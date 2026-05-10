@@ -1,0 +1,11 @@
+[package]
+name = "scry-query"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+scry-capability = { path = "../scry-capability" }
+tokio = { workspace = true, features = ["rt"] }
+serde = { workspace = true }
+dashmap = { workspace = true }
