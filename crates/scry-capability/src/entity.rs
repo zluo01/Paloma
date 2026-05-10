@@ -11,7 +11,9 @@ pub struct Item {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Action {
+    /// action name for both UI display and as action enum
     pub label: String,
+    /// action input params
     pub params: Vec<String>,
 }
 
@@ -42,7 +44,9 @@ pub enum ImageFormat {
 }
 
 pub trait Capability: Send + Sync + 'static {
+    /// handler unique name
     fn id(&self) -> &'static str;
+    /// handler descriptions for UI display
     fn metadata(&self) -> CapabilityMeta;
 }
 

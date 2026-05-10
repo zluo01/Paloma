@@ -12,7 +12,9 @@ pub struct Query {
 }
 
 pub struct QueryResponse {
+    /// handler unique name
     pub id: &'static str,
+    /// handler results
     pub items: Vec<Item>,
 }
 
