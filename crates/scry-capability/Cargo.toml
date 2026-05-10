@@ -1,0 +1,15 @@
+[package]
+name = "scry-capability"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+freedesktop-desktop-entry = { workspace = true }
+strsim = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+log = { workspace = true }
