@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub title: String,
     pub icon: Option<IconRef>,
     pub actions: Vec<Action>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Action {
     pub label: String,
     pub params: Vec<String>,
@@ -23,21 +23,8 @@ pub enum ActionOutcome {
     Replace { input: String },
 }
 
-#[derive(Deserialize)]
-struct PluginItem {
-    title: String,
-    icon: Option<IconRef>,
-    actions: Vec<PluginAction>,
-}
-
-#[derive(Deserialize)]
-struct PluginAction {
-    label: String,
-    run: String, // JSON-RPC payload for transactional requests
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum IconRef {
     Name(String),
     Path(String),
@@ -62,7 +49,7 @@ pub trait Capability: Send + Sync + 'static {
 pub trait QueryHandler: Capability {
     fn query(&self, input: &str) -> Vec<Item>;
 
-    fn run(&self, action: Action);
+    fn run(&self, action: Action) -> ActionOutcome;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

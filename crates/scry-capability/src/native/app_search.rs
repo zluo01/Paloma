@@ -4,7 +4,9 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use crate::entity::{Action, Capability, CapabilityMeta, IconRef, Item, QueryHandler};
+use crate::entity::{
+    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+};
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{error, info};
 use notify::{EventKind, RecursiveMode};
@@ -78,10 +80,10 @@ impl QueryHandler for AppSearch {
         ranked.into_iter().map(|(_, app)| app.to_item()).collect()
     }
 
-    fn run(&self, action: Action) {
+    fn run(&self, action: Action) -> ActionOutcome {
         let Some((program, args)) = action.params.split_first() else {
             error!("app_search: empty argv, nothing to launch");
-            return;
+            return ActionOutcome::Hide;
         };
 
         let result = Command::new(program)
@@ -96,6 +98,8 @@ impl QueryHandler for AppSearch {
             Ok(_child) => info!("app_search: launched {program}"),
             Err(err) => error!("app_search: failed to launch {program}: {err}"),
         }
+
+        ActionOutcome::Hide
     }
 }
 

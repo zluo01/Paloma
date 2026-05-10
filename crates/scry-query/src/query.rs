@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use tokio::task::JoinSet;
 
 use scry_capability::native::app_search::AppSearch;
-use scry_capability::{Action, Item, QueryHandler};
+use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
 use serde::Serialize;
 
 pub struct Query {
@@ -51,10 +51,10 @@ impl Query {
         responses
     }
 
-    pub fn run(&self, id: String, action: Action) {
-        if let Some(handler) = self.handlers.get(id.as_str()) {
-            handler.run(action);
-        }
+    pub fn run(&self, id: String, action: Action) -> Option<ActionOutcome> {
+        self.handlers
+            .get(id.as_str())
+            .map(|handler| handler.run(action))
     }
 }
 
