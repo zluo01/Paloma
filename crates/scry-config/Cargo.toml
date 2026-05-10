@@ -1,0 +1,11 @@
+[package]
+name = "scry-config"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Path resolution and configuration for Scry."
+
+[dependencies]
+log = { workspace = true }

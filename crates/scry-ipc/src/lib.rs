@@ -1,6 +1,4 @@
-use log::warn;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tokio_util::codec::LengthDelimitedCodec;
 
 pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024; // 8 mb
@@ -79,21 +77,6 @@ pub struct ActionInvokeParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionOutcomeParams {
     pub outcome: scry_capability::ActionOutcome,
-}
-
-pub fn runtime_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let user = std::env::var("USER").unwrap_or_else(|_| "unknown".into());
-            warn!("XDG_RUNTIME_DIR is unset; falling back to /tmp/scry-{user}");
-            PathBuf::from(format!("/tmp/scry-{user}"))
-        })
-        .join("scry")
-}
-
-pub fn socket_path() -> PathBuf {
-    runtime_dir().join("scry.sock")
 }
 
 pub fn codec() -> LengthDelimitedCodec {
