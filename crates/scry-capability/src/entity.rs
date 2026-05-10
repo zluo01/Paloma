@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::future::Future;
-use std::pin::Pin;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
@@ -69,13 +67,14 @@ pub struct CapabilityMeta {
     pub author: Option<String>,
 }
 
+#[async_trait::async_trait]
 pub trait Tool: Capability {
     type Args: serde::de::DeserializeOwned + schemars::JsonSchema + Send;
 
     const NAME: &'static str;
     const DESCRIPTION: &'static str;
 
-    fn invoke(&self, args: Self::Args) -> impl Future<Output = Result<ToolResult, String>> + Send;
+    async fn invoke(&self, args: Self::Args) -> Result<ToolResult, String>;
 
     fn schema(&self) -> ToolSchema {
         ToolSchema {
@@ -93,18 +92,18 @@ pub struct ToolSchema {
     pub input_schema: serde_json::Value,
 }
 
-pub struct ToolResult {
-    pub content: String,
+pub enum ToolResult {
+    Text(String),
+    Image { mime_type: String, data: Vec<u8> },
 }
 
+#[async_trait::async_trait]
 pub trait DynTool: Send + Sync {
     fn schema(&self) -> ToolSchema;
-    fn invoke<'a>(
-        &'a self,
-        args: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>>;
+    async fn invoke(&self, args: serde_json::Value) -> Result<ToolResult, String>;
 }
 
+#[async_trait::async_trait]
 impl<T> DynTool for T
 where
     T: Tool + Send + Sync,
@@ -113,13 +112,8 @@ where
         Tool::schema(self)
     }
 
-    fn invoke<'a>(
-        &'a self,
-        args: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
-        Box::pin(async move {
-            let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            Tool::invoke(self, parsed).await
-        })
+    async fn invoke(&self, args: serde_json::Value) -> Result<ToolResult, String> {
+        let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
+        Tool::invoke(self, parsed).await
     }
 }
