@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-
+use log::warn;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tokio_util::codec::LengthDelimitedCodec;
 
 pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024; // 8 mb
@@ -85,7 +85,7 @@ pub fn runtime_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             let user = std::env::var("USER").unwrap_or_else(|_| "unknown".into());
-            eprintln!("[scry] warning: XDG_RUNTIME_DIR is unset; falling back to /tmp/scry-{user}");
+            warn!("XDG_RUNTIME_DIR is unset; falling back to /tmp/scry-{user}");
             PathBuf::from(format!("/tmp/scry-{user}"))
         })
         .join("scry")

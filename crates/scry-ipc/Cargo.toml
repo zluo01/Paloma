@@ -8,3 +8,4 @@ rust-version.workspace = true
 scry-capability = { path = "../scry-capability" }
 serde = { workspace = true }
 tokio-util = { workspace = true, features = ["codec"] }
+log = { workspace = true }
