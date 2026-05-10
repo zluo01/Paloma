@@ -12,4 +12,5 @@ freedesktop-desktop-entry = { workspace = true }
 strsim = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
+wl-clipboard-rs = { workspace = true }
 log = { workspace = true }

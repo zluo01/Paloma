@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use tokio::task::JoinSet;
 
 use scry_capability::native::app_search::AppSearch;
+use scry_capability::native::clipboard::Clipboard;
 use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
 use serde::Serialize;
 
@@ -28,6 +29,9 @@ impl Query {
                 source: source.to_string(),
             })?);
         handlers.insert(app_search.id(), app_search);
+
+        let clipboard: Arc<dyn QueryHandler> = Arc::new(Clipboard::new());
+        handlers.insert(clipboard.id(), clipboard);
 
         Ok(Self { handlers })
     }
