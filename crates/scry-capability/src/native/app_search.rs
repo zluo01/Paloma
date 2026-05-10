@@ -8,7 +8,7 @@ use crate::entity::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
 };
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
-use log::{error, info};
+use log::{debug, error, info, warn};
 use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 
@@ -133,9 +133,13 @@ impl AppSearch {
         )?;
 
         for path in fde::default_paths() {
+            if !path.is_dir() {
+                debug!("app_search: skipping missing watch path {path:?}");
+                continue;
+            }
             match debouncer.watch(&path, RecursiveMode::NonRecursive) {
-                Ok(_) => info!("Watch for path: {:?}", &path),
-                Err(e) => error!("Fail to watch path: {:?}. Error: {}", &path, e),
+                Ok(_) => info!("app_search: watching {path:?}"),
+                Err(e) => warn!("app_search: failed to watch {path:?}: {e}"),
             }
         }
 
