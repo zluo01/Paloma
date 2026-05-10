@@ -66,6 +66,7 @@ pub struct ResultErrorParams {
 pub struct ResultItemsParams {
     pub query_id: u64,
     pub handler_id: String,
+    pub handler_name: String,
     pub items: Vec<scry_capability::Item>,
 }
 

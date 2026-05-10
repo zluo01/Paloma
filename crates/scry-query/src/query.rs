@@ -15,6 +15,8 @@ pub struct Query {
 pub struct QueryResponse {
     /// handler unique name
     pub id: &'static str,
+    /// Display section name
+    pub name: String,
     /// handler results
     pub items: Vec<Item>,
 }
@@ -40,10 +42,12 @@ impl Query {
         let mut set = JoinSet::new();
         for entry in self.handlers.iter() {
             let id = *entry.key();
+            let name = entry.value().metadata().name;
             let handler = Arc::clone(entry.value());
             let input = input.to_owned();
             set.spawn_blocking(move || QueryResponse {
                 id,
+                name,
                 items: handler.query(&input),
             });
         }
