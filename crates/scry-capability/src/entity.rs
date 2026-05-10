@@ -57,6 +57,10 @@ pub trait Capability: Send + Sync + 'static {
     fn metadata(&self) -> CapabilityMeta;
 }
 
+pub trait QueryHandler: Capability {
+    fn query(&self, input: &str) -> Vec<Item>;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityMeta {
     pub name: String,

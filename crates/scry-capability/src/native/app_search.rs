@@ -3,7 +3,7 @@ use std::process::Command;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use crate::entity::{Action, Capability, CapabilityMeta, IconRef, Item};
+use crate::entity::{Action, Capability, CapabilityMeta, IconRef, Item, QueryHandler};
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{error, info};
 use notify::{EventKind, RecursiveMode};
@@ -62,6 +62,27 @@ impl Capability for AppSearch {
     }
 }
 
+impl QueryHandler for AppSearch {
+    fn query(&self, input: &str) -> Vec<Item> {
+        let entries = self.entries.read().unwrap();
+
+        let mut ranked: Vec<_> = entries
+            .iter()
+            .filter_map(|app| score_app(input, app).map(|score| (score, app)))
+            .collect();
+
+        ranked.sort_by(|(left_score, left), (right_score, right)| {
+            right_score.cmp(left_score).then_with(|| {
+                left.name
+                    .to_ascii_lowercase()
+                    .cmp(&right.name.to_ascii_lowercase())
+            })
+        });
+
+        ranked.into_iter().map(|(_, app)| app.to_item()).collect()
+    }
+}
+
 impl AppSearch {
     pub fn new() -> notify::Result<Self> {
         let entries = Arc::new(RwLock::new(load()));
@@ -102,25 +123,6 @@ impl AppSearch {
             entries,
             _watcher: debouncer,
         })
-    }
-
-    pub fn search(&self, query: &str) -> Vec<Item> {
-        let entries = self.entries.read().unwrap();
-
-        let mut ranked: Vec<_> = entries
-            .iter()
-            .filter_map(|app| score_app(query, app).map(|score| (score, app)))
-            .collect();
-
-        ranked.sort_by(|(left_score, left), (right_score, right)| {
-            right_score.cmp(left_score).then_with(|| {
-                left.name
-                    .to_ascii_lowercase()
-                    .cmp(&right.name.to_ascii_lowercase())
-            })
-        });
-
-        ranked.into_iter().map(|(_, app)| app.to_item()).collect()
     }
 }
 
