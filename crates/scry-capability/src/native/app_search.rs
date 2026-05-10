@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::process::Command;
+use std::os::unix::process::CommandExt;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -24,17 +25,12 @@ struct AppEntry {
 
 impl AppEntry {
     fn to_item(&self) -> Item {
-        let argv = self.exec.clone();
         Item {
             title: self.name.clone(),
             icon: self.icon.clone().map(IconRef::Name),
             actions: vec![Action {
                 label: "Open".to_string(),
-                run: Box::new(move || {
-                    let mut cmd = Command::new(&argv[0]);
-                    cmd.args(&argv[1..]);
-                    let _ = cmd.spawn();
-                }),
+                params: self.exec.clone(),
             }],
         }
     }
@@ -80,6 +76,26 @@ impl QueryHandler for AppSearch {
         });
 
         ranked.into_iter().map(|(_, app)| app.to_item()).collect()
+    }
+
+    fn run(&self, action: Action) {
+        let Some((program, args)) = action.params.split_first() else {
+            error!("app_search: empty argv, nothing to launch");
+            return;
+        };
+
+        let result = Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn();
+
+        match result {
+            Ok(_child) => info!("app_search: launched {program}"),
+            Err(err) => error!("app_search: failed to launch {program}: {err}"),
+        }
     }
 }
 

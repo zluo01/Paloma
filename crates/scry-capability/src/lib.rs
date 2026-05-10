@@ -1,4 +1,4 @@
 mod entity;
 pub mod native;
 
-pub use entity::{Item, QueryHandler};
+pub use entity::{Action, Item, QueryHandler};

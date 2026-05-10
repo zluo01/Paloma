@@ -2,15 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
+#[derive(Serialize, Deserialize)]
 pub struct Item {
     pub title: String,
     pub icon: Option<IconRef>,
     pub actions: Vec<Action>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Action {
     pub label: String,
-    pub run: Box<dyn Fn() + Send + Sync + 'static>,
+    pub params: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +61,8 @@ pub trait Capability: Send + Sync + 'static {
 
 pub trait QueryHandler: Capability {
     fn query(&self, input: &str) -> Vec<Item>;
+
+    fn run(&self, action: Action);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
