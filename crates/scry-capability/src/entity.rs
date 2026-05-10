@@ -92,9 +92,10 @@ pub struct ToolSchema {
     pub input_schema: serde_json::Value,
 }
 
+#[derive(Debug)]
 pub enum ToolResult {
     Text(String),
-    Image { mime_type: String, data: Vec<u8> },
+    Binary { mime_type: String, data: Vec<u8> },
 }
 
 #[async_trait::async_trait]
