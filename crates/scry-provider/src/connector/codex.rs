@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use crate::entity::{Auth, Connection, ProviderAuthenticator, ProviderError, Result};
+use crate::entity::{Auth, Connection, ProviderAuthenticator, ProviderError, ProviderId, Result};
 use serde::{Deserialize, Serialize};
 
-const PROVIDER_ID: &str = "codex";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const USERCODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
 const TOKEN_POLL_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
@@ -72,8 +71,8 @@ impl CodexConnector {
 
 #[async_trait::async_trait]
 impl ProviderAuthenticator for CodexConnector {
-    fn id(&self) -> &'static str {
-        PROVIDER_ID
+    fn id(&self) -> ProviderId {
+        ProviderId::Codex
     }
 
     async fn init_connection(&self) -> Result<Connection> {

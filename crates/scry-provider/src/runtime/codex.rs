@@ -1,10 +1,9 @@
-use crate::entity::{ChatRequest, ChatStream, Model, ProviderClient, ProviderError};
+use crate::entity::{ChatRequest, ChatStream, Model, ProviderClient, ProviderError, ProviderId};
 use crate::{Auth, Result};
 use base64::Engine;
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
 
-const PROVIDER_ID: &str = "codex";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
@@ -106,8 +105,8 @@ fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
 
 #[async_trait::async_trait]
 impl ProviderClient for CodexRuntime {
-    fn id(&self) -> &'static str {
-        PROVIDER_ID
+    fn id(&self) -> ProviderId {
+        ProviderId::Codex
     }
 
     async fn refresh(&self) -> Result<Option<Auth>> {

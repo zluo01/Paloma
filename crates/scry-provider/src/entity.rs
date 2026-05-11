@@ -7,7 +7,7 @@ pub type ChatStream = BoxStream<'static, Result<ChatEvent>>;
 
 #[async_trait::async_trait]
 pub trait ProviderClient: Send + Sync {
-    fn id(&self) -> &'static str;
+    fn id(&self) -> ProviderId;
 
     async fn refresh(&self) -> Result<Option<Auth>>;
 
@@ -18,7 +18,7 @@ pub trait ProviderClient: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait ProviderAuthenticator: Send + Sync {
-    fn id(&self) -> &'static str;
+    fn id(&self) -> ProviderId;
 
     async fn init_connection(&self) -> Result<Connection>;
 
@@ -45,6 +45,20 @@ pub enum Connection {
         instructions_url: Option<String>,
     },
     None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderId {
+    Codex,
+}
+
+impl ProviderId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderId::Codex => "codex",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
