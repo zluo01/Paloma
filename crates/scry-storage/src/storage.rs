@@ -26,12 +26,16 @@ impl Storage {
         auth_kind: &str,
         secret: &str,
         expires_at: Option<i64>,
+        model: &str,
+        effort: &str,
     ) -> Result<()> {
         sqlx::query(queries::INSERT_PROVIDER_QUERY)
             .bind(provider_id)
             .bind(auth_kind)
             .bind(secret)
             .bind(expires_at)
+            .bind(model)
+            .bind(effort)
             .execute(&self.pool)
             .await
             .map_err(|e| match &e {
@@ -137,7 +141,14 @@ mod tests {
 
         let first = Storage::new(&path).await.expect("first open");
         first
-            .insert_provider("anthropic", "api_key", "sk-1", None)
+            .insert_provider(
+                "anthropic",
+                "api_key",
+                "sk-1",
+                None,
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .unwrap();
         drop(first);
@@ -156,7 +167,14 @@ mod tests {
     async fn insert_provider_writes_row() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("anthropic", "api_key", "sk-abc", Some(1_700_000_000))
+            .insert_provider(
+                "anthropic",
+                "api_key",
+                "sk-abc",
+                Some(1_700_000_000),
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .expect("insert");
 
@@ -176,12 +194,12 @@ mod tests {
     async fn insert_provider_duplicate_returns_duplicate_error() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok-1", None)
+            .insert_provider("codex", "oauth", "tok-1", None, "gpt-5", "medium")
             .await
             .expect("first insert");
 
         let err = storage
-            .insert_provider("codex", "oauth", "tok-2", None)
+            .insert_provider("codex", "oauth", "tok-2", None, "gpt-5", "medium")
             .await
             .expect_err("second insert must fail");
 
@@ -195,7 +213,7 @@ mod tests {
     async fn insert_provider_rejects_bad_auth_kind() {
         let (storage, _tmp) = fresh_storage().await;
         let err = storage
-            .insert_provider("openai", "magic_link", "x", None)
+            .insert_provider("openai", "magic_link", "x", None, "gpt-5", "medium")
             .await
             .expect_err("CHECK constraint should reject unknown auth_kind");
 
@@ -208,7 +226,7 @@ mod tests {
     async fn update_provider_changes_row() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "old-token", Some(100))
+            .insert_provider("codex", "oauth", "old-token", Some(100), "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -246,7 +264,14 @@ mod tests {
     async fn delete_provider_removes_row() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("anthropic", "api_key", "x", None)
+            .insert_provider(
+                "anthropic",
+                "api_key",
+                "x",
+                None,
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .unwrap();
 
@@ -284,11 +309,18 @@ mod tests {
     async fn connected_providers_returns_all_inserted_ids() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("anthropic", "api_key", "sk-a", None)
+            .insert_provider(
+                "anthropic",
+                "api_key",
+                "sk-a",
+                None,
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", Some(123))
+            .insert_provider("codex", "oauth", "tok", Some(123), "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -301,11 +333,18 @@ mod tests {
     async fn connected_providers_reflects_deletes() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("anthropic", "api_key", "sk-a", None)
+            .insert_provider(
+                "anthropic",
+                "api_key",
+                "sk-a",
+                None,
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", None)
+            .insert_provider("codex", "oauth", "tok", None, "gpt-5", "medium")
             .await
             .unwrap();
 

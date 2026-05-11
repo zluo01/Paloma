@@ -4,14 +4,16 @@ pub const INIT_TABLE_QUERY: &str = "
     provider_id TEXT PRIMARY KEY NOT NULL,
     auth_kind TEXT NOT NULL CHECK (auth_kind IN ('api_key', 'oauth')),
     secret TEXT NOT NULL,
-    expires_at INTEGER
+    expires_at INTEGER,
+    model TEXT NOT NULL,
+    effort TEXT NOT NULL
   );
     ";
 
 //language=sqlite
 pub const INSERT_PROVIDER_QUERY: &str = "
-  INSERT INTO provider_credentials (provider_id, auth_kind, secret, expires_at)
-  VALUES (?, ?, ?, ?);
+  INSERT INTO provider_credentials (provider_id, auth_kind, secret, expires_at, model, effort)
+  VALUES (?, ?, ?, ?, ?, ?);
     ";
 
 //language=sqlite
