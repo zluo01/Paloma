@@ -1,2 +1,4 @@
 pub mod connector;
-mod entity;
+pub mod entity;
+
+pub use entity::{Auth, Connection, ProviderAuthenticator, ProviderError, Result};

@@ -59,6 +59,15 @@ pub enum Auth {
     },
 }
 
+impl Auth {
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            Auth::ApiKey(_) => "api_key",
+            Auth::OAuth { .. } => "oauth",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub model: String,
