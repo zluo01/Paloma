@@ -26,3 +26,8 @@ pub const DELETE_PROVIDER_QUERY: &str = "
   DELETE FROM provider_credentials
   WHERE provider_id = ?;
     ";
+
+//language=sqlite
+pub const CONNECTED_PROVIDERS_QUERY: &str = "
+  SELECT provider_id FROM provider_credentials
+    ";

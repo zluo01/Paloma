@@ -1,7 +1,7 @@
 use crate::error::{Result, StorageError};
 use crate::queries;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::Duration;
 
@@ -72,6 +72,16 @@ impl Storage {
             return Err(StorageError::NotFound(provider_id.to_string()));
         }
         Ok(())
+    }
+
+    pub async fn connected_providers(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query(queries::CONNECTED_PROVIDERS_QUERY)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get::<String, _>("provider_id"))
+            .collect())
     }
 }
 
@@ -261,5 +271,47 @@ mod tests {
             matches!(err, StorageError::NotFound(ref id) if id == "ghost"),
             "expected NotFound(\"ghost\"), got {err:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn connected_providers_returns_empty_when_no_rows() {
+        let (storage, _tmp) = fresh_storage().await;
+        let ids = storage.connected_providers().await.expect("query");
+        assert!(ids.is_empty(), "expected empty, got {ids:?}");
+    }
+
+    #[tokio::test]
+    async fn connected_providers_returns_all_inserted_ids() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("anthropic", "api_key", "sk-a", None)
+            .await
+            .unwrap();
+        storage
+            .insert_provider("codex", "oauth", "tok", Some(123))
+            .await
+            .unwrap();
+
+        let mut ids = storage.connected_providers().await.expect("query");
+        ids.sort();
+        assert_eq!(ids, vec!["anthropic".to_string(), "codex".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn connected_providers_reflects_deletes() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("anthropic", "api_key", "sk-a", None)
+            .await
+            .unwrap();
+        storage
+            .insert_provider("codex", "oauth", "tok", None)
+            .await
+            .unwrap();
+
+        storage.delete_provider("anthropic").await.unwrap();
+
+        let ids = storage.connected_providers().await.expect("query");
+        assert_eq!(ids, vec!["codex".to_string()]);
     }
 }
