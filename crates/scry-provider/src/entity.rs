@@ -9,13 +9,11 @@ pub type ChatStream = BoxStream<'static, Result<ChatEvent>>;
 pub trait ProviderClient: Send + Sync {
     fn id(&self) -> &'static str;
 
-    async fn refresh(&self, credential: Auth) -> Result<Auth>;
+    async fn refresh(&self) -> Result<Option<Auth>>;
 
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream>;
 
     async fn models(&self) -> Result<Vec<Model>>;
-
-    async fn usage(&self) -> Result<Option<Usage>>;
 }
 
 #[async_trait::async_trait]
@@ -99,7 +97,9 @@ pub enum ChatEvent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: String,
-    pub name: Option<String>,
+    pub name: String,
+    pub default_reasoning_effort: String,
+    pub supported_reasoning_efforts: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
