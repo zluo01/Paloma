@@ -8,7 +8,7 @@ use scry_capability::native::clipboard::Clipboard;
 use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
 use serde::Serialize;
 
-pub struct Query {
+pub struct QueryController {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
 }
 
@@ -21,7 +21,7 @@ pub struct QueryResponse {
     pub items: Vec<Item>,
 }
 
-impl Query {
+impl QueryController {
     pub fn new() -> Result<Self, QueryInitError> {
         let handlers: DashMap<&'static str, Arc<dyn QueryHandler>> = DashMap::new();
 

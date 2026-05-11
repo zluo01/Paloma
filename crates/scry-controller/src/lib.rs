@@ -1,3 +1,3 @@
-pub mod query;
+pub mod query_controller;
 
-pub use query::{Query, QueryResponse};
+pub use query_controller::{QueryController, QueryResponse};
