@@ -24,6 +24,13 @@ pub const UPDATE_PROVIDER_QUERY: &str = "
     ";
 
 //language=sqlite
+pub const UPDATE_PROVIDER_PREFERENCES_QUERY: &str = "
+  UPDATE provider_credentials
+  SET model = ?, effort = ?
+  WHERE provider_id = ?;
+    ";
+
+//language=sqlite
 pub const DELETE_PROVIDER_QUERY: &str = "
   DELETE FROM provider_credentials
   WHERE provider_id = ?;

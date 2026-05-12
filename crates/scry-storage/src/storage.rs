@@ -67,6 +67,24 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn update_preferences(
+        &self,
+        provider_id: &str,
+        model: &str,
+        effort: &str,
+    ) -> Result<()> {
+        let result = sqlx::query(queries::UPDATE_PROVIDER_PREFERENCES_QUERY)
+            .bind(model)
+            .bind(effort)
+            .bind(provider_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(provider_id.to_string()));
+        }
+        Ok(())
+    }
+
     pub async fn delete_provider(&self, provider_id: &str) -> Result<()> {
         let result = sqlx::query(queries::DELETE_PROVIDER_QUERY)
             .bind(provider_id)
@@ -258,6 +276,49 @@ mod tests {
         let (storage, _tmp) = fresh_storage().await;
         let err = storage
             .update_provider("ghost", "api_key", "x", None)
+            .await
+            .expect_err("must fail");
+
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == "ghost"),
+            "expected NotFound(\"ghost\"), got {err:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn update_preferences_changes_model_and_effort_only() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("codex", "oauth", "tok", Some(100), "gpt-5", "medium")
+            .await
+            .unwrap();
+
+        storage
+            .update_preferences("codex", "gpt-5-mini", "high")
+            .await
+            .expect("update prefs");
+
+        let row = sqlx::query(
+            "SELECT secret, expires_at, model, effort FROM provider_credentials WHERE provider_id = ?",
+        )
+        .bind("codex")
+        .fetch_one(storage.pool())
+        .await
+        .unwrap();
+
+        // Auth fields untouched.
+        assert_eq!(row.get::<String, _>("secret"), "tok");
+        assert_eq!(row.get::<Option<i64>, _>("expires_at"), Some(100));
+        // Preferences updated.
+        assert_eq!(row.get::<String, _>("model"), "gpt-5-mini");
+        assert_eq!(row.get::<String, _>("effort"), "high");
+    }
+
+    #[tokio::test]
+    async fn update_preferences_nonexistent_returns_not_found() {
+        let (storage, _tmp) = fresh_storage().await;
+        let err = storage
+            .update_preferences("ghost", "gpt-5", "medium")
             .await
             .expect_err("must fail");
 

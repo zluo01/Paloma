@@ -68,12 +68,21 @@ impl RuntimeController {
         self.handlers.remove(&provider_id);
     }
 
-    pub async fn models(
-        &self,
-        provider_id: ProviderId,
-    ) -> Result<Vec<Model>, RuntimeControllerError> {
-        let client = self.client(provider_id)?;
-        Ok(client.models().await?)
+    pub async fn models(&self, provider_id: ProviderId) -> Option<Vec<Model>> {
+        let client = match self.client(provider_id) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("missing proper client: {e}");
+                return None;
+            }
+        };
+        match client.models().await {
+            Ok(m) => Some(m),
+            Err(e) => {
+                log::error!("models: failed to fetch for {provider_id:?}: {e}");
+                None
+            }
+        }
     }
 
     fn client(

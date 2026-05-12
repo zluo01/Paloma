@@ -1,11 +1,13 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{RuntimeController, RuntimeControllerError};
 use dashmap::DashMap;
 use scry_provider::connector::CodexConnector;
-use scry_provider::entity::{Auth, Connection, ProviderAuthenticator, ProviderError, ProviderId};
-use scry_storage::storage::Storage;
+use scry_provider::entity::{
+    Auth, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
+};
+use scry_storage::storage::{ConnectedProvider, Storage};
 use scry_storage::StorageError;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +52,14 @@ impl ConnectController {
             .new_model(provider_id, &auth)
             .await?;
 
-        let models = self.runtime_controller.models(provider_id).await?;
+        // We just registered the runtime client, so a `None` here is
+        // a real failure (network blip / bad auth) rather than a
+        // missing handler — bail so the caller can surface it.
+        let models = self
+            .runtime_controller
+            .models(provider_id)
+            .await
+            .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
         let default = models
             .first()
             .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
@@ -80,25 +89,46 @@ impl ConnectController {
         Ok(())
     }
 
+    pub async fn set_preferences(
+        &self,
+        provider_id: ProviderId,
+        model: &str,
+        effort: &str,
+    ) -> Result<(), ConnectError> {
+        self.storage
+            .update_preferences(provider_id.as_str(), model, effort)
+            .await?;
+        Ok(())
+    }
+
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, ConnectError> {
-        let connected: HashSet<String> = self
+        let connected: HashMap<String, ConnectedProvider> = self
             .storage
             .connected_providers()
             .await?
             .into_iter()
-            .map(|p| p.provider_id)
+            .map(|p| (p.provider_id.clone(), p))
             .collect();
 
         let mut ids: Vec<ProviderId> = self.handlers.iter().map(|entry| *entry.key()).collect();
         ids.sort_by_key(|id| id.as_str());
 
-        Ok(ids
-            .into_iter()
-            .map(|id| Connector {
-                connected: connected.contains(id.as_str()),
-                id,
-            })
-            .collect())
+        let mut connectors = Vec::with_capacity(ids.len());
+        for id in ids {
+            let connection = match connected.get(id.as_str()) {
+                Some(cred) => {
+                    let available_models = self.runtime_controller.models(id).await;
+                    Some(ConnectorConnection {
+                        prefer_model: cred.model.clone(),
+                        prefer_effort: cred.effort.clone(),
+                        available_models,
+                    })
+                }
+                None => None,
+            };
+            connectors.push(Connector { id, connection });
+        }
+        Ok(connectors)
     }
 
     fn handler(
@@ -157,8 +187,16 @@ impl ConnectController {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Connector {
-    id: ProviderId,
-    connected: bool,
+    pub id: ProviderId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectorConnection>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectorConnection {
+    pub prefer_model: String,
+    pub prefer_effort: String,
+    pub available_models: Option<Vec<Model>>,
 }
 
 #[derive(Debug, thiserror::Error)]
