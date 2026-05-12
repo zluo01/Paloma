@@ -5,6 +5,7 @@ use sqlx::{FromRow, Pool, Sqlite};
 use std::path::Path;
 use std::time::Duration;
 
+#[derive(Clone)]
 pub struct Storage {
     pool: Pool<Sqlite>,
 }
@@ -25,7 +26,6 @@ impl Storage {
         provider_id: &str,
         auth_kind: &str,
         secret: &str,
-        expires_at: Option<i64>,
         model: &str,
         effort: &str,
     ) -> Result<()> {
@@ -33,7 +33,6 @@ impl Storage {
             .bind(provider_id)
             .bind(auth_kind)
             .bind(secret)
-            .bind(expires_at)
             .bind(model)
             .bind(effort)
             .execute(&self.pool)
@@ -52,12 +51,10 @@ impl Storage {
         provider_id: &str,
         auth_kind: &str,
         secret: &str,
-        expires_at: Option<i64>,
     ) -> Result<()> {
         let result = sqlx::query(queries::UPDATE_PROVIDER_QUERY)
             .bind(auth_kind)
             .bind(secret)
-            .bind(expires_at)
             .bind(provider_id)
             .execute(&self.pool)
             .await?;
@@ -109,7 +106,6 @@ pub struct ConnectedProvider {
     pub provider_id: String,
     pub auth_kind: String,
     pub secret: String,
-    pub expires_at: Option<i64>,
     pub model: String,
     pub effort: String,
 }
@@ -170,7 +166,6 @@ mod tests {
                 "anthropic",
                 "api_key",
                 "sk-1",
-                None,
                 "claude-sonnet-4-5",
                 "medium",
             )
@@ -196,35 +191,35 @@ mod tests {
                 "anthropic",
                 "api_key",
                 "sk-abc",
-                Some(1_700_000_000),
                 "claude-sonnet-4-5",
                 "medium",
             )
             .await
             .expect("insert");
 
-        let row = sqlx::query("SELECT provider_id, auth_kind, secret, expires_at FROM provider_credentials WHERE provider_id = ?")
-            .bind("anthropic")
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
+        let row = sqlx::query(
+            "SELECT provider_id, auth_kind, secret FROM provider_credentials WHERE provider_id = ?",
+        )
+        .bind("anthropic")
+        .fetch_one(storage.pool())
+        .await
+        .unwrap();
 
         assert_eq!(row.get::<String, _>("provider_id"), "anthropic");
         assert_eq!(row.get::<String, _>("auth_kind"), "api_key");
         assert_eq!(row.get::<String, _>("secret"), "sk-abc");
-        assert_eq!(row.get::<Option<i64>, _>("expires_at"), Some(1_700_000_000));
     }
 
     #[tokio::test]
     async fn insert_provider_duplicate_returns_duplicate_error() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok-1", None, "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "tok-1", "gpt-5", "medium")
             .await
             .expect("first insert");
 
         let err = storage
-            .insert_provider("codex", "oauth", "tok-2", None, "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "tok-2", "gpt-5", "medium")
             .await
             .expect_err("second insert must fail");
 
@@ -238,7 +233,7 @@ mod tests {
     async fn insert_provider_rejects_bad_auth_kind() {
         let (storage, _tmp) = fresh_storage().await;
         let err = storage
-            .insert_provider("openai", "magic_link", "x", None, "gpt-5", "medium")
+            .insert_provider("openai", "magic_link", "x", "gpt-5", "medium")
             .await
             .expect_err("CHECK constraint should reject unknown auth_kind");
 
@@ -251,31 +246,28 @@ mod tests {
     async fn update_provider_changes_row() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "old-token", Some(100), "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "old-token", "gpt-5", "medium")
             .await
             .unwrap();
 
         storage
-            .update_provider("codex", "oauth", "new-token", Some(999))
+            .update_provider("codex", "oauth", "new-token")
             .await
             .expect("update");
 
-        let row = sqlx::query(
-            "SELECT secret, expires_at FROM provider_credentials WHERE provider_id = ?",
-        )
-        .bind("codex")
-        .fetch_one(storage.pool())
-        .await
-        .unwrap();
+        let row = sqlx::query("SELECT secret FROM provider_credentials WHERE provider_id = ?")
+            .bind("codex")
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
         assert_eq!(row.get::<String, _>("secret"), "new-token");
-        assert_eq!(row.get::<Option<i64>, _>("expires_at"), Some(999));
     }
 
     #[tokio::test]
     async fn update_provider_nonexistent_returns_not_found() {
         let (storage, _tmp) = fresh_storage().await;
         let err = storage
-            .update_provider("ghost", "api_key", "x", None)
+            .update_provider("ghost", "api_key", "x")
             .await
             .expect_err("must fail");
 
@@ -289,7 +281,7 @@ mod tests {
     async fn update_preferences_changes_model_and_effort_only() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok", Some(100), "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -299,7 +291,7 @@ mod tests {
             .expect("update prefs");
 
         let row = sqlx::query(
-            "SELECT secret, expires_at, model, effort FROM provider_credentials WHERE provider_id = ?",
+            "SELECT secret, model, effort FROM provider_credentials WHERE provider_id = ?",
         )
         .bind("codex")
         .fetch_one(storage.pool())
@@ -308,7 +300,6 @@ mod tests {
 
         // Auth fields untouched.
         assert_eq!(row.get::<String, _>("secret"), "tok");
-        assert_eq!(row.get::<Option<i64>, _>("expires_at"), Some(100));
         // Preferences updated.
         assert_eq!(row.get::<String, _>("model"), "gpt-5-mini");
         assert_eq!(row.get::<String, _>("effort"), "high");
@@ -332,14 +323,7 @@ mod tests {
     async fn delete_provider_removes_row() {
         let (storage, _tmp) = fresh_storage().await;
         storage
-            .insert_provider(
-                "anthropic",
-                "api_key",
-                "x",
-                None,
-                "claude-sonnet-4-5",
-                "medium",
-            )
+            .insert_provider("anthropic", "api_key", "x", "claude-sonnet-4-5", "medium")
             .await
             .unwrap();
 
@@ -381,14 +365,13 @@ mod tests {
                 "anthropic",
                 "api_key",
                 "sk-a",
-                None,
                 "claude-sonnet-4-5",
                 "medium",
             )
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", Some(123), "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -411,14 +394,13 @@ mod tests {
                 "anthropic",
                 "api_key",
                 "sk-a",
-                None,
                 "claude-sonnet-4-5",
                 "medium",
             )
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", None, "gpt-5", "medium")
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
