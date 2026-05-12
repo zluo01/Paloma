@@ -8,7 +8,7 @@ rust-version.workspace = true
 scry-capability = { path = "../scry-capability" }
 scry-storage = { path = "../scry-storage" }
 scry-provider = { path = "../scry-provider" }
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "time"] }
 serde = { workspace = true }
 dashmap = { workspace = true }
 reqwest = { workspace = true }

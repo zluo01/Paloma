@@ -1,4 +1,5 @@
 use futures::stream::BoxStream;
+use scry_storage::storage::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -9,7 +10,7 @@ pub type ChatStream = BoxStream<'static, Result<ChatEvent>>;
 pub trait ProviderClient: Send + Sync {
     fn id(&self) -> ProviderId;
 
-    async fn refresh(&self) -> Result<Option<Auth>>;
+    async fn refresh(&self, storage: &Storage) -> Result<Option<Auth>>;
 
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream>;
 
@@ -67,7 +68,7 @@ pub enum Auth {
     ApiKey(String),
     OAuth {
         refresh_token: Option<String>,
-        expires_at_unix: Option<i64>,
+        expires_in: Option<i64>,
     },
 }
 
@@ -128,6 +129,9 @@ pub enum ProviderError {
 
     #[error("JSON encode/decode failed: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Storage(#[from] scry_storage::StorageError),
 
     #[error("device authorization timed out after {0}s")]
     Timeout(u64),

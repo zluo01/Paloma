@@ -154,7 +154,7 @@ impl ProviderAuthenticator for CodexConnector {
 
         Ok(Auth::OAuth {
             refresh_token: tokens.refresh_token,
-            expires_at_unix: None,
+            expires_in: None,
         })
     }
 }

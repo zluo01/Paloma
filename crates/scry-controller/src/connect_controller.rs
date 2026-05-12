@@ -156,7 +156,6 @@ impl ConnectController {
                         provider_id.as_str(),
                         kind,
                         secret,
-                        None,
                         prefer_model,
                         prefer_effort,
                     )
@@ -164,7 +163,7 @@ impl ConnectController {
             }
             Auth::OAuth {
                 refresh_token,
-                expires_at_unix,
+                expires_in: _,
             } => {
                 let secret = refresh_token
                     .as_deref()
@@ -174,7 +173,6 @@ impl ConnectController {
                         provider_id.as_str(),
                         kind,
                         secret,
-                        *expires_at_unix,
                         prefer_model,
                         prefer_effort,
                     )

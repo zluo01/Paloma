@@ -1,6 +1,7 @@
 use crate::entity::{ChatRequest, ChatStream, Model, ProviderClient, ProviderError, ProviderId};
 use crate::{Auth, Result};
 use base64::Engine;
+use scry_storage::storage::Storage;
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
 
@@ -48,12 +49,13 @@ impl CodexRuntime {
             }
         };
 
-        let (tokens, new_refresh_token) = fetch_access_token(&request, &refresh_token).await?;
-
         Ok(Self {
             request,
-            refresh_token: Arc::new(RwLock::new(new_refresh_token)),
-            tokens: Arc::new(RwLock::new(tokens)),
+            refresh_token: Arc::new(RwLock::new(refresh_token)),
+            tokens: Arc::new(RwLock::new(RefreshTokens {
+                access_token: String::new(),
+                chatgpt_account_id: String::new(),
+            })),
         })
     }
 }
@@ -61,7 +63,7 @@ impl CodexRuntime {
 async fn fetch_access_token(
     request: &reqwest::Client,
     refresh_token: &str,
-) -> Result<(RefreshTokens, String)> {
+) -> Result<(RefreshTokens, String, i64)> {
     let response: RefreshResponse = request
         .post(TOKEN_URL)
         .json(&serde_json::json!({
@@ -84,6 +86,7 @@ async fn fetch_access_token(
             chatgpt_account_id,
         },
         response.refresh_token,
+        response.expires_in,
     ))
 }
 
@@ -109,21 +112,25 @@ impl ProviderClient for CodexRuntime {
         ProviderId::Codex
     }
 
-    async fn refresh(&self) -> Result<Option<Auth>> {
+    async fn refresh(&self, storage: &Storage) -> Result<Option<Auth>> {
         let current_refresh_token = self.refresh_token.read().unwrap().clone();
-        let (new_tokens, new_refresh_token) =
+        let (new_tokens, new_refresh_token, expires_in) =
             fetch_access_token(&self.request, &current_refresh_token).await?;
         *self.tokens.write().unwrap() = new_tokens;
-        if new_refresh_token != current_refresh_token {
-            *self.refresh_token.write().unwrap() = new_refresh_token.clone();
-            Ok(Some(Auth::OAuth {
-                refresh_token: Some(new_refresh_token),
-                expires_at_unix: None,
-            }))
-        } else {
-            Ok(None)
-        }
+        *self.refresh_token.write().unwrap() = new_refresh_token.clone();
+
+        // codex refresh token follows "rotate on use"
+        // so we need to proactively update the db whenever we refresh.
+        storage
+            .update_provider(ProviderId::Codex.as_str(), "oauth", &new_refresh_token)
+            .await?;
+
+        Ok(Some(Auth::OAuth {
+            refresh_token: Some(new_refresh_token),
+            expires_in: Some(expires_in),
+        }))
     }
+
     async fn chat(&self, _request: ChatRequest) -> Result<ChatStream> {
         todo!()
     }
@@ -186,9 +193,6 @@ struct RefreshTokens {
 #[derive(Debug, Deserialize)]
 struct RefreshResponse {
     /// Seconds until `access_token` expires (e.g. `863999` ≈ 10 days).
-    /// Unused today; will populate `Auth::OAuth.expires_at_unix` when
-    /// `refresh()` is implemented.
-    #[allow(dead_code)]
     expires_in: i64,
     refresh_token: String,
     access_token: String,
