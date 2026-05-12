@@ -8,7 +8,7 @@ use scry_capability::native::clipboard::Clipboard;
 use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
 use serde::Serialize;
 
-pub struct QueryController {
+pub struct LocalQuery {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
 }
 
@@ -21,12 +21,12 @@ pub struct QueryResponse {
     pub items: Vec<Item>,
 }
 
-impl QueryController {
-    pub fn new() -> Result<Self, QueryInitError> {
+impl LocalQuery {
+    pub fn new() -> Result<Self, LocalQueryInitError> {
         let handlers: DashMap<&'static str, Arc<dyn QueryHandler>> = DashMap::new();
 
         let app_search: Arc<dyn QueryHandler> =
-            Arc::new(AppSearch::new().map_err(|source| QueryInitError {
+            Arc::new(AppSearch::new().map_err(|source| LocalQueryInitError {
                 handler: "app_search",
                 source: source.to_string(),
             })?);
@@ -69,12 +69,12 @@ impl QueryController {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct QueryInitError {
+pub struct LocalQueryInitError {
     handler: &'static str,
     source: String,
 }
 
-impl std::fmt::Display for QueryInitError {
+impl std::fmt::Display for LocalQueryInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -84,4 +84,4 @@ impl std::fmt::Display for QueryInitError {
     }
 }
 
-impl std::error::Error for QueryInitError {}
+impl std::error::Error for LocalQueryInitError {}
