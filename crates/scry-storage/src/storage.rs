@@ -1,7 +1,7 @@
 use crate::error::{Result, StorageError};
 use crate::queries;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::{Pool, Row, Sqlite};
+use sqlx::{FromRow, Pool, Sqlite};
 use std::path::Path;
 use std::time::Duration;
 
@@ -78,15 +78,22 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn connected_providers(&self) -> Result<Vec<String>> {
-        let rows = sqlx::query(queries::CONNECTED_PROVIDERS_QUERY)
+    pub async fn connected_providers(&self) -> Result<Vec<ConnectedProvider>> {
+        let providers = sqlx::query_as::<_, ConnectedProvider>(queries::CONNECTED_PROVIDERS_QUERY)
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| row.get::<String, _>("provider_id"))
-            .collect())
+        Ok(providers)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct ConnectedProvider {
+    pub provider_id: String,
+    pub auth_kind: String,
+    pub secret: String,
+    pub expires_at: Option<i64>,
+    pub model: String,
+    pub effort: String,
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {
@@ -301,8 +308,8 @@ mod tests {
     #[tokio::test]
     async fn connected_providers_returns_empty_when_no_rows() {
         let (storage, _tmp) = fresh_storage().await;
-        let ids = storage.connected_providers().await.expect("query");
-        assert!(ids.is_empty(), "expected empty, got {ids:?}");
+        let rows = storage.connected_providers().await.expect("query");
+        assert!(rows.is_empty(), "expected empty, got {rows:?}");
     }
 
     #[tokio::test]
@@ -324,7 +331,13 @@ mod tests {
             .await
             .unwrap();
 
-        let mut ids = storage.connected_providers().await.expect("query");
+        let mut ids: Vec<String> = storage
+            .connected_providers()
+            .await
+            .expect("query")
+            .into_iter()
+            .map(|p| p.provider_id)
+            .collect();
         ids.sort();
         assert_eq!(ids, vec!["anthropic".to_string(), "codex".to_string()]);
     }
@@ -350,7 +363,13 @@ mod tests {
 
         storage.delete_provider("anthropic").await.unwrap();
 
-        let ids = storage.connected_providers().await.expect("query");
+        let ids: Vec<String> = storage
+            .connected_providers()
+            .await
+            .expect("query")
+            .into_iter()
+            .map(|p| p.provider_id)
+            .collect();
         assert_eq!(ids, vec!["codex".to_string()]);
     }
 }

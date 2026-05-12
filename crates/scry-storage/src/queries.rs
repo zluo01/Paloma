@@ -31,5 +31,5 @@ pub const DELETE_PROVIDER_QUERY: &str = "
 
 //language=sqlite
 pub const CONNECTED_PROVIDERS_QUERY: &str = "
-  SELECT provider_id FROM provider_credentials
+  SELECT * FROM provider_credentials
     ";

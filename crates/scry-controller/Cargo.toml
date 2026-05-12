@@ -13,3 +13,4 @@ serde = { workspace = true }
 dashmap = { workspace = true }
 reqwest = { workspace = true }
 thiserror = { workspace = true }
+log = { workspace = true }

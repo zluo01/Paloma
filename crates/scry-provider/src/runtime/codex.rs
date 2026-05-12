@@ -27,8 +27,8 @@ pub struct CodexRuntime {
 }
 
 impl CodexRuntime {
-    pub async fn new(credential: Auth, request: reqwest::Client) -> Result<Self> {
-        let refresh_token = match &credential {
+    pub async fn new(credential: &Auth, request: reqwest::Client) -> Result<Self> {
+        let refresh_token = match credential {
             Auth::OAuth {
                 refresh_token: Some(rt),
                 ..
