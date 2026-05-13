@@ -1,9 +1,10 @@
+use super::queries;
 use crate::error::{Result, StorageError};
-use crate::queries;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{FromRow, Pool, Sqlite};
 use std::path::Path;
 use std::time::Duration;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct Storage {
@@ -93,6 +94,39 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn create_new_session(&self, session_id: &Uuid, provider_id: &str) -> Result<()> {
+        sqlx::query(queries::CREATE_NEW_SESSION_QUERY)
+            .bind(session_id.to_string())
+            .bind(provider_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| match &e {
+                sqlx::Error::Database(db) if db.is_unique_violation() => {
+                    StorageError::Duplicate(session_id.to_string())
+                }
+                _ => e.into(),
+            })?;
+        Ok(())
+    }
+
+    pub async fn all_sessions(&self) -> Result<Vec<Session>> {
+        let sessions = sqlx::query_as::<_, Session>(queries::GET_ALL_SESSIONS_QUERY)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(sessions)
+    }
+
+    pub async fn delete_session(&self, session_id: &str) -> Result<()> {
+        let result = sqlx::query(queries::DELETE_SESSION_QUERY)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(session_id.to_string()));
+        }
+        Ok(())
+    }
+
     pub async fn connected_providers(&self) -> Result<Vec<ConnectedProvider>> {
         let providers = sqlx::query_as::<_, ConnectedProvider>(queries::CONNECTED_PROVIDERS_QUERY)
             .fetch_all(&self.pool)
@@ -108,6 +142,12 @@ pub struct ConnectedProvider {
     pub secret: String,
     pub model: String,
     pub effort: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct Session {
+    pub session_id: String,
+    pub provider_id: String,
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {

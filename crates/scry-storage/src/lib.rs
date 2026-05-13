@@ -1,5 +1,5 @@
+pub mod db;
 mod error;
-mod queries;
-pub mod storage;
+pub mod session;
 
 pub use error::{Result, StorageError};
