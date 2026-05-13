@@ -7,6 +7,10 @@ pub fn config_dir() -> PathBuf {
     home_dir().join(".config").join(APP_DIR)
 }
 
+pub fn session_dir() -> PathBuf {
+    config_dir().join("sessions")
+}
+
 pub fn database_path() -> PathBuf {
     config_dir().join("scry.db")
 }
