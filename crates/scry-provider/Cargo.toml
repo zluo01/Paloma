@@ -18,6 +18,7 @@ tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 base64 = { workspace = true }
+eventsource-stream = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "test-util", "time"] }

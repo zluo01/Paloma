@@ -1,5 +1,5 @@
 use futures::stream::BoxStream;
-use scry_storage::storage::Storage;
+use scry_storage::db::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -15,6 +15,8 @@ pub trait ProviderClient: Send + Sync {
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream>;
 
     async fn models(&self) -> Result<Vec<Model>>;
+
+    fn construct_user_prompt(&self, prompt: String) -> Value;
 }
 
 #[async_trait::async_trait]
@@ -81,31 +83,37 @@ impl Auth {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub model: String,
-    pub messages: Vec<ChatMessage>,
+    pub effort: String,
+    pub messages: Vec<Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: ChatRole,
-    pub content: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChatRole {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatEvent {
-    TextDelta { text: String },
+    TextDelta {
+        text: String,
+    },
+    /// Incremental human-readable summary of the model's hidden
+    /// chain-of-thought. Streamed in parallel with `TextDelta`s before
+    /// the final answer; intended for a "thinking…" UI surface, not for
+    /// replay. The summary is best-effort prose the model writes about
+    /// its own reasoning — it has no semantic relationship to the
+    /// `encrypted_content` carried by `ReasoningItem` and must not be
+    /// substituted for it.
+    ReasoningSummaryDelta {
+        text: String,
+    },
+    /// Opaque reasoning item finalized during the turn. Persist with
+    /// the assistant message under `ChatMessage::reasoning_items` and
+    /// echo it back on the next turn to preserve hidden chain-of-thought.
+    /// We deliberately don't model the schema — the server may evolve it
+    /// and the `encrypted_content` field is meant to be opaque.
+    OutputItem {
+        item: Value,
+    },
     Done,
 }
 
@@ -115,11 +123,6 @@ pub struct Model {
     pub name: String,
     pub default_reasoning_effort: String,
     pub supported_reasoning_efforts: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Usage {
-    pub plan: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -149,6 +152,27 @@ pub enum ProviderError {
         source: chrono::ParseError,
     },
 
+    /// Transient transport-layer failure (TCP reset mid-stream, TLS error,
+    /// dropped HTTP/2 frame, etc.). A retry layer can re-issue the request
+    /// with backoff and reasonably expect success. Distinct from
+    /// `Other`/parse errors, which signal a logical fault and should not
+    /// be retried.
+    #[error("transport error: {0}")]
+    Transport(String),
+
     #[error("{0}")]
     Other(String),
+}
+
+impl ProviderError {
+    /// Whether a retry controller may safely re-issue the originating
+    /// request. Currently only `Transport` (and `reqwest::Error`s that
+    /// are themselves transport-level — connect / timeout) qualify.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            ProviderError::Transport(_) => true,
+            ProviderError::Http(e) => e.is_connect() || e.is_timeout(),
+            _ => false,
+        }
+    }
 }
