@@ -14,11 +14,18 @@ pub enum WriterEvent {
     Close { session_id: Uuid },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EntryType {
+    ResponseItem,
+    EventMsg,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileEntry {
     pub timestamp: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "type")]
-    pub t: String,
+    pub t: EntryType,
     pub payload: Value,
 }
 
@@ -31,7 +38,7 @@ pub struct SessionWriter {
 
 impl SessionWriter {
     pub fn new(root_dir: PathBuf) -> (Self, mpsc::Sender<WriterEvent>) {
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel(scry_config::SESSION_WRITER_CHANNEL_CAPACITY);
 
         let writer = Self {
             root_dir,
