@@ -7,20 +7,20 @@ use scry_provider::connector::CodexConnector;
 use scry_provider::entity::{
     Auth, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
 };
-use scry_storage::storage::{ConnectedProvider, Storage};
+use scry_storage::db::{ConnectedProvider, Storage};
 use scry_storage::StorageError;
 use serde::{Deserialize, Serialize};
 
 pub struct ConnectController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>>,
-    runtime_controller: RuntimeController,
+    runtime_controller: Arc<RuntimeController>,
     storage: Storage,
 }
 
 impl ConnectController {
     pub fn new(
         storage: Storage,
-        runtime_controller: RuntimeController,
+        runtime_controller: Arc<RuntimeController>,
         http: reqwest::Client,
     ) -> Self {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>> = DashMap::new();
@@ -49,7 +49,7 @@ impl ConnectController {
         let auth = handler.finalize_connection(payload).await?;
 
         self.runtime_controller
-            .new_model(provider_id, &auth)
+            .new_provider(provider_id, &auth)
             .await?;
 
         // We just registered the runtime client, so a `None` here is
@@ -57,7 +57,7 @@ impl ConnectController {
         // missing handler — bail so the caller can surface it.
         let models = self
             .runtime_controller
-            .models(provider_id)
+            .provider_models(provider_id)
             .await
             .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
         let default = models
@@ -76,7 +76,7 @@ impl ConnectController {
             )
             .await
         {
-            self.runtime_controller.remove_model(provider_id);
+            self.runtime_controller.remove_provider(provider_id);
             return Err(e);
         }
 
@@ -85,7 +85,7 @@ impl ConnectController {
 
     pub async fn disconnect(&self, provider_id: ProviderId) -> Result<(), ConnectError> {
         self.storage.delete_provider(provider_id.as_str()).await?;
-        self.runtime_controller.remove_model(provider_id);
+        self.runtime_controller.remove_provider(provider_id);
         Ok(())
     }
 
@@ -117,7 +117,7 @@ impl ConnectController {
         for id in ids {
             let connection = match connected.get(id.as_str()) {
                 Some(cred) => {
-                    let available_models = self.runtime_controller.models(id).await;
+                    let available_models = self.runtime_controller.provider_models(id).await;
                     Some(ConnectorConnection {
                         prefer_model: cred.model.clone(),
                         prefer_effort: cred.effort.clone(),

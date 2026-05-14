@@ -1,12 +1,13 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
+use std::sync::Arc;
 use tokio::task::JoinSet;
 
+use crate::entity::{LocalRenderEvent, RenderEvent};
 use scry_capability::native::app_search::AppSearch;
 use scry_capability::native::clipboard::Clipboard;
 use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 pub struct LocalQuery {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
@@ -38,7 +39,7 @@ impl LocalQuery {
         Ok(Self { handlers })
     }
 
-    pub async fn query(&self, input: &str) -> Vec<QueryResponse> {
+    pub async fn query(&self, input: &str, render_tx: mpsc::Sender<RenderEvent>) {
         let mut set = JoinSet::new();
         for entry in self.handlers.iter() {
             let id = *entry.key();
@@ -52,13 +53,28 @@ impl LocalQuery {
             });
         }
 
-        let mut responses = Vec::with_capacity(self.handlers.len());
         while let Some(joined) = set.join_next().await {
-            if let Ok(response) = joined {
-                responses.push(response);
+            match joined {
+                Ok(response) => {
+                    if render_tx
+                        .send(RenderEvent::Local(LocalRenderEvent::Append { response }))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                Err(err) => {
+                    let _ = render_tx
+                        .send(RenderEvent::Error {
+                            message: err.to_string(),
+                        })
+                        .await;
+                }
             }
         }
-        responses
+
+        let _ = render_tx.send(RenderEvent::Done).await;
     }
 
     pub fn run(&self, id: String, action: Action) -> Option<ActionOutcome> {

@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use dashmap::{DashMap, Entry};
 use log::error;
-use scry_provider::entity::{Auth, Model, ProviderClient, ProviderError, ProviderId};
+use scry_provider::entity::{
+    Auth, Model, ProviderClient, ProviderError, ProviderId,
+};
 use scry_provider::runtime::CodexRuntime;
-use scry_storage::storage::Storage;
+use scry_storage::db::Storage;
 use scry_storage::StorageError;
 use tokio::task::JoinHandle;
 
@@ -17,7 +19,7 @@ pub struct RuntimeController {
 
 impl RuntimeController {
     pub async fn new(
-        storage: &Storage,
+        storage: Storage,
         request: reqwest::Client,
     ) -> Result<Self, RuntimeControllerError> {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderClient>> = DashMap::new();
@@ -55,12 +57,12 @@ impl RuntimeController {
         Ok(Self {
             handlers,
             refresh_handles,
-            storage: storage.clone(),
+            storage,
             request,
         })
     }
 
-    pub async fn new_model(
+    pub async fn new_provider(
         &self,
         provider_id: ProviderId,
         auth: &Auth,
@@ -70,7 +72,7 @@ impl RuntimeController {
         };
         match self.handlers.entry(provider_id) {
             Entry::Occupied(_) => {
-                error!("new_model: provider {provider_id:?} already registered; ignoring");
+                error!("provider {provider_id:?} already registered; ignoring");
                 Err(RuntimeControllerError::AlreadyRegistered(provider_id))
             }
             Entry::Vacant(slot) => {
@@ -87,14 +89,14 @@ impl RuntimeController {
         }
     }
 
-    pub fn remove_model(&self, provider_id: ProviderId) {
+    pub fn remove_provider(&self, provider_id: ProviderId) {
         self.handlers.remove(&provider_id);
         if let Some((_, handle)) = self.refresh_handles.remove(&provider_id) {
             handle.abort();
         }
     }
 
-    pub async fn models(&self, provider_id: ProviderId) -> Option<Vec<Model>> {
+    pub async fn provider_models(&self, provider_id: ProviderId) -> Option<Vec<Model>> {
         let client = match self.client(provider_id) {
             Ok(c) => c,
             Err(e) => {
@@ -111,7 +113,7 @@ impl RuntimeController {
         }
     }
 
-    fn client(
+    pub fn client(
         &self,
         provider_id: ProviderId,
     ) -> Result<Arc<dyn ProviderClient>, RuntimeControllerError> {
@@ -129,6 +131,9 @@ pub enum RuntimeControllerError {
 
     #[error("provider already registered: {0:?}")]
     AlreadyRegistered(ProviderId),
+
+    #[error("session writer channel closed")]
+    WriterChannelClosed,
 
     #[error(transparent)]
     Provider(#[from] ProviderError),
