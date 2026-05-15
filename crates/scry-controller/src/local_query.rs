@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use log::error;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -40,6 +41,13 @@ impl LocalQuery {
     }
 
     pub async fn query(&self, input: &str, render_tx: mpsc::Sender<RenderEvent>) {
+        if input.trim().is_empty() {
+            if render_tx.send(RenderEvent::Done).await.is_err() {
+                error!("local query: failed to send done event for empty input");
+            }
+            return;
+        }
+
         let mut set = JoinSet::new();
         for entry in self.handlers.iter() {
             let id = *entry.key();
@@ -56,25 +64,34 @@ impl LocalQuery {
         while let Some(joined) = set.join_next().await {
             match joined {
                 Ok(response) => {
+                    let id = response.id;
                     if render_tx
                         .send(RenderEvent::Local(LocalRenderEvent::Append { response }))
                         .await
                         .is_err()
                     {
+                        error!("local query: failed to send render response for handler {id}");
                         return;
                     }
                 }
                 Err(err) => {
-                    let _ = render_tx
+                    let message = err.to_string();
+                    if render_tx
                         .send(RenderEvent::Error {
-                            message: err.to_string(),
+                            message: message.clone(),
                         })
-                        .await;
+                        .await
+                        .is_err()
+                    {
+                        error!("local query: failed to send join error to renderer: {message}");
+                    }
                 }
             }
         }
 
-        let _ = render_tx.send(RenderEvent::Done).await;
+        if render_tx.send(RenderEvent::Done).await.is_err() {
+            error!("local query: failed to send done event to renderer");
+        }
     }
 
     pub fn run(&self, id: String, action: Action) -> Option<ActionOutcome> {
