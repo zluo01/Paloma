@@ -27,13 +27,13 @@ impl RemoteQuery {
         }
     }
 
-    pub async fn chat(
+    /// First of the call chain, get or generate new session if it is new chat
+    pub async fn init_chat(
         &self,
         session_id: Option<Uuid>,
         provider_id: ProviderId,
-        prompt: String,
-    ) -> Result<Uuid, RuntimeControllerError> {
-        let id = match session_id {
+    ) -> Result<(Uuid, bool), RuntimeControllerError> {
+        match session_id {
             None => {
                 let id = Uuid::now_v7();
                 self.storage
@@ -42,11 +42,19 @@ impl RemoteQuery {
                 self.session_manager_client
                     .create_session(id, provider_id)
                     .await?;
-                id
+                Ok((id, true))
             }
-            Some(id) => id,
-        };
+            Some(id) => Ok((id, false)),
+        }
+    }
 
+    /// new chat based on the session_id return from init_chat
+    pub async fn chat(
+        &self,
+        session_id: Uuid,
+        provider_id: ProviderId,
+        prompt: String,
+    ) -> Result<(), RuntimeControllerError> {
         let prefer_model_config = self
             .storage
             .prefer_model_config(provider_id.as_str())
@@ -56,10 +64,13 @@ impl RemoteQuery {
 
         let latest_prompt = client.construct_user_prompt(prompt);
         self.session_manager_client
-            .add_event(id, SessionEvent::UserPrompt(latest_prompt))
+            .add_event(session_id, SessionEvent::UserPrompt(latest_prompt))
             .await?;
 
-        let messages = self.session_manager_client.construct_messages(id).await?;
+        let messages = self
+            .session_manager_client
+            .construct_messages(session_id)
+            .await?;
 
         let mut stream = client
             .chat(ChatRequest {
@@ -76,7 +87,7 @@ impl RemoteQuery {
                     Ok(chat_event) => SessionEvent::Chat(chat_event),
                     Err(err) => {
                         let message = err.to_string();
-                        error!("chat stream error for session {id}: {message}");
+                        error!("chat stream error for session {session_id}: {message}");
                         SessionEvent::Err(message)
                     }
                 };
@@ -86,8 +97,8 @@ impl RemoteQuery {
                     SessionEvent::Chat(ChatEvent::Done) | SessionEvent::Err(_)
                 );
 
-                if let Err(err) = session_client.add_event(id, session_event).await {
-                    error!("failed to insert event for session {id}: {err}");
+                if let Err(err) = session_client.add_event(session_id, session_event).await {
+                    error!("failed to insert event for session {session_id}: {err}");
                 }
 
                 if is_terminal {
@@ -96,6 +107,17 @@ impl RemoteQuery {
             }
         });
 
-        Ok(id)
+        Ok(())
+    }
+
+    // use for cleanup newly created session but the chat fails
+    pub async fn cleanup(&self, session_id: Uuid) {
+        if let Err(err) = self.session_manager_client.remove_session(session_id).await {
+            error!("cleanup: remove session {session_id} from manager: {err}");
+        }
+
+        if let Err(err) = self.storage.delete_session(&session_id.to_string()).await {
+            error!("cleanup: delete session {session_id} from storage: {err}");
+        }
     }
 }

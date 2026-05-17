@@ -3,24 +3,15 @@ use log::error;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-use crate::entity::{LocalRenderEvent, RenderEvent};
+pub(crate) use crate::entity::{LocalRenderEvent, QueryResponse, RenderEvent};
 use scry_capability::native::app_search::AppSearch;
 use scry_capability::native::clipboard::Clipboard;
-use scry_capability::{Action, ActionOutcome, Item, QueryHandler};
+use scry_capability::{Action, ActionOutcome, QueryHandler};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
 pub struct LocalQuery {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
-}
-
-pub struct QueryResponse {
-    /// handler unique name
-    pub id: &'static str,
-    /// Display section name
-    pub name: String,
-    /// handler results
-    pub items: Vec<Item>,
 }
 
 impl LocalQuery {

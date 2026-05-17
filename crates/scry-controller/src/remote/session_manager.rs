@@ -1,4 +1,5 @@
-use log::error;
+use crate::entity::{ChatRenderEvent, RenderEvent};
+use log::{debug, error};
 use scry_provider::entity::{ChatEvent, ProviderId};
 use scry_storage::db::Storage;
 use scry_storage::session::{read_session_entries, EntryType, FileEntry, SessionWriterClient};
@@ -7,8 +8,14 @@ use serde_json::Value;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
+
+#[derive(Clone, Debug)]
+pub struct SessionUpdate {
+    pub session_id: Uuid,
+    pub event: RenderEvent,
+}
 
 #[derive(Debug)]
 enum SessionStreamingEvent {
@@ -17,10 +24,13 @@ enum SessionStreamingEvent {
         provider_id: ProviderId,
         reply: oneshot::Sender<Result<(), SessionManagerError>>,
     },
+    RemoveSession {
+        session_id: Uuid,
+        reply: oneshot::Sender<Result<(), SessionManagerError>>,
+    },
     AddEvent {
         session_id: Uuid,
         payload: SessionEvent,
-        reply: oneshot::Sender<Result<(), SessionManagerError>>,
     },
     ConstructMessages {
         session_id: Uuid,
@@ -47,11 +57,13 @@ struct Session {
 pub struct SessionManager {
     sessions: HashMap<Uuid, Session>,
     event_rx: mpsc::Receiver<SessionStreamingEvent>,
+    updates_tx: broadcast::Sender<SessionUpdate>,
 }
 
 #[derive(Clone)]
 pub struct SessionManagerClient {
     event_tx: mpsc::Sender<SessionStreamingEvent>,
+    updates_tx: broadcast::Sender<SessionUpdate>,
 }
 
 impl SessionManager {
@@ -62,13 +74,19 @@ impl SessionManager {
         let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, storage).await?;
 
         let (tx, rx) = mpsc::channel(scry_config::SESSION_MANAGER_CHANNEL_CAPACITY);
+        let (updates_tx, _) = broadcast::channel(scry_config::SESSION_BROADCAST_CHANNEL_CAPACITY);
 
         let manager = Self {
             sessions,
             event_rx: rx,
+            updates_tx: updates_tx.clone(),
+        };
+        let client = SessionManagerClient {
+            event_tx: tx,
+            updates_tx,
         };
 
-        Ok((manager, SessionManagerClient { event_tx: tx }))
+        Ok((manager, client))
     }
 
     pub async fn run(&mut self, session_writer_client: &SessionWriterClient) {
@@ -105,15 +123,26 @@ impl SessionManager {
                 };
                 let _ = reply.send(result);
             }
+            SessionStreamingEvent::RemoveSession { session_id, reply } => {
+                if self.sessions.remove(&session_id).is_none() {
+                    debug!("remove: session {session_id} not in memory");
+                }
+                let result = session_writer_client
+                    .delete_file(session_id)
+                    .await
+                    .map_err(SessionManagerError::from);
+                let _ = reply.send(result);
+            }
             SessionStreamingEvent::AddEvent {
                 session_id,
                 payload,
-                reply,
             } => {
-                let result = self
+                if let Err(err) = self
                     .add_event(session_id, payload, session_writer_client)
-                    .await;
-                let _ = reply.send(result);
+                    .await
+                {
+                    error!("session {session_id} add_event failed: {err}");
+                }
             }
             SessionStreamingEvent::ConstructMessages { session_id, reply } => {
                 let _ = reply.send(self.construct_messages(session_id));
@@ -148,6 +177,7 @@ impl SessionManager {
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
 
+        let render_event = payload.to_render_event();
         session.update(payload);
 
         if let Some((t, item)) = entry {
@@ -162,6 +192,11 @@ impl SessionManager {
                 )
                 .await?;
         }
+
+        if let Some(event) = render_event {
+            let _ = self.updates_tx.send(SessionUpdate { session_id, event });
+        }
+
         Ok(())
     }
 
@@ -181,6 +216,28 @@ impl SessionManager {
             })
             .collect();
         Ok(messages)
+    }
+}
+
+impl SessionEvent {
+    fn to_render_event(&self) -> Option<RenderEvent> {
+        match self {
+            SessionEvent::Chat(ChatEvent::TextDelta { text }) => {
+                Some(RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                    text: text.clone(),
+                }))
+            }
+            SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { text }) => {
+                Some(RenderEvent::Chat(ChatRenderEvent::ReasoningDelta {
+                    text: text.clone(),
+                }))
+            }
+            SessionEvent::Chat(ChatEvent::Done) => Some(RenderEvent::Done),
+            SessionEvent::Err(message) => Some(RenderEvent::Error {
+                message: message.clone(),
+            }),
+            SessionEvent::UserPrompt(_) | SessionEvent::Chat(ChatEvent::OutputItem { .. }) => None,
+        }
     }
 }
 
@@ -209,11 +266,20 @@ impl SessionManagerClient {
         session_id: Uuid,
         payload: SessionEvent,
     ) -> Result<(), SessionManagerError> {
-        let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::AddEvent {
                 session_id,
                 payload,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)
+    }
+
+    pub async fn remove_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::RemoveSession {
+                session_id,
                 reply: reply_tx,
             })
             .await
@@ -249,6 +315,11 @@ impl SessionManagerClient {
         reply_rx
             .await
             .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
+    /// For UI process to subscribe for rendering update
+    pub fn subscribe(&self) -> broadcast::Receiver<SessionUpdate> {
+        self.updates_tx.subscribe()
     }
 }
 

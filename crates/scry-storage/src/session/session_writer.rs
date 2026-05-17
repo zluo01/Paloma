@@ -1,5 +1,5 @@
 use crate::{Result, StorageError};
-use log::error;
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -33,6 +33,10 @@ enum WriterEvent {
     Append {
         session_id: Uuid,
         entry: FileEntry,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    Delete {
+        session_id: Uuid,
         reply: oneshot::Sender<Result<()>>,
     },
     Close {
@@ -95,6 +99,21 @@ impl SessionWriter {
                 let result = self.do_append(session_id, entry).await;
                 let _ = reply.send(result);
             }
+            WriterEvent::Delete { session_id, reply } => {
+                if self.open_files.remove(&session_id).is_none() {
+                    warn!("delete: no cached file handle for session {session_id}");
+                }
+                let path = self.path_for(session_id);
+                let result = match tokio::fs::remove_file(&path).await {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        warn!("delete: no file at {path:?} for session {session_id}");
+                        Ok(())
+                    }
+                    Err(e) => Err(e.into()),
+                };
+                let _ = reply.send(result);
+            }
             WriterEvent::Close { session_id } => {
                 self.open_files.remove(&session_id);
             }
@@ -137,6 +156,18 @@ impl SessionWriterClient {
             .send(WriterEvent::Append {
                 session_id,
                 entry,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| StorageError::ChannelClosed)?;
+        reply_rx.await.map_err(|_| StorageError::ChannelClosed)?
+    }
+
+    pub async fn delete_file(&self, session_id: Uuid) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(WriterEvent::Delete {
+                session_id,
                 reply: reply_tx,
             })
             .await
