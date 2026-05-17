@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use scry_controller::remote_query::RemoteQuery;
+use scry_controller::remote::{RemoteQuery, SessionManager, SessionManagerClient};
 use scry_controller::{ConnectController, LocalQuery, RuntimeController};
 use scry_storage::db::Storage;
 use scry_storage::session::SessionWriter;
@@ -19,6 +19,7 @@ pub struct AppContext {
     pub connect: ConnectController,
     pub local_query: LocalQuery,
     pub remote_query: RemoteQuery,
+    pub session_manager_client: SessionManagerClient,
     pub hotkey: broadcast::Sender<()>,
     pub tray_events: broadcast::Sender<TrayEvent>,
 }
@@ -49,10 +50,14 @@ impl AppContext {
         let runtime = Arc::new(RuntimeController::new(storage.clone(), http.clone()).await?);
         let connect = ConnectController::new(storage.clone(), Arc::clone(&runtime), http);
 
-        let (mut writer, writer_tx) = SessionWriter::new(session_path);
-        tokio::spawn(async move { writer.run().await });
+        let (mut session_writer, session_writer_client) = SessionWriter::new(session_path.clone());
+        tokio::spawn(async move { session_writer.run().await });
 
-        let remote_query = RemoteQuery::new(storage, runtime, writer_tx);
+        let (mut session_manager, session_manager_client) =
+            SessionManager::new(session_path, &storage).await?;
+        tokio::spawn(async move { session_manager.run(&session_writer_client).await });
+
+        let remote_query = RemoteQuery::new(storage, runtime, session_manager_client.clone());
         let local_query = LocalQuery::new()?;
 
         let (hotkey, _) = broadcast::channel(scry_config::HOTKEY_CHANNEL_CAPACITY);
@@ -62,6 +67,7 @@ impl AppContext {
             connect,
             local_query,
             remote_query,
+            session_manager_client,
             hotkey,
             tray_events,
         }))
@@ -83,5 +89,5 @@ pub enum AppError {
     Runtime(#[from] scry_controller::RuntimeControllerError),
 
     #[error(transparent)]
-    LocalQuery(#[from] scry_controller::local_query::LocalQueryInitError),
+    LocalQuery(#[from] scry_controller::LocalQueryInitError),
 }

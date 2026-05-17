@@ -1,0 +1,351 @@
+use log::error;
+use scry_provider::entity::{ChatEvent, ProviderId};
+use scry_storage::db::Storage;
+use scry_storage::session::{read_session_entries, EntryType, FileEntry, SessionWriterClient};
+use scry_storage::StorageError;
+use serde_json::Value;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
+
+#[derive(Debug)]
+enum SessionStreamingEvent {
+    CreateSession {
+        session_id: Uuid,
+        provider_id: ProviderId,
+        reply: oneshot::Sender<Result<(), SessionManagerError>>,
+    },
+    AddEvent {
+        session_id: Uuid,
+        payload: SessionEvent,
+        reply: oneshot::Sender<Result<(), SessionManagerError>>,
+    },
+    ConstructMessages {
+        session_id: Uuid,
+        reply: oneshot::Sender<Result<Vec<Value>, SessionManagerError>>,
+    },
+    AvailableSessions {
+        reply: oneshot::Sender<Result<Vec<(Uuid, ProviderId)>, SessionManagerError>>,
+    },
+}
+
+#[derive(Debug)]
+pub enum SessionEvent {
+    UserPrompt(Value),
+    Chat(ChatEvent),
+    Err(String),
+}
+
+struct Session {
+    provider_id: ProviderId,
+    events: Vec<SessionEvent>, // single source of truth: prompts + deltas + OutputItems
+    terminal: Option<Option<String>>,
+}
+
+pub struct SessionManager {
+    sessions: HashMap<Uuid, Session>,
+    event_rx: mpsc::Receiver<SessionStreamingEvent>,
+}
+
+#[derive(Clone)]
+pub struct SessionManagerClient {
+    event_tx: mpsc::Sender<SessionStreamingEvent>,
+}
+
+impl SessionManager {
+    pub async fn new(
+        session_path: PathBuf,
+        storage: &Storage,
+    ) -> Result<(Self, SessionManagerClient), StorageError> {
+        let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, storage).await?;
+
+        let (tx, rx) = mpsc::channel(scry_config::SESSION_MANAGER_CHANNEL_CAPACITY);
+
+        let manager = Self {
+            sessions,
+            event_rx: rx,
+        };
+
+        Ok((manager, SessionManagerClient { event_tx: tx }))
+    }
+
+    pub async fn run(&mut self, session_writer_client: &SessionWriterClient) {
+        while let Some(event) = self.event_rx.recv().await {
+            if let Err(err) = self.handle_event(event, session_writer_client).await {
+                error!("session manager error: {err}");
+            }
+        }
+    }
+
+    async fn handle_event(
+        &mut self,
+        event: SessionStreamingEvent,
+        session_writer_client: &SessionWriterClient,
+    ) -> scry_storage::Result<()> {
+        match event {
+            SessionStreamingEvent::CreateSession {
+                session_id,
+                provider_id,
+                reply,
+            } => {
+                let result = match self.sessions.entry(session_id) {
+                    Entry::Occupied(_) => {
+                        Err(SessionManagerError::SessionAlreadyExists(session_id))
+                    }
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(Session {
+                            provider_id,
+                            events: Vec::new(),
+                            terminal: None,
+                        });
+                        Ok(())
+                    }
+                };
+                let _ = reply.send(result);
+            }
+            SessionStreamingEvent::AddEvent {
+                session_id,
+                payload,
+                reply,
+            } => {
+                let result = self
+                    .add_event(session_id, payload, session_writer_client)
+                    .await;
+                let _ = reply.send(result);
+            }
+            SessionStreamingEvent::ConstructMessages { session_id, reply } => {
+                let _ = reply.send(self.construct_messages(session_id));
+            }
+            SessionStreamingEvent::AvailableSessions { reply } => {
+                let sessions = self
+                    .sessions
+                    .iter()
+                    .map(|(id, session)| (*id, session.provider_id))
+                    .collect();
+                let _ = reply.send(Ok(sessions));
+            }
+        }
+        Ok(())
+    }
+
+    async fn add_event(
+        &mut self,
+        session_id: Uuid,
+        payload: SessionEvent,
+        session_writer_client: &SessionWriterClient,
+    ) -> Result<(), SessionManagerError> {
+        let Some(session) = self.sessions.get_mut(&session_id) else {
+            return Err(SessionManagerError::UnknownSession(session_id));
+        };
+
+        let entry = match &payload {
+            SessionEvent::UserPrompt(item) => Some((EntryType::EventMsg, item.clone())),
+            SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
+                Some((EntryType::ResponseItem, item.clone()))
+            }
+            SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
+        };
+
+        session.update(payload);
+
+        if let Some((t, item)) = entry {
+            session_writer_client
+                .append_file(
+                    session_id,
+                    FileEntry {
+                        timestamp: chrono::Utc::now(),
+                        t,
+                        payload: item,
+                    },
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>, SessionManagerError> {
+        let session = self
+            .sessions
+            .get(&session_id)
+            .ok_or(SessionManagerError::UnknownSession(session_id))?;
+
+        let messages = session
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                SessionEvent::UserPrompt(item)
+                | SessionEvent::Chat(ChatEvent::OutputItem { item }) => Some(item.clone()),
+                SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
+            })
+            .collect();
+        Ok(messages)
+    }
+}
+
+impl SessionManagerClient {
+    pub async fn create_session(
+        &self,
+        session_id: Uuid,
+        provider_id: ProviderId,
+    ) -> Result<(), SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::CreateSession {
+                session_id,
+                provider_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
+    pub async fn add_event(
+        &self,
+        session_id: Uuid,
+        payload: SessionEvent,
+    ) -> Result<(), SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::AddEvent {
+                session_id,
+                payload,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
+    pub async fn construct_messages(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Vec<Value>, SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::ConstructMessages {
+                session_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
+    pub async fn available_sessions(&self) -> Result<Vec<(Uuid, ProviderId)>, SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::AvailableSessions { reply: reply_tx })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionManagerError {
+    #[error("unknown session {0}")]
+    UnknownSession(Uuid),
+
+    #[error("session {0} already exists")]
+    SessionAlreadyExists(Uuid),
+
+    #[error("session channel closed")]
+    ChannelClosed,
+
+    #[error("append failed: {0}")]
+    Append(#[from] StorageError),
+}
+
+impl Session {
+    fn update(&mut self, event: SessionEvent) {
+        match event {
+            event @ SessionEvent::Chat(ChatEvent::OutputItem { .. }) => {
+                self.events.retain(|event| {
+                    !matches!(
+                        event,
+                        SessionEvent::Chat(
+                            ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
+                        )
+                    )
+                });
+                self.events.push(event);
+            }
+            SessionEvent::Chat(ChatEvent::Done) => {
+                self.terminal = Some(None);
+            }
+            SessionEvent::Err(message) => self.terminal = Some(Some(message)),
+            event @ (SessionEvent::UserPrompt(_)
+            | SessionEvent::Chat(
+                ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
+            )) => {
+                self.events.push(event);
+            }
+        }
+    }
+}
+
+async fn restore_sessions(
+    session_path: PathBuf,
+    storage: &Storage,
+) -> Result<HashMap<Uuid, Session>, StorageError> {
+    let mut sessions: HashMap<Uuid, Session> = HashMap::new();
+
+    for session in storage.all_sessions().await? {
+        let id = match Uuid::parse_str(session.session_id.as_str()) {
+            Ok(id) => id,
+            Err(e) => {
+                error!(
+                    "skip session with invalid uuid {:?}: {e}",
+                    session.session_id
+                );
+                continue;
+            }
+        };
+        let provider_id = match session.provider_id.as_str() {
+            "codex" => ProviderId::Codex,
+            other => {
+                error!("skip session {id} with unknown provider_id {other:?}");
+                continue;
+            }
+        };
+
+        let file_entries = match read_session_entries(&session_path, id).await {
+            Ok(entries) => entries,
+            Err(e) => {
+                error!("skip session {id}: failed to read session file: {e}");
+                continue;
+            }
+        };
+        let events = file_entries
+            .into_iter()
+            .map(|entry| match entry.t {
+                EntryType::EventMsg => SessionEvent::UserPrompt(entry.payload),
+                EntryType::ResponseItem => SessionEvent::Chat(ChatEvent::OutputItem {
+                    item: entry.payload,
+                }),
+            })
+            .collect();
+
+        sessions.insert(
+            id,
+            Session {
+                provider_id,
+                events,
+                terminal: None,
+            },
+        );
+    }
+
+    Ok(sessions)
+}

@@ -62,3 +62,8 @@ pub const DELETE_SESSION_QUERY: &str = "
   DELETE FROM sessions
   WHERE session_id = ?;
     ";
+
+//language=sqlite
+pub const PREFER_MODEL_CONFIG_QUERY: &str = "
+    SELECT model, effort FROM provider_credentials WHERE provider_id = ?
+";

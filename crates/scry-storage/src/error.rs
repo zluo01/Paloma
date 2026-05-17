@@ -14,6 +14,9 @@ pub enum StorageError {
 
     #[error("provider {0} already exists")]
     Duplicate(String),
+
+    #[error("session writer channel closed")]
+    ChannelClosed,
 }
 
 pub type Result<T> = std::result::Result<T, StorageError>;

@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use dashmap::{DashMap, Entry};
 use log::error;
-use scry_provider::entity::{
-    Auth, Model, ProviderClient, ProviderError, ProviderId,
-};
+use scry_provider::entity::{Auth, Model, ProviderClient, ProviderError, ProviderId};
 use scry_provider::runtime::CodexRuntime;
 use scry_storage::db::Storage;
 use scry_storage::StorageError;
 use tokio::task::JoinHandle;
+
+use crate::remote::SessionManagerError;
 
 pub struct RuntimeController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderClient>>,
@@ -140,8 +140,14 @@ pub enum RuntimeControllerError {
 
     #[error(transparent)]
     Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    SessionManager(#[from] SessionManagerError),
 }
 
+// TODO we should refresh on start up and check if error happens,
+//  if error happens, we should return a special state
+//  such that UI end can show some reconnect actions for user to fix.
 async fn refresh_and_schedule(
     provider_id: ProviderId,
     client: Arc<dyn ProviderClient>,

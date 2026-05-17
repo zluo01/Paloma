@@ -94,7 +94,7 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn create_new_session(&self, session_id: &Uuid, provider_id: &str) -> Result<()> {
+    pub async fn create_new_session(&self, session_id: Uuid, provider_id: &str) -> Result<()> {
         sqlx::query(queries::CREATE_NEW_SESSION_QUERY)
             .bind(session_id.to_string())
             .bind(provider_id)
@@ -133,6 +133,14 @@ impl Storage {
             .await?;
         Ok(providers)
     }
+
+    pub async fn prefer_model_config(&self, provider_id: &str) -> Result<PreferModelConfig> {
+        sqlx::query_as::<_, PreferModelConfig>(queries::PREFER_MODEL_CONFIG_QUERY)
+            .bind(provider_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -148,6 +156,12 @@ pub struct ConnectedProvider {
 pub struct Session {
     pub session_id: String,
     pub provider_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct PreferModelConfig {
+    pub model: String,
+    pub effort: String,
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {
