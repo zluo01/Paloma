@@ -120,4 +120,14 @@ impl RemoteQuery {
             error!("cleanup: delete session {session_id} from storage: {err}");
         }
     }
+
+    pub async fn restore_session(&self, session_id: Uuid) {
+        if let Err(err) = self
+            .session_manager_client
+            .restore_session(session_id)
+            .await
+        {
+            error!("restore session {session_id}: {err}");
+        }
+    }
 }

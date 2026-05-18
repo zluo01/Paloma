@@ -25,6 +25,7 @@ pub struct QueryResponse {
 
 #[derive(Clone, Debug)]
 pub enum ChatRenderEvent {
+    UserPrompt { text: String },
     TextDelta { text: String },
     ReasoningDelta { text: String },
 }

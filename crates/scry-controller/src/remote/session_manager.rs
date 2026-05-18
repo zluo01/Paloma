@@ -24,6 +24,9 @@ enum SessionStreamingEvent {
         provider_id: ProviderId,
         reply: oneshot::Sender<Result<(), SessionManagerError>>,
     },
+    RestoreSession {
+        session_id: Uuid,
+    },
     RemoveSession {
         session_id: Uuid,
         reply: oneshot::Sender<Result<(), SessionManagerError>>,
@@ -123,6 +126,11 @@ impl SessionManager {
                 };
                 let _ = reply.send(result);
             }
+            SessionStreamingEvent::RestoreSession { session_id } => {
+                if let Err(err) = self.restore_session(session_id) {
+                    error!("session {session_id} restore_session failed: {err}");
+                }
+            }
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
                 if self.sessions.remove(&session_id).is_none() {
                     debug!("remove: session {session_id} not in memory");
@@ -200,6 +208,75 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Restore session history from memory
+    fn restore_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+        let session = self
+            .sessions
+            .get(&session_id)
+            .ok_or(SessionManagerError::UnknownSession(session_id))?;
+
+        for event in &session.events {
+            let render = match event {
+                SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
+                    if item.get("type").and_then(|t| t.as_str()) != Some("message") {
+                        continue;
+                    }
+                    let parts: Vec<String> = item
+                        .get("content")
+                        .and_then(|c| c.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|c| {
+                                    let kind = c.get("type").and_then(|t| t.as_str())?;
+                                    match kind {
+                                        "output_text" => {
+                                            c.get("text").and_then(|x| x.as_str()).map(String::from)
+                                        }
+                                        "refusal" => c
+                                            .get("refusal")
+                                            .and_then(|x| x.as_str())
+                                            .map(String::from),
+                                        _ => None,
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if parts.is_empty() {
+                        error!("OutputItem (type=message) yielded no text from value: {item}");
+                        continue;
+                    }
+                    RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                        text: parts.join("\n"),
+                    })
+                }
+                SessionEvent::UserPrompt(_)
+                | SessionEvent::Chat(ChatEvent::TextDelta { .. })
+                | SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { .. }) => {
+                    match event.to_render_event() {
+                        Some(r) => r,
+                        None => continue,
+                    }
+                }
+                // All other cases are unexpected
+                other => {
+                    if other.to_render_event().is_some() {
+                        error!(
+                            "unexpected event in restored history for session {session_id}: {other:?}"
+                        );
+                    }
+                    continue;
+                }
+            };
+
+            let _ = self.updates_tx.send(SessionUpdate {
+                session_id,
+                event: render,
+            });
+        }
+        Ok(())
+    }
+
     fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>, SessionManagerError> {
         let session = self
             .sessions
@@ -236,7 +313,23 @@ impl SessionEvent {
             SessionEvent::Err(message) => Some(RenderEvent::Error {
                 message: message.clone(),
             }),
-            SessionEvent::UserPrompt(_) | SessionEvent::Chat(ChatEvent::OutputItem { .. }) => None,
+            SessionEvent::UserPrompt(item) => {
+                let text = item
+                    .get("content")
+                    .and_then(|c| c.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("")
+                    })
+                    .unwrap_or_default();
+                if text.is_empty() {
+                    error!("UserPrompt yielded no text from value: {item}");
+                }
+                Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
+            }
+            SessionEvent::Chat(ChatEvent::OutputItem { .. }) => None,
         }
     }
 }
@@ -271,6 +364,13 @@ impl SessionManagerClient {
                 session_id,
                 payload,
             })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)
+    }
+
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+        self.event_tx
+            .send(SessionStreamingEvent::RestoreSession { session_id })
             .await
             .map_err(|_| SessionManagerError::ChannelClosed)
     }
