@@ -94,10 +94,16 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn create_new_session(&self, session_id: Uuid, provider_id: &str) -> Result<()> {
+    pub async fn create_new_session(
+        &self,
+        session_id: Uuid,
+        provider_id: &str,
+        title: &str,
+    ) -> Result<()> {
         sqlx::query(queries::CREATE_NEW_SESSION_QUERY)
             .bind(session_id.to_string())
             .bind(provider_id)
+            .bind(title)
             .execute(&self.pool)
             .await
             .map_err(|e| match &e {
@@ -106,6 +112,29 @@ impl Storage {
                 }
                 _ => e.into(),
             })?;
+        Ok(())
+    }
+
+    pub async fn update_session_title(&self, session_id: &str, title: &str) -> Result<()> {
+        let result = sqlx::query(queries::UPDATE_SESSION_TITLE_QUERY)
+            .bind(title)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(session_id.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn touch_session(&self, session_id: &str) -> Result<()> {
+        let result = sqlx::query(queries::TOUCH_SESSION_QUERY)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(session_id.to_string()));
+        }
         Ok(())
     }
 
@@ -156,6 +185,7 @@ pub struct ConnectedProvider {
 pub struct Session {
     pub session_id: String,
     pub provider_id: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -468,5 +498,174 @@ mod tests {
             .map(|p| p.provider_id)
             .collect();
         assert_eq!(ids, vec!["codex".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn create_session_persists_title_and_defaults() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .await
+            .unwrap();
+
+        let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000001").unwrap();
+        storage
+            .create_new_session(session_id, "codex", "my first chat")
+            .await
+            .expect("create session");
+
+        let sessions = storage.all_sessions().await.expect("all sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, session_id.to_string());
+        assert_eq!(sessions[0].provider_id, "codex");
+        assert_eq!(sessions[0].title, "my first chat");
+
+        // `generated`/`last_update` aren't returned by `all_sessions`; read
+        // them directly to confirm the insert defaults (not generated, and a
+        // populated `last_update`).
+        let (generated, last_update): (bool, i64) =
+            sqlx::query_as("SELECT generated, last_update FROM sessions WHERE session_id = ?")
+                .bind(session_id.to_string())
+                .fetch_one(storage.pool())
+                .await
+                .unwrap();
+        assert!(!generated);
+        assert!(last_update > 0);
+    }
+
+    #[tokio::test]
+    async fn all_sessions_orders_by_last_update_latest_first() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .await
+            .unwrap();
+
+        let oldest = Uuid::parse_str("019e1234-5678-7000-8000-00000000000a").unwrap();
+        let newest = Uuid::parse_str("019e1234-5678-7000-8000-00000000000b").unwrap();
+        let middle = Uuid::parse_str("019e1234-5678-7000-8000-00000000000c").unwrap();
+        for (id, title) in [(oldest, "oldest"), (newest, "newest"), (middle, "middle")] {
+            storage
+                .create_new_session(id, "codex", title)
+                .await
+                .unwrap();
+        }
+
+        // Force distinct last_update values regardless of insertion clock.
+        for (id, ts) in [(oldest, 100_i64), (newest, 300), (middle, 200)] {
+            sqlx::query("UPDATE sessions SET last_update = ? WHERE session_id = ?")
+                .bind(ts)
+                .bind(id.to_string())
+                .execute(storage.pool())
+                .await
+                .unwrap();
+        }
+
+        let titles: Vec<String> = storage
+            .all_sessions()
+            .await
+            .expect("all sessions")
+            .into_iter()
+            .map(|s| s.title)
+            .collect();
+        assert_eq!(titles, vec!["newest", "middle", "oldest"]);
+    }
+
+    #[tokio::test]
+    async fn update_session_title_sets_title_and_marks_generated() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .await
+            .unwrap();
+
+        let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000002").unwrap();
+        storage
+            .create_new_session(session_id, "codex", "")
+            .await
+            .unwrap();
+
+        storage
+            .update_session_title(&session_id.to_string(), "Generated title")
+            .await
+            .expect("update title");
+
+        let sessions = storage.all_sessions().await.expect("all sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].title, "Generated title");
+
+        // `generated` isn't returned by `all_sessions`; read it directly to
+        // confirm the update flipped it to true.
+        let generated: bool =
+            sqlx::query_scalar("SELECT generated FROM sessions WHERE session_id = ?")
+                .bind(session_id.to_string())
+                .fetch_one(storage.pool())
+                .await
+                .unwrap();
+        assert!(generated);
+    }
+
+    #[tokio::test]
+    async fn update_session_title_nonexistent_returns_not_found() {
+        let (storage, _tmp) = fresh_storage().await;
+        let err = storage
+            .update_session_title("019e1234-5678-7000-8000-0000000000ff", "x")
+            .await
+            .expect_err("must fail");
+
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000ff"),
+            "expected NotFound, got {err:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn touch_session_bumps_last_update() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage
+            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .await
+            .unwrap();
+
+        let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000003").unwrap();
+        storage
+            .create_new_session(session_id, "codex", "t")
+            .await
+            .unwrap();
+
+        // Backdate so the bump is observable regardless of clock resolution.
+        sqlx::query("UPDATE sessions SET last_update = 1000 WHERE session_id = ?")
+            .bind(session_id.to_string())
+            .execute(storage.pool())
+            .await
+            .unwrap();
+
+        storage
+            .touch_session(&session_id.to_string())
+            .await
+            .expect("touch");
+
+        // `last_update` isn't returned by `all_sessions`; read it directly.
+        let last_update: i64 =
+            sqlx::query_scalar("SELECT last_update FROM sessions WHERE session_id = ?")
+                .bind(session_id.to_string())
+                .fetch_one(storage.pool())
+                .await
+                .unwrap();
+        assert!(last_update > 1000, "expected bump, got {last_update}");
+    }
+
+    #[tokio::test]
+    async fn touch_session_nonexistent_returns_not_found() {
+        let (storage, _tmp) = fresh_storage().await;
+        let err = storage
+            .touch_session("019e1234-5678-7000-8000-0000000000fe")
+            .await
+            .expect_err("must fail");
+
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000fe"),
+            "expected NotFound, got {err:?}",
+        );
     }
 }

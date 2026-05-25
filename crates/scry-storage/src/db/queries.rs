@@ -12,7 +12,10 @@ pub const INIT_TABLE_QUERY: &str = "
       session_id   TEXT PRIMARY KEY NOT NULL,
       provider_id  TEXT
                    REFERENCES provider_credentials(provider_id)
-                   ON DELETE SET NULL
+                   ON DELETE SET NULL,
+      title        TEXT NOT NULL DEFAULT '',
+      generated    INTEGER NOT NULL DEFAULT 0 CHECK (generated IN (0, 1)),
+      last_update  INTEGER NOT NULL DEFAULT (unixepoch())
     );
     ";
 
@@ -49,12 +52,26 @@ pub const CONNECTED_PROVIDERS_QUERY: &str = "
 
 //language=sqlite
 pub const CREATE_NEW_SESSION_QUERY: &str = "
-  INSERT INTO sessions (session_id, provider_id) VALUES (?, ?)
+  INSERT INTO sessions (session_id, provider_id, title) VALUES (?, ?, ?)
+    ";
+
+//language=sqlite
+pub const UPDATE_SESSION_TITLE_QUERY: &str = "
+  UPDATE sessions
+  SET title = ?, generated = 1
+  WHERE session_id = ?;
+    ";
+
+//language=sqlite
+pub const TOUCH_SESSION_QUERY: &str = "
+  UPDATE sessions
+  SET last_update = unixepoch()
+  WHERE session_id = ?;
     ";
 
 //language=sqlite
 pub const GET_ALL_SESSIONS_QUERY: &str = "
-  SELECT * FROM sessions
+  SELECT session_id, provider_id, title FROM sessions ORDER BY last_update DESC
 ";
 
 //language=sqlite
