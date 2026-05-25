@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{RuntimeController, RuntimeControllerError};
+use crate::{ProviderController, ProviderControllerError};
 use dashmap::DashMap;
 use scry_provider::connector::CodexConnector;
 use scry_provider::entity::{
@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 
 pub struct ConnectController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>>,
-    runtime_controller: Arc<RuntimeController>,
+    provider_controller: Arc<ProviderController>,
     storage: Storage,
 }
 
 impl ConnectController {
     pub fn new(
         storage: Storage,
-        runtime_controller: Arc<RuntimeController>,
+        provider_controller: Arc<ProviderController>,
         http: reqwest::Client,
     ) -> Self {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>> = DashMap::new();
@@ -30,7 +30,7 @@ impl ConnectController {
 
         Self {
             handlers,
-            runtime_controller,
+            provider_controller,
             storage,
         }
     }
@@ -48,7 +48,7 @@ impl ConnectController {
         let handler = self.handler(provider_id)?;
         let auth = handler.finalize_connection(payload).await?;
 
-        self.runtime_controller
+        self.provider_controller
             .new_provider(provider_id, &auth)
             .await?;
 
@@ -56,7 +56,7 @@ impl ConnectController {
         // a real failure (network blip / bad auth) rather than a
         // missing handler — bail so the caller can surface it.
         let models = self
-            .runtime_controller
+            .provider_controller
             .provider_models(provider_id)
             .await
             .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
@@ -76,7 +76,7 @@ impl ConnectController {
             )
             .await
         {
-            self.runtime_controller.remove_provider(provider_id);
+            self.provider_controller.remove_provider(provider_id);
             return Err(e);
         }
 
@@ -85,7 +85,7 @@ impl ConnectController {
 
     pub async fn disconnect(&self, provider_id: ProviderId) -> Result<(), ConnectError> {
         self.storage.delete_provider(provider_id.as_str()).await?;
-        self.runtime_controller.remove_provider(provider_id);
+        self.provider_controller.remove_provider(provider_id);
         Ok(())
     }
 
@@ -117,7 +117,7 @@ impl ConnectController {
         for id in ids {
             let connection = match connected.get(id.as_str()) {
                 Some(cred) => {
-                    let available_models = self.runtime_controller.provider_models(id).await;
+                    let available_models = self.provider_controller.provider_models(id).await;
                     Some(ConnectorConnection {
                         prefer_model: cred.model.clone(),
                         prefer_effort: cred.effort.clone(),
@@ -212,7 +212,7 @@ pub enum ConnectError {
     Provider(#[from] ProviderError),
 
     #[error(transparent)]
-    Runtime(#[from] RuntimeControllerError),
+    Runtime(#[from] ProviderControllerError),
 
     #[error(transparent)]
     Storage(#[from] StorageError),

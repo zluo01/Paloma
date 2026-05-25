@@ -10,18 +10,18 @@ use tokio::task::JoinHandle;
 
 use crate::remote::SessionManagerError;
 
-pub struct RuntimeController {
+pub struct ProviderController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderClient>>,
     refresh_handles: DashMap<ProviderId, JoinHandle<()>>,
     storage: Storage,
     request: reqwest::Client,
 }
 
-impl RuntimeController {
+impl ProviderController {
     pub async fn new(
         storage: Storage,
         request: reqwest::Client,
-    ) -> Result<Self, RuntimeControllerError> {
+    ) -> Result<Self, ProviderControllerError> {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderClient>> = DashMap::new();
         let refresh_handles: DashMap<ProviderId, JoinHandle<()>> = DashMap::new();
 
@@ -66,14 +66,14 @@ impl RuntimeController {
         &self,
         provider_id: ProviderId,
         auth: &Auth,
-    ) -> Result<(), RuntimeControllerError> {
+    ) -> Result<(), ProviderControllerError> {
         let client: Arc<dyn ProviderClient> = match provider_id {
             ProviderId::Codex => Arc::new(CodexRuntime::new(auth, self.request.clone()).await?),
         };
         match self.handlers.entry(provider_id) {
             Entry::Occupied(_) => {
                 error!("provider {provider_id:?} already registered; ignoring");
-                Err(RuntimeControllerError::AlreadyRegistered(provider_id))
+                Err(ProviderControllerError::AlreadyRegistered(provider_id))
             }
             Entry::Vacant(slot) => {
                 refresh_and_schedule(
@@ -116,16 +116,16 @@ impl RuntimeController {
     pub fn client(
         &self,
         provider_id: ProviderId,
-    ) -> Result<Arc<dyn ProviderClient>, RuntimeControllerError> {
+    ) -> Result<Arc<dyn ProviderClient>, ProviderControllerError> {
         self.handlers
             .get(&provider_id)
             .map(|h| Arc::clone(h.value()))
-            .ok_or(RuntimeControllerError::UnknownProvider(provider_id))
+            .ok_or(ProviderControllerError::UnknownProvider(provider_id))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RuntimeControllerError {
+pub enum ProviderControllerError {
     #[error("provider not registered: {0:?}")]
     UnknownProvider(ProviderId),
 
