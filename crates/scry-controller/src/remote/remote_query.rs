@@ -1,30 +1,28 @@
 use crate::remote::session_manager::SessionManagerClient;
-use crate::remote::SessionEvent;
-use crate::{RuntimeController, RuntimeControllerError};
-use futures::StreamExt;
+use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
+use crate::ProviderControllerError;
 use log::error;
-use scry_provider::entity::{ChatEvent, ChatRequest, ProviderId};
+use scry_provider::entity::ProviderId;
 use scry_storage::db::Storage;
-use std::sync::Arc;
 use uuid::Uuid;
 
 const MAX_TITLE_CHARS: usize = 56;
 
 pub struct RemoteQuery {
-    runtime_controller: Arc<RuntimeController>,
     session_manager_client: SessionManagerClient,
+    turn_manager_client: TurnManagerClient,
     storage: Storage,
 }
 
 impl RemoteQuery {
     pub fn new(
         storage: Storage,
-        runtime_controller: Arc<RuntimeController>,
         session_manager_client: SessionManagerClient,
+        turn_manager_client: TurnManagerClient,
     ) -> Self {
         Self {
-            runtime_controller,
             session_manager_client,
+            turn_manager_client,
             storage,
         }
     }
@@ -35,7 +33,7 @@ impl RemoteQuery {
         session_id: Option<Uuid>,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(Uuid, bool), RuntimeControllerError> {
+    ) -> Result<(Uuid, bool), ProviderControllerError> {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
@@ -57,60 +55,14 @@ impl RemoteQuery {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(), RuntimeControllerError> {
-        let prefer_model_config = self
-            .storage
-            .prefer_model_config(provider_id.as_str())
-            .await?;
+    ) -> Result<(), TurnManagerError> {
+        self.turn_manager_client
+            .start_chat(session_id, provider_id, prompt)
+            .await
+    }
 
-        let client = self.runtime_controller.client(provider_id)?;
-
-        let latest_prompt = client.construct_user_prompt(prompt);
-        self.session_manager_client
-            .add_event(session_id, SessionEvent::UserPrompt(latest_prompt))
-            .await?;
-
-        let messages = self
-            .session_manager_client
-            .construct_messages(session_id)
-            .await?;
-
-        let mut stream = client
-            .chat(ChatRequest {
-                model: prefer_model_config.model,
-                effort: prefer_model_config.effort,
-                messages,
-            })
-            .await?;
-
-        let session_client = self.session_manager_client.clone();
-        tokio::spawn(async move {
-            while let Some(event) = stream.next().await {
-                let session_event = match event {
-                    Ok(chat_event) => SessionEvent::Chat(chat_event),
-                    Err(err) => {
-                        let message = err.to_string();
-                        error!("chat stream error for session {session_id}: {message}");
-                        SessionEvent::Err(message)
-                    }
-                };
-
-                let is_terminal = matches!(
-                    session_event,
-                    SessionEvent::Chat(ChatEvent::Done) | SessionEvent::Err(_)
-                );
-
-                if let Err(err) = session_client.add_event(session_id, session_event).await {
-                    error!("failed to insert event for session {session_id}: {err}");
-                }
-
-                if is_terminal {
-                    break;
-                }
-            }
-        });
-
-        Ok(())
+    pub async fn cancel(&self, session_id: Uuid) -> Result<(), TurnManagerError> {
+        self.turn_manager_client.cancel(session_id).await
     }
 
     // use for cleanup newly created session but the chat fails
