@@ -8,6 +8,8 @@ use scry_storage::db::Storage;
 use std::sync::Arc;
 use uuid::Uuid;
 
+const MAX_TITLE_CHARS: usize = 56;
+
 pub struct RemoteQuery {
     runtime_controller: Arc<RuntimeController>,
     session_manager_client: SessionManagerClient,
@@ -32,12 +34,13 @@ impl RemoteQuery {
         &self,
         session_id: Option<Uuid>,
         provider_id: ProviderId,
+        prompt: String,
     ) -> Result<(Uuid, bool), RuntimeControllerError> {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
                 self.storage
-                    .create_new_session(id, provider_id.as_str())
+                    .create_new_session(id, provider_id.as_str(), &title_from_prompt(&prompt))
                     .await?;
                 self.session_manager_client
                     .create_session(id, provider_id)
@@ -129,5 +132,15 @@ impl RemoteQuery {
         {
             error!("restore session {session_id}: {err}");
         }
+    }
+}
+
+fn title_from_prompt(prompt: &str) -> String {
+    let s = prompt.lines().next().unwrap_or("").trim();
+    if s.chars().count() <= MAX_TITLE_CHARS {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(MAX_TITLE_CHARS).collect();
+        format!("{truncated}…")
     }
 }
