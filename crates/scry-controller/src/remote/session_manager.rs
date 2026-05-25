@@ -178,8 +178,9 @@ impl SessionManager {
         };
 
         let entry = match &payload {
-            SessionEvent::UserPrompt(item) => Some((EntryType::EventMsg, item.clone())),
-            SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
+            SessionEvent::UserPrompt(item)
+            | SessionEvent::Chat(ChatEvent::OutputItem { item })
+            | SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                 Some((EntryType::ResponseItem, item.clone()))
             }
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
@@ -288,7 +289,8 @@ impl SessionManager {
             .iter()
             .filter_map(|event| match event {
                 SessionEvent::UserPrompt(item)
-                | SessionEvent::Chat(ChatEvent::OutputItem { item }) => Some(item.clone()),
+                | SessionEvent::Chat(ChatEvent::OutputItem { item })
+                | SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => Some(item.clone()),
                 SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
             })
             .collect();
@@ -311,6 +313,7 @@ impl SessionEvent {
             }
             SessionEvent::Chat(ChatEvent::Done) => Some(RenderEvent::Done),
             SessionEvent::Err(message) => Some(RenderEvent::Error {
+                // TODO need to check when it is the first prompt, but somehow error happens, should we keep the session and remove the prompt or we should remove the whole session
                 message: message.clone(),
             }),
             SessionEvent::UserPrompt(item) => {
@@ -329,7 +332,9 @@ impl SessionEvent {
                 }
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
             }
-            SessionEvent::Chat(ChatEvent::OutputItem { .. }) => None,
+            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {
+                None
+            }
         }
     }
 }
@@ -441,7 +446,9 @@ pub enum SessionManagerError {
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            event @ SessionEvent::Chat(ChatEvent::OutputItem { .. }) => {
+            event @ SessionEvent::Chat(
+                ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. },
+            ) => {
                 self.events.retain(|event| {
                     !matches!(
                         event,
@@ -500,11 +507,9 @@ async fn restore_sessions(
         };
         let events = file_entries
             .into_iter()
-            .map(|entry| match entry.t {
-                EntryType::EventMsg => SessionEvent::UserPrompt(entry.payload),
-                EntryType::ResponseItem => SessionEvent::Chat(ChatEvent::OutputItem {
-                    item: entry.payload,
-                }),
+            .filter_map(|entry| match entry.t {
+                EntryType::ResponseItem => Some(response_item_to_event(entry.payload)),
+                EntryType::EventMsg => None,
             })
             .collect();
 
@@ -519,4 +524,14 @@ async fn restore_sessions(
     }
 
     Ok(sessions)
+}
+
+/// Reconstruct the in-memory `SessionEvent` for a persisted response item.
+/// User messages come back as `UserPrompt`; everything else is an `OutputItem`.
+fn response_item_to_event(payload: Value) -> SessionEvent {
+    if payload.get("role").and_then(|r| r.as_str()) == Some("user") {
+        SessionEvent::UserPrompt(payload)
+    } else {
+        SessionEvent::Chat(ChatEvent::OutputItem { item: payload })
+    }
 }

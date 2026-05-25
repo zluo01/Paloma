@@ -17,6 +17,8 @@ pub trait ProviderClient: Send + Sync {
     async fn models(&self) -> Result<Vec<Model>>;
 
     fn construct_user_prompt(&self, prompt: String) -> Value;
+
+    fn construct_function_call_output(&self, call_id: String, output: String) -> Value;
 }
 
 #[async_trait::async_trait]
@@ -93,27 +95,10 @@ pub struct ChatRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatEvent {
-    TextDelta {
-        text: String,
-    },
-    /// Incremental human-readable summary of the model's hidden
-    /// chain-of-thought. Streamed in parallel with `TextDelta`s before
-    /// the final answer; intended for a "thinking…" UI surface, not for
-    /// replay. The summary is best-effort prose the model writes about
-    /// its own reasoning — it has no semantic relationship to the
-    /// `encrypted_content` carried by `ReasoningItem` and must not be
-    /// substituted for it.
-    ReasoningSummaryDelta {
-        text: String,
-    },
-    /// Opaque reasoning item finalized during the turn. Persist with
-    /// the assistant message under `ChatMessage::reasoning_items` and
-    /// echo it back on the next turn to preserve hidden chain-of-thought.
-    /// We deliberately don't model the schema — the server may evolve it
-    /// and the `encrypted_content` field is meant to be opaque.
-    OutputItem {
-        item: Value,
-    },
+    TextDelta { text: String },
+    ReasoningSummaryDelta { text: String },
+    OutputItem { item: Value },
+    ToolCallItem { item: Value },
     Done,
 }
 
