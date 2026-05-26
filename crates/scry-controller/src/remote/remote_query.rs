@@ -1,9 +1,12 @@
 use crate::remote::session_manager::SessionManagerClient;
 use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
-use crate::ProviderControllerError;
+use crate::remote::SessionEvent;
+use crate::{ProviderController, ProviderControllerError};
 use log::error;
+use scry_config::ENVIRONMENT_CONTEXT;
 use scry_provider::entity::ProviderId;
 use scry_storage::db::Storage;
+use std::sync::Arc;
 use uuid::Uuid;
 
 const MAX_TITLE_CHARS: usize = 56;
@@ -11,6 +14,7 @@ const MAX_TITLE_CHARS: usize = 56;
 pub struct RemoteQuery {
     session_manager_client: SessionManagerClient,
     turn_manager_client: TurnManagerClient,
+    provider_controller: Arc<ProviderController>,
     storage: Storage,
 }
 
@@ -19,15 +23,16 @@ impl RemoteQuery {
         storage: Storage,
         session_manager_client: SessionManagerClient,
         turn_manager_client: TurnManagerClient,
+        provider_controller: Arc<ProviderController>,
     ) -> Self {
         Self {
             session_manager_client,
             turn_manager_client,
+            provider_controller,
             storage,
         }
     }
 
-    /// First of the call chain, get or generate new session if it is new chat
     pub async fn init_chat(
         &self,
         session_id: Option<Uuid>,
@@ -44,6 +49,14 @@ impl RemoteQuery {
                 self.session_manager_client
                     .create_session(id, provider_id, title)
                     .await?;
+
+                // inject environment_context
+                let client = self.provider_controller.client(provider_id)?;
+                let env_prompt = client.construct_user_prompt(ENVIRONMENT_CONTEXT.clone());
+                self.session_manager_client
+                    .add_event(id, SessionEvent::UserPrompt(env_prompt))
+                    .await?;
+
                 Ok((id, true))
             }
             Some(id) => Ok((id, false)),

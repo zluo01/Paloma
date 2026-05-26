@@ -9,3 +9,4 @@ description = "Path resolution and configuration for Scry."
 
 [dependencies]
 log = { workspace = true }
+scry-utils = { path = "../scry-utils" }

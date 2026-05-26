@@ -93,8 +93,12 @@ impl AppContext {
         );
         tokio::spawn(async move { turn_manager.run().await });
 
-        let remote_query =
-            RemoteQuery::new(storage, session_manager_client.clone(), turn_manager_client);
+        let remote_query = RemoteQuery::new(
+            storage,
+            session_manager_client.clone(),
+            turn_manager_client,
+            Arc::clone(&provider_controller),
+        );
 
         Ok((connect, remote_query, session_manager_client))
     }

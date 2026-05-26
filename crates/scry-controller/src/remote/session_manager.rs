@@ -371,6 +371,10 @@ impl SessionEvent {
                             .join("")
                     })
                     .unwrap_or_default();
+                // should not render environment context in the UI
+                if text.trim_start().starts_with("<environment_context>") {
+                    return None;
+                }
                 if text.is_empty() {
                     error!("UserPrompt yielded no text from value: {item}");
                 }

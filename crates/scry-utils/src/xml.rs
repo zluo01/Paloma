@@ -10,6 +10,7 @@ pub struct Element {
 #[derive(Debug, Clone)]
 enum Body {
     Empty,
+    PlainText(String),
     Cdata(String),
     Children(Vec<Element>),
 }
@@ -46,6 +47,11 @@ impl Element {
     pub fn cdata(mut self, text: impl Into<String>) -> Self {
         let raw = text.into();
         self.body = Body::Cdata(escape_cdata(&raw));
+        self
+    }
+
+    pub fn plain_text(mut self, text: impl Into<String>) -> Self {
+        self.body = Body::PlainText(text.into());
         self
     }
 
@@ -91,6 +97,13 @@ fn write_element(f: &mut Formatter<'_>, elem: &Element) -> fmt::Result {
                 write!(f, "\n></{}>", elem.name)
             } else {
                 write!(f, "></{}>", elem.name)
+            }
+        }
+        Body::PlainText(body) => {
+            if has_attrs {
+                write!(f, "\n>{body}</{}>", elem.name)
+            } else {
+                write!(f, ">{body}</{}>", elem.name)
             }
         }
         Body::Cdata(escaped) => {
@@ -193,6 +206,44 @@ mod tests {
     fn cdata_body_is_wrapped_verbatim() {
         let actual = Element::new("stdout").cdata("hello\nworld").to_string();
         let expected = "<stdout><![CDATA[hello\nworld]]></stdout>";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn plain_text_body_renders_inline() {
+        let actual = Element::new("cwd").plain_text("/home/mike").to_string();
+        let expected = "<cwd>/home/mike</cwd>";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn plain_text_passes_through_verbatim_without_escaping() {
+        // By contract, plain_text is unescaped — the caller guarantees the
+        // value is free of XML metacharacters. Anything that would need
+        // escaping should use `cdata` instead.
+        let actual = Element::new("v").plain_text("a & b < c > d").to_string();
+        let expected = "<v>a & b < c > d</v>";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn plain_text_with_attrs_keeps_attrs_multiline_but_body_inline() {
+        let actual = Element::new("p")
+            .attr("k", 1)
+            .plain_text("hello")
+            .to_string();
+        let expected = "<p\n  k=\"1\"\n>hello</p>";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn plain_text_replaces_cdata_body_when_set_after() {
+        // Documenting current behaviour: last body wins, same as cdata-then-child.
+        let actual = Element::new("p")
+            .cdata("dropped")
+            .plain_text("kept")
+            .to_string();
+        let expected = "<p>kept</p>";
         assert_eq!(actual, expected);
     }
 
