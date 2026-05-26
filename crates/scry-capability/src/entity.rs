@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
@@ -74,7 +75,12 @@ pub trait Tool: Capability {
     const NAME: &'static str;
     const DESCRIPTION: &'static str;
 
-    async fn invoke(&self, args: Self::Args) -> Result<ToolResult, String>;
+    async fn invoke(
+        &self,
+        session_id: Uuid,
+        caller_id: String,
+        args: Self::Args,
+    ) -> Result<ToolResult, String>;
 
     fn schema(&self) -> ToolSchema {
         ToolSchema {
@@ -101,7 +107,12 @@ pub enum ToolResult {
 #[async_trait::async_trait]
 pub trait DynTool: Send + Sync {
     fn schema(&self) -> ToolSchema;
-    async fn invoke(&self, args: serde_json::Value) -> Result<ToolResult, String>;
+    async fn invoke(
+        &self,
+        session_id: Uuid,
+        caller_id: String,
+        args: serde_json::Value,
+    ) -> Result<ToolResult, String>;
 }
 
 #[async_trait::async_trait]
@@ -113,8 +124,13 @@ where
         Tool::schema(self)
     }
 
-    async fn invoke(&self, args: serde_json::Value) -> Result<ToolResult, String> {
+    async fn invoke(
+        &self,
+        session_id: Uuid,
+        caller_id: String,
+        args: serde_json::Value,
+    ) -> Result<ToolResult, String> {
         let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
-        Tool::invoke(self, parsed).await
+        Tool::invoke(self, session_id, caller_id, parsed).await
     }
 }
