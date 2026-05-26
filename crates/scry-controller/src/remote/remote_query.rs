@@ -1,4 +1,4 @@
-use crate::remote::session_manager::SessionManagerClient;
+use crate::remote::session_manager::{SessionManagerClient, SessionManagerError, TerminalState};
 use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
 use crate::remote::SessionEvent;
 use crate::{ProviderController, ProviderControllerError};
@@ -90,14 +90,13 @@ impl RemoteQuery {
         }
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) {
-        if let Err(err) = self
-            .session_manager_client
+    pub async fn restore_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<TerminalState, SessionManagerError> {
+        self.session_manager_client
             .restore_session(session_id)
             .await
-        {
-            error!("restore session {session_id}: {err}");
-        }
     }
 }
 

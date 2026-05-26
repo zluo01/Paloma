@@ -34,6 +34,7 @@ enum SessionStreamingEvent {
     },
     RestoreSession {
         session_id: Uuid,
+        reply: oneshot::Sender<Result<TerminalState, SessionManagerError>>,
     },
     RemoveSession {
         session_id: Uuid,
@@ -60,7 +61,7 @@ pub enum SessionEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TerminalState {
+pub enum TerminalState {
     Running,
     Done,
     Error,
@@ -144,10 +145,8 @@ impl SessionManager {
                 };
                 let _ = reply.send(result);
             }
-            SessionStreamingEvent::RestoreSession { session_id } => {
-                if let Err(err) = self.restore_session(session_id) {
-                    error!("session {session_id} restore_session failed: {err}");
-                }
+            SessionStreamingEvent::RestoreSession { session_id, reply } => {
+                let _ = reply.send(self.restore_session(session_id));
             }
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
                 if self.sessions.remove(&session_id).is_none() {
@@ -231,8 +230,7 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Restore session history from memory
-    fn restore_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+    fn restore_session(&self, session_id: Uuid) -> Result<TerminalState, SessionManagerError> {
         let session = self
             .sessions
             .get(&session_id)
@@ -308,18 +306,7 @@ impl SessionManager {
             });
         }
 
-        // Only mark the trailing replayed turn complete if the session actually
-        // reached a terminal state. A `Running` session was interrupted — leave
-        // its pending "thinking…" indicator visible so the UI truthfully signals
-        // "unfinished" rather than silently presenting it as done.
-        if session.terminal != TerminalState::Running {
-            let _ = self.updates_tx.send(SessionUpdate {
-                session_id,
-                event: RenderEvent::Done,
-            });
-        }
-
-        Ok(())
+        Ok(session.terminal)
     }
 
     fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>, SessionManagerError> {
@@ -459,11 +446,21 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+    pub async fn restore_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<TerminalState, SessionManagerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
-            .send(SessionStreamingEvent::RestoreSession { session_id })
+            .send(SessionStreamingEvent::RestoreSession {
+                session_id,
+                reply: reply_tx,
+            })
             .await
-            .map_err(|_| SessionManagerError::ChannelClosed)
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
     pub async fn remove_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
