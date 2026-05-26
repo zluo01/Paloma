@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use log::error;
-use scry_capability::tools::process_manager::ProcessManagerClient;
+use scry_capability::tools::shell::process_manager::ProcessManagerClient;
 use scry_capability::tools::shell::Shell;
 use scry_capability::{DynTool, Tool, ToolResult};
 use scry_provider::entity::ToolSchema as ProviderToolSchema;
