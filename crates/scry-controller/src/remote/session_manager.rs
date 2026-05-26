@@ -613,11 +613,11 @@ async fn restore_sessions(
     Ok(sessions)
 }
 
-/// Reconstruct the in-memory `SessionEvent` for a persisted response item.
-/// User messages come back as `UserPrompt`; everything else is an `OutputItem`.
 fn response_item_to_event(payload: Value) -> SessionEvent {
     if payload.get("role").and_then(|r| r.as_str()) == Some("user") {
         SessionEvent::UserPrompt(payload)
+    } else if payload.get("type").and_then(|t| t.as_str()) == Some("function_call") {
+        SessionEvent::Chat(ChatEvent::ToolCallItem { item: payload })
     } else {
         SessionEvent::Chat(ChatEvent::OutputItem { item: payload })
     }
