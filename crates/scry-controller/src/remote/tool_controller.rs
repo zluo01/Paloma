@@ -3,6 +3,7 @@ use log::error;
 use scry_capability::tools::process_manager::ProcessManagerClient;
 use scry_capability::tools::shell::Shell;
 use scry_capability::{DynTool, Tool, ToolResult};
+use scry_provider::entity::ToolSchema as ProviderToolSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::sync::Arc;
@@ -31,6 +32,20 @@ impl ToolController {
         Self { handlers }
     }
 
+    pub fn tool_schemas(&self) -> Vec<ProviderToolSchema> {
+        self.handlers
+            .iter()
+            .map(|entry| {
+                let schema = entry.value().schema();
+                ProviderToolSchema {
+                    name: schema.name,
+                    description: schema.description,
+                    parameters: schema.input_schema,
+                }
+            })
+            .collect()
+    }
+
     /// We should populate all errors back to the model such that model has context on what happens and what to do next
     /// Also log error so can debug internally
     pub async fn exec(&self, session_id: Uuid, call: &ToolCallPayload) -> String {
@@ -49,7 +64,8 @@ impl ToolController {
             Err(err) => return format!("invalid arguments for {}: {err}", call.name),
         };
 
-        match tool.invoke(session_id, args).await {
+        let caller_id = &call.call_id;
+        match tool.invoke(session_id, caller_id.clone(), args).await {
             Ok(ToolResult::Text(text)) => text,
             Ok(ToolResult::Binary { mime_type, .. }) => format!("<binary output: {mime_type}>"),
             Err(message) => {

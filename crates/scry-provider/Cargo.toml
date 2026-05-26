@@ -8,6 +8,7 @@ publish.workspace = true
 description = "Provider connection and credential primitives for Scry."
 
 [dependencies]
+scry-config = { path = "../scry-config" }
 scry-storage = { path = "../scry-storage" }
 async-trait = { workspace = true }
 futures = { workspace = true }

@@ -5,7 +5,7 @@ use crate::{ProviderController, ProviderControllerError};
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
-use scry_provider::entity::{ChatEvent, ChatRequest, ChatStream, ProviderId};
+use scry_provider::entity::{ChatEvent, ChatRequest, ChatStream, ProviderId, ToolSchema};
 use scry_storage::db::Storage;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -122,6 +122,7 @@ impl TurnManager {
         let session_client = self.session_manager_client.clone();
         let event_tx = self.event_tx.clone();
         let turn_map = self.turn_map.clone();
+        let tools = self.tool_controller.tool_schemas();
 
         let handle = tokio::spawn(async move {
             let stream = match open_stream(
@@ -131,6 +132,7 @@ impl TurnManager {
                 provider_id,
                 session_id,
                 Some(prompt),
+                tools,
             )
             .await
             {
@@ -179,6 +181,7 @@ impl TurnManager {
         let storage = self.storage.clone();
         let event_tx = self.event_tx.clone();
         let turn_map = self.turn_map.clone();
+        let tools = tool_controller.tool_schemas();
 
         let handle = tokio::spawn(async move {
             // Run all tool calls concurrently.
@@ -222,6 +225,7 @@ impl TurnManager {
                 provider_id,
                 session_id,
                 None,
+                tools,
             )
             .await
             {
@@ -298,6 +302,7 @@ async fn open_stream(
     provider_id: ProviderId,
     session_id: Uuid,
     prompt: Option<String>,
+    tools: Vec<ToolSchema>,
 ) -> Result<ChatStream, ProviderControllerError> {
     let client = provider_controller.client(provider_id)?;
     let config = storage.prefer_model_config(provider_id.as_str()).await?;
@@ -315,6 +320,7 @@ async fn open_stream(
             model: config.model,
             effort: config.effort,
             messages,
+            tools,
         })
         .await?;
     Ok(stream)

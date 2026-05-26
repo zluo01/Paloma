@@ -90,6 +90,14 @@ pub struct ChatRequest {
     pub model: String,
     pub effort: String,
     pub messages: Vec<Value>,
+    pub tools: Vec<ToolSchema>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolSchema {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
