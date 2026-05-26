@@ -17,11 +17,19 @@ pub struct SessionUpdate {
     pub event: RenderEvent,
 }
 
+#[derive(Clone, Debug)]
+pub struct SessionListItem {
+    pub session_id: Uuid,
+    pub provider_id: ProviderId,
+    pub title: String,
+}
+
 #[derive(Debug)]
 enum SessionStreamingEvent {
     CreateSession {
         session_id: Uuid,
         provider_id: ProviderId,
+        title: String,
         reply: oneshot::Sender<Result<(), SessionManagerError>>,
     },
     RestoreSession {
@@ -40,7 +48,7 @@ enum SessionStreamingEvent {
         reply: oneshot::Sender<Result<Vec<Value>, SessionManagerError>>,
     },
     AvailableSessions {
-        reply: oneshot::Sender<Result<Vec<(Uuid, ProviderId)>, SessionManagerError>>,
+        reply: oneshot::Sender<Result<Vec<SessionListItem>, SessionManagerError>>,
     },
 }
 
@@ -51,10 +59,18 @@ pub enum SessionEvent {
     Err(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalState {
+    Running,
+    Done,
+    Error,
+}
+
 struct Session {
     provider_id: ProviderId,
+    title: String,
     events: Vec<SessionEvent>, // single source of truth: prompts + deltas + OutputItems
-    terminal: Option<Option<String>>,
+    terminal: TerminalState,
 }
 
 pub struct SessionManager {
@@ -109,6 +125,7 @@ impl SessionManager {
             SessionStreamingEvent::CreateSession {
                 session_id,
                 provider_id,
+                title,
                 reply,
             } => {
                 let result = match self.sessions.entry(session_id) {
@@ -118,8 +135,9 @@ impl SessionManager {
                     Entry::Vacant(vacant) => {
                         vacant.insert(Session {
                             provider_id,
+                            title,
                             events: Vec::new(),
-                            terminal: None,
+                            terminal: TerminalState::Done,
                         });
                         Ok(())
                     }
@@ -159,7 +177,11 @@ impl SessionManager {
                 let sessions = self
                     .sessions
                     .iter()
-                    .map(|(id, session)| (*id, session.provider_id))
+                    .map(|(id, session)| SessionListItem {
+                        session_id: *id,
+                        provider_id: session.provider_id,
+                        title: session.title.clone(),
+                    })
                     .collect();
                 let _ = reply.send(Ok(sessions));
             }
@@ -219,41 +241,51 @@ impl SessionManager {
         for event in &session.events {
             let render = match event {
                 SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
-                    if item.get("type").and_then(|t| t.as_str()) != Some("message") {
-                        continue;
-                    }
-                    let parts: Vec<String> = item
-                        .get("content")
-                        .and_then(|c| c.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|c| {
-                                    let kind = c.get("type").and_then(|t| t.as_str())?;
-                                    match kind {
-                                        "output_text" => {
-                                            c.get("text").and_then(|x| x.as_str()).map(String::from)
-                                        }
-                                        "refusal" => c
-                                            .get("refusal")
-                                            .and_then(|x| x.as_str())
-                                            .map(String::from),
-                                        _ => None,
-                                    }
+                    match item.get("type").and_then(|t| t.as_str()) {
+                        Some("message") => {
+                            let parts: Vec<String> = item
+                                .get("content")
+                                .and_then(|c| c.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|c| {
+                                            let kind = c.get("type").and_then(|t| t.as_str())?;
+                                            match kind {
+                                                "output_text" => c
+                                                    .get("text")
+                                                    .and_then(|x| x.as_str())
+                                                    .map(String::from),
+                                                "refusal" => c
+                                                    .get("refusal")
+                                                    .and_then(|x| x.as_str())
+                                                    .map(String::from),
+                                                _ => None,
+                                            }
+                                        })
+                                        .collect()
                                 })
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    if parts.is_empty() {
-                        error!("OutputItem (type=message) yielded no text from value: {item}");
-                        continue;
+                                .unwrap_or_default();
+                            if parts.is_empty() {
+                                error!(
+                                    "OutputItem (type=message) yielded no text from value: {item}"
+                                );
+                                continue;
+                            }
+                            RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                                text: parts.join("\n"),
+                            })
+                        }
+                        Some("web_search_call") => match web_search_render(item) {
+                            Some(r) => r,
+                            None => continue,
+                        },
+                        _ => continue,
                     }
-                    RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                        text: parts.join("\n"),
-                    })
                 }
                 SessionEvent::UserPrompt(_)
                 | SessionEvent::Chat(ChatEvent::TextDelta { .. })
-                | SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { .. }) => {
+                | SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { .. })
+                | SessionEvent::Chat(ChatEvent::ToolCallItem { .. }) => {
                     match event.to_render_event() {
                         Some(r) => r,
                         None => continue,
@@ -275,6 +307,18 @@ impl SessionManager {
                 event: render,
             });
         }
+
+        // Only mark the trailing replayed turn complete if the session actually
+        // reached a terminal state. A `Running` session was interrupted — leave
+        // its pending "thinking…" indicator visible so the UI truthfully signals
+        // "unfinished" rather than silently presenting it as done.
+        if session.terminal != TerminalState::Running {
+            let _ = self.updates_tx.send(SessionUpdate {
+                session_id,
+                event: RenderEvent::Done,
+            });
+        }
+
         Ok(())
     }
 
@@ -332,11 +376,47 @@ impl SessionEvent {
                 }
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
             }
-            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {
-                None
+            SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => tool_call_render(item),
+            SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
+                match item.get("type").and_then(|t| t.as_str()) {
+                    Some("web_search_call") => web_search_render(item),
+                    _ => None,
+                }
             }
         }
     }
+}
+
+/// TODO Currently only match for the web search call format from openAI, need to adapt other case later
+fn web_search_render(item: &Value) -> Option<RenderEvent> {
+    let action = item.get("action").cloned().unwrap_or(Value::Null);
+    let arguments = serde_json::to_string_pretty(&action).unwrap_or_else(|_| action.to_string());
+    Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
+        name: "web_search".to_string(),
+        arguments,
+    }))
+}
+
+fn tool_call_render(item: &Value) -> Option<RenderEvent> {
+    let name = item.get("name").and_then(|n| n.as_str())?.to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    // Pretty print if it is json, otherwise, raw string
+    let raw = item
+        .get("arguments")
+        .and_then(|a| a.as_str())
+        .unwrap_or_default();
+    let arguments = serde_json::from_str::<Value>(raw)
+        .ok()
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+        .unwrap_or_else(|| raw.to_string());
+
+    Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
+        name,
+        arguments,
+    }))
 }
 
 impl SessionManagerClient {
@@ -344,12 +424,14 @@ impl SessionManagerClient {
         &self,
         session_id: Uuid,
         provider_id: ProviderId,
+        title: String,
     ) -> Result<(), SessionManagerError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::CreateSession {
                 session_id,
                 provider_id,
+                title,
                 reply: reply_tx,
             })
             .await
@@ -411,7 +493,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn available_sessions(&self) -> Result<Vec<(Uuid, ProviderId)>, SessionManagerError> {
+    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, SessionManagerError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::AvailableSessions { reply: reply_tx })
@@ -460,13 +542,17 @@ impl Session {
                 self.events.push(event);
             }
             SessionEvent::Chat(ChatEvent::Done) => {
-                self.terminal = Some(None);
+                self.terminal = TerminalState::Done;
             }
-            SessionEvent::Err(message) => self.terminal = Some(Some(message)),
-            event @ (SessionEvent::UserPrompt(_)
-            | SessionEvent::Chat(
+            SessionEvent::Err(_message) => self.terminal = TerminalState::Error,
+            event @ SessionEvent::UserPrompt(_) => {
+                // whenever new prompt coming, we consider the state as running.
+                self.terminal = TerminalState::Running;
+                self.events.push(event);
+            }
+            event @ SessionEvent::Chat(
                 ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
-            )) => {
+            ) => {
                 self.events.push(event);
             }
         }
@@ -517,8 +603,9 @@ async fn restore_sessions(
             id,
             Session {
                 provider_id,
+                title: session.title,
                 events,
-                terminal: None,
+                terminal: TerminalState::Done,
             },
         );
     }

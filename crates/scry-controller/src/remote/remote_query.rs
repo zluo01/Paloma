@@ -37,11 +37,12 @@ impl RemoteQuery {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
+                let title = title_from_prompt(&prompt);
                 self.storage
-                    .create_new_session(id, provider_id.as_str(), &title_from_prompt(&prompt))
+                    .create_new_session(id, provider_id.as_str(), &title)
                     .await?;
                 self.session_manager_client
-                    .create_session(id, provider_id)
+                    .create_session(id, provider_id, title)
                     .await?;
                 Ok((id, true))
             }

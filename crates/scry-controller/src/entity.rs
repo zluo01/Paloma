@@ -28,4 +28,5 @@ pub enum ChatRenderEvent {
     UserPrompt { text: String },
     TextDelta { text: String },
     ReasoningDelta { text: String },
+    ToolCall { name: String, arguments: String },
 }
