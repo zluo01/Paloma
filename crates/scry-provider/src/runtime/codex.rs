@@ -163,8 +163,8 @@ impl ProviderClient for CodexRuntime {
             .error_for_status()?;
 
         let sse = response.bytes_stream().eventsource();
-        let stream = stream::unfold(Some(sse), move |state| async move {
-            let mut sse = state?;
+        let stream = stream::unfold(Some((sse, false)), move |state| async move {
+            let (mut sse, mut reasoning_summary_delta_seen) = state?;
             loop {
                 let next = match tokio::time::timeout(SSE_IDLE_TIMEOUT, sse.next()).await {
                     Err(_) => {
@@ -217,17 +217,42 @@ impl ProviderClient for CodexRuntime {
                         // ── Text streaming (renderable) ────────────────────────
                         "response.output_text.delta" => {
                             return match serde_json::from_str::<TextDeltaPayload>(&frame.data) {
-                                Ok(p) => {
-                                    Some((Ok(ChatEvent::TextDelta { text: p.delta }), Some(sse)))
-                                }
+                                Ok(p) => Some((
+                                    Ok(ChatEvent::TextDelta { text: p.delta }),
+                                    Some((sse, reasoning_summary_delta_seen)),
+                                )),
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
                         }
                         "response.reasoning_summary_text.delta" => {
                             return match serde_json::from_str::<TextDeltaPayload>(&frame.data) {
+                                Ok(p) => {
+                                    reasoning_summary_delta_seen = true;
+                                    Some((
+                                        Ok(ChatEvent::ReasoningSummaryDelta { text: p.delta }),
+                                        Some((sse, reasoning_summary_delta_seen)),
+                                    ))
+                                }
+                                Err(e) => Some((Err(ProviderError::from(e)), None)),
+                            };
+                        }
+                        "response.reasoning_summary_part.added" => {
+                            reasoning_summary_delta_seen = false;
+                            return Some((
+                                Ok(ChatEvent::ReasoningSummaryDelta {
+                                    text: String::new(),
+                                }),
+                                Some((sse, reasoning_summary_delta_seen)),
+                            ));
+                        }
+                        "response.reasoning_summary_text.done" => {
+                            if reasoning_summary_delta_seen {
+                                continue;
+                            }
+                            return match serde_json::from_str::<TextDonePayload>(&frame.data) {
                                 Ok(p) => Some((
-                                    Ok(ChatEvent::ReasoningSummaryDelta { text: p.delta }),
-                                    Some(sse),
+                                    Ok(ChatEvent::ReasoningSummaryDelta { text: p.text }),
+                                    Some((sse, true)),
                                 )),
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
@@ -236,7 +261,14 @@ impl ProviderClient for CodexRuntime {
                             return match serde_json::from_str::<OutputItemDonePayload>(&frame.data)
                             {
                                 Ok(p) => {
-                                    Some((Ok(ChatEvent::OutputItem { item: p.item }), Some(sse)))
+                                    let event = if p.item.get("type").and_then(|t| t.as_str())
+                                        == Some("function_call")
+                                    {
+                                        ChatEvent::ToolCallItem { item: p.item }
+                                    } else {
+                                        ChatEvent::OutputItem { item: p.item }
+                                    };
+                                    Some((Ok(event), Some((sse, reasoning_summary_delta_seen))))
                                 }
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
@@ -286,9 +318,7 @@ impl ProviderClient for CodexRuntime {
                         //   only emitted when reasoning is *not* encrypted.
                         //   We always request `include: ["reasoning.encrypted_content"]`
                         //   so these are not expected in practice.
-                        "response.reasoning_summary_part.added"
-                        | "response.reasoning_summary_part.done"
-                        | "response.reasoning_summary_text.done"
+                        "response.reasoning_summary_part.done"
                         | "response.reasoning_text.delta"
                         | "response.reasoning_text.done" => continue,
                         // ── Tool-call argument streaming ───────────────────────
@@ -306,11 +336,17 @@ impl ProviderClient for CodexRuntime {
                         // For every hosted tool, the only durable record is the
                         // resolved call delivered via `output_item.done`. The
                         // `.in_progress` / `.searching` / `.generating` /
-                        // `.interpreting` pings just drive spinners we don't
-                        // render. None of these tools are enabled in
-                        // `build_request_body` (`"tools": []`) so we shouldn't
-                        // see them today — listed for completeness so future
-                        // tool enablement only needs to flip the arm.
+                        // `.interpreting` pings just drive UI spinners; we
+                        // don't render per-tool affordances yet, so skipping
+                        // is fine — the final call still flows through the
+                        // generic `OutputItem` handler above.
+                        //
+                        // Status note: `web_search` IS enabled in
+                        // `build_request_body`, so `response.web_search_call.*`
+                        // frames fire on real turns and are intentionally
+                        // skipped here. The other hosted-tool arms are dormant
+                        // (their tools are not advertised) and listed only so
+                        // enabling any of them later is a one-line change.
                         "response.file_search_call.in_progress"
                         | "response.file_search_call.searching"
                         | "response.file_search_call.completed"
@@ -341,10 +377,18 @@ impl ProviderClient for CodexRuntime {
                         | "response.audio.transcript.done" => continue,
                         // ── Unknown / future events ────────────────────────────
                         // The Responses API evolves: new sub-lifecycle frames,
-                        // new tool families, etc. Treat unknown events the same
-                        // way Codex does — log nothing, keep polling, let the
-                        // turn finish on `response.completed`.
-                        _ => continue,
+                        // new tool families, etc. Surface them at error level
+                        // so a new event type is visible in logs (add an arm
+                        // when one shows up), then keep polling — the turn
+                        // still resolves on `response.completed`.
+                        event => {
+                            log::debug!(
+                                "codex SSE: unknown event type {event:?}; skipping. \
+                                 If this is a new official event, add it to the match \
+                                 (see https://developers.openai.com/api/reference/resources/responses/streaming-events)."
+                            );
+                            continue;
+                        }
                     },
                 }
             }
@@ -408,6 +452,14 @@ impl ProviderClient for CodexRuntime {
             ]
         })
     }
+
+    fn construct_function_call_output(&self, call_id: String, output: String) -> Value {
+        serde_json::json!({
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": output,
+        })
+    }
 }
 
 /// Tokens derived from a refresh-token exchange. Held together under one lock
@@ -457,6 +509,11 @@ struct TextDeltaPayload {
     delta: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct TextDonePayload {
+    text: String,
+}
+
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.output_item.done
 #[derive(Debug, Deserialize)]
 struct OutputItemDonePayload {
@@ -464,13 +521,45 @@ struct OutputItemDonePayload {
 }
 
 fn build_request_body(request: &ChatRequest) -> Value {
+    // Wrap each provider-agnostic ToolSchema in the OpenAI Responses API
+    // function-tool envelope. `strict: false` matches Codex CLI's behaviour
+    // — strict mode requires the schema to be exhaustively closed (every
+    // object marks `additionalProperties: false`), which schemars-generated
+    // schemas don't guarantee.
+    let mut tools: Vec<Value> = request
+        .tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "type": "function",
+                "name": t.name,
+                "description": t.description,
+                "strict": false,
+                "parameters": t.parameters,
+            })
+        })
+        .collect();
+
+    // Append the hosted `web_search` tool. The Responses API runs the
+    // search server-side (no shell/curl scraping needed) and emits the
+    // finalized call as a `web_search_call` item on the `output_item.done`
+    // SSE frame, which our generic `OutputItem` handler persists so later
+    // turns can reference the results. `external_web_access: true` selects
+    // the live (non-cached) variant — matches Codex CLI's
+    // `WebSearchMode::Live`. See
+    // <https://platform.openai.com/docs/guides/tools-web-search>.
+    tools.push(serde_json::json!({
+        "type": "web_search",
+        "external_web_access": true,
+    }));
+
     serde_json::json!({
         "model": request.model,
-        "instructions": "",
+        "instructions": scry_config::INSTRUCTION,
         "input": request.messages,
         "stream": true,
         "store": false,
-        "tools": [],
+        "tools": tools,
         "reasoning": { "effort": request.effort, "summary": "auto" },
         "include": ["reasoning.encrypted_content"],
     })
