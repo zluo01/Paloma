@@ -29,7 +29,7 @@ pub struct AppContext {
 
 impl AppContext {
     pub async fn build() -> Result<Arc<Self>, AppError> {
-        let db_path = scry_config::database_path();
+        let db_path = scry_config::DATABASE_PATH.clone();
         if let Some(parent) = db_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -54,7 +54,7 @@ impl AppContext {
     async fn init_llm(
         storage: Storage,
     ) -> Result<(ConnectController, RemoteQuery, SessionManagerClient), AppError> {
-        let session_path = scry_config::session_dir();
+        let session_path = scry_config::SESSION_DIR.clone();
         tokio::fs::create_dir_all(&session_path).await?;
 
         let http = reqwest::Client::builder()

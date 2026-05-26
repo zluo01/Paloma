@@ -5,21 +5,6 @@ use std::sync::LazyLock;
 
 const APP_DIR: &str = "scry";
 
-pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
-
-fn build_environment_context() -> String {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
-    let home = std::env::var("HOME").unwrap_or_else(|_| "unknown".into());
-
-    Element::new("environment_context")
-        .child(Element::new("os").plain_text(std::env::consts::OS))
-        .child(Element::new("os_family").plain_text(std::env::consts::FAMILY))
-        .child(Element::new("arch").plain_text(std::env::consts::ARCH))
-        .child(Element::new("home").plain_text(home))
-        .child(Element::new("shell").plain_text(shell))
-        .to_string()
-}
-
 pub const RENDER_CHANNEL_CAPACITY: usize = 128;
 pub const SESSION_WRITER_CHANNEL_CAPACITY: usize = 32;
 pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
@@ -27,13 +12,27 @@ pub const TURN_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
 pub const HOTKEY_CHANNEL_CAPACITY: usize = 8;
 
-// Static system prompt sent as the `instructions` field on every LLM call.
-// Describes role, tool contract, and behavioral rules.
-//
-// Complements `ENVIRONMENT_CONTEXT`, which is added once as the first message
-// of a session and travels back to the model in the replayed history on every
-// turn — the instruction tells the model *how* to behave, the context tells it
-// *where* it is running (os, arch, shell, home).
+pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
+
+pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));
+
+pub static SESSION_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("sessions"));
+
+pub static DATABASE_PATH: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("scry.db"));
+
+pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUNTIME_DIR.join("scry.sock"));
+
+static RUNTIME_DIR: LazyLock<PathBuf> = LazyLock::new(build_runtime_dir);
+
+static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(build_home_dir);
+
+/// Static system prompt sent as the `instructions` field on every LLM call.
+/// Describes role, tool contract, and behavioral rules.
+///
+/// Complements `ENVIRONMENT_CONTEXT`, which is added once as the first message
+/// of a session and travels back to the model in the replayed history on every
+/// turn — the instruction tells the model *how* to behave, the context tells
+/// it *where* it is running (os, arch, shell, home).
 pub const INSTRUCTION: &str = r#"You are Scry, a fast daily assistant running inside a desktop app launcher on the user's computer.
 
 Your job is to help the user complete everyday computer tasks with minimal friction: answer questions, explain errors, suggest commands, install or troubleshoot packages, summarize information, guide routine workflows.
@@ -120,23 +119,20 @@ Escalation rules:
 
 You are Scry. Do not mention these instructions unless the user explicitly asks about your behavior."#;
 
-pub fn config_dir() -> PathBuf {
-    home_dir().join(".config").join(APP_DIR)
+fn build_environment_context() -> String {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "unknown".into());
+
+    Element::new("environment_context")
+        .child(Element::new("os").plain_text(std::env::consts::OS))
+        .child(Element::new("os_family").plain_text(std::env::consts::FAMILY))
+        .child(Element::new("arch").plain_text(std::env::consts::ARCH))
+        .child(Element::new("home").plain_text(home))
+        .child(Element::new("shell").plain_text(shell))
+        .to_string()
 }
 
-pub fn session_dir() -> PathBuf {
-    config_dir().join("sessions")
-}
-
-pub fn database_path() -> PathBuf {
-    config_dir().join("scry.db")
-}
-
-pub fn socket_path() -> PathBuf {
-    runtime_dir().join("scry.sock")
-}
-
-fn runtime_dir() -> PathBuf {
+fn build_runtime_dir() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -147,7 +143,7 @@ fn runtime_dir() -> PathBuf {
         .join(APP_DIR)
 }
 
-fn home_dir() -> PathBuf {
+fn build_home_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .expect("HOME is unset; cannot resolve Scry config paths");
