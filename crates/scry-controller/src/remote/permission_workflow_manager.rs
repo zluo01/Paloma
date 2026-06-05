@@ -228,7 +228,10 @@ impl PermissionWorkflowManager {
         let session_allows =
             session.always || session.allowlist.contains(command.join(" ").as_str());
 
-        if session_allows {
+        let decision = self.permission_controller.classify(&command).await?;
+
+        // only bypass permission check if the command is a composite
+        if session_allows && decision.command_type() == &CommandType::Composite {
             self.permission_tracker.insert(
                 caller_id,
                 PermissionState {
@@ -238,7 +241,6 @@ impl PermissionWorkflowManager {
                 },
             );
         } else {
-            let decision = self.permission_controller.classify(&command).await?;
             let tracker = match decision.decision() {
                 ArgvDecision::Allow => CompletableFuture::completed(true),
                 ArgvDecision::NotExecutable => CompletableFuture::completed(false),
