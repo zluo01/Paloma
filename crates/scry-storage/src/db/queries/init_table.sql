@@ -16,3 +16,10 @@ CREATE TABLE IF NOT EXISTS sessions
     title       TEXT             NOT NULL DEFAULT '',
     last_update INTEGER          NOT NULL DEFAULT (unixepoch())
 );
+
+CREATE TABLE IF NOT EXISTS permissions
+(
+    prefix     TEXT PRIMARY KEY NOT NULL CHECK (length(prefix) > 0),
+    with_glob  INTEGER          NOT NULL DEFAULT 0 CHECK (with_glob IN (0, 1)),
+    updated_at INTEGER          NOT NULL DEFAULT (unixepoch())
+);

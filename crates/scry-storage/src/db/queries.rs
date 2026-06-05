@@ -20,3 +20,7 @@ pub const GET_ALL_SESSIONS_QUERY: &str = include_str!("queries/get_all_sessions.
 pub const DELETE_SESSION_QUERY: &str = include_str!("queries/delete_session.sql");
 
 pub const PREFER_MODEL_CONFIG_QUERY: &str = include_str!("queries/prefer_model_config.sql");
+
+pub const MATCH_PERMISSION_QUERY: &str = include_str!("queries/match_permission.sql");
+
+pub const INSERT_PERMISSION_QUERY: &str = include_str!("queries/insert_permission.sql");

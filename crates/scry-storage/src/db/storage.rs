@@ -158,6 +158,24 @@ impl Storage {
             .await?
             .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
     }
+
+    pub async fn is_command_allowed(&self, command: &str) -> Result<bool> {
+        let allowed: bool = sqlx::query_scalar(queries::MATCH_PERMISSION_QUERY)
+            .bind(command)
+            .bind(command)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(allowed)
+    }
+
+    pub async fn add_permission(&self, prefix: &str, with_glob: bool) -> Result<()> {
+        sqlx::query(queries::INSERT_PERMISSION_QUERY)
+            .bind(prefix)
+            .bind(with_glob)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -605,5 +623,105 @@ mod tests {
             matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000fe"),
             "expected NotFound, got {err:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn unknown_command_is_not_allowed() {
+        let (storage, _tmp) = fresh_storage().await;
+        assert!(!storage.is_command_allowed("cargo build").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn exact_permission_allows_only_the_exact_command() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage.add_permission("git status", false).await.unwrap();
+
+        assert!(storage.is_command_allowed("git status").await.unwrap());
+        // Extra args are a different command for a non-glob entry.
+        assert!(!storage.is_command_allowed("git status -s").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn glob_permission_matches_on_token_boundary() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage.add_permission("cargo build", true).await.unwrap();
+
+        // Exact prefix and any space-separated continuation are allowed.
+        assert!(storage.is_command_allowed("cargo build").await.unwrap());
+        assert!(storage
+            .is_command_allowed("cargo build -j 8")
+            .await
+            .unwrap());
+        // A different binary that merely shares a leading substring must not.
+        assert!(!storage
+            .is_command_allowed("cargo buildkit run")
+            .await
+            .unwrap());
+        // Shorter than the prefix never matches.
+        assert!(!storage.is_command_allowed("cargo").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn add_permission_widens_exact_to_glob_in_place() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage.add_permission("cargo build", false).await.unwrap();
+        assert!(!storage
+            .is_command_allowed("cargo build -j 8")
+            .await
+            .unwrap());
+
+        // Re-approving as a glob upserts the same row and widens it.
+        storage.add_permission("cargo build", true).await.unwrap();
+        assert!(storage
+            .is_command_allowed("cargo build -j 8")
+            .await
+            .unwrap());
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM permissions")
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        assert_eq!(count, 1, "upsert must not create a second row");
+    }
+
+    #[tokio::test]
+    async fn add_permission_sets_with_glob_exactly() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage.add_permission("cargo build", true).await.unwrap();
+        assert!(storage
+            .is_command_allowed("cargo build -j 8")
+            .await
+            .unwrap());
+
+        // A later exact re-approval narrows the row (last-writer-wins).
+        storage.add_permission("cargo build", false).await.unwrap();
+        assert!(storage.is_command_allowed("cargo build").await.unwrap());
+        assert!(!storage
+            .is_command_allowed("cargo build -j 8")
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn add_permission_refreshes_updated_at_on_conflict() {
+        let (storage, _tmp) = fresh_storage().await;
+        storage.add_permission("cargo build", false).await.unwrap();
+
+        // Backdate so the bump is observable regardless of clock resolution.
+        sqlx::query("UPDATE permissions SET updated_at = 1000 WHERE prefix = ?")
+            .bind("cargo build")
+            .execute(storage.pool())
+            .await
+            .unwrap();
+
+        storage.add_permission("cargo build", true).await.unwrap();
+
+        let updated_at: i64 =
+            sqlx::query_scalar("SELECT updated_at FROM permissions WHERE prefix = ?")
+                .bind("cargo build")
+                .fetch_one(storage.pool())
+                .await
+                .unwrap();
+        assert!(updated_at > 1000, "expected refresh, got {updated_at}");
     }
 }
