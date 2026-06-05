@@ -13,8 +13,6 @@ pub const CONNECTED_PROVIDERS_QUERY: &str = include_str!("queries/connected_prov
 
 pub const CREATE_NEW_SESSION_QUERY: &str = include_str!("queries/create_new_session.sql");
 
-pub const UPDATE_SESSION_TITLE_QUERY: &str = include_str!("queries/update_session_title.sql");
-
 pub const TOUCH_SESSION_QUERY: &str = include_str!("queries/touch_session.sql");
 
 pub const GET_ALL_SESSIONS_QUERY: &str = include_str!("queries/get_all_sessions.sql");

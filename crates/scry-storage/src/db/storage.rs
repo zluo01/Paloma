@@ -115,18 +115,6 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn update_session_title(&self, session_id: &str, title: &str) -> Result<()> {
-        let result = sqlx::query(queries::UPDATE_SESSION_TITLE_QUERY)
-            .bind(title)
-            .bind(session_id)
-            .execute(&self.pool)
-            .await?;
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(session_id.to_string()));
-        }
-        Ok(())
-    }
-
     pub async fn touch_session(&self, session_id: &str) -> Result<()> {
         let result = sqlx::query(queries::TOUCH_SESSION_QUERY)
             .bind(session_id)
@@ -520,16 +508,14 @@ mod tests {
         assert_eq!(sessions[0].provider_id, "codex");
         assert_eq!(sessions[0].title, "my first chat");
 
-        // `generated`/`last_update` aren't returned by `all_sessions`; read
-        // them directly to confirm the insert defaults (not generated, and a
-        // populated `last_update`).
-        let (generated, last_update): (bool, i64) =
-            sqlx::query_as("SELECT generated, last_update FROM sessions WHERE session_id = ?")
+        // `last_update` isn't returned by `all_sessions`; read it directly to
+        // confirm the insert populated it.
+        let last_update: i64 =
+            sqlx::query_scalar("SELECT last_update FROM sessions WHERE session_id = ?")
                 .bind(session_id.to_string())
                 .fetch_one(storage.pool())
                 .await
                 .unwrap();
-        assert!(!generated);
         assert!(last_update > 0);
     }
 
@@ -569,54 +555,6 @@ mod tests {
             .map(|s| s.title)
             .collect();
         assert_eq!(titles, vec!["newest", "middle", "oldest"]);
-    }
-
-    #[tokio::test]
-    async fn update_session_title_sets_title_and_marks_generated() {
-        let (storage, _tmp) = fresh_storage().await;
-        storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
-            .await
-            .unwrap();
-
-        let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000002").unwrap();
-        storage
-            .create_new_session(session_id, "codex", "")
-            .await
-            .unwrap();
-
-        storage
-            .update_session_title(&session_id.to_string(), "Generated title")
-            .await
-            .expect("update title");
-
-        let sessions = storage.all_sessions().await.expect("all sessions");
-        assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].title, "Generated title");
-
-        // `generated` isn't returned by `all_sessions`; read it directly to
-        // confirm the update flipped it to true.
-        let generated: bool =
-            sqlx::query_scalar("SELECT generated FROM sessions WHERE session_id = ?")
-                .bind(session_id.to_string())
-                .fetch_one(storage.pool())
-                .await
-                .unwrap();
-        assert!(generated);
-    }
-
-    #[tokio::test]
-    async fn update_session_title_nonexistent_returns_not_found() {
-        let (storage, _tmp) = fresh_storage().await;
-        let err = storage
-            .update_session_title("019e1234-5678-7000-8000-0000000000ff", "x")
-            .await
-            .expect_err("must fail");
-
-        assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000ff"),
-            "expected NotFound, got {err:?}",
-        );
     }
 
     #[tokio::test]

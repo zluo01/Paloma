@@ -14,6 +14,5 @@ CREATE TABLE IF NOT EXISTS sessions
                                  REFERENCES provider_credentials (provider_id)
                                      ON DELETE SET NULL,
     title       TEXT             NOT NULL DEFAULT '',
-    generated   INTEGER          NOT NULL DEFAULT 0 CHECK (generated IN (0, 1)),
     last_update INTEGER          NOT NULL DEFAULT (unixepoch())
 );
