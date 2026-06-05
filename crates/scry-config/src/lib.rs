@@ -11,6 +11,7 @@ pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const TURN_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
 pub const HOTKEY_CHANNEL_CAPACITY: usize = 8;
+pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
 
 pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
 

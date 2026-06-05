@@ -18,3 +18,29 @@ impl ArgvDecision {
         self as u8
     }
 }
+
+#[derive(Clone)]
+pub enum CommandType {
+    Simple,
+    Composite,
+}
+
+#[derive(Clone)]
+pub struct PermissionDecision {
+    t: CommandType,
+    decision: ArgvDecision,
+}
+
+impl PermissionDecision {
+    pub fn new(t: CommandType, decision: ArgvDecision) -> Self {
+        Self { t, decision }
+    }
+
+    pub fn command_type(&self) -> &CommandType {
+        &self.t
+    }
+
+    pub fn decision(&self) -> ArgvDecision {
+        self.decision
+    }
+}

@@ -4,6 +4,7 @@ mod parser;
 mod safety;
 mod utils;
 
+pub use crate::entity::{CommandType, PermissionDecision};
 pub use entity::ArgvDecision;
 pub use error::{PermissionError, Result};
 use scry_storage::db::Storage;
@@ -17,10 +18,13 @@ impl PermissionController {
         Self { storage }
     }
 
-    pub async fn classify(&self, command: &[String]) -> Result<ArgvDecision> {
+    pub async fn classify(&self, command: &[String]) -> Result<PermissionDecision> {
         let Some(commands) = parser::parse_commands(command)? else {
             // Unparseable composite: always ask, never persist globally.
-            return Ok(ArgvDecision::AskNoPersist);
+            return Ok(PermissionDecision::new(
+                CommandType::Composite,
+                ArgvDecision::AskNoPersist,
+            ));
         };
         // More than one atom means a composite; only a single atom is eligible for a global "allow always".
         let is_composite = commands.len() > 1;
@@ -35,17 +39,21 @@ impl PermissionController {
         // A composite with a novel atom must not offer global persistence;
         // downgrade `Unknown` to ask-no-persist. All atoms allowlisted stays
         // `Allow` (auto-run); dangerous/not-executable atoms already dominate.
-        if is_composite && folded == ArgvDecision::Unknown {
-            Ok(ArgvDecision::AskNoPersist)
+        let decision = if is_composite && folded == ArgvDecision::Unknown {
+            ArgvDecision::AskNoPersist
         } else {
-            Ok(folded)
-        }
+            folded
+        };
+        let t = if is_composite {
+            CommandType::Composite
+        } else {
+            CommandType::Simple
+        };
+        Ok(PermissionDecision::new(t, decision))
     }
 
-    pub async fn add_permission(&self, prefix: &[String], with_glob: bool) -> Result<()> {
-        self.storage
-            .add_permission(&prefix.join(" "), with_glob)
-            .await?;
+    pub async fn add_permission(&self, prefix: String, with_glob: bool) -> Result<()> {
+        self.storage.add_permission(&prefix, with_glob).await?;
         Ok(())
     }
 

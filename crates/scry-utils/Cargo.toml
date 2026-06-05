@@ -6,3 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Leaf utilities for Scry (no workspace deps, no domain types)"
+
+[dependencies]
+futures = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }

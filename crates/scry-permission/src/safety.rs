@@ -27,12 +27,12 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
     if command
         .iter()
-        .any(|a| executable_name_lookup_key(a).as_deref() == Some("sudo"))
+        .any(|a| executable_name_lookup_key(a) == Some("sudo"))
     {
         return Ok(ArgvDecision::NotExecutable);
     }
 
-    match executable_name_lookup_key(cmd0).as_deref() {
+    match executable_name_lookup_key(cmd0) {
         // Require a controlling tty; cannot be driven non-interactively.
         Some("su" | "passwd" | "ssh-add") => Ok(ArgvDecision::NotExecutable),
 
@@ -47,13 +47,13 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
         }
 
         Some("rm")
-            if has_recursive_short_flag(&command) || command.iter().any(|a| a == "--recursive") =>
+            if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
         {
             Ok(ArgvDecision::AskNoPersist)
         }
 
         Some("chmod" | "chown")
-            if has_recursive_short_flag(&command) || command.iter().any(|a| a == "--recursive") =>
+            if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
         {
             Ok(ArgvDecision::AskNoPersist)
         }
@@ -74,7 +74,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
         Some(name) if ALWAYS_ALLOWED.contains(name) => Ok(ArgvDecision::Allow),
 
-        Some("date") if is_safe_date_argv(&command) => Ok(ArgvDecision::Allow),
+        Some("date") if is_safe_date_argv(command) => Ok(ArgvDecision::Allow),
 
         Some("base64") => {
             const UNSAFE_BASE64_OPTIONS: &[&str] = &["-o", "--output"];
