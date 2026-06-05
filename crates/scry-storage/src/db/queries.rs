@@ -1,86 +1,24 @@
-//language=sqlite
-pub const INIT_TABLE_QUERY: &str = "
-    CREATE TABLE IF NOT EXISTS provider_credentials (
-      provider_id TEXT PRIMARY KEY NOT NULL,
-      auth_kind TEXT NOT NULL CHECK (auth_kind IN ('api_key', 'oauth')),
-      secret TEXT NOT NULL,
-      model TEXT NOT NULL,
-      effort TEXT NOT NULL
-    );
+pub const INIT_TABLE_QUERY: &str = include_str!("queries/init_table.sql");
 
-    CREATE TABLE IF NOT EXISTS sessions (
-      session_id   TEXT PRIMARY KEY NOT NULL,
-      provider_id  TEXT
-                   REFERENCES provider_credentials(provider_id)
-                   ON DELETE SET NULL,
-      title        TEXT NOT NULL DEFAULT '',
-      generated    INTEGER NOT NULL DEFAULT 0 CHECK (generated IN (0, 1)),
-      last_update  INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-    ";
+pub const INSERT_PROVIDER_QUERY: &str = include_str!("queries/insert_provider.sql");
 
-//language=sqlite
-pub const INSERT_PROVIDER_QUERY: &str = "
-  INSERT INTO provider_credentials (provider_id, auth_kind, secret, model, effort)
-  VALUES (?, ?, ?, ?, ?);
-    ";
+pub const UPDATE_PROVIDER_QUERY: &str = include_str!("queries/update_provider.sql");
 
-//language=sqlite
-pub const UPDATE_PROVIDER_QUERY: &str = "
-  UPDATE provider_credentials
-  SET auth_kind = ?, secret = ?
-  WHERE provider_id = ?;
-    ";
+pub const UPDATE_PROVIDER_PREFERENCES_QUERY: &str =
+    include_str!("queries/update_provider_preferences.sql");
 
-//language=sqlite
-pub const UPDATE_PROVIDER_PREFERENCES_QUERY: &str = "
-  UPDATE provider_credentials
-  SET model = ?, effort = ?
-  WHERE provider_id = ?;
-    ";
+pub const DELETE_PROVIDER_QUERY: &str = include_str!("queries/delete_provider.sql");
 
-//language=sqlite
-pub const DELETE_PROVIDER_QUERY: &str = "
-  DELETE FROM provider_credentials
-  WHERE provider_id = ?;
-    ";
+pub const CONNECTED_PROVIDERS_QUERY: &str = include_str!("queries/connected_providers.sql");
 
-//language=sqlite
-pub const CONNECTED_PROVIDERS_QUERY: &str = "
-  SELECT * FROM provider_credentials
-    ";
+pub const CREATE_NEW_SESSION_QUERY: &str = include_str!("queries/create_new_session.sql");
 
-//language=sqlite
-pub const CREATE_NEW_SESSION_QUERY: &str = "
-  INSERT INTO sessions (session_id, provider_id, title) VALUES (?, ?, ?)
-    ";
+pub const UPDATE_SESSION_TITLE_QUERY: &str = include_str!("queries/update_session_title.sql");
 
-//language=sqlite
-pub const UPDATE_SESSION_TITLE_QUERY: &str = "
-  UPDATE sessions
-  SET title = ?, generated = 1
-  WHERE session_id = ?;
-    ";
+pub const TOUCH_SESSION_QUERY: &str = include_str!("queries/touch_session.sql");
 
-//language=sqlite
-pub const TOUCH_SESSION_QUERY: &str = "
-  UPDATE sessions
-  SET last_update = unixepoch()
-  WHERE session_id = ?;
-    ";
+pub const GET_ALL_SESSIONS_QUERY: &str = include_str!("queries/get_all_sessions.sql");
 
-//language=sqlite
-pub const GET_ALL_SESSIONS_QUERY: &str = "
-  SELECT session_id, provider_id, title FROM sessions ORDER BY last_update DESC
-";
+pub const DELETE_SESSION_QUERY: &str = include_str!("queries/delete_session.sql");
 
-//language=sqlite
-pub const DELETE_SESSION_QUERY: &str = "
-  DELETE FROM sessions
-  WHERE session_id = ?;
-    ";
-
-//language=sqlite
-pub const PREFER_MODEL_CONFIG_QUERY: &str = "
-    SELECT model, effort FROM provider_credentials WHERE provider_id = ?
-";
+pub const PREFER_MODEL_CONFIG_QUERY: &str = include_str!("queries/prefer_model_config.sql");
