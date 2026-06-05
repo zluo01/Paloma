@@ -1,12 +1,14 @@
-use crate::remote::session_manager::SessionManagerClient;
+use crate::remote::session_manager::{SessionManagerClient, SessionManagerError};
 use crate::remote::tool_controller::{ToolCallPayload, ToolController};
 use crate::remote::SessionEvent;
 use crate::{ProviderController, ProviderControllerError};
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
-use scry_provider::entity::{ChatEvent, ChatRequest, ChatStream, ProviderId, ToolSchema};
-use scry_storage::db::Storage;
+use scry_provider::entity::{
+    ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema,
+};
+use scry_storage::{db::Storage, StorageError};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -40,7 +42,7 @@ enum TurnStepEvent {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-        reply: oneshot::Sender<Result<(), TurnManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     },
     /// Self calling intermediate state, should never be called outside
     ToolCall {
@@ -51,7 +53,7 @@ enum TurnStepEvent {
     /// cancelling the call
     Cancel {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<(), TurnManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     },
 }
 
@@ -85,7 +87,7 @@ impl TurnManager {
         }
     }
 
-    async fn handle_event(&mut self, event: TurnStepEvent) -> scry_storage::Result<()> {
+    async fn handle_event(&mut self, event: TurnStepEvent) -> Result<()> {
         match event {
             TurnStepEvent::Start {
                 provider_id,
@@ -115,7 +117,7 @@ impl TurnManager {
         provider_id: ProviderId,
         session_id: Uuid,
         prompt: String,
-        reply: oneshot::Sender<Result<(), TurnManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     ) {
         let provider_controller = self.provider_controller.clone();
         let storage = self.storage.clone();
@@ -141,7 +143,7 @@ impl TurnManager {
                     stream
                 }
                 Err(err) => {
-                    let _ = reply.send(Err(err.into()));
+                    let _ = reply.send(Err(err));
                     mark_step_done(&turn_map, session_id);
                     return;
                 }
@@ -303,7 +305,7 @@ async fn open_stream(
     session_id: Uuid,
     prompt: Option<String>,
     tools: Vec<ToolSchema>,
-) -> Result<ChatStream, ProviderControllerError> {
+) -> Result<ChatStream> {
     let client = provider_controller.client(provider_id)?;
     let config = storage.prefer_model_config(provider_id.as_str()).await?;
 
@@ -380,7 +382,7 @@ impl TurnManagerClient {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(), TurnManagerError> {
+    ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(TurnStepEvent::Start {
@@ -396,7 +398,7 @@ impl TurnManagerClient {
             .map_err(|_| TurnManagerError::ChannelClosed)?
     }
 
-    pub async fn cancel(&self, session_id: Uuid) -> Result<(), TurnManagerError> {
+    pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(TurnStepEvent::Cancel {
@@ -418,4 +420,15 @@ pub enum TurnManagerError {
 
     #[error(transparent)]
     Runtime(#[from] ProviderControllerError),
+
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    Session(#[from] SessionManagerError),
+
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
 }
+
+pub type Result<T> = std::result::Result<T, TurnManagerError>;
