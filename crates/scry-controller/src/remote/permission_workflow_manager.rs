@@ -6,7 +6,6 @@ use scry_permission::{
     ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
 };
 use scry_utils::future::CompletableFuture;
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
@@ -225,12 +224,9 @@ impl PermissionWorkflowManager {
         caller_id: String,
         command: Vec<String>,
     ) -> Result<()> {
-        let session_allows = self
-            .session_permission
-            .get(&session_id)
-            .is_some_and(|session| {
-                session.always || session.allowlist.contains(command.join(" ").as_str())
-            });
+        let session = self.session_permission.entry(session_id).or_default();
+        let session_allows =
+            session.always || session.allowlist.contains(command.join(" ").as_str());
 
         if session_allows {
             self.permission_tracker.insert(
@@ -357,43 +353,41 @@ impl PermissionWorkflowManager {
                     .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?;
                 let command = state.command.join(" ");
 
-                match self.session_permission.entry(session_id) {
-                    Entry::Occupied(mut entry) => {
-                        entry.get_mut().allowlist.insert(command);
+                match self.session_permission.get_mut(&session_id) {
+                    Some(session) => {
+                        session.allowlist.insert(command);
+                        state.tracker.complete(true);
+                        Ok(())
                     }
-                    Entry::Vacant(entry) => {
-                        entry.insert(SessionPermission {
-                            always: false,
-                            allowlist: HashSet::from([command]),
-                        });
+                    None => {
+                        // Decision arrived without a prior init for this
+                        // session — a bug. Deny the tracker so the waiter
+                        // unblocks instead of hanging until the timeout.
+                        state.tracker.complete(false);
+                        Err(PermissionWorkflowError::MissingSession(session_id))
                     }
-                };
-
-                state.tracker.complete(true);
-                Ok(())
+                }
             }
             UserDecision::IgnorePermission {
                 session_id,
                 caller_id,
             } => {
-                match self.session_permission.entry(session_id) {
-                    Entry::Occupied(mut entry) => {
-                        entry.get_mut().always = true;
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(SessionPermission {
-                            always: true,
-                            allowlist: HashSet::new(),
-                        });
-                    }
-                };
-
-                self.permission_tracker
+                let state = self
+                    .permission_tracker
                     .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?
-                    .tracker
-                    .complete(true);
-                Ok(())
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?;
+
+                match self.session_permission.get_mut(&session_id) {
+                    Some(session) => {
+                        session.always = true;
+                        state.tracker.complete(true);
+                        Ok(())
+                    }
+                    None => {
+                        state.tracker.complete(false);
+                        Err(PermissionWorkflowError::MissingSession(session_id))
+                    }
+                }
             }
             UserDecision::Deny { caller_id } => {
                 self.permission_tracker
@@ -458,6 +452,12 @@ pub enum PermissionWorkflowError {
 
     #[error("no permission entry for caller id {0}")]
     MissingCallerId(String),
+
+    // The session entry is created by `init_permission_workflow`;
+    // its absence afterward means the decision arrived without a prior
+    // init for this session, which is a bug.
+    #[error("no permission entry for session id {0}")]
+    MissingSession(Uuid),
 
     #[error("permission workflow channel closed")]
     ChannelClosed,
