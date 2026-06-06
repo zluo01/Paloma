@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use scry_capability::tools::shell::process_manager::ProcessManager;
 use scry_controller::remote::{
-    PermissionWorkflowManager, RemoteQuery, SessionManager, SessionManagerClient, ToolController,
-    TurnManager,
+    PermissionWorkflowManager, RemoteQuery, SessionManager, ToolController, TurnManager,
 };
 use scry_controller::{ConnectController, LocalQuery, ProviderController};
 use scry_permission::PermissionController;
@@ -24,7 +23,6 @@ pub struct AppContext {
     pub connect: ConnectController,
     pub local_query: LocalQuery,
     pub remote_query: RemoteQuery,
-    pub session_manager_client: SessionManagerClient,
     pub hotkey: broadcast::Sender<()>,
     pub tray_events: broadcast::Sender<TrayEvent>,
 }
@@ -37,7 +35,7 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (connect, remote_query, session_manager_client) = Self::init_llm(storage).await?;
+        let (connect, remote_query) = Self::init_llm(storage).await?;
         let local_query = Self::init_local()?;
 
         let (hotkey, _) = broadcast::channel(scry_config::HOTKEY_CHANNEL_CAPACITY);
@@ -47,15 +45,12 @@ impl AppContext {
             connect,
             local_query,
             remote_query,
-            session_manager_client,
             hotkey,
             tray_events,
         }))
     }
 
-    async fn init_llm(
-        storage: Storage,
-    ) -> Result<(ConnectController, RemoteQuery, SessionManagerClient), AppError> {
+    async fn init_llm(storage: Storage) -> Result<(ConnectController, RemoteQuery), AppError> {
         let session_path = scry_config::SESSION_DIR.clone();
         tokio::fs::create_dir_all(&session_path).await?;
 
@@ -106,13 +101,13 @@ impl AppContext {
 
         let remote_query = RemoteQuery::new(
             storage,
-            session_manager_client.clone(),
+            session_manager_client,
             turn_manager_client,
             permission_workflow_client,
             Arc::clone(&provider_controller),
         );
 
-        Ok((connect, remote_query, session_manager_client))
+        Ok((connect, remote_query))
     }
 
     fn init_local() -> Result<LocalQuery, AppError> {

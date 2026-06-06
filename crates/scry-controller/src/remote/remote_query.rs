@@ -1,7 +1,9 @@
 use crate::remote::permission_workflow_manager::{PermissionWorkflowError, UserDecision};
-use crate::remote::session_manager::{SessionManagerClient, SessionManagerError, TerminalState};
+use crate::remote::session_manager::{
+    SessionListItem, SessionManagerClient, SessionManagerError, TerminalState,
+};
 use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
-use crate::remote::{PermissionWorkflowManagerClient, SessionEvent};
+use crate::remote::{PermissionWorkflowManagerClient, SessionEvent, SessionUpdate};
 use crate::{ProviderController, ProviderControllerError};
 use log::error;
 use scry_config::ENVIRONMENT_CONTEXT;
@@ -9,6 +11,7 @@ use scry_provider::entity::ProviderId;
 use scry_storage::db::Storage;
 use scry_storage::StorageError;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 const MAX_TITLE_CHARS: usize = 56;
@@ -108,6 +111,14 @@ impl RemoteQuery {
             .permission_workflow_client
             .decide(user_decision)
             .await?)
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<SessionUpdate> {
+        self.session_manager_client.subscribe()
+    }
+
+    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {
+        Ok(self.session_manager_client.available_sessions().await?)
     }
 }
 
