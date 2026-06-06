@@ -39,9 +39,8 @@ enum WriterEvent {
         session_id: Uuid,
         reply: oneshot::Sender<Result<()>>,
     },
-    Close {
-        session_id: Uuid,
-    },
+    #[allow(dead_code)]
+    Close { session_id: Uuid },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
