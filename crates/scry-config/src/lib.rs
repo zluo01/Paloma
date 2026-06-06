@@ -13,6 +13,10 @@ pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
 pub const HOTKEY_CHANNEL_CAPACITY: usize = 8;
 pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
 
+/// How long the tool executor waits for the user to resolve a permission
+/// prompt before giving up and refusing to run the command.
+pub const PERMISSION_DECISION_TIMEOUT_SECS: u64 = 300;
+
 pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));

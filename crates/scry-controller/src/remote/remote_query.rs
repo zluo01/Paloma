@@ -1,11 +1,13 @@
+use crate::remote::permission_workflow_manager::{PermissionWorkflowError, UserDecision};
 use crate::remote::session_manager::{SessionManagerClient, SessionManagerError, TerminalState};
 use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
-use crate::remote::SessionEvent;
+use crate::remote::{PermissionWorkflowManagerClient, SessionEvent};
 use crate::{ProviderController, ProviderControllerError};
 use log::error;
 use scry_config::ENVIRONMENT_CONTEXT;
 use scry_provider::entity::ProviderId;
 use scry_storage::db::Storage;
+use scry_storage::StorageError;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -14,6 +16,7 @@ const MAX_TITLE_CHARS: usize = 56;
 pub struct RemoteQuery {
     session_manager_client: SessionManagerClient,
     turn_manager_client: TurnManagerClient,
+    permission_workflow_client: PermissionWorkflowManagerClient,
     provider_controller: Arc<ProviderController>,
     storage: Storage,
 }
@@ -23,11 +26,13 @@ impl RemoteQuery {
         storage: Storage,
         session_manager_client: SessionManagerClient,
         turn_manager_client: TurnManagerClient,
+        permission_workflow_client: PermissionWorkflowManagerClient,
         provider_controller: Arc<ProviderController>,
     ) -> Self {
         Self {
             session_manager_client,
             turn_manager_client,
+            permission_workflow_client,
             provider_controller,
             storage,
         }
@@ -38,7 +43,7 @@ impl RemoteQuery {
         session_id: Option<Uuid>,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(Uuid, bool), ProviderControllerError> {
+    ) -> Result<(Uuid, bool)> {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
@@ -69,14 +74,15 @@ impl RemoteQuery {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(), TurnManagerError> {
-        self.turn_manager_client
+    ) -> Result<()> {
+        Ok(self
+            .turn_manager_client
             .start_chat(session_id, provider_id, prompt)
-            .await
+            .await?)
     }
 
-    pub async fn cancel(&self, session_id: Uuid) -> Result<(), TurnManagerError> {
-        self.turn_manager_client.cancel(session_id).await
+    pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
+        Ok(self.turn_manager_client.cancel(session_id).await?)
     }
 
     // use for cleanup newly created session but the chat fails
@@ -90,13 +96,18 @@ impl RemoteQuery {
         }
     }
 
-    pub async fn restore_session(
-        &self,
-        session_id: Uuid,
-    ) -> Result<TerminalState, SessionManagerError> {
-        self.session_manager_client
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
+        Ok(self
+            .session_manager_client
             .restore_session(session_id)
-            .await
+            .await?)
+    }
+
+    pub async fn decide(&self, user_decision: UserDecision) -> Result<()> {
+        Ok(self
+            .permission_workflow_client
+            .decide(user_decision)
+            .await?)
     }
 }
 
@@ -109,3 +120,23 @@ fn title_from_prompt(prompt: &str) -> String {
         format!("{truncated}…")
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum RemoteQueryError {
+    #[error(transparent)]
+    ProviderController(#[from] ProviderControllerError),
+
+    #[error(transparent)]
+    TurnManager(#[from] TurnManagerError),
+
+    #[error(transparent)]
+    SessionManager(#[from] SessionManagerError),
+
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    PermissionWorkflow(#[from] PermissionWorkflowError),
+}
+
+pub type Result<T> = std::result::Result<T, RemoteQueryError>;

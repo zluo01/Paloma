@@ -1,5 +1,9 @@
 use crate::entity::{ChatRenderEvent, RenderEvent};
+use crate::remote::tool_controller::ToolCallPayload;
+use crate::remote::PermissionWorkflowManagerClient;
 use log::{debug, error};
+use scry_capability::tools::shell::{Shell, ShellArgs};
+use scry_capability::Tool;
 use scry_provider::entity::{ChatEvent, ProviderId};
 use scry_storage::db::Storage;
 use scry_storage::session::{read_session_entries, EntryType, FileEntry, SessionWriterClient};
@@ -78,6 +82,7 @@ pub struct SessionManager {
     sessions: HashMap<Uuid, Session>,
     event_rx: mpsc::Receiver<SessionStreamingEvent>,
     updates_tx: broadcast::Sender<SessionUpdate>,
+    permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
 #[derive(Clone)]
@@ -90,6 +95,7 @@ impl SessionManager {
     pub async fn new(
         session_path: PathBuf,
         storage: &Storage,
+        permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Result<(Self, SessionManagerClient), StorageError> {
         let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, storage).await?;
 
@@ -100,6 +106,7 @@ impl SessionManager {
             sessions,
             event_rx: rx,
             updates_tx: updates_tx.clone(),
+            permission_workflow_client,
         };
         let client = SessionManagerClient {
             event_tx: tx,
@@ -146,7 +153,7 @@ impl SessionManager {
                 let _ = reply.send(result);
             }
             SessionStreamingEvent::RestoreSession { session_id, reply } => {
-                let _ = reply.send(self.restore_session(session_id));
+                let _ = reply.send(self.restore_session(session_id).await);
             }
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
                 if self.sessions.remove(&session_id).is_none() {
@@ -207,7 +214,9 @@ impl SessionManager {
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
 
-        let render_event = payload.to_render_event();
+        let render_event = payload
+            .to_render_event(&self.permission_workflow_client, session_id)
+            .await;
         session.update(payload);
 
         if let Some((t, item)) = entry {
@@ -230,7 +239,10 @@ impl SessionManager {
         Ok(())
     }
 
-    fn restore_session(&self, session_id: Uuid) -> Result<TerminalState, SessionManagerError> {
+    async fn restore_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<TerminalState, SessionManagerError> {
         let session = self
             .sessions
             .get(&session_id)
@@ -284,14 +296,21 @@ impl SessionManager {
                 | SessionEvent::Chat(ChatEvent::TextDelta { .. })
                 | SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { .. })
                 | SessionEvent::Chat(ChatEvent::ToolCallItem { .. }) => {
-                    match event.to_render_event() {
+                    match event
+                        .to_render_event(&self.permission_workflow_client, session_id)
+                        .await
+                    {
                         Some(r) => r,
                         None => continue,
                     }
                 }
                 // All other cases are unexpected
                 other => {
-                    if other.to_render_event().is_some() {
+                    if other
+                        .to_render_event(&self.permission_workflow_client, session_id)
+                        .await
+                        .is_some()
+                    {
                         error!(
                             "unexpected event in restored history for session {session_id}: {other:?}"
                         );
@@ -330,7 +349,11 @@ impl SessionManager {
 }
 
 impl SessionEvent {
-    fn to_render_event(&self) -> Option<RenderEvent> {
+    async fn to_render_event(
+        &self,
+        permission_workflow_manager_client: &PermissionWorkflowManagerClient,
+        session_id: Uuid,
+    ) -> Option<RenderEvent> {
         match self {
             SessionEvent::Chat(ChatEvent::TextDelta { text }) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::TextDelta {
@@ -367,7 +390,9 @@ impl SessionEvent {
                 }
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
             }
-            SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => tool_call_render(item),
+            SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
+                tool_call_render(permission_workflow_manager_client, session_id, item).await
+            }
             SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
                 match item.get("type").and_then(|t| t.as_str()) {
                     Some("web_search_call") => web_search_render(item),
@@ -385,29 +410,63 @@ fn web_search_render(item: &Value) -> Option<RenderEvent> {
     Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
         name: "web_search".to_string(),
         arguments,
+        description: None,
+        decisions: vec![],
     }))
 }
 
-fn tool_call_render(item: &Value) -> Option<RenderEvent> {
-    let name = item.get("name").and_then(|n| n.as_str())?.to_string();
-    if name.is_empty() {
-        return None;
+async fn tool_call_render(
+    permission_workflow_manager_client: &PermissionWorkflowManagerClient,
+    session_id: Uuid,
+    item: &Value,
+) -> Option<RenderEvent> {
+    match serde_json::from_value::<ToolCallPayload>(item.clone()) {
+        Ok(call) => {
+            // special handling for shell due to require user permission input
+            if call.name == Shell::NAME {
+                let args = match serde_json::from_str::<ShellArgs>(&call.arguments) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        error!("session {session_id}: malformed shell arguments: {err}");
+                        return None;
+                    }
+                };
+                let decisions = match permission_workflow_manager_client
+                    .check_decision(session_id, call.call_id)
+                    .await
+                {
+                    Ok(decisions) => decisions,
+                    Err(err) => {
+                        error!("session {session_id}: failed to check permission decision: {err}");
+                        return None;
+                    }
+                };
+                return Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
+                    name: call.name,
+                    arguments: args.command.join(" "),
+                    description: Some(args.description),
+                    decisions,
+                }));
+            }
+
+            // Pretty print if it is json, otherwise, raw string
+            let arguments = serde_json::from_str::<Value>(call.arguments.as_str())
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or(call.arguments);
+
+            Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
+                name: call.name,
+                arguments,
+                description: None,
+                decisions: vec![],
+            }))
+        }
+        Err(err) => {
+            error!("session {session_id}: malformed tool call: {err}");
+            None
+        }
     }
-
-    // Pretty print if it is json, otherwise, raw string
-    let raw = item
-        .get("arguments")
-        .and_then(|a| a.as_str())
-        .unwrap_or_default();
-    let arguments = serde_json::from_str::<Value>(raw)
-        .ok()
-        .and_then(|v| serde_json::to_string_pretty(&v).ok())
-        .unwrap_or_else(|| raw.to_string());
-
-    Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-        name,
-        arguments,
-    }))
 }
 
 impl SessionManagerClient {

@@ -22,7 +22,7 @@ struct PermissionState {
     command: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum UserDecision {
     AllowOnce {
         caller_id: String,

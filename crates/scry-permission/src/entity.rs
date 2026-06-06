@@ -19,7 +19,7 @@ impl ArgvDecision {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum CommandType {
     Simple,
     Composite,

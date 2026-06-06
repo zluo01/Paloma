@@ -1,3 +1,4 @@
+use crate::remote::UserDecision;
 use scry_capability::Item;
 
 #[derive(Clone, Debug)]
@@ -25,8 +26,19 @@ pub struct QueryResponse {
 
 #[derive(Clone, Debug)]
 pub enum ChatRenderEvent {
-    UserPrompt { text: String },
-    TextDelta { text: String },
-    ReasoningDelta { text: String },
-    ToolCall { name: String, arguments: String },
+    UserPrompt {
+        text: String,
+    },
+    TextDelta {
+        text: String,
+    },
+    ReasoningDelta {
+        text: String,
+    },
+    ToolCall {
+        name: String,
+        arguments: String,
+        description: Option<String>,
+        decisions: Vec<UserDecision>,
+    },
 }

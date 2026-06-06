@@ -1,10 +1,12 @@
 use crate::remote::session_manager::{SessionManagerClient, SessionManagerError};
 use crate::remote::tool_controller::{ToolCallPayload, ToolController};
-use crate::remote::SessionEvent;
+use crate::remote::{PermissionWorkflowManagerClient, SessionEvent};
 use crate::{ProviderController, ProviderControllerError};
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
+use scry_capability::tools::shell::{Shell, ShellArgs};
+use scry_capability::Tool;
 use scry_provider::entity::{
     ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema,
 };
@@ -18,6 +20,7 @@ pub struct TurnManager {
     turn_map: Arc<DashMap<Uuid, TurnState>>,
     provider_controller: Arc<ProviderController>,
     session_manager_client: SessionManagerClient,
+    permission_workflow_client: PermissionWorkflowManagerClient,
     tool_controller: Arc<ToolController>,
     storage: Storage,
     event_rx: mpsc::Receiver<TurnStepEvent>,
@@ -62,6 +65,7 @@ impl TurnManager {
         storage: Storage,
         provider_controller: Arc<ProviderController>,
         session_manager_client: SessionManagerClient,
+        permission_workflow_client: PermissionWorkflowManagerClient,
         tool_controller: Arc<ToolController>,
     ) -> (Self, TurnManagerClient) {
         let (tx, rx) = mpsc::channel(scry_config::TURN_MANAGER_CHANNEL_CAPACITY);
@@ -70,6 +74,7 @@ impl TurnManager {
             turn_map: Arc::new(DashMap::new()),
             provider_controller,
             session_manager_client,
+            permission_workflow_client,
             tool_controller,
             storage,
             event_rx: rx,
@@ -122,6 +127,7 @@ impl TurnManager {
         let provider_controller = self.provider_controller.clone();
         let storage = self.storage.clone();
         let session_client = self.session_manager_client.clone();
+        let permission_client = self.permission_workflow_client.clone();
         let event_tx = self.event_tx.clone();
         let turn_map = self.turn_map.clone();
         let tools = self.tool_controller.tool_schemas();
@@ -152,6 +158,7 @@ impl TurnManager {
             run_step(
                 stream,
                 &session_client,
+                &permission_client,
                 &event_tx,
                 &turn_map,
                 provider_id,
@@ -179,6 +186,7 @@ impl TurnManager {
 
         let tool_controller = self.tool_controller.clone();
         let session_client = self.session_manager_client.clone();
+        let permission_client = self.permission_workflow_client.clone();
         let provider_controller = self.provider_controller.clone();
         let storage = self.storage.clone();
         let event_tx = self.event_tx.clone();
@@ -245,6 +253,7 @@ impl TurnManager {
             run_step(
                 stream,
                 &session_client,
+                &permission_client,
                 &event_tx,
                 &turn_map,
                 provider_id,
@@ -277,12 +286,19 @@ fn mark_step_done(turn_map: &DashMap<Uuid, TurnState>, session_id: Uuid) {
 async fn run_step(
     stream: ChatStream,
     session_client: &SessionManagerClient,
+    permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     event_tx: &mpsc::Sender<TurnStepEvent>,
     turn_map: &DashMap<Uuid, TurnState>,
     provider_id: ProviderId,
     session_id: Uuid,
 ) {
-    let (tool_calls, errored) = exhaust_events(stream, session_client, session_id).await;
+    let (tool_calls, errored) = exhaust_events(
+        stream,
+        session_client,
+        permission_workflow_manager_client,
+        session_id,
+    )
+    .await;
 
     mark_step_done(turn_map, session_id);
 
@@ -331,6 +347,7 @@ async fn open_stream(
 async fn exhaust_events(
     mut stream: ChatStream,
     session_client: &SessionManagerClient,
+    permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     session_id: Uuid,
 ) -> (Vec<ToolCallPayload>, bool) {
     let mut tool_calls: Vec<ToolCallPayload> = Vec::new();
@@ -340,7 +357,31 @@ async fn exhaust_events(
             Ok(chat_event) => {
                 if let ChatEvent::ToolCallItem { item } = &chat_event {
                     match serde_json::from_value::<ToolCallPayload>(item.clone()) {
-                        Ok(call) => tool_calls.push(call),
+                        Ok(call) => {
+                            // it should be ok to log error here since later on, when actual tool call happens
+                            // it will still fail with missing call_id or session_id which then
+                            // we can populate the error back to the LLM.
+                            if call.name == Shell::NAME {
+                                match serde_json::from_str::<ShellArgs>(&call.arguments) {
+                                    Ok(args) => {
+                                        if let Err(err) = permission_workflow_manager_client
+                                            .init_permission_workflow(
+                                                session_id,
+                                                call.call_id.clone(),
+                                                args.command,
+                                            )
+                                            .await
+                                        {
+                                            error!("session {session_id}: failed to init permission workflow: {err}");
+                                        }
+                                    }
+                                    Err(err) => error!(
+                                        "session {session_id}: malformed shell arguments: {err}"
+                                    ),
+                                }
+                            }
+                            tool_calls.push(call);
+                        }
                         Err(err) => error!("session {session_id}: malformed tool call: {err}"),
                     }
                 }

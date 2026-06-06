@@ -3,9 +3,11 @@ use std::time::Duration;
 
 use scry_capability::tools::shell::process_manager::ProcessManager;
 use scry_controller::remote::{
-    RemoteQuery, SessionManager, SessionManagerClient, ToolController, TurnManager,
+    PermissionWorkflowManager, RemoteQuery, SessionManager, SessionManagerClient, ToolController,
+    TurnManager,
 };
 use scry_controller::{ConnectController, LocalQuery, ProviderController};
+use scry_permission::PermissionController;
 use scry_storage::db::Storage;
 use scry_storage::session::SessionWriter;
 use tokio::sync::broadcast;
@@ -73,22 +75,31 @@ impl AppContext {
         let connect =
             ConnectController::new(storage.clone(), Arc::clone(&provider_controller), http);
 
+        let permission_controller = PermissionController::new(storage.clone());
+        let (mut permission_workflow_manager, permission_workflow_client) =
+            PermissionWorkflowManager::new(permission_controller);
+        tokio::spawn(async move { permission_workflow_manager.run().await });
+
         let (mut session_writer, session_writer_client) = SessionWriter::new(session_path.clone());
         tokio::spawn(async move { session_writer.run().await });
 
         let (mut session_manager, session_manager_client) =
-            SessionManager::new(session_path, &storage).await?;
+            SessionManager::new(session_path, &storage, permission_workflow_client.clone()).await?;
         tokio::spawn(async move { session_manager.run(&session_writer_client).await });
 
         let (mut process_manager, process_manager_client) = ProcessManager::new();
         tokio::spawn(async move { process_manager.run().await });
 
-        let tool_controller = Arc::new(ToolController::new(process_manager_client));
+        let tool_controller = Arc::new(ToolController::new(
+            process_manager_client,
+            permission_workflow_client.clone(),
+        ));
 
         let (mut turn_manager, turn_manager_client) = TurnManager::new(
             storage.clone(),
             Arc::clone(&provider_controller),
             session_manager_client.clone(),
+            permission_workflow_client.clone(),
             tool_controller,
         );
         tokio::spawn(async move { turn_manager.run().await });
@@ -97,6 +108,7 @@ impl AppContext {
             storage,
             session_manager_client.clone(),
             turn_manager_client,
+            permission_workflow_client,
             Arc::clone(&provider_controller),
         );
 

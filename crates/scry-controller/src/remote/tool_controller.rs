@@ -1,16 +1,21 @@
+use crate::remote::PermissionWorkflowManagerClient;
 use dashmap::DashMap;
 use log::error;
 use scry_capability::tools::shell::process_manager::ProcessManagerClient;
 use scry_capability::tools::shell::Shell;
 use scry_capability::{DynTool, Tool, ToolResult};
+use scry_config::PERMISSION_DECISION_TIMEOUT_SECS;
 use scry_provider::entity::ToolSchema as ProviderToolSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 pub struct ToolController {
     handlers: DashMap<&'static str, Arc<dyn DynTool>>,
+    permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,13 +28,19 @@ pub struct ToolCallPayload {
 }
 
 impl ToolController {
-    pub fn new(process_manager_client: ProcessManagerClient) -> Self {
+    pub fn new(
+        process_manager_client: ProcessManagerClient,
+        permission_workflow_client: PermissionWorkflowManagerClient,
+    ) -> Self {
         let handlers: DashMap<&'static str, Arc<dyn DynTool>> = DashMap::new();
 
         let shell: Arc<dyn DynTool> = Arc::new(Shell::new(process_manager_client));
         handlers.insert(Shell::NAME, shell);
 
-        Self { handlers }
+        Self {
+            handlers,
+            permission_workflow_client,
+        }
     }
 
     pub fn tool_schemas(&self) -> Vec<ProviderToolSchema> {
@@ -65,6 +76,15 @@ impl ToolController {
         };
 
         let caller_id = &call.call_id;
+
+        // Shell commands must clear the permission workflow before they run.
+        if call.name == Shell::NAME {
+            if let Err(msg) = self.authorize_shell(caller_id.clone()).await {
+                error!("shell permission gate for {caller_id}: {msg}");
+                return msg;
+            }
+        }
+
         match tool.invoke(session_id, caller_id.clone(), args).await {
             Ok(ToolResult::Text(text)) => text,
             Ok(ToolResult::Binary { mime_type, .. }) => format!("<binary output: {mime_type}>"),
@@ -72,6 +92,29 @@ impl ToolController {
                 error!("tool {} failed: {message}", call.name);
                 message
             }
+        }
+    }
+
+    /// Wait and Get the user decision on permission
+    async fn authorize_shell(&self, caller_id: String) -> Result<(), String> {
+        let decision = self
+            .permission_workflow_client
+            .wait_decision(caller_id)
+            .await
+            .map_err(|err| format!("permission workflow unavailable: {err}"))?;
+
+        match timeout(
+            Duration::from_secs(PERMISSION_DECISION_TIMEOUT_SECS),
+            decision,
+        )
+        .await
+        {
+            Err(_) => Err("permission request timed out; command was not executed".to_string()),
+            Ok(None) => {
+                Err("permission request was cancelled; command was not executed".to_string())
+            }
+            Ok(Some(true)) => Ok(()),
+            Ok(Some(false)) => Err("command was denied by the user".to_string()),
         }
     }
 }
