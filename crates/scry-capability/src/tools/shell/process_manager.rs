@@ -29,7 +29,7 @@ const SPILL_ROOT: &str = "/tmp/scry";
 #[derive(Debug)]
 pub struct ProcessExecRequest {
     pub session_id: Uuid,
-    pub caller_id: String,
+    pub call_id: String,
     pub command: Vec<String>,
     pub cwd: PathBuf,
 }
@@ -126,10 +126,10 @@ impl ProcessManager {
             }
         }
 
-        // Per-invocation spill directory keyed by caller_id. If we cannot
+        // Per-invocation spill directory keyed by call_id. If we cannot
         // create it, spill is disabled for this exec and overflow bytes fall
         // back to discard.
-        let spill_dir = PathBuf::from(SPILL_ROOT).join(&request.caller_id);
+        let spill_dir = PathBuf::from(SPILL_ROOT).join(&request.call_id);
         let spill_paths = match std::fs::create_dir_all(&spill_dir) {
             Ok(()) => Some((spill_dir.join("out"), spill_dir.join("err"))),
             Err(e) => {
@@ -424,7 +424,7 @@ fn format_output(
     Element::new("shell_output")
         .attr("command", request.command.join(" "))
         .attr("workdir", request.cwd.display())
-        .attr("exec_id", &request.caller_id)
+        .attr("exec_id", &request.call_id)
         .attr_if(timed_out, "timed_out", "true")
         .attr("exit_code", status_text)
         .attr("duration_ms", duration.as_millis())
@@ -468,7 +468,7 @@ mod tests {
         let result = client
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
-                caller_id: "call_stdout".into(),
+                call_id: "call_stdout".into(),
                 command: vec!["printf".into(), "hello".into()],
                 cwd: std::env::current_dir().unwrap(),
             })
@@ -492,7 +492,7 @@ mod tests {
         let result = client
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
-                caller_id: "call_exit".into(),
+                call_id: "call_exit".into(),
                 command: vec!["sh".into(), "-c".into(), "exit 7".into()],
                 cwd: std::env::current_dir().unwrap(),
             })
@@ -511,7 +511,7 @@ mod tests {
         let err = client
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
-                caller_id: "call_spawn_fail".into(),
+                call_id: "call_spawn_fail".into(),
                 command: vec!["this-binary-does-not-exist-xyz".into()],
                 cwd: std::env::current_dir().unwrap(),
             })
@@ -527,7 +527,7 @@ mod tests {
         let session_id = Uuid::now_v7();
         let cmd = client.exec(ProcessExecRequest {
             session_id,
-            caller_id: "call_cancel".into(),
+            call_id: "call_cancel".into(),
             // 30s sleep — would normally time out at COMMAND_TIMEOUT or
             // outlive the test if not cancelled.
             command: vec!["sleep".into(), "30".into()],
@@ -555,13 +555,13 @@ mod tests {
     #[tokio::test]
     async fn exec_spills_when_output_exceeds_payload_cap() {
         // Twice the payload cap of stdout — expect truncated="true", a
-        // full_output path keyed by caller_id, and the body to end in "...".
+        // full_output path keyed by call_id, and the body to end in "...".
         let client = spawn_pm();
         let bytes = MAX_STREAM_PAYLOAD_BYTES * 2;
         let result = client
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
-                caller_id: "call_spill".into(),
+                call_id: "call_spill".into(),
                 command: vec![
                     "sh".into(),
                     "-c".into(),

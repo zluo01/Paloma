@@ -87,7 +87,7 @@ impl Tool for Shell {
     async fn invoke(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         args: Self::Args,
     ) -> Result<ToolResult, String> {
         validate_argv(&args.command)?;
@@ -95,7 +95,7 @@ impl Tool for Shell {
 
         let request = ProcessExecRequest {
             session_id,
-            caller_id,
+            call_id,
             command: args.command,
             cwd: workdir,
         };

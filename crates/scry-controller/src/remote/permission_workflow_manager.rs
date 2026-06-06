@@ -25,23 +25,23 @@ struct PermissionState {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum UserDecision {
     AllowOnce {
-        caller_id: String,
+        call_id: String,
     },
     Allow {
-        caller_id: String,
+        call_id: String,
         command: String,
         glob: bool,
     },
     AllowSession {
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
     },
     IgnorePermission {
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
     },
     Deny {
-        caller_id: String,
+        call_id: String,
     },
 }
 
@@ -49,17 +49,17 @@ pub enum UserDecision {
 enum PermissionWorkflowEvent {
     InitPermissionWorkflow {
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         command: Vec<String>,
         reply: oneshot::Sender<Result<()>>,
     },
     CheckDecision {
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         reply: oneshot::Sender<Result<Vec<UserDecision>>>,
     },
     WaitDecision {
-        caller_id: String,
+        call_id: String,
         reply: oneshot::Sender<Result<BoxFuture<'static, Option<bool>>>>,
     },
     Decide {
@@ -73,7 +73,7 @@ pub struct PermissionWorkflowManager {
     event_rx: mpsc::Receiver<PermissionWorkflowEvent>,
     // key is the session id.
     session_permission: HashMap<Uuid, SessionPermission>,
-    // key is the caller_id from llm function call payload
+    // key is the call_id from llm function call payload
     permission_tracker: HashMap<String, PermissionState>,
 }
 
@@ -87,14 +87,14 @@ impl PermissionWorkflowManagerClient {
     pub async fn init_permission_workflow(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         command: Vec<String>,
     ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(PermissionWorkflowEvent::InitPermissionWorkflow {
                 session_id,
-                caller_id,
+                call_id,
                 command,
                 reply: reply_tx,
             })
@@ -109,13 +109,13 @@ impl PermissionWorkflowManagerClient {
     pub async fn check_decision(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
     ) -> Result<Vec<UserDecision>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(PermissionWorkflowEvent::CheckDecision {
                 session_id,
-                caller_id,
+                call_id,
                 reply: reply_tx,
             })
             .await
@@ -127,14 +127,11 @@ impl PermissionWorkflowManagerClient {
 
     /// Hand back the awaitable that resolves once the decision is made. Await
     /// the returned future (in your own task) for `Some(true)`/`Some(false)`.
-    pub async fn wait_decision(
-        &self,
-        caller_id: String,
-    ) -> Result<BoxFuture<'static, Option<bool>>> {
+    pub async fn wait_decision(&self, call_id: String) -> Result<BoxFuture<'static, Option<bool>>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(PermissionWorkflowEvent::WaitDecision {
-                caller_id,
+                call_id,
                 reply: reply_tx,
             })
             .await
@@ -188,24 +185,24 @@ impl PermissionWorkflowManager {
         match event {
             PermissionWorkflowEvent::InitPermissionWorkflow {
                 session_id,
-                caller_id,
+                call_id,
                 command,
                 reply,
             } => {
                 let result = self
-                    .init_permission_workflow(session_id, caller_id, command)
+                    .init_permission_workflow(session_id, call_id, command)
                     .await;
                 let _ = reply.send(result);
             }
             PermissionWorkflowEvent::CheckDecision {
                 session_id,
-                caller_id,
+                call_id,
                 reply,
             } => {
-                let _ = reply.send(self.handle_check_decision(session_id, caller_id));
+                let _ = reply.send(self.handle_check_decision(session_id, call_id));
             }
-            PermissionWorkflowEvent::WaitDecision { caller_id, reply } => {
-                let _ = reply.send(self.handle_wait_decision(caller_id));
+            PermissionWorkflowEvent::WaitDecision { call_id, reply } => {
+                let _ = reply.send(self.handle_wait_decision(call_id));
             }
             PermissionWorkflowEvent::Decide {
                 user_decision,
@@ -221,7 +218,7 @@ impl PermissionWorkflowManager {
     async fn init_permission_workflow(
         &mut self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         command: Vec<String>,
     ) -> Result<()> {
         let session = self.session_permission.entry(session_id).or_default();
@@ -233,7 +230,7 @@ impl PermissionWorkflowManager {
         // only bypass permission check if the command is a composite
         if session_allows && decision.command_type() == &CommandType::Composite {
             self.permission_tracker.insert(
-                caller_id,
+                call_id,
                 PermissionState {
                     decision: PermissionDecision::new(CommandType::Composite, ArgvDecision::Allow),
                     tracker: CompletableFuture::completed(true),
@@ -247,7 +244,7 @@ impl PermissionWorkflowManager {
                 _ => CompletableFuture::pending(),
             };
             self.permission_tracker.insert(
-                caller_id,
+                call_id,
                 PermissionState {
                     decision,
                     tracker,
@@ -261,16 +258,16 @@ impl PermissionWorkflowManager {
     fn handle_check_decision(
         &mut self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
     ) -> Result<Vec<UserDecision>> {
         let state = self
             .permission_tracker
-            .get_mut(&caller_id)
-            .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?;
+            .get_mut(&call_id)
+            .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
 
         match state.decision.command_type() {
             // should have options allow once, allow session, allow always, deny
-            CommandType::Composite => Ok(generate_unsafe_decision_options(caller_id, session_id)),
+            CommandType::Composite => Ok(generate_unsafe_decision_options(call_id, session_id)),
             CommandType::Simple => {
                 match state.decision.decision() {
                     ArgvDecision::Unknown => {
@@ -278,22 +275,22 @@ impl PermissionWorkflowManager {
 
                         // allow once on exact
                         user_options.push(UserDecision::AllowOnce {
-                            caller_id: caller_id.clone(),
+                            call_id: call_id.clone(),
                         });
 
                         // allow global for generated options
                         user_options.append(&mut generate_decision_options(
-                            caller_id.clone(),
+                            call_id.clone(),
                             &state.command,
                         ));
 
                         // deny options
-                        user_options.push(UserDecision::Deny { caller_id });
+                        user_options.push(UserDecision::Deny { call_id });
 
                         Ok(user_options)
                     }
                     ArgvDecision::AskNoPersist => {
-                        Ok(generate_unsafe_decision_options(caller_id, session_id))
+                        Ok(generate_unsafe_decision_options(call_id, session_id))
                     }
                     ArgvDecision::Allow | ArgvDecision::NotExecutable => Ok(vec![]),
                 }
@@ -301,11 +298,11 @@ impl PermissionWorkflowManager {
         }
     }
 
-    fn handle_wait_decision(&self, caller_id: String) -> Result<BoxFuture<'static, Option<bool>>> {
+    fn handle_wait_decision(&self, call_id: String) -> Result<BoxFuture<'static, Option<bool>>> {
         let handle = self
             .permission_tracker
-            .get(&caller_id)
-            .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?
+            .get(&call_id)
+            .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
             .tracker
             .get()
             .boxed();
@@ -315,10 +312,10 @@ impl PermissionWorkflowManager {
 
     async fn handle_user_decision(&mut self, user_decision: UserDecision) -> Result<()> {
         match user_decision {
-            UserDecision::AllowOnce { caller_id } => {
+            UserDecision::AllowOnce { call_id } => {
                 self.permission_tracker
-                    .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?
+                    .get_mut(&call_id)
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
                     .complete(true);
                 Ok(())
@@ -326,7 +323,7 @@ impl PermissionWorkflowManager {
             // for normal allow, it can either be exact allow or wildcard allow(glob enabled)
             // we will need to save the decision to database for consensus check
             UserDecision::Allow {
-                caller_id,
+                call_id,
                 command,
                 glob,
             } => {
@@ -335,8 +332,8 @@ impl PermissionWorkflowManager {
                     .await?;
 
                 self.permission_tracker
-                    .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?
+                    .get_mut(&call_id)
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
                     .complete(true);
                 Ok(())
@@ -347,12 +344,12 @@ impl PermissionWorkflowManager {
             // for second case, we explicitly update the always flag along with the allowlist
             UserDecision::AllowSession {
                 session_id,
-                caller_id,
+                call_id,
             } => {
                 let state = self
                     .permission_tracker
-                    .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?;
+                    .get_mut(&call_id)
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
                 let command = state.command.join(" ");
 
                 match self.session_permission.get_mut(&session_id) {
@@ -372,12 +369,12 @@ impl PermissionWorkflowManager {
             }
             UserDecision::IgnorePermission {
                 session_id,
-                caller_id,
+                call_id,
             } => {
                 let state = self
                     .permission_tracker
-                    .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?;
+                    .get_mut(&call_id)
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
 
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
@@ -391,10 +388,10 @@ impl PermissionWorkflowManager {
                     }
                 }
             }
-            UserDecision::Deny { caller_id } => {
+            UserDecision::Deny { call_id } => {
                 self.permission_tracker
-                    .get_mut(&caller_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(caller_id.clone()))?
+                    .get_mut(&call_id)
+                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
                     .complete(false);
                 Ok(())
@@ -404,31 +401,31 @@ impl PermissionWorkflowManager {
 }
 
 /// options for AskNoPersist
-fn generate_unsafe_decision_options(caller_id: String, session_id: Uuid) -> Vec<UserDecision> {
+fn generate_unsafe_decision_options(call_id: String, session_id: Uuid) -> Vec<UserDecision> {
     vec![
         UserDecision::AllowOnce {
-            caller_id: caller_id.clone(),
+            call_id: call_id.clone(),
         },
         UserDecision::AllowSession {
             session_id,
-            caller_id: caller_id.clone(),
+            call_id: call_id.clone(),
         },
         UserDecision::IgnorePermission {
             session_id,
-            caller_id: caller_id.clone(),
+            call_id: call_id.clone(),
         },
-        UserDecision::Deny { caller_id },
+        UserDecision::Deny { call_id },
     ]
 }
 
-fn generate_decision_options(caller_id: String, command_vec: &[String]) -> Vec<UserDecision> {
+fn generate_decision_options(call_id: String, command_vec: &[String]) -> Vec<UserDecision> {
     let Some(program) = command_vec.first() else {
         return Vec::new();
     };
 
     // Broadest: the program alone, e.g. "cargo:*".
     let mut options = vec![UserDecision::Allow {
-        caller_id: caller_id.clone(),
+        call_id: call_id.clone(),
         command: program.clone(),
         glob: true,
     }];
@@ -438,7 +435,7 @@ fn generate_decision_options(caller_id: String, command_vec: &[String]) -> Vec<U
     // "-f" or "--amend".
     if command_vec.get(1).is_some_and(|arg| !arg.starts_with('-')) {
         options.push(UserDecision::Allow {
-            caller_id,
+            call_id,
             command: command_vec[..2].join(" "),
             glob: true,
         });
@@ -475,11 +472,11 @@ mod tests {
         parts.iter().map(|s| s.to_string()).collect()
     }
 
-    /// A glob `Allow` with caller_id "c" — asserting against it checks all
-    /// three fields (caller_id, command, glob) at once.
+    /// A glob `Allow` with call_id "c" — asserting against it checks all
+    /// three fields (call_id, command, glob) at once.
     fn allow(command: &str) -> UserDecision {
         UserDecision::Allow {
-            caller_id: "c".into(),
+            call_id: "c".into(),
             command: command.into(),
             glob: true,
         }
@@ -536,18 +533,18 @@ mod tests {
             opts,
             vec![
                 UserDecision::AllowOnce {
-                    caller_id: "c".into(),
+                    call_id: "c".into(),
                 },
                 UserDecision::AllowSession {
                     session_id,
-                    caller_id: "c".into(),
+                    call_id: "c".into(),
                 },
                 UserDecision::IgnorePermission {
                     session_id,
-                    caller_id: "c".into(),
+                    call_id: "c".into(),
                 },
                 UserDecision::Deny {
-                    caller_id: "c".into(),
+                    call_id: "c".into(),
                 },
             ]
         );

@@ -78,7 +78,7 @@ pub trait Tool: Capability {
     async fn invoke(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         args: Self::Args,
     ) -> Result<ToolResult, String>;
 
@@ -110,7 +110,7 @@ pub trait DynTool: Send + Sync {
     async fn invoke(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         args: serde_json::Value,
     ) -> Result<ToolResult, String>;
 }
@@ -127,10 +127,10 @@ where
     async fn invoke(
         &self,
         session_id: Uuid,
-        caller_id: String,
+        call_id: String,
         args: serde_json::Value,
     ) -> Result<ToolResult, String> {
         let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
-        Tool::invoke(self, session_id, caller_id, parsed).await
+        Tool::invoke(self, session_id, call_id, parsed).await
     }
 }

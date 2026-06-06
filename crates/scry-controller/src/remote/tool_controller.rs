@@ -75,17 +75,17 @@ impl ToolController {
             Err(err) => return format!("invalid arguments for {}: {err}", call.name),
         };
 
-        let caller_id = &call.call_id;
+        let call_id = &call.call_id;
 
         // Shell commands must clear the permission workflow before they run.
         if call.name == Shell::NAME {
-            if let Err(msg) = self.authorize_shell(caller_id.clone()).await {
-                error!("shell permission gate for {caller_id}: {msg}");
+            if let Err(msg) = self.authorize_shell(call_id.clone()).await {
+                error!("shell permission gate for {call_id}: {msg}");
                 return msg;
             }
         }
 
-        match tool.invoke(session_id, caller_id.clone(), args).await {
+        match tool.invoke(session_id, call_id.clone(), args).await {
             Ok(ToolResult::Text(text)) => text,
             Ok(ToolResult::Binary { mime_type, .. }) => format!("<binary output: {mime_type}>"),
             Err(message) => {
@@ -96,10 +96,10 @@ impl ToolController {
     }
 
     /// Wait and Get the user decision on permission
-    async fn authorize_shell(&self, caller_id: String) -> Result<(), String> {
+    async fn authorize_shell(&self, call_id: String) -> Result<(), String> {
         let decision = self
             .permission_workflow_client
-            .wait_decision(caller_id)
+            .wait_decision(call_id)
             .await
             .map_err(|err| format!("permission workflow unavailable: {err}"))?;
 
