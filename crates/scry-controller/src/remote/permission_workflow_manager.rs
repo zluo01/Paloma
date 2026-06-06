@@ -265,6 +265,11 @@ impl PermissionWorkflowManager {
             .get_mut(&call_id)
             .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
 
+        // if future is already completed, then meaning no more user action required.
+        if state.tracker.is_completed() {
+            return Ok(vec![]);
+        }
+
         match state.decision.command_type() {
             // should have options allow once, allow session, allow always, deny
             CommandType::Composite => Ok(generate_unsafe_decision_options(call_id, session_id)),

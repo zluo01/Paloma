@@ -37,6 +37,10 @@ impl<T: Clone> CompletableFuture<T> {
         }
     }
 
+    pub fn is_completed(&self) -> bool {
+        self.complete.is_none()
+    }
+
     pub fn get(&self) -> impl Future<Output = Option<T>> {
         let read = self.read.clone();
         async move { read.await.ok() }
