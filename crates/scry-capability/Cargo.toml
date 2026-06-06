@@ -30,7 +30,7 @@ dashmap = { workspace = true }
 scry-utils = { path = "../scry-utils" }
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true }
+nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
