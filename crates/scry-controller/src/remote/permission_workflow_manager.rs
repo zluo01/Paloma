@@ -1,12 +1,16 @@
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use log::error;
-use scry_config::PERMISSION_WORKFLOW_CHANNEL_CAPACITY;
+use log::{debug, error};
+use scry_config::{
+    PERMISSION_DECISION_TIMEOUT_SECS, PERMISSION_EVICT_TTL_SECS,
+    PERMISSION_WORKFLOW_CHANNEL_CAPACITY,
+};
 use scry_permission::{
     ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
 };
 use scry_utils::future::CompletableFuture;
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -16,10 +20,19 @@ struct SessionPermission {
     allowlist: HashSet<String>,
 }
 
-struct PermissionState {
+#[derive(Clone)]
+pub enum PermissionState {
+    Allow,
+    Deny,
+    Timeout,
+}
+
+struct PermissionRequest {
     decision: PermissionDecision,
-    tracker: CompletableFuture<bool>,
+    tracker: CompletableFuture<PermissionState>,
     command: Vec<String>,
+    timeout_at: Instant,
+    evict_at: Instant,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -60,7 +73,7 @@ enum PermissionWorkflowEvent {
     },
     WaitDecision {
         call_id: String,
-        reply: oneshot::Sender<Result<BoxFuture<'static, Option<bool>>>>,
+        reply: oneshot::Sender<Result<BoxFuture<'static, Option<PermissionState>>>>,
     },
     Decide {
         user_decision: UserDecision,
@@ -74,87 +87,12 @@ pub struct PermissionWorkflowManager {
     // key is the session id.
     session_permission: HashMap<Uuid, SessionPermission>,
     // key is the call_id from llm function call payload
-    permission_tracker: HashMap<String, PermissionState>,
+    permission_tracker: HashMap<String, PermissionRequest>,
 }
 
 #[derive(Clone)]
 pub struct PermissionWorkflowManagerClient {
     event_tx: mpsc::Sender<PermissionWorkflowEvent>,
-}
-
-impl PermissionWorkflowManagerClient {
-    /// Register a tool call and classify it, populating the pending tracker.
-    pub async fn init_permission_workflow(
-        &self,
-        session_id: Uuid,
-        call_id: String,
-        command: Vec<String>,
-    ) -> Result<()> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(PermissionWorkflowEvent::InitPermissionWorkflow {
-                session_id,
-                call_id,
-                command,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
-    }
-
-    /// The option menu to present for a pending request.
-    pub async fn check_decision(
-        &self,
-        session_id: Uuid,
-        call_id: String,
-    ) -> Result<Vec<UserDecision>> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(PermissionWorkflowEvent::CheckDecision {
-                session_id,
-                call_id,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
-    }
-
-    /// Hand back the awaitable that resolves once the decision is made. Await
-    /// the returned future (in your own task) for `Some(true)`/`Some(false)`.
-    pub async fn wait_decision(&self, call_id: String) -> Result<BoxFuture<'static, Option<bool>>> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(PermissionWorkflowEvent::WaitDecision {
-                call_id,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
-    }
-
-    /// Submit the user's decision, completing the pending tracker.
-    pub async fn decide(&self, user_decision: UserDecision) -> Result<()> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(PermissionWorkflowEvent::Decide {
-                user_decision,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
-    }
 }
 
 impl PermissionWorkflowManager {
@@ -174,11 +112,36 @@ impl PermissionWorkflowManager {
     }
 
     pub async fn run(&mut self) {
-        while let Some(event) = self.event_rx.recv().await {
-            if let Err(err) = self.handle_event(event).await {
-                error!("permission workflow manager error: {err}");
+        let mut sweep = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                maybe_event = self.event_rx.recv() => {
+                    let Some(event) = maybe_event else { break };
+                    if let Err(err) = self.handle_event(event).await {
+                        error!("permission workflow manager error: {err}");
+                    }
+                }
+                _ = sweep.tick() => self.sweep(),
             }
         }
+    }
+
+    /// Handle timeout and eviction, same thread as mpsc, so no need to worry about thread-safe
+    fn sweep(&mut self) {
+        let now = Instant::now();
+        self.permission_tracker.retain(|call_id, request| {
+            if now >= request.evict_at {
+                if !request.tracker.is_completed() {
+                    error!("permission for {call_id} evicted while still pending; this indicates a bug");
+                }
+                return false;
+            }
+            if now >= request.timeout_at && !request.tracker.is_completed() {
+                request.tracker.complete(PermissionState::Timeout);
+                debug!("permission for {call_id} is timed out");
+            }
+            true
+        });
     }
 
     async fn handle_event(&mut self, event: PermissionWorkflowEvent) -> Result<()> {
@@ -227,28 +190,36 @@ impl PermissionWorkflowManager {
 
         let decision = self.permission_controller.classify(&command).await?;
 
+        let now = Instant::now();
+        let timeout_at = now + Duration::from_secs(PERMISSION_DECISION_TIMEOUT_SECS);
+        let evict_at = now + Duration::from_secs(PERMISSION_EVICT_TTL_SECS);
+
         // only bypass permission check if the command is a composite
         if session_allows && decision.command_type() == &CommandType::Composite {
             self.permission_tracker.insert(
                 call_id,
-                PermissionState {
+                PermissionRequest {
                     decision: PermissionDecision::new(CommandType::Composite, ArgvDecision::Allow),
-                    tracker: CompletableFuture::completed(true),
+                    tracker: CompletableFuture::completed(PermissionState::Allow),
                     command,
+                    timeout_at,
+                    evict_at,
                 },
             );
         } else {
             let tracker = match decision.decision() {
-                ArgvDecision::Allow => CompletableFuture::completed(true),
-                ArgvDecision::NotExecutable => CompletableFuture::completed(false),
+                ArgvDecision::Allow => CompletableFuture::completed(PermissionState::Allow),
+                ArgvDecision::NotExecutable => CompletableFuture::completed(PermissionState::Deny),
                 _ => CompletableFuture::pending(),
             };
             self.permission_tracker.insert(
                 call_id,
-                PermissionState {
+                PermissionRequest {
                     decision,
                     tracker,
                     command,
+                    timeout_at,
+                    evict_at,
                 },
             );
         }
@@ -303,7 +274,10 @@ impl PermissionWorkflowManager {
         }
     }
 
-    fn handle_wait_decision(&self, call_id: String) -> Result<BoxFuture<'static, Option<bool>>> {
+    fn handle_wait_decision(
+        &self,
+        call_id: String,
+    ) -> Result<BoxFuture<'static, Option<PermissionState>>> {
         let handle = self
             .permission_tracker
             .get(&call_id)
@@ -322,7 +296,7 @@ impl PermissionWorkflowManager {
                     .get_mut(&call_id)
                     .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
-                    .complete(true);
+                    .complete(PermissionState::Allow);
                 Ok(())
             }
             // for normal allow, it can either be exact allow or wildcard allow(glob enabled)
@@ -340,7 +314,7 @@ impl PermissionWorkflowManager {
                     .get_mut(&call_id)
                     .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
-                    .complete(true);
+                    .complete(PermissionState::Allow);
                 Ok(())
             }
             // AllowSession only happens to composite, which can either be
@@ -360,14 +334,14 @@ impl PermissionWorkflowManager {
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.allowlist.insert(command);
-                        state.tracker.complete(true);
+                        state.tracker.complete(PermissionState::Allow);
                         Ok(())
                     }
                     None => {
                         // Decision arrived without a prior init for this
                         // session — a bug. Deny the tracker so the waiter
                         // unblocks instead of hanging until the timeout.
-                        state.tracker.complete(false);
+                        state.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     }
                 }
@@ -384,11 +358,11 @@ impl PermissionWorkflowManager {
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.always = true;
-                        state.tracker.complete(true);
+                        state.tracker.complete(PermissionState::Allow);
                         Ok(())
                     }
                     None => {
-                        state.tracker.complete(false);
+                        state.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     }
                 }
@@ -398,7 +372,7 @@ impl PermissionWorkflowManager {
                     .get_mut(&call_id)
                     .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
                     .tracker
-                    .complete(false);
+                    .complete(PermissionState::Deny);
                 Ok(())
             }
         }
@@ -447,6 +421,84 @@ fn generate_decision_options(call_id: String, command_vec: &[String]) -> Vec<Use
     }
 
     options
+}
+
+impl PermissionWorkflowManagerClient {
+    /// Register a tool call and classify it, populating the pending tracker.
+    pub async fn init_permission_workflow(
+        &self,
+        session_id: Uuid,
+        call_id: String,
+        command: Vec<String>,
+    ) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::InitPermissionWorkflow {
+                session_id,
+                call_id,
+                command,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+    }
+
+    /// The option menu to present for a pending request.
+    pub async fn check_decision(
+        &self,
+        session_id: Uuid,
+        call_id: String,
+    ) -> Result<Vec<UserDecision>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::CheckDecision {
+                session_id,
+                call_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+    }
+
+    /// Hand back the awaitable that resolves once the decision is made. Await
+    /// the returned future (in your own task) for `Some(true)`/`Some(false)`.
+    pub async fn wait_decision(
+        &self,
+        call_id: String,
+    ) -> Result<BoxFuture<'static, Option<PermissionState>>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::WaitDecision {
+                call_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+    }
+
+    /// Submit the user's decision, completing the pending tracker.
+    pub async fn decide(&self, user_decision: UserDecision) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::Decide {
+                user_decision,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -17,6 +17,9 @@ pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
 /// prompt before giving up and refusing to run the command.
 pub const PERMISSION_DECISION_TIMEOUT_SECS: u64 = 300;
 
+/// How long we preserve the permission action in memory
+pub const PERMISSION_EVICT_TTL_SECS: u64 = 600;
+
 pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));

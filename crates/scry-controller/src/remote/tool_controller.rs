@@ -1,16 +1,14 @@
+use crate::remote::permission_workflow_manager::PermissionState;
 use crate::remote::PermissionWorkflowManagerClient;
 use dashmap::DashMap;
 use log::error;
 use scry_capability::tools::shell::process_manager::ProcessManagerClient;
 use scry_capability::tools::shell::Shell;
 use scry_capability::{DynTool, Tool, ToolResult};
-use scry_config::PERMISSION_DECISION_TIMEOUT_SECS;
 use scry_provider::entity::ToolSchema as ProviderToolSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::timeout;
 use uuid::Uuid;
 
 pub struct ToolController {
@@ -103,18 +101,13 @@ impl ToolController {
             .await
             .map_err(|err| format!("permission workflow unavailable: {err}"))?;
 
-        match timeout(
-            Duration::from_secs(PERMISSION_DECISION_TIMEOUT_SECS),
-            decision,
-        )
-        .await
-        {
-            Err(_) => Err("permission request timed out; command was not executed".to_string()),
-            Ok(None) => {
-                Err("permission request was cancelled; command was not executed".to_string())
+        match decision.await {
+            Some(PermissionState::Allow) => Ok(()),
+            Some(PermissionState::Deny) => Err("command was denied by the user".into()),
+            Some(PermissionState::Timeout) => {
+                Err("permission request timed out; command was not executed".into())
             }
-            Ok(Some(true)) => Ok(()),
-            Ok(Some(false)) => Err("command was denied by the user".to_string()),
+            None => Err("permission request was cancelled; command was not executed".into()),
         }
     }
 }

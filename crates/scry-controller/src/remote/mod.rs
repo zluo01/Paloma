@@ -5,7 +5,7 @@ mod tool_controller;
 mod turn_manager;
 
 pub use permission_workflow_manager::{
-    PermissionWorkflowManager, PermissionWorkflowManagerClient, UserDecision,
+    PermissionState, PermissionWorkflowManager, PermissionWorkflowManagerClient, UserDecision,
 };
 pub use remote_query::{RemoteQuery, RemoteQueryError};
 pub use session_manager::{
