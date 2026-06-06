@@ -8,8 +8,6 @@ use crate::{ProviderController, ProviderControllerError};
 use log::error;
 use scry_config::ENVIRONMENT_CONTEXT;
 use scry_provider::entity::ProviderId;
-use scry_storage::db::Storage;
-use scry_storage::StorageError;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -21,12 +19,10 @@ pub struct RemoteQuery {
     turn_manager_client: TurnManagerClient,
     permission_workflow_client: PermissionWorkflowManagerClient,
     provider_controller: Arc<ProviderController>,
-    storage: Storage,
 }
 
 impl RemoteQuery {
     pub fn new(
-        storage: Storage,
         session_manager_client: SessionManagerClient,
         turn_manager_client: TurnManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
@@ -37,7 +33,6 @@ impl RemoteQuery {
             turn_manager_client,
             permission_workflow_client,
             provider_controller,
-            storage,
         }
     }
 
@@ -51,9 +46,6 @@ impl RemoteQuery {
             None => {
                 let id = Uuid::now_v7();
                 let title = title_from_prompt(&prompt);
-                self.storage
-                    .create_new_session(id, provider_id.as_str(), &title)
-                    .await?;
                 self.session_manager_client
                     .create_session(id, provider_id, title)
                     .await?;
@@ -92,10 +84,6 @@ impl RemoteQuery {
     pub async fn cleanup(&self, session_id: Uuid) {
         if let Err(err) = self.session_manager_client.remove_session(session_id).await {
             error!("cleanup: remove session {session_id} from manager: {err}");
-        }
-
-        if let Err(err) = self.storage.delete_session(&session_id.to_string()).await {
-            error!("cleanup: delete session {session_id} from storage: {err}");
         }
     }
 
@@ -142,9 +130,6 @@ pub enum RemoteQueryError {
 
     #[error(transparent)]
     SessionManager(#[from] SessionManagerError),
-
-    #[error(transparent)]
-    Storage(#[from] StorageError),
 
     #[error(transparent)]
     PermissionWorkflow(#[from] PermissionWorkflowError),

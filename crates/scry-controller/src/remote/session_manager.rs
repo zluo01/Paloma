@@ -82,6 +82,7 @@ pub struct SessionManager {
     sessions: HashMap<Uuid, Session>,
     event_rx: mpsc::Receiver<SessionStreamingEvent>,
     updates_tx: broadcast::Sender<SessionUpdate>,
+    storage: Storage,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
@@ -94,10 +95,10 @@ pub struct SessionManagerClient {
 impl SessionManager {
     pub async fn new(
         session_path: PathBuf,
-        storage: &Storage,
+        storage: Storage,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Result<(Self, SessionManagerClient), StorageError> {
-        let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, storage).await?;
+        let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, &storage).await?;
 
         let (tx, rx) = mpsc::channel(scry_config::SESSION_MANAGER_CHANNEL_CAPACITY);
         let (updates_tx, _) = broadcast::channel(scry_config::SESSION_BROADCAST_CHANNEL_CAPACITY);
@@ -106,6 +107,7 @@ impl SessionManager {
             sessions,
             event_rx: rx,
             updates_tx: updates_tx.clone(),
+            storage,
             permission_workflow_client,
         };
         let client = SessionManagerClient {
@@ -136,6 +138,10 @@ impl SessionManager {
                 title,
                 reply,
             } => {
+                self.storage
+                    .create_new_session(session_id, provider_id.as_str(), &title)
+                    .await?;
+
                 let result = match self.sessions.entry(session_id) {
                     Entry::Occupied(_) => {
                         Err(SessionManagerError::SessionAlreadyExists(session_id))
@@ -156,6 +162,11 @@ impl SessionManager {
                 let _ = reply.send(self.restore_session(session_id).await);
             }
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
+                // make sure the db is updated first, if error, we still have the session in sync
+                if let Err(err) = self.storage.delete_session(&session_id.to_string()).await {
+                    error!("cleanup: delete session {session_id} from storage: {err}");
+                }
+
                 if self.sessions.remove(&session_id).is_none() {
                     debug!("remove: session {session_id} not in memory");
                 }
