@@ -20,7 +20,7 @@ struct SessionPermission {
     allowlist: HashSet<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum PermissionState {
     Allow,
     Deny,
@@ -292,9 +292,8 @@ impl PermissionWorkflowManager {
     async fn handle_user_decision(&mut self, user_decision: UserDecision) -> Result<()> {
         match user_decision {
             UserDecision::AllowOnce { call_id } => {
-                self.permission_tracker
-                    .get_mut(&call_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
+                get_permission_request_guard(&mut self.permission_tracker, &call_id)
+                    .await?
                     .tracker
                     .complete(PermissionState::Allow);
                 Ok(())
@@ -306,15 +305,12 @@ impl PermissionWorkflowManager {
                 command,
                 glob,
             } => {
+                let request =
+                    get_permission_request_guard(&mut self.permission_tracker, &call_id).await?;
                 self.permission_controller
                     .add_permission(command, glob)
                     .await?;
-
-                self.permission_tracker
-                    .get_mut(&call_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
-                    .tracker
-                    .complete(PermissionState::Allow);
+                request.tracker.complete(PermissionState::Allow);
                 Ok(())
             }
             // AllowSession only happens to composite, which can either be
@@ -325,23 +321,21 @@ impl PermissionWorkflowManager {
                 session_id,
                 call_id,
             } => {
-                let state = self
-                    .permission_tracker
-                    .get_mut(&call_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
-                let command = state.command.join(" ");
+                let request =
+                    get_permission_request_guard(&mut self.permission_tracker, &call_id).await?;
+                let command = request.command.join(" ");
 
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.allowlist.insert(command);
-                        state.tracker.complete(PermissionState::Allow);
+                        request.tracker.complete(PermissionState::Allow);
                         Ok(())
                     }
                     None => {
                         // Decision arrived without a prior init for this
                         // session — a bug. Deny the tracker so the waiter
                         // unblocks instead of hanging until the timeout.
-                        state.tracker.complete(PermissionState::Deny);
+                        request.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     }
                 }
@@ -350,33 +344,53 @@ impl PermissionWorkflowManager {
                 session_id,
                 call_id,
             } => {
-                let state = self
-                    .permission_tracker
-                    .get_mut(&call_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?;
+                let request =
+                    get_permission_request_guard(&mut self.permission_tracker, &call_id).await?;
 
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.always = true;
-                        state.tracker.complete(PermissionState::Allow);
+                        request.tracker.complete(PermissionState::Allow);
                         Ok(())
                     }
                     None => {
-                        state.tracker.complete(PermissionState::Deny);
+                        request.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     }
                 }
             }
             UserDecision::Deny { call_id } => {
-                self.permission_tracker
-                    .get_mut(&call_id)
-                    .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.clone()))?
+                get_permission_request_guard(&mut self.permission_tracker, &call_id)
+                    .await?
                     .tracker
                     .complete(PermissionState::Deny);
                 Ok(())
             }
         }
     }
+}
+
+async fn get_permission_request_guard<'a>(
+    permission_tracker: &'a mut HashMap<String, PermissionRequest>,
+    call_id: &str,
+) -> Result<&'a mut PermissionRequest> {
+    let request = permission_tracker
+        .get_mut(call_id)
+        .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.to_string()))?;
+
+    if request.tracker.is_completed() {
+        return Err(match request.tracker.get().await {
+            Some(PermissionState::Timeout) => {
+                PermissionWorkflowError::AlreadyTimedOut(call_id.to_string())
+            }
+            _ => {
+                error!("Unexpected attempt to complete on completed future {call_id}. This indicates a bug.");
+                PermissionWorkflowError::AlreadyResolved(call_id.to_string())
+            }
+        });
+    }
+
+    Ok(request)
 }
 
 /// options for AskNoPersist
@@ -517,6 +531,12 @@ pub enum PermissionWorkflowError {
 
     #[error("permission workflow channel closed")]
     ChannelClosed,
+
+    #[error("permission for {0} already timed out")]
+    AlreadyTimedOut(String),
+
+    #[error("permission for {0} was already resolved")]
+    AlreadyResolved(String),
 }
 
 pub type Result<T> = std::result::Result<T, PermissionWorkflowError>;
