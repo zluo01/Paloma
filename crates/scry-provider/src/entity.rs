@@ -1,5 +1,5 @@
 use futures::stream::BoxStream;
-use scry_storage::db::Storage;
+use scry_storage::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

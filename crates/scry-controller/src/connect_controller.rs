@@ -7,8 +7,8 @@ use scry_provider::connector::CodexConnector;
 use scry_provider::entity::{
     Auth, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
 };
-use scry_storage::db::{ConnectedProvider, Storage};
 use scry_storage::StorageError;
+use scry_storage::{ConnectedProvider, Storage};
 use serde::{Deserialize, Serialize};
 
 pub struct ConnectController {

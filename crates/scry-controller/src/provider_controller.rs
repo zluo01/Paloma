@@ -4,7 +4,7 @@ use dashmap::{DashMap, Entry};
 use log::error;
 use scry_provider::entity::{Auth, Model, ProviderClient, ProviderError, ProviderId};
 use scry_provider::runtime::CodexRuntime;
-use scry_storage::db::Storage;
+use scry_storage::Storage;
 use scry_storage::StorageError;
 use tokio::task::JoinHandle;
 

@@ -10,7 +10,7 @@ use scry_capability::Tool;
 use scry_provider::entity::{
     ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema,
 };
-use scry_storage::{db::Storage, StorageError};
+use scry_storage::{Storage, StorageError};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;

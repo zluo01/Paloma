@@ -6,7 +6,7 @@ use base64::Engine;
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::stream;
 use futures::StreamExt;
-use scry_storage::db::Storage;
+use scry_storage::Storage;
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::{Arc, RwLock};

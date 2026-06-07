@@ -7,7 +7,7 @@ use scry_controller::remote::{
 };
 use scry_controller::{ConnectController, LocalQuery, ProviderController};
 use scry_permission::PermissionController;
-use scry_storage::db::Storage;
+use scry_storage::Storage;
 use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Copy)]

@@ -5,8 +5,8 @@ use log::error;
 use scry_capability::tools::shell::{Shell, ShellArgs};
 use scry_capability::Tool;
 use scry_provider::entity::{ChatEvent, ProviderId};
-use scry_storage::db::{EntryType, Storage};
 use scry_storage::StorageError;
+use scry_storage::{EntryType, Storage};
 use serde_json::Value;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -631,7 +631,7 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
     Ok(sessions)
 }
 
-fn to_session_list_item(session: scry_storage::db::Session) -> Option<SessionListItem> {
+fn to_session_list_item(session: scry_storage::Session) -> Option<SessionListItem> {
     let session_id = match Uuid::parse_str(&session.session_id) {
         Ok(id) => id,
         Err(e) => {
