@@ -1,5 +1,6 @@
 use super::queries;
 use crate::error::{Result, StorageError};
+use serde_json::Value;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{FromRow, Pool, Sqlite};
 use std::path::Path;
@@ -176,6 +177,39 @@ impl Storage {
             .await?;
         Ok(())
     }
+
+    pub async fn insert_history(
+        &self,
+        session_id: &str,
+        payload_type: EntryType,
+        payload: &Value,
+    ) -> Result<()> {
+        sqlx::query(queries::INSERT_HISTORY)
+            .bind(session_id)
+            .bind(payload_type.as_str())
+            .bind(serde_json::to_string(payload)?)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_history(&self, session_id: &str) -> Result<Vec<FileEntry>> {
+        let entries = sqlx::query_as::<_, FileEntry>(queries::GET_HISTORY)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(entries)
+    }
+
+    pub async fn restore_history(&self, session_id: &str) -> Result<Vec<RestoreEntry>> {
+        let entries = sqlx::query_as::<_, RestoreEntry>(queries::RESTORE_HISTORY)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(entries)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -198,6 +232,37 @@ pub struct Session {
 pub struct PreferModelConfig {
     pub model: String,
     pub effort: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
+pub enum EntryType {
+    ResponseItem,
+    EventMsg,
+}
+
+impl EntryType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EntryType::ResponseItem => "response_item",
+            EntryType::EventMsg => "event_msg",
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+pub struct FileEntry {
+    #[sqlx(rename = "payloadType")]
+    pub t: EntryType,
+    pub payload: Value,
+}
+
+#[derive(Debug, FromRow)]
+pub struct RestoreEntry {
+    #[sqlx(rename = "payloadType")]
+    pub t: EntryType,
+    pub payload: Value,
+    pub finished: bool,
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {

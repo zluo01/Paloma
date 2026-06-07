@@ -1,4 +1,4 @@
 mod queries;
 mod storage;
 
-pub use storage::{ConnectedProvider, Session, Storage};
+pub use storage::{ConnectedProvider, EntryType, Session, Storage};

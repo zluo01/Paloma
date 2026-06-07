@@ -24,8 +24,6 @@ pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environme
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));
 
-pub static SESSION_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("sessions"));
-
 pub static DATABASE_PATH: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("scry.db"));
 
 pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUNTIME_DIR.join("scry.sock"));

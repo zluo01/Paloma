@@ -26,3 +26,9 @@ pub const PREFER_MODEL_CONFIG_QUERY: &str =
 pub const MATCH_PERMISSION_QUERY: &str = include_str!("queries/permissions/match_permission.sql");
 
 pub const INSERT_PERMISSION_QUERY: &str = include_str!("queries/permissions/insert_permission.sql");
+
+pub const INSERT_HISTORY: &str = include_str!("queries/history/insert_history.sql");
+
+pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");
+
+pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.sql");

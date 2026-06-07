@@ -1,17 +1,15 @@
 use crate::entity::{ChatRenderEvent, RenderEvent};
 use crate::remote::tool_controller::ToolCallPayload;
 use crate::remote::PermissionWorkflowManagerClient;
-use log::{debug, error};
+use log::error;
 use scry_capability::tools::shell::{Shell, ShellArgs};
 use scry_capability::Tool;
 use scry_provider::entity::{ChatEvent, ProviderId};
-use scry_storage::db::Storage;
-use scry_storage::session::{read_session_entries, EntryType, FileEntry, SessionWriterClient};
+use scry_storage::db::{EntryType, Storage};
 use scry_storage::StorageError;
 use serde_json::Value;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
@@ -34,15 +32,15 @@ enum SessionStreamingEvent {
         session_id: Uuid,
         provider_id: ProviderId,
         title: String,
-        reply: oneshot::Sender<Result<(), SessionManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     },
     RestoreSession {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<TerminalState, SessionManagerError>>,
+        reply: oneshot::Sender<Result<TerminalState>>,
     },
     RemoveSession {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<(), SessionManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     },
     AddEvent {
         session_id: Uuid,
@@ -50,10 +48,10 @@ enum SessionStreamingEvent {
     },
     ConstructMessages {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<Vec<Value>, SessionManagerError>>,
+        reply: oneshot::Sender<Result<Vec<Value>>>,
     },
     AvailableSessions {
-        reply: oneshot::Sender<Result<Vec<SessionListItem>, SessionManagerError>>,
+        reply: oneshot::Sender<Result<Vec<SessionListItem>>>,
     },
 }
 
@@ -72,9 +70,8 @@ pub enum TerminalState {
 }
 
 struct Session {
-    provider_id: ProviderId,
-    title: String,
-    events: Vec<SessionEvent>, // single source of truth: prompts + deltas + OutputItems
+    /// only store delta, clear on DONE or ERROR
+    delta: Vec<SessionEvent>,
     terminal: TerminalState,
 }
 
@@ -94,11 +91,10 @@ pub struct SessionManagerClient {
 
 impl SessionManager {
     pub async fn new(
-        session_path: PathBuf,
         storage: Storage,
         permission_workflow_client: PermissionWorkflowManagerClient,
-    ) -> Result<(Self, SessionManagerClient), StorageError> {
-        let sessions: HashMap<Uuid, Session> = restore_sessions(session_path, &storage).await?;
+    ) -> Result<(Self, SessionManagerClient)> {
+        let sessions: HashMap<Uuid, Session> = restore_sessions(&storage).await?;
 
         let (tx, rx) = mpsc::channel(scry_config::SESSION_MANAGER_CHANNEL_CAPACITY);
         let (updates_tx, _) = broadcast::channel(scry_config::SESSION_BROADCAST_CHANNEL_CAPACITY);
@@ -118,19 +114,15 @@ impl SessionManager {
         Ok((manager, client))
     }
 
-    pub async fn run(&mut self, session_writer_client: &SessionWriterClient) {
+    pub async fn run(&mut self) {
         while let Some(event) = self.event_rx.recv().await {
-            if let Err(err) = self.handle_event(event, session_writer_client).await {
+            if let Err(err) = self.handle_event(event).await {
                 error!("session manager error: {err}");
             }
         }
     }
 
-    async fn handle_event(
-        &mut self,
-        event: SessionStreamingEvent,
-        session_writer_client: &SessionWriterClient,
-    ) -> scry_storage::Result<()> {
+    async fn handle_event(&mut self, event: SessionStreamingEvent) -> Result<()> {
         match event {
             SessionStreamingEvent::CreateSession {
                 session_id,
@@ -138,41 +130,36 @@ impl SessionManager {
                 title,
                 reply,
             } => {
-                self.storage
+                let result = self
+                    .storage
                     .create_new_session(session_id, provider_id.as_str(), &title)
-                    .await?;
-
-                let result = match self.sessions.entry(session_id) {
-                    Entry::Occupied(_) => {
-                        Err(SessionManagerError::SessionAlreadyExists(session_id))
-                    }
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(Session {
-                            provider_id,
-                            title,
-                            events: Vec::new(),
-                            terminal: TerminalState::Done,
-                        });
-                        Ok(())
-                    }
-                };
+                    .await
+                    .map_err(SessionManagerError::from)
+                    .and_then(|()| match self.sessions.entry(session_id) {
+                        Entry::Occupied(_) => {
+                            Err(SessionManagerError::SessionAlreadyExists(session_id))
+                        }
+                        Entry::Vacant(vacant) => {
+                            vacant.insert(Session {
+                                delta: Vec::new(),
+                                terminal: TerminalState::Done,
+                            });
+                            Ok(())
+                        }
+                    });
                 let _ = reply.send(result);
             }
             SessionStreamingEvent::RestoreSession { session_id, reply } => {
                 let _ = reply.send(self.restore_session(session_id).await);
             }
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
-                // make sure the db is updated first, if error, we still have the session in sync
-                if let Err(err) = self.storage.delete_session(&session_id.to_string()).await {
-                    error!("cleanup: delete session {session_id} from storage: {err}");
-                }
-
-                if self.sessions.remove(&session_id).is_none() {
-                    debug!("remove: session {session_id} not in memory");
-                }
-                let result = session_writer_client
-                    .delete_file(session_id)
+                let result = self
+                    .storage
+                    .delete_session(&session_id.to_string())
                     .await
+                    .map(|()| {
+                        self.sessions.remove(&session_id);
+                    })
                     .map_err(SessionManagerError::from);
                 let _ = reply.send(result);
             }
@@ -180,38 +167,32 @@ impl SessionManager {
                 session_id,
                 payload,
             } => {
-                if let Err(err) = self
-                    .add_event(session_id, payload, session_writer_client)
-                    .await
-                {
+                if let Err(err) = self.add_event(session_id, payload).await {
                     error!("session {session_id} add_event failed: {err}");
                 }
             }
             SessionStreamingEvent::ConstructMessages { session_id, reply } => {
-                let _ = reply.send(self.construct_messages(session_id));
+                let _ = reply.send(self.construct_messages(session_id).await);
             }
             SessionStreamingEvent::AvailableSessions { reply } => {
-                let sessions = self
-                    .sessions
-                    .iter()
-                    .map(|(id, session)| SessionListItem {
-                        session_id: *id,
-                        provider_id: session.provider_id,
-                        title: session.title.clone(),
+                let result = self
+                    .storage
+                    .all_sessions()
+                    .await
+                    .map(|sessions| {
+                        sessions
+                            .into_iter()
+                            .filter_map(to_session_list_item)
+                            .collect()
                     })
-                    .collect();
-                let _ = reply.send(Ok(sessions));
+                    .map_err(SessionManagerError::from);
+                let _ = reply.send(result);
             }
         }
         Ok(())
     }
 
-    async fn add_event(
-        &mut self,
-        session_id: Uuid,
-        payload: SessionEvent,
-        session_writer_client: &SessionWriterClient,
-    ) -> Result<(), SessionManagerError> {
+    async fn add_event(&mut self, session_id: Uuid, payload: SessionEvent) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&session_id) else {
             return Err(SessionManagerError::UnknownSession(session_id));
         };
@@ -230,16 +211,10 @@ impl SessionManager {
             .await;
         session.update(payload);
 
+        // save only output item or tool call output item to db history
         if let Some((t, item)) = entry {
-            session_writer_client
-                .append_file(
-                    session_id,
-                    FileEntry {
-                        timestamp: chrono::Utc::now(),
-                        t,
-                        payload: item,
-                    },
-                )
+            self.storage
+                .insert_history(&session_id.to_string(), t, &item)
                 .await?;
         }
 
@@ -250,30 +225,25 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn restore_session(
-        &self,
-        session_id: Uuid,
-    ) -> Result<TerminalState, SessionManagerError> {
+    async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
         let session = self
             .sessions
             .get(&session_id)
             .ok_or(SessionManagerError::UnknownSession(session_id))?;
 
-        let mut completed_tool_calls: HashSet<String> = HashSet::new();
-        let mut renders: VecDeque<RenderEvent> = VecDeque::new();
+        for entry in self
+            .storage
+            .restore_history(&session_id.to_string())
+            .await?
+        {
+            let (event, finished) = match entry.t {
+                EntryType::ResponseItem => (response_item_to_event(entry.payload), entry.finished),
+                EntryType::EventMsg => continue,
+            };
 
-        // walk the history backward to collect function_call_output
-        // so we do not render unwanted actions for tool call permissions
-        for event in session.events.iter().rev() {
-            let render = match event {
+            let render = match &event {
                 SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
                     match item.get("type").and_then(|t| t.as_str()) {
-                        Some("function_call_output") => {
-                            if let Some(call_id) = item.get("call_id").and_then(|c| c.as_str()) {
-                                completed_tool_calls.insert(call_id.to_string());
-                            }
-                            continue;
-                        }
                         Some("message") => {
                             let parts: Vec<String> = item
                                 .get("content")
@@ -315,10 +285,6 @@ impl SessionManager {
                     }
                 }
                 SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
-                    let finished = item
-                        .get("call_id")
-                        .and_then(|c| c.as_str())
-                        .is_some_and(|call_id| completed_tool_calls.contains(call_id));
                     match tool_call_render(
                         &self.permission_workflow_client,
                         session_id,
@@ -331,9 +297,7 @@ impl SessionManager {
                         None => continue,
                     }
                 }
-                SessionEvent::UserPrompt(_)
-                | SessionEvent::Chat(ChatEvent::TextDelta { .. })
-                | SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { .. }) => {
+                SessionEvent::UserPrompt(_) => {
                     match event
                         .to_render_event(&self.permission_workflow_client, session_id)
                         .await
@@ -342,43 +306,47 @@ impl SessionManager {
                         None => continue,
                     }
                 }
-                // All other cases are unexpected
                 other => {
-                    if other
-                        .to_render_event(&self.permission_workflow_client, session_id)
-                        .await
-                        .is_some()
-                    {
-                        error!(
-                            "unexpected event in restored history for session {session_id}: {other:?}"
-                        );
-                    }
+                    error!(
+                        "unexpected event in restored history for session {session_id}: {other:?}"
+                    );
                     continue;
                 }
             };
 
-            renders.push_front(render);
-        }
-
-        for render in renders {
             let _ = self.updates_tx.send(SessionUpdate {
                 session_id,
                 event: render,
             });
         }
 
+        // Replay in-flight streaming deltas not yet finalized into history, so a
+        // re-subscribing UI catches up on the current turn's partial output.
+        for event in &session.delta {
+            if let Some(render) = event
+                .to_render_event(&self.permission_workflow_client, session_id)
+                .await
+            {
+                let _ = self.updates_tx.send(SessionUpdate {
+                    session_id,
+                    event: render,
+                });
+            }
+        }
+
         Ok(session.terminal)
     }
 
-    fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>, SessionManagerError> {
-        let session = self
-            .sessions
-            .get(&session_id)
-            .ok_or(SessionManagerError::UnknownSession(session_id))?;
-
-        let messages = session
-            .events
-            .iter()
+    async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>> {
+        let messages = self
+            .storage
+            .get_history(&session_id.to_string())
+            .await?
+            .into_iter()
+            .filter_map(|entry| match entry.t {
+                EntryType::ResponseItem => Some(response_item_to_event(entry.payload)),
+                EntryType::EventMsg => None,
+            })
             .filter_map(|event| match event {
                 SessionEvent::UserPrompt(item)
                 | SessionEvent::Chat(ChatEvent::OutputItem { item })
@@ -526,7 +494,7 @@ impl SessionManagerClient {
         session_id: Uuid,
         provider_id: ProviderId,
         title: String,
-    ) -> Result<(), SessionManagerError> {
+    ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::CreateSession {
@@ -542,11 +510,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn add_event(
-        &self,
-        session_id: Uuid,
-        payload: SessionEvent,
-    ) -> Result<(), SessionManagerError> {
+    pub async fn add_event(&self, session_id: Uuid, payload: SessionEvent) -> Result<()> {
         self.event_tx
             .send(SessionStreamingEvent::AddEvent {
                 session_id,
@@ -556,10 +520,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)
     }
 
-    pub async fn restore_session(
-        &self,
-        session_id: Uuid,
-    ) -> Result<TerminalState, SessionManagerError> {
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::RestoreSession {
@@ -573,7 +534,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn remove_session(&self, session_id: Uuid) -> Result<(), SessionManagerError> {
+    pub async fn remove_session(&self, session_id: Uuid) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::RemoveSession {
@@ -587,10 +548,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn construct_messages(
-        &self,
-        session_id: Uuid,
-    ) -> Result<Vec<Value>, SessionManagerError> {
+    pub async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::ConstructMessages {
@@ -604,7 +562,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, SessionManagerError> {
+    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::AvailableSessions { reply: reply_tx })
@@ -621,59 +579,32 @@ impl SessionManagerClient {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum SessionManagerError {
-    #[error("unknown session {0}")]
-    UnknownSession(Uuid),
-
-    #[error("session {0} already exists")]
-    SessionAlreadyExists(Uuid),
-
-    #[error("session channel closed")]
-    ChannelClosed,
-
-    #[error("append failed: {0}")]
-    Append(#[from] StorageError),
-}
-
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            event @ SessionEvent::Chat(
-                ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. },
-            ) => {
-                self.events.retain(|event| {
-                    !matches!(
-                        event,
-                        SessionEvent::Chat(
-                            ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
-                        )
-                    )
-                });
-                self.events.push(event);
-            }
+            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {}
             SessionEvent::Chat(ChatEvent::Done) => {
-                self.terminal = TerminalState::Done;
+                self.delta.clear();
+                self.terminal = TerminalState::Done
             }
-            SessionEvent::Err(_message) => self.terminal = TerminalState::Error,
-            event @ SessionEvent::UserPrompt(_) => {
+            SessionEvent::Err(_message) => {
+                self.delta.clear();
+                self.terminal = TerminalState::Error
+            }
+            SessionEvent::UserPrompt(_) => {
                 // whenever new prompt coming, we consider the state as running.
                 self.terminal = TerminalState::Running;
-                self.events.push(event);
             }
             event @ SessionEvent::Chat(
                 ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
             ) => {
-                self.events.push(event);
+                self.delta.push(event);
             }
         }
     }
 }
 
-async fn restore_sessions(
-    session_path: PathBuf,
-    storage: &Storage,
-) -> Result<HashMap<Uuid, Session>, StorageError> {
+async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
     let mut sessions: HashMap<Uuid, Session> = HashMap::new();
 
     for session in storage.all_sessions().await? {
@@ -687,41 +618,42 @@ async fn restore_sessions(
                 continue;
             }
         };
-        let provider_id = match session.provider_id.as_str() {
-            "codex" => ProviderId::Codex,
-            other => {
-                error!("skip session {id} with unknown provider_id {other:?}");
-                continue;
-            }
-        };
-
-        let file_entries = match read_session_entries(&session_path, id).await {
-            Ok(entries) => entries,
-            Err(e) => {
-                error!("skip session {id}: failed to read session file: {e}");
-                continue;
-            }
-        };
-        let events = file_entries
-            .into_iter()
-            .filter_map(|entry| match entry.t {
-                EntryType::ResponseItem => Some(response_item_to_event(entry.payload)),
-                EntryType::EventMsg => None,
-            })
-            .collect();
 
         sessions.insert(
             id,
             Session {
-                provider_id,
-                title: session.title,
-                events,
+                delta: vec![],
                 terminal: TerminalState::Done,
             },
         );
     }
 
     Ok(sessions)
+}
+
+fn to_session_list_item(session: scry_storage::db::Session) -> Option<SessionListItem> {
+    let session_id = match Uuid::parse_str(&session.session_id) {
+        Ok(id) => id,
+        Err(e) => {
+            error!(
+                "skip session with invalid uuid {:?}: {e}",
+                session.session_id
+            );
+            return None;
+        }
+    };
+    let provider_id = match session.provider_id.as_str() {
+        "codex" => ProviderId::Codex,
+        other => {
+            error!("skip session {session_id} with unknown provider_id {other:?}");
+            return None;
+        }
+    };
+    Some(SessionListItem {
+        session_id,
+        provider_id,
+        title: session.title,
+    })
 }
 
 fn response_item_to_event(payload: Value) -> SessionEvent {
@@ -733,3 +665,20 @@ fn response_item_to_event(payload: Value) -> SessionEvent {
         SessionEvent::Chat(ChatEvent::OutputItem { item: payload })
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionManagerError {
+    #[error("unknown session {0}")]
+    UnknownSession(Uuid),
+
+    #[error("session {0} already exists")]
+    SessionAlreadyExists(Uuid),
+
+    #[error("session channel closed")]
+    ChannelClosed,
+
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
+
+type Result<T> = std::result::Result<T, SessionManagerError>;

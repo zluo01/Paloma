@@ -8,7 +8,6 @@ use scry_controller::remote::{
 use scry_controller::{ConnectController, LocalQuery, ProviderController};
 use scry_permission::PermissionController;
 use scry_storage::db::Storage;
-use scry_storage::session::SessionWriter;
 use tokio::sync::broadcast;
 
 /// Tray-driven actions delivered to the GTK side.
@@ -51,9 +50,6 @@ impl AppContext {
     }
 
     async fn init_llm(storage: Storage) -> Result<(ConnectController, RemoteQuery), AppError> {
-        let session_path = scry_config::SESSION_DIR.clone();
-        tokio::fs::create_dir_all(&session_path).await?;
-
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .read_timeout(Duration::from_secs(900))
@@ -75,16 +71,9 @@ impl AppContext {
             PermissionWorkflowManager::new(permission_controller);
         tokio::spawn(async move { permission_workflow_manager.run().await });
 
-        let (mut session_writer, session_writer_client) = SessionWriter::new(session_path.clone());
-        tokio::spawn(async move { session_writer.run().await });
-
-        let (mut session_manager, session_manager_client) = SessionManager::new(
-            session_path,
-            storage.clone(),
-            permission_workflow_client.clone(),
-        )
-        .await?;
-        tokio::spawn(async move { session_manager.run(&session_writer_client).await });
+        let (mut session_manager, session_manager_client) =
+            SessionManager::new(storage.clone(), permission_workflow_client.clone()).await?;
+        tokio::spawn(async move { session_manager.run().await });
 
         let (mut process_manager, process_manager_client) = ProcessManager::new();
         tokio::spawn(async move { process_manager.run().await });
@@ -134,4 +123,7 @@ pub enum AppError {
 
     #[error(transparent)]
     LocalQuery(#[from] scry_controller::LocalQueryInitError),
+
+    #[error(transparent)]
+    SessionManager(#[from] scry_controller::remote::SessionManagerError),
 }

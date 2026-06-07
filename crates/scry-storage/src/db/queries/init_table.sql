@@ -23,3 +23,16 @@ CREATE TABLE IF NOT EXISTS permissions
     with_glob  INTEGER          NOT NULL DEFAULT 0 CHECK (with_glob IN (0, 1)),
     updated_at INTEGER          NOT NULL DEFAULT (unixepoch())
 );
+
+CREATE TABLE IF NOT EXISTS history
+(   
+    id          INTEGER PRIMARY KEY,
+    session_id  TEXT    NOT NULL
+        REFERENCES sessions (session_id)
+            ON DELETE CASCADE,
+    timestamp   INTEGER NOT NULL DEFAULT (unixepoch()),
+    payloadType TEXT    NOT NULL,
+    payload     TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_session ON history (session_id);
