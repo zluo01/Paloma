@@ -1,3 +1,3 @@
-pub mod codex;
+mod codex;
 
 pub use codex::CodexConnector;

@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use scry_capability::ProcessManager;
 use scry_controller::{
-    remote::{PermissionWorkflowManager, RemoteQuery, SessionManager, ToolController, TurnManager},
-    ConnectController, LocalQuery, ProviderController,
+    ConnectController, LocalQuery, PermissionWorkflowManager, ProviderController, RemoteQuery,
+    SessionManager, ToolController, TurnManager,
 };
 use scry_permission::PermissionController;
 use scry_storage::Storage;
@@ -122,5 +122,5 @@ pub enum AppError {
     LocalQuery(#[from] scry_controller::LocalQueryInitError),
 
     #[error(transparent)]
-    SessionManager(#[from] scry_controller::remote::SessionManagerError),
+    SessionManager(#[from] scry_controller::SessionManagerError),
 }

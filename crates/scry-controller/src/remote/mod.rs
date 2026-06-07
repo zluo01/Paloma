@@ -10,8 +10,7 @@ pub use permission_workflow_manager::{
 };
 pub use remote_query::{RemoteQuery, RemoteQueryError};
 pub use session_manager::{
-    SessionEvent, SessionManager, SessionManagerClient, SessionManagerError, SessionUpdate,
-    TerminalState,
+    SessionEvent, SessionManager, SessionManagerError, SessionUpdate, TerminalState,
 };
 pub use tool_controller::ToolController;
-pub use turn_manager::{TurnManager, TurnManagerClient};
+pub use turn_manager::TurnManager;
