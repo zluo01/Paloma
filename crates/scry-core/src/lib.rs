@@ -10,14 +10,12 @@ use scry_permission::PermissionController;
 use scry_storage::db::Storage;
 use tokio::sync::broadcast;
 
-/// Tray-driven actions delivered to the GTK side.
 #[derive(Debug, Clone, Copy)]
 pub enum TrayEvent {
     OpenSettings,
     Quit,
 }
 
-/// Process-wide application state.
 pub struct AppContext {
     pub connect: ConnectController,
     pub local_query: LocalQuery,
@@ -119,7 +117,7 @@ pub enum AppError {
     Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
-    Runtime(#[from] scry_controller::ProviderControllerError),
+    Provider(#[from] scry_controller::ProviderControllerError),
 
     #[error(transparent)]
     LocalQuery(#[from] scry_controller::LocalQueryInitError),
