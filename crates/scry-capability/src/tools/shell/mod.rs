@@ -1,8 +1,8 @@
-pub mod process_manager;
+mod process_manager;
 
 use std::path::PathBuf;
 
-use process_manager::{ProcessExecRequest, ProcessManagerClient};
+pub use process_manager::{ProcessExecRequest, ProcessManager, ProcessManagerClient};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;

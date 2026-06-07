@@ -1,10 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use log::error;
-use scry_capability::{
-    tools::shell::{Shell, ShellArgs},
-    Tool,
-};
+use scry_capability::{Shell, ShellArgs, Tool};
 use scry_provider::{ChatEvent, ProviderId};
 use scry_storage::{EntryType, Storage, StorageError};
 use serde_json::Value;

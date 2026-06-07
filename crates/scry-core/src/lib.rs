@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use scry_capability::tools::shell::process_manager::ProcessManager;
+use scry_capability::ProcessManager;
 use scry_controller::{
     remote::{PermissionWorkflowManager, RemoteQuery, SessionManager, ToolController, TurnManager},
     ConnectController, LocalQuery, ProviderController,

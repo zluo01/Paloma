@@ -3,10 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
-use scry_capability::{
-    tools::shell::{Shell, ShellArgs},
-    Tool,
-};
+use scry_capability::{Shell, ShellArgs, Tool};
 use scry_provider::{ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema};
 use scry_storage::{Storage, StorageError};
 use tokio::{

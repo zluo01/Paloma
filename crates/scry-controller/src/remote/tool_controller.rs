@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use log::error;
-use scry_capability::{
-    tools::shell::{process_manager::ProcessManagerClient, Shell},
-    DynTool, Tool, ToolResult,
-};
+use scry_capability::{DynTool, ProcessManagerClient, Shell, Tool, ToolResult};
 use scry_provider::ToolSchema as ProviderToolSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

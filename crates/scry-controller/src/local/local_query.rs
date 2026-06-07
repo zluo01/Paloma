@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use log::error;
-use scry_capability::{
-    native::{app_search::AppSearch, clipboard::Clipboard},
-    Action, ActionOutcome, QueryHandler,
-};
+use scry_capability::{Action, ActionOutcome, AppSearch, Clipboard, QueryHandler};
 use serde::Serialize;
 use tokio::{sync::mpsc, task::JoinSet};
 
