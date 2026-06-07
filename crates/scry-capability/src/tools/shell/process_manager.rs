@@ -37,11 +37,11 @@ pub struct ProcessExecRequest {
 pub enum ProcessManagerEvent {
     Exec {
         request: ProcessExecRequest,
-        reply: oneshot::Sender<Result<ToolResult, ProcessManagerError>>,
+        reply: oneshot::Sender<Result<ToolResult>>,
     },
     CancelSession {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<(), ProcessManagerError>>,
+        reply: oneshot::Sender<Result<()>>,
     },
 }
 
@@ -87,7 +87,7 @@ impl ProcessManager {
     fn handle_exec(
         &mut self,
         request: ProcessExecRequest,
-        reply: oneshot::Sender<Result<ToolResult, ProcessManagerError>>,
+        reply: oneshot::Sender<Result<ToolResult>>,
     ) {
         let mut cmd = Command::new(&request.command[0]);
         cmd.args(&request.command[1..])
@@ -161,10 +161,7 @@ impl ProcessManager {
 }
 
 impl ProcessManagerClient {
-    pub async fn exec(
-        &self,
-        request: ProcessExecRequest,
-    ) -> Result<ToolResult, ProcessManagerError> {
+    pub async fn exec(&self, request: ProcessExecRequest) -> Result<ToolResult> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(ProcessManagerEvent::Exec {
@@ -178,7 +175,7 @@ impl ProcessManagerClient {
             .map_err(|_| ProcessManagerError::ChannelClosed)?
     }
 
-    pub async fn cancel_session(&self, session_id: Uuid) -> Result<(), ProcessManagerError> {
+    pub async fn cancel_session(&self, session_id: Uuid) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(ProcessManagerEvent::CancelSession {
@@ -201,6 +198,8 @@ pub enum ProcessManagerError {
     #[error("failed to spawn process: {0}")]
     Spawn(String),
 }
+
+type Result<T> = std::result::Result<T, ProcessManagerError>;
 
 fn remove_pid(sessions: &DashMap<Uuid, Vec<i32>>, session_id: Uuid, pid: i32) {
     let became_empty = match sessions.get_mut(&session_id) {
