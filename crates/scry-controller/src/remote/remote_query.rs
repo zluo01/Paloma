@@ -1,4 +1,6 @@
-use crate::remote::permission_workflow_manager::{PermissionWorkflowError, UserDecision};
+use crate::remote::permission_workflow_manager::{
+    PermissionState, PermissionWorkflowError, UserDecision,
+};
 use crate::remote::session_manager::{
     SessionListItem, SessionManagerClient, SessionManagerError, TerminalState,
 };
@@ -94,7 +96,7 @@ impl RemoteQuery {
             .await?)
     }
 
-    pub async fn decide(&self, user_decision: UserDecision) -> Result<()> {
+    pub async fn decide(&self, user_decision: UserDecision) -> Result<PermissionState> {
         Ok(self
             .permission_workflow_client
             .decide(user_decision)

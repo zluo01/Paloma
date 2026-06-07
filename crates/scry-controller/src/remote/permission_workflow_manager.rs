@@ -77,7 +77,7 @@ enum PermissionWorkflowEvent {
     },
     Decide {
         user_decision: UserDecision,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<PermissionState>>,
     },
 }
 
@@ -171,8 +171,7 @@ impl PermissionWorkflowManager {
                 user_decision,
                 reply,
             } => {
-                let result = self.handle_user_decision(user_decision).await;
-                let _ = reply.send(result);
+                let _ = reply.send(self.handle_user_decision(user_decision).await);
             }
         };
         Ok(())
@@ -289,14 +288,17 @@ impl PermissionWorkflowManager {
         Ok(handle)
     }
 
-    async fn handle_user_decision(&mut self, user_decision: UserDecision) -> Result<()> {
+    async fn handle_user_decision(
+        &mut self,
+        user_decision: UserDecision,
+    ) -> Result<PermissionState> {
         match user_decision {
             UserDecision::AllowOnce { call_id } => {
                 get_permission_request_guard(&mut self.permission_tracker, &call_id)
                     .await?
                     .tracker
                     .complete(PermissionState::Allow);
-                Ok(())
+                Ok(PermissionState::Allow)
             }
             // for normal allow, it can either be exact allow or wildcard allow(glob enabled)
             // we will need to save the decision to database for consensus check
@@ -311,7 +313,7 @@ impl PermissionWorkflowManager {
                     .add_permission(command, glob)
                     .await?;
                 request.tracker.complete(PermissionState::Allow);
-                Ok(())
+                Ok(PermissionState::Allow)
             }
             // AllowSession only happens to composite, which can either be
             // allowed command in this session or allow all composite in this session
@@ -329,7 +331,7 @@ impl PermissionWorkflowManager {
                     Some(session) => {
                         session.allowlist.insert(command);
                         request.tracker.complete(PermissionState::Allow);
-                        Ok(())
+                        Ok(PermissionState::Allow)
                     }
                     None => {
                         // Decision arrived without a prior init for this
@@ -351,7 +353,7 @@ impl PermissionWorkflowManager {
                     Some(session) => {
                         session.always = true;
                         request.tracker.complete(PermissionState::Allow);
-                        Ok(())
+                        Ok(PermissionState::Allow)
                     }
                     None => {
                         request.tracker.complete(PermissionState::Deny);
@@ -364,7 +366,7 @@ impl PermissionWorkflowManager {
                     .await?
                     .tracker
                     .complete(PermissionState::Deny);
-                Ok(())
+                Ok(PermissionState::Deny)
             }
         }
     }
@@ -499,8 +501,7 @@ impl PermissionWorkflowManagerClient {
             .map_err(|_| PermissionWorkflowError::ChannelClosed)?
     }
 
-    /// Submit the user's decision, completing the pending tracker.
-    pub async fn decide(&self, user_decision: UserDecision) -> Result<()> {
+    pub async fn decide(&self, user_decision: UserDecision) -> Result<PermissionState> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(PermissionWorkflowEvent::Decide {
