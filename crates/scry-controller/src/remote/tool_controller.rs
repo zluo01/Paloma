@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use log::error;
-use scry_capability::{DynTool, ProcessManagerClient, Shell, Tool, ToolResult};
-use scry_provider::ToolSchema as ProviderToolSchema;
+use scry_capability::{DynTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -42,17 +41,10 @@ impl ToolController {
         }
     }
 
-    pub fn tool_schemas(&self) -> Vec<ProviderToolSchema> {
+    pub fn tool_schemas(&self) -> Vec<ToolSchema> {
         self.handlers
             .iter()
-            .map(|entry| {
-                let schema = entry.value().schema();
-                ProviderToolSchema {
-                    name: schema.name,
-                    description: schema.description,
-                    parameters: schema.input_schema,
-                }
-            })
+            .flat_map(|entry| entry.value().schema())
             .collect()
     }
 

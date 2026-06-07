@@ -5,6 +5,6 @@ mod runtime;
 pub use connector::CodexConnector;
 pub use entity::{
     Auth, ChatEvent, ChatRequest, ChatStream, Connection, Model, ProviderAuthenticator,
-    ProviderClient, ProviderError, ProviderId, Result, ToolSchema,
+    ProviderClient, ProviderError, ProviderId, Result,
 };
 pub use runtime::CodexRuntime;

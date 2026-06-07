@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::entity::{Capability, CapabilityMeta, Tool, ToolResult};
+use crate::{Capability, CapabilityMeta, Tool, ToolResult};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShellArgs {

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,20 +83,21 @@ pub trait Tool: Capability {
         args: Self::Args,
     ) -> Result<ToolResult, String>;
 
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
+    fn schema(&self) -> Vec<ToolSchema> {
+        vec![ToolSchema {
             name: Self::NAME.into(),
             description: Self::DESCRIPTION.into(),
-            input_schema: serde_json::to_value(schemars::schema_for!(Self::Args))
+            parameters: serde_json::to_value(schemars::schema_for!(Self::Args))
                 .expect("JsonSchema output is always serializable"),
-        }
+        }]
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolSchema {
     pub name: String,
     pub description: String,
-    pub input_schema: serde_json::Value,
+    pub parameters: Value,
 }
 
 #[derive(Debug)]
@@ -106,7 +108,7 @@ pub enum ToolResult {
 
 #[async_trait::async_trait]
 pub trait DynTool: Send + Sync {
-    fn schema(&self) -> ToolSchema;
+    fn schema(&self) -> Vec<ToolSchema>;
     async fn invoke(
         &self,
         session_id: Uuid,
@@ -120,7 +122,7 @@ impl<T> DynTool for T
 where
     T: Tool + Send + Sync,
 {
-    fn schema(&self) -> ToolSchema {
+    fn schema(&self) -> Vec<ToolSchema> {
         Tool::schema(self)
     }
 

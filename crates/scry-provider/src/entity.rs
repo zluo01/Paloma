@@ -1,4 +1,5 @@
 use futures::stream::BoxStream;
+use scry_capability::ToolSchema;
 use scry_storage::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -91,13 +92,6 @@ pub struct ChatRequest {
     pub effort: String,
     pub messages: Vec<Value>,
     pub tools: Vec<ToolSchema>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ToolSchema {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

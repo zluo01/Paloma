@@ -9,6 +9,7 @@ description = "Provider connection and credential primitives for Scry."
 
 [dependencies]
 scry-config = { path = "../scry-config" }
+scry-capability = { path = "../scry-capability" }
 scry-storage = { path = "../scry-storage" }
 async-trait = { workspace = true }
 futures = { workspace = true }
