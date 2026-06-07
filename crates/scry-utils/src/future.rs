@@ -1,6 +1,6 @@
-use futures::future::Shared;
-use futures::FutureExt;
 use std::future::Future;
+
+use futures::{future::Shared, FutureExt};
 use tokio::sync::oneshot;
 
 /// A simple wrapper on the oneshot to make it like completableFuture in Java
@@ -32,7 +32,7 @@ impl<T: Clone> CompletableFuture<T> {
             Some(tx) => {
                 let _ = tx.send(value);
                 true
-            }
+            },
             None => false,
         }
     }

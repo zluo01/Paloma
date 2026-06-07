@@ -1,14 +1,15 @@
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use log::error;
-use std::sync::Arc;
-use tokio::task::JoinSet;
+use scry_capability::{
+    native::{app_search::AppSearch, clipboard::Clipboard},
+    Action, ActionOutcome, QueryHandler,
+};
+use serde::Serialize;
+use tokio::{sync::mpsc, task::JoinSet};
 
 pub(crate) use crate::entity::{LocalRenderEvent, QueryResponse, RenderEvent};
-use scry_capability::native::app_search::AppSearch;
-use scry_capability::native::clipboard::Clipboard;
-use scry_capability::{Action, ActionOutcome, QueryHandler};
-use serde::Serialize;
-use tokio::sync::mpsc;
 
 pub struct LocalQuery {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
@@ -64,7 +65,7 @@ impl LocalQuery {
                         error!("local query: failed to send render response for handler {id}");
                         return;
                     }
-                }
+                },
                 Err(err) => {
                     let message = err.to_string();
                     if render_tx
@@ -76,7 +77,7 @@ impl LocalQuery {
                     {
                         error!("local query: failed to send join error to renderer: {message}");
                     }
-                }
+                },
             }
         }
 

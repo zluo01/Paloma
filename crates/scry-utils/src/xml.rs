@@ -98,14 +98,14 @@ fn write_element(f: &mut Formatter<'_>, elem: &Element) -> fmt::Result {
             } else {
                 write!(f, "></{}>", elem.name)
             }
-        }
+        },
         Body::PlainText(body) => {
             if has_attrs {
                 write!(f, "\n>{body}</{}>", elem.name)
             } else {
                 write!(f, ">{body}</{}>", elem.name)
             }
-        }
+        },
         Body::Cdata(escaped) => {
             // Body already has its `]]>` occurrences split.
             if has_attrs {
@@ -113,7 +113,7 @@ fn write_element(f: &mut Formatter<'_>, elem: &Element) -> fmt::Result {
             } else {
                 write!(f, "><![CDATA[{escaped}]]></{}>", elem.name)
             }
-        }
+        },
         Body::Children(kids) => {
             if has_attrs {
                 f.write_str("\n>")?;
@@ -125,7 +125,7 @@ fn write_element(f: &mut Formatter<'_>, elem: &Element) -> fmt::Result {
                 write_element(f, kid)?;
             }
             write!(f, "\n</{}>", elem.name)
-        }
+        },
     }
 }
 

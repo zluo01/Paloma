@@ -1,5 +1,9 @@
-use futures::future::BoxFuture;
-use futures::FutureExt;
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
+
+use futures::{future::BoxFuture, FutureExt};
 use log::{debug, error};
 use scry_config::{
     PERMISSION_DECISION_TIMEOUT_SECS, PERMISSION_EVICT_TTL_SECS,
@@ -9,8 +13,6 @@ use scry_permission::{
     ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
 };
 use scry_utils::CompletableFuture;
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -156,23 +158,23 @@ impl PermissionWorkflowManager {
                     .init_permission_workflow(session_id, call_id, command)
                     .await;
                 let _ = reply.send(result);
-            }
+            },
             PermissionWorkflowEvent::CheckDecision {
                 session_id,
                 call_id,
                 reply,
             } => {
                 let _ = reply.send(self.handle_check_decision(session_id, call_id));
-            }
+            },
             PermissionWorkflowEvent::WaitDecision { call_id, reply } => {
                 let _ = reply.send(self.handle_wait_decision(call_id));
-            }
+            },
             PermissionWorkflowEvent::Decide {
                 user_decision,
                 reply,
             } => {
                 let _ = reply.send(self.handle_user_decision(user_decision).await);
-            }
+            },
         };
         Ok(())
     }
@@ -263,13 +265,13 @@ impl PermissionWorkflowManager {
                         user_options.push(UserDecision::Deny { call_id });
 
                         Ok(user_options)
-                    }
+                    },
                     ArgvDecision::AskNoPersist => {
                         Ok(generate_unsafe_decision_options(call_id, session_id))
-                    }
+                    },
                     ArgvDecision::Allow | ArgvDecision::NotExecutable => Ok(vec![]),
                 }
-            }
+            },
         }
     }
 
@@ -299,7 +301,7 @@ impl PermissionWorkflowManager {
                     .tracker
                     .complete(PermissionState::Allow);
                 Ok(PermissionState::Allow)
-            }
+            },
             // for normal allow, it can either be exact allow or wildcard allow(glob enabled)
             // we will need to save the decision to database for consensus check
             UserDecision::Allow {
@@ -314,7 +316,7 @@ impl PermissionWorkflowManager {
                     .await?;
                 request.tracker.complete(PermissionState::Allow);
                 Ok(PermissionState::Allow)
-            }
+            },
             // AllowSession only happens to composite, which can either be
             // allowed command in this session or allow all composite in this session
             // for first case, we do not need to update always flag but simply add to allowlist
@@ -332,16 +334,16 @@ impl PermissionWorkflowManager {
                         session.allowlist.insert(command);
                         request.tracker.complete(PermissionState::Allow);
                         Ok(PermissionState::Allow)
-                    }
+                    },
                     None => {
                         // Decision arrived without a prior init for this
                         // session — a bug. Deny the tracker so the waiter
                         // unblocks instead of hanging until the timeout.
                         request.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
-                    }
+                    },
                 }
-            }
+            },
             UserDecision::IgnorePermission {
                 session_id,
                 call_id,
@@ -354,20 +356,20 @@ impl PermissionWorkflowManager {
                         session.always = true;
                         request.tracker.complete(PermissionState::Allow);
                         Ok(PermissionState::Allow)
-                    }
+                    },
                     None => {
                         request.tracker.complete(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
-                    }
+                    },
                 }
-            }
+            },
             UserDecision::Deny { call_id } => {
                 get_permission_request_guard(&mut self.permission_tracker, &call_id)
                     .await?
                     .tracker
                     .complete(PermissionState::Deny);
                 Ok(PermissionState::Deny)
-            }
+            },
         }
     }
 }
@@ -384,11 +386,11 @@ async fn get_permission_request_guard<'a>(
         return Err(match request.tracker.get().await {
             Some(PermissionState::Timeout) => {
                 PermissionWorkflowError::AlreadyTimedOut(call_id.to_string())
-            }
+            },
             _ => {
                 error!("Unexpected attempt to complete on completed future {call_id}. This indicates a bug.");
                 PermissionWorkflowError::AlreadyResolved(call_id.to_string())
-            }
+            },
         });
     }
 

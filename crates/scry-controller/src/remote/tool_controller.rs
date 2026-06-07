@@ -1,15 +1,19 @@
-use crate::remote::permission_workflow_manager::PermissionState;
-use crate::remote::PermissionWorkflowManagerClient;
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use log::error;
-use scry_capability::tools::shell::process_manager::ProcessManagerClient;
-use scry_capability::tools::shell::Shell;
-use scry_capability::{DynTool, Tool, ToolResult};
-use scry_provider::entity::ToolSchema as ProviderToolSchema;
+use scry_capability::{
+    tools::shell::{process_manager::ProcessManagerClient, Shell},
+    DynTool, Tool, ToolResult,
+};
+use scry_provider::ToolSchema as ProviderToolSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::remote::{
+    permission_workflow_manager::PermissionState, PermissionWorkflowManagerClient,
+};
 
 pub struct ToolController {
     handlers: DashMap<&'static str, Arc<dyn DynTool>>,
@@ -89,7 +93,7 @@ impl ToolController {
             Err(message) => {
                 error!("tool {} failed: {message}", call.name);
                 message
-            }
+            },
         }
     }
 
@@ -106,7 +110,7 @@ impl ToolController {
             Some(PermissionState::Deny) => Err("command was denied by the user".into()),
             Some(PermissionState::Timeout) => {
                 Err("permission request timed out; command was not executed".into())
-            }
+            },
             None => Err("permission request was cancelled; command was not executed".into()),
         }
     }

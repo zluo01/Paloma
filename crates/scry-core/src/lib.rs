@@ -1,11 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use scry_capability::tools::shell::process_manager::ProcessManager;
-use scry_controller::remote::{
-    PermissionWorkflowManager, RemoteQuery, SessionManager, ToolController, TurnManager,
+use scry_controller::{
+    remote::{PermissionWorkflowManager, RemoteQuery, SessionManager, ToolController, TurnManager},
+    ConnectController, LocalQuery, ProviderController,
 };
-use scry_controller::{ConnectController, LocalQuery, ProviderController};
 use scry_permission::PermissionController;
 use scry_storage::Storage;
 use tokio::sync::broadcast;

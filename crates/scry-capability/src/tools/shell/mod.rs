@@ -1,12 +1,13 @@
 pub mod process_manager;
 
+use std::path::PathBuf;
+
+use process_manager::{ProcessExecRequest, ProcessManagerClient};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::entity::{Capability, CapabilityMeta, Tool, ToolResult};
-use process_manager::{ProcessExecRequest, ProcessManagerClient};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShellArgs {
@@ -127,8 +128,7 @@ fn resolve_workdir(workdir: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::process_manager::ProcessManager;
-    use super::*;
+    use super::{process_manager::ProcessManager, *};
 
     fn spawn_shell() -> Shell {
         let (mut pm, client) = ProcessManager::new();

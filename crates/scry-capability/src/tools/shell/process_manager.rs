@@ -1,16 +1,16 @@
-use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use crate::entity::ToolResult;
 use dashmap::DashMap;
 use scry_utils::Element;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot};
-use tokio::time::timeout;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::{Child, Command},
+    sync::{mpsc, oneshot},
+    time::timeout,
+};
 use uuid::Uuid;
+
+use crate::entity::ToolResult;
 
 /// Bounded mpsc capacity for the actor's incoming event queue.
 const PROCESS_MANAGER_CHANNEL_CAPACITY: usize = 128;
@@ -76,11 +76,11 @@ impl ProcessManager {
         match event {
             ProcessManagerEvent::Exec { request, reply } => {
                 self.handle_exec(request, reply);
-            }
+            },
             ProcessManagerEvent::CancelSession { session_id, reply } => {
                 self.cancel_session(session_id);
                 let _ = reply.send(Ok(()));
-            }
+            },
         }
     }
 
@@ -106,7 +106,7 @@ impl ProcessManager {
             Err(e) => {
                 let _ = reply.send(Err(ProcessManagerError::Spawn(e.to_string())));
                 return;
-            }
+            },
         };
 
         let pgid = child.id().map(|id| id as i32);
@@ -116,13 +116,13 @@ impl ProcessManager {
                     .entry(request.session_id)
                     .or_default()
                     .push(pgid);
-            }
+            },
             None => {
                 log::error!(
                     "Spawned child for session {} has no pid. This indicate a code bug.",
                     request.session_id
                 );
-            }
+            },
         }
 
         // Per-invocation spill directory keyed by call_id. If we cannot
@@ -137,7 +137,7 @@ impl ProcessManager {
                     spill_dir
                 );
                 None
-            }
+            },
         };
 
         let sessions = self.sessions.clone();
@@ -207,7 +207,7 @@ fn remove_pid(sessions: &DashMap<Uuid, Vec<i32>>, session_id: Uuid, pid: i32) {
         Some(mut vec) => {
             vec.retain(|p| *p != pid);
             vec.is_empty()
-        }
+        },
         None => return,
     };
     if became_empty {
@@ -219,8 +219,10 @@ fn remove_pid(sessions: &DashMap<Uuid, Vec<i32>>, session_id: Uuid, pid: i32) {
 
 #[cfg(unix)]
 fn kill_process_group(pgid: i32) {
-    use nix::sys::signal::{killpg, Signal};
-    use nix::unistd::Pid;
+    use nix::{
+        sys::signal::{killpg, Signal},
+        unistd::Pid,
+    };
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
 }
 
@@ -252,7 +254,7 @@ async fn run_to_completion(
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "terminated_by_signal".to_string());
             (false, code)
-        }
+        },
         Ok(Err(e)) => (false, format!("wait_error: {e}")),
         Err(_) => {
             // Timeout. Kill the whole process group on unix, then drain.
@@ -264,7 +266,7 @@ async fn run_to_completion(
             let _ = child.start_kill();
             let _ = child.wait().await;
             (true, "timed_out".to_string())
-        }
+        },
     };
 
     // Drain reader tasks with a bounded timeout. If a grandchild kept the
@@ -354,13 +356,13 @@ where
                                     p.display()
                                 );
                             }
-                        }
+                        },
                         Err(e) => {
                             log::error!(
                                 "could not create spill file {}: {e}; overflow will be discarded",
                                 p.display()
                             );
-                        }
+                        },
                     }
                 }
             }

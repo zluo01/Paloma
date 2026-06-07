@@ -1,16 +1,21 @@
-use crate::entity::{
-    ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, ProviderId,
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
 };
-use crate::{Auth, Result};
+
 use base64::Engine;
 use eventsource_stream::{EventStreamError, Eventsource};
-use futures::stream;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use scry_storage::Storage;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+
+use crate::{
+    entity::{
+        ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, ProviderId,
+    },
+    Auth, Result,
+};
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
@@ -51,12 +56,12 @@ impl CodexRuntime {
                 return Err(ProviderError::Other(
                     "Codex credential is missing a refresh_token".into(),
                 ));
-            }
+            },
             Auth::ApiKey(_) => {
                 return Err(ProviderError::Other(
                     "Codex does not support api_key credentials".into(),
                 ));
-            }
+            },
         };
 
         Ok(Self {
@@ -174,7 +179,7 @@ impl ProviderClient for CodexRuntime {
                             ))),
                             None,
                         ));
-                    }
+                    },
                     Ok(None) => return None,
                     Ok(Some(frame)) => frame,
                 };
@@ -187,13 +192,13 @@ impl ProviderClient for CodexRuntime {
                             ))),
                             None,
                         ));
-                    }
+                    },
                     Err(e) => {
                         return Some((
                             Err(ProviderError::Other(format!("SSE parse error: {e}"))),
                             None,
                         ));
-                    }
+                    },
                     // https://developers.openai.com/api/reference/resources/responses/streaming-events
                     //
                     // Event-handling philosophy (mirrors Codex CLI's
@@ -223,7 +228,7 @@ impl ProviderClient for CodexRuntime {
                                 )),
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
-                        }
+                        },
                         "response.reasoning_summary_text.delta" => {
                             return match serde_json::from_str::<TextDeltaPayload>(&frame.data) {
                                 Ok(p) => {
@@ -232,10 +237,10 @@ impl ProviderClient for CodexRuntime {
                                         Ok(ChatEvent::ReasoningSummaryDelta { text: p.delta }),
                                         Some((sse, reasoning_summary_delta_seen)),
                                     ))
-                                }
+                                },
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
-                        }
+                        },
                         "response.reasoning_summary_part.added" => {
                             reasoning_summary_delta_seen = false;
                             return Some((
@@ -244,7 +249,7 @@ impl ProviderClient for CodexRuntime {
                                 }),
                                 Some((sse, reasoning_summary_delta_seen)),
                             ));
-                        }
+                        },
                         "response.reasoning_summary_text.done" => {
                             if reasoning_summary_delta_seen {
                                 continue;
@@ -256,7 +261,7 @@ impl ProviderClient for CodexRuntime {
                                 )),
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
-                        }
+                        },
                         "response.output_item.done" => {
                             return match serde_json::from_str::<OutputItemDonePayload>(&frame.data)
                             {
@@ -269,14 +274,14 @@ impl ProviderClient for CodexRuntime {
                                         ChatEvent::OutputItem { item: p.item }
                                     };
                                     Some((Ok(event), Some((sse, reasoning_summary_delta_seen))))
-                                }
+                                },
                                 Err(e) => Some((Err(ProviderError::from(e)), None)),
                             };
-                        }
+                        },
                         "response.completed" => return Some((Ok(ChatEvent::Done), None)),
                         "response.failed" | "response.incomplete" | "error" => {
                             return Some((Err(parse_stream_error(&frame.data)), None));
-                        }
+                        },
                         // ── Lifecycle: status pings (no payload we need) ───────
                         // `response.created`     — turn started (we use the HTTP
                         //                          200 itself as the start signal).
@@ -388,7 +393,7 @@ impl ProviderClient for CodexRuntime {
                                  (see https://developers.openai.com/api/reference/resources/responses/streaming-events)."
                             );
                             continue;
-                        }
+                        },
                     },
                 }
             }

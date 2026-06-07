@@ -1,9 +1,11 @@
-use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
-use std::sync::{Arc, RwLock};
-use std::thread;
-use std::time::Duration;
+use std::{
+    collections::VecDeque,
+    io::{BufRead, BufReader},
+    process::{Command, Stdio},
+    sync::{Arc, RwLock},
+    thread,
+    time::Duration,
+};
 
 use log::{debug, error};
 use wl_clipboard_rs::copy::{
@@ -66,7 +68,7 @@ impl QueryHandler for Clipboard {
             REMOVE_ACTION_LABEL => self.remove_entry(&text),
             other => {
                 error!("clipboard: unknown action label: {other}");
-            }
+            },
         };
 
         ActionOutcome::Hide
@@ -146,11 +148,11 @@ fn run_wl_paste_watch(history: &RwLock<VecDeque<String>>) -> std::io::Result<()>
                 if !text.trim().is_empty() {
                     push_entry(history, text);
                 }
-            }
+            },
             Err(e) => {
                 let _ = child.kill();
                 return Err(e);
-            }
+            },
         }
     }
 }

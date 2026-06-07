@@ -1,13 +1,13 @@
 //! Bash composite parser, Logic partially ported from openai/codex
 //! (`codex-rs/shell-command/src/bash.rs`).
 
-use tree_sitter::Node;
-use tree_sitter::Parser;
-use tree_sitter::Tree;
+use tree_sitter::{Node, Parser, Tree};
 use tree_sitter_bash::LANGUAGE as BASH;
 
-use crate::error::{PermissionError, Result};
-use crate::utils::is_supported_shell;
+use crate::{
+    error::{PermissionError, Result},
+    utils::is_supported_shell,
+};
 
 pub(crate) fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String>>>> {
     if command.is_empty() {
@@ -141,18 +141,18 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<Vec<String>> {
                     return None;
                 }
                 words.push(word_node.utf8_text(src.as_bytes()).ok()?.to_owned());
-            }
+            },
             "word" | "number" => {
                 words.push(child.utf8_text(src.as_bytes()).ok()?.to_owned());
-            }
+            },
             "string" => {
                 let parsed = parse_double_quoted_string(child, src)?;
                 words.push(parsed);
-            }
+            },
             "raw_string" => {
                 let parsed = parse_raw_string(child, src)?;
                 words.push(parsed);
-            }
+            },
             "concatenation" => {
                 // Handle concatenated arguments like -g"*.py"
                 let mut concatenated = String::new();
@@ -162,15 +162,15 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<Vec<String>> {
                         "word" | "number" => {
                             concatenated
                                 .push_str(part.utf8_text(src.as_bytes()).ok()?.to_owned().as_str());
-                        }
+                        },
                         "string" => {
                             let parsed = parse_double_quoted_string(part, src)?;
                             concatenated.push_str(&parsed);
-                        }
+                        },
                         "raw_string" => {
                             let parsed = parse_raw_string(part, src)?;
                             concatenated.push_str(&parsed);
-                        }
+                        },
                         _ => return None,
                     }
                 }
@@ -178,7 +178,7 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<Vec<String>> {
                     return None;
                 }
                 words.push(concatenated);
-            }
+            },
             _ => return None,
         }
     }

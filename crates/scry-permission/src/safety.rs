@@ -1,12 +1,13 @@
 //! Per-argv safety check. Logic partially ported from openai/codex
 //! (`codex-rs/shell-command/src/command_safety/is_safe_command.rs`).
 
-use crate::entity::ArgvDecision;
-use crate::error::{PermissionError, Result};
-use crate::utils::SHELLS;
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::LazyLock;
+use std::{collections::HashSet, path::Path, sync::LazyLock};
+
+use crate::{
+    entity::ArgvDecision,
+    error::{PermissionError, Result},
+    utils::SHELLS,
+};
 
 static ALWAYS_ALLOWED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
@@ -44,25 +45,25 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
                 .any(|a| matches!(a.as_str(), "--gen-key" | "--full-generate-key")) =>
         {
             Ok(ArgvDecision::NotExecutable)
-        }
+        },
 
         Some("rm")
             if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
         {
             Ok(ArgvDecision::AskNoPersist)
-        }
+        },
 
         Some("chmod" | "chown")
             if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
         {
             Ok(ArgvDecision::AskNoPersist)
-        }
+        },
 
         Some("kill") if command.iter().any(|a| a == "-1") => Ok(ArgvDecision::AskNoPersist),
 
         Some("dd") if command.iter().any(|a| a.starts_with("of=")) => {
             Ok(ArgvDecision::AskNoPersist)
-        }
+        },
 
         Some(name) if name == "mkfs" || name.starts_with("mkfs.") => Ok(ArgvDecision::AskNoPersist),
 
@@ -70,7 +71,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
         Some(cmd) if cfg!(target_os = "linux") && matches!(cmd, "numfmt" | "tac") => {
             Ok(ArgvDecision::Allow)
-        }
+        },
 
         Some(name) if ALWAYS_ALLOWED.contains(name) => Ok(ArgvDecision::Allow),
 
@@ -88,7 +89,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
             } else {
                 Ok(ArgvDecision::Allow)
             }
-        }
+        },
 
         Some("find") => {
             // Options that can execute arbitrary commands or deletes matching files
@@ -111,7 +112,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
             } else {
                 Ok(ArgvDecision::Allow)
             }
-        }
+        },
 
         // Ripgrep
         Some("rg") => {
@@ -142,7 +143,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
             } else {
                 Ok(ArgvDecision::Allow)
             }
-        }
+        },
 
         // `sed -n {N|M,N}p <file>` read-only shape.
         Some("sed")
@@ -151,7 +152,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
                 && is_valid_sed_n_arg(command.get(2).map(String::as_str)) =>
         {
             Ok(ArgvDecision::Allow)
-        }
+        },
 
         _ => Ok(ArgvDecision::Unknown),
     }
@@ -206,7 +207,7 @@ fn is_valid_sed_n_arg(arg: Option<&str>) -> bool {
                 && !b.is_empty()
                 && a.chars().all(|c| c.is_ascii_digit())
                 && b.chars().all(|c| c.is_ascii_digit())
-        }
+        },
 
         // anything else (more than one comma) is invalid
         _ => false,

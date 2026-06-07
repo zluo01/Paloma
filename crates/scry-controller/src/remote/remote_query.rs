@@ -1,18 +1,22 @@
-use crate::remote::permission_workflow_manager::{
-    PermissionState, PermissionWorkflowError, UserDecision,
-};
-use crate::remote::session_manager::{
-    SessionListItem, SessionManagerClient, SessionManagerError, TerminalState,
-};
-use crate::remote::turn_manager::{TurnManagerClient, TurnManagerError};
-use crate::remote::{PermissionWorkflowManagerClient, SessionEvent, SessionUpdate};
-use crate::{ProviderController, ProviderControllerError};
+use std::sync::Arc;
+
 use log::error;
 use scry_config::ENVIRONMENT_CONTEXT;
-use scry_provider::entity::ProviderId;
-use std::sync::Arc;
+use scry_provider::ProviderId;
 use tokio::sync::broadcast;
 use uuid::Uuid;
+
+use crate::{
+    remote::{
+        permission_workflow_manager::{PermissionState, PermissionWorkflowError, UserDecision},
+        session_manager::{
+            SessionListItem, SessionManagerClient, SessionManagerError, TerminalState,
+        },
+        turn_manager::{TurnManagerClient, TurnManagerError},
+        PermissionWorkflowManagerClient, SessionEvent, SessionUpdate,
+    },
+    ProviderController, ProviderControllerError,
+};
 
 const MAX_TITLE_CHARS: usize = 56;
 
@@ -60,7 +64,7 @@ impl RemoteQuery {
                     .await?;
 
                 Ok((id, true))
-            }
+            },
             Some(id) => Ok((id, false)),
         }
     }

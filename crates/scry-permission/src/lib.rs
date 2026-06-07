@@ -4,10 +4,11 @@ mod parser;
 mod safety;
 mod utils;
 
-pub use crate::entity::{CommandType, PermissionDecision};
 pub use entity::ArgvDecision;
 pub use error::{PermissionError, Result};
 use scry_storage::Storage;
+
+pub use crate::entity::{CommandType, PermissionDecision};
 
 pub struct PermissionController {
     storage: Storage,

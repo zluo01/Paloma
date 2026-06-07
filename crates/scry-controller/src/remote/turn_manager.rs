@@ -1,20 +1,28 @@
-use crate::remote::session_manager::{SessionManagerClient, SessionManagerError};
-use crate::remote::tool_controller::{ToolCallPayload, ToolController};
-use crate::remote::{PermissionWorkflowManagerClient, SessionEvent};
-use crate::{ProviderController, ProviderControllerError};
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
-use scry_capability::tools::shell::{Shell, ShellArgs};
-use scry_capability::Tool;
-use scry_provider::entity::{
-    ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema,
+use scry_capability::{
+    tools::shell::{Shell, ShellArgs},
+    Tool,
 };
+use scry_provider::{ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId, ToolSchema};
 use scry_storage::{Storage, StorageError};
-use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use uuid::Uuid;
+
+use crate::{
+    remote::{
+        session_manager::{SessionManagerClient, SessionManagerError},
+        tool_controller::{ToolCallPayload, ToolController},
+        PermissionWorkflowManagerClient, SessionEvent,
+    },
+    ProviderController, ProviderControllerError,
+};
 
 pub struct TurnManager {
     turn_map: Arc<DashMap<Uuid, TurnState>>,
@@ -101,18 +109,18 @@ impl TurnManager {
                 reply,
             } => {
                 self.start_chat(provider_id, session_id, prompt, reply);
-            }
+            },
             TurnStepEvent::ToolCall {
                 provider_id,
                 session_id,
                 tool_calls,
             } => {
                 self.tool_call(provider_id, session_id, tool_calls).await;
-            }
+            },
             TurnStepEvent::Cancel { session_id, reply } => {
                 self.abort_turn(session_id);
                 let _ = reply.send(Ok(()));
-            }
+            },
         }
         Ok(())
     }
@@ -147,12 +155,12 @@ impl TurnManager {
                 Ok(stream) => {
                     let _ = reply.send(Ok(()));
                     stream
-                }
+                },
                 Err(err) => {
                     let _ = reply.send(Err(err));
                     mark_step_done(&turn_map, session_id);
                     return;
-                }
+                },
             };
 
             run_step(
@@ -212,7 +220,7 @@ impl TurnManager {
                     error!("turn {session_id}: provider client: {err}");
                     mark_step_done(&turn_map, session_id);
                     return;
-                }
+                },
             };
 
             for (call_id, output) in outputs {
@@ -247,7 +255,7 @@ impl TurnManager {
                         .await;
                     mark_step_done(&turn_map, session_id);
                     return;
-                }
+                },
             };
 
             run_step(
@@ -374,25 +382,25 @@ async fn exhaust_events(
                                         {
                                             error!("session {session_id}: failed to init permission workflow: {err}");
                                         }
-                                    }
+                                    },
                                     Err(err) => error!(
                                         "session {session_id}: malformed shell arguments: {err}"
                                     ),
                                 }
                             }
                             tool_calls.push(call);
-                        }
+                        },
                         Err(err) => error!("session {session_id}: malformed tool call: {err}"),
                     }
                 }
                 SessionEvent::Chat(chat_event)
-            }
+            },
             Err(err) => {
                 let message = err.to_string();
                 error!("chat stream error for session {session_id}: {message}");
                 errored = true;
                 SessionEvent::Err(message)
-            }
+            },
         };
 
         // terminate on both error or done

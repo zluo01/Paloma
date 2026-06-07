@@ -1,0 +1,12 @@
+edition = "2021"
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+match_block_trailing_comma = true
+
+# nightly-only:
+# Merge every `use` sharing a crate root into one nested `{}` tree.
+imports_granularity = "Crate"
+# Sort imports into std / external / local (`crate`/`self`/`super`) blocks,
+# separated by a blank line.
+group_imports = "StdExternalCrate"

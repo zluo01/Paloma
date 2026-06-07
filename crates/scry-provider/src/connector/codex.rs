@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use crate::entity::{Auth, Connection, ProviderAuthenticator, ProviderError, ProviderId, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::entity::{Auth, Connection, ProviderAuthenticator, ProviderError, ProviderId, Result};
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const USERCODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
@@ -103,7 +104,7 @@ impl ProviderAuthenticator for CodexConnector {
                 return Err(ProviderError::InvalidConnection {
                     expected: "DeviceCode",
                 });
-            }
+            },
         };
         let transaction_payload: UserCodeResponse = serde_json::from_value(transactional_payload)?;
 

@@ -1,16 +1,19 @@
-use std::collections::HashSet;
-use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
-
-use crate::entity::{
-    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+use std::{
+    collections::HashSet,
+    os::unix::process::CommandExt,
+    process::{Command, Stdio},
+    sync::{Arc, RwLock},
+    time::Duration,
 };
+
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{debug, error, info, warn};
 use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
+
+use crate::entity::{
+    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+};
 
 const NAME_WEIGHT: i64 = 10_000;
 const GENERIC_NAME_WEIGHT: i64 = 7_000;
@@ -369,8 +372,9 @@ fn is_interpreter(tok: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::LazyLock;
+
+    use super::*;
 
     static FIREFOX: LazyLock<AppEntry> = LazyLock::new(|| {
         app(

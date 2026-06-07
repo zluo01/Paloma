@@ -1,7 +1,7 @@
+use std::{path::PathBuf, sync::LazyLock};
+
 use log::warn;
 use scry_utils::Element;
-use std::path::PathBuf;
-use std::sync::LazyLock;
 
 const APP_DIR: &str = "scry";
 

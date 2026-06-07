@@ -2,10 +2,8 @@ use std::sync::Arc;
 
 use dashmap::{DashMap, Entry};
 use log::error;
-use scry_provider::entity::{Auth, Model, ProviderClient, ProviderError, ProviderId};
-use scry_provider::runtime::CodexRuntime;
-use scry_storage::Storage;
-use scry_storage::StorageError;
+use scry_provider::{Auth, CodexRuntime, Model, ProviderClient, ProviderError, ProviderId};
+use scry_storage::{Storage, StorageError};
 use tokio::task::JoinHandle;
 
 use crate::remote::SessionManagerError;
@@ -35,14 +33,14 @@ impl ProviderController {
                 other => {
                     error!("startup: find unknown auth_kind {other:?}");
                     continue;
-                }
+                },
             };
             let client: Arc<dyn ProviderClient> = match cred.provider_id.as_str() {
                 "codex" => Arc::new(CodexRuntime::new(&auth, request.clone()).await?),
                 other => {
                     error!("startup: get unknown provider_id {other:?}");
                     continue;
-                }
+                },
             };
             refresh_and_schedule(
                 client.id(),
@@ -74,7 +72,7 @@ impl ProviderController {
             Entry::Occupied(_) => {
                 error!("provider {provider_id:?} already registered; ignoring");
                 Err(ProviderControllerError::AlreadyRegistered(provider_id))
-            }
+            },
             Entry::Vacant(slot) => {
                 refresh_and_schedule(
                     provider_id,
@@ -85,7 +83,7 @@ impl ProviderController {
                 .await;
                 slot.insert(client);
                 Ok(())
-            }
+            },
         }
     }
 
@@ -102,14 +100,14 @@ impl ProviderController {
             Err(e) => {
                 log::error!("missing proper client: {e}");
                 return None;
-            }
+            },
         };
         match client.models().await {
             Ok(m) => Some(m),
             Err(e) => {
                 log::error!("models: failed to fetch for {provider_id:?}: {e}");
                 None
-            }
+            },
         }
     }
 
@@ -167,7 +165,7 @@ async fn refresh_and_schedule(
         Err(e) => {
             error!("initial refresh failed: {e}");
             return;
-        }
+        },
     };
 
     let handle = tokio::spawn(async move {
@@ -184,7 +182,7 @@ async fn refresh_and_schedule(
                 Err(e) => {
                     error!("scheduled refresh failed: {e}");
                     return;
-                }
+                },
             }
         }
     });

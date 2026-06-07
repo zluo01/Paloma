@@ -1,5 +1,6 @@
-use crate::remote::UserDecision;
 use scry_capability::Item;
+
+use crate::remote::UserDecision;
 
 #[derive(Clone, Debug)]
 pub enum RenderEvent {

@@ -1,15 +1,13 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+
+use dashmap::DashMap;
+use scry_provider::{
+    Auth, CodexConnector, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
+};
+use scry_storage::{ConnectedProvider, Storage, StorageError};
+use serde::{Deserialize, Serialize};
 
 use crate::{ProviderController, ProviderControllerError};
-use dashmap::DashMap;
-use scry_provider::connector::CodexConnector;
-use scry_provider::entity::{
-    Auth, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
-};
-use scry_storage::StorageError;
-use scry_storage::{ConnectedProvider, Storage};
-use serde::{Deserialize, Serialize};
 
 pub struct ConnectController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>>,
@@ -123,7 +121,7 @@ impl ConnectController {
                         prefer_effort: cred.effort.clone(),
                         available_models,
                     })
-                }
+                },
                 None => None,
             };
             connectors.push(Connector { id, connection });
@@ -160,7 +158,7 @@ impl ConnectController {
                         prefer_effort,
                     )
                     .await?;
-            }
+            },
             Auth::OAuth {
                 refresh_token,
                 expires_in: _,
@@ -177,7 +175,7 @@ impl ConnectController {
                         prefer_effort,
                     )
                     .await?;
-            }
+            },
         }
         Ok(())
     }

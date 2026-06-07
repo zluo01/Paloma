@@ -1,11 +1,14 @@
+use std::{path::Path, time::Duration};
+
+use serde_json::Value;
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    FromRow, Pool, Sqlite,
+};
+use uuid::Uuid;
+
 use super::queries;
 use crate::error::{Result, StorageError};
-use serde_json::Value;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::{FromRow, Pool, Sqlite};
-use std::path::Path;
-use std::time::Duration;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct Storage {
@@ -42,7 +45,7 @@ impl Storage {
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
                     StorageError::Duplicate(provider_id.to_string())
-                }
+                },
                 _ => e.into(),
             })?;
         Ok(())
@@ -110,7 +113,7 @@ impl Storage {
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
                     StorageError::Duplicate(session_id.to_string())
-                }
+                },
                 _ => e.into(),
             })?;
         Ok(())
@@ -285,9 +288,10 @@ async fn initialize(pool: &Pool<Sqlite>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use sqlx::Row;
     use tempfile::TempDir;
+
+    use super::*;
 
     /// Spin up a `Storage` backed by a fresh file in a tempdir.
     /// Returns the `TempDir` guard so the directory survives the test.

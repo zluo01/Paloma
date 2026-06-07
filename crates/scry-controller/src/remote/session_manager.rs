@@ -1,17 +1,20 @@
-use crate::entity::{ChatRenderEvent, RenderEvent};
-use crate::remote::tool_controller::ToolCallPayload;
-use crate::remote::PermissionWorkflowManagerClient;
+use std::collections::{hash_map::Entry, HashMap};
+
 use log::error;
-use scry_capability::tools::shell::{Shell, ShellArgs};
-use scry_capability::Tool;
-use scry_provider::entity::{ChatEvent, ProviderId};
-use scry_storage::StorageError;
-use scry_storage::{EntryType, Storage};
+use scry_capability::{
+    tools::shell::{Shell, ShellArgs},
+    Tool,
+};
+use scry_provider::{ChatEvent, ProviderId};
+use scry_storage::{EntryType, Storage, StorageError};
 use serde_json::Value;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
+
+use crate::{
+    entity::{ChatRenderEvent, RenderEvent},
+    remote::{tool_controller::ToolCallPayload, PermissionWorkflowManagerClient},
+};
 
 #[derive(Clone, Debug)]
 pub struct SessionUpdate {
@@ -138,20 +141,20 @@ impl SessionManager {
                     .and_then(|()| match self.sessions.entry(session_id) {
                         Entry::Occupied(_) => {
                             Err(SessionManagerError::SessionAlreadyExists(session_id))
-                        }
+                        },
                         Entry::Vacant(vacant) => {
                             vacant.insert(Session {
                                 delta: Vec::new(),
                                 terminal: TerminalState::Done,
                             });
                             Ok(())
-                        }
+                        },
                     });
                 let _ = reply.send(result);
-            }
+            },
             SessionStreamingEvent::RestoreSession { session_id, reply } => {
                 let _ = reply.send(self.restore_session(session_id).await);
-            }
+            },
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
                 let result = self
                     .storage
@@ -162,7 +165,7 @@ impl SessionManager {
                     })
                     .map_err(SessionManagerError::from);
                 let _ = reply.send(result);
-            }
+            },
             SessionStreamingEvent::AddEvent {
                 session_id,
                 payload,
@@ -170,10 +173,10 @@ impl SessionManager {
                 if let Err(err) = self.add_event(session_id, payload).await {
                     error!("session {session_id} add_event failed: {err}");
                 }
-            }
+            },
             SessionStreamingEvent::ConstructMessages { session_id, reply } => {
                 let _ = reply.send(self.construct_messages(session_id).await);
-            }
+            },
             SessionStreamingEvent::AvailableSessions { reply } => {
                 let result = self
                     .storage
@@ -187,7 +190,7 @@ impl SessionManager {
                     })
                     .map_err(SessionManagerError::from);
                 let _ = reply.send(result);
-            }
+            },
         }
         Ok(())
     }
@@ -202,7 +205,7 @@ impl SessionManager {
             | SessionEvent::Chat(ChatEvent::OutputItem { item })
             | SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                 Some((EntryType::ResponseItem, item.clone()))
-            }
+            },
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
 
@@ -276,14 +279,14 @@ impl SessionManager {
                             RenderEvent::Chat(ChatRenderEvent::TextDelta {
                                 text: parts.join("\n"),
                             })
-                        }
+                        },
                         Some("web_search_call") => match web_search_render(item) {
                             Some(r) => r,
                             None => continue,
                         },
                         _ => continue,
                     }
-                }
+                },
                 SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                     match tool_call_render(
                         &self.permission_workflow_client,
@@ -296,7 +299,7 @@ impl SessionManager {
                         Some(r) => r,
                         None => continue,
                     }
-                }
+                },
                 SessionEvent::UserPrompt(_) => {
                     match event
                         .to_render_event(&self.permission_workflow_client, session_id)
@@ -305,13 +308,13 @@ impl SessionManager {
                         Some(r) => r,
                         None => continue,
                     }
-                }
+                },
                 other => {
                     error!(
                         "unexpected event in restored history for session {session_id}: {other:?}"
                     );
                     continue;
-                }
+                },
             };
 
             let _ = self.updates_tx.send(SessionUpdate {
@@ -369,12 +372,12 @@ impl SessionEvent {
                 Some(RenderEvent::Chat(ChatRenderEvent::TextDelta {
                     text: text.clone(),
                 }))
-            }
+            },
             SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { text }) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::ReasoningDelta {
                     text: text.clone(),
                 }))
-            }
+            },
             SessionEvent::Chat(ChatEvent::Done) => Some(RenderEvent::Done),
             SessionEvent::Err(message) => Some(RenderEvent::Error {
                 // TODO need to check when it is the first prompt, but somehow error happens, should we keep the session and remove the prompt or we should remove the whole session
@@ -399,17 +402,17 @@ impl SessionEvent {
                     error!("UserPrompt yielded no text from value: {item}");
                 }
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
-            }
+            },
             SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                 // Live tool calls are always still pending when first rendered.
                 tool_call_render(permission_workflow_manager_client, session_id, item, false).await
-            }
+            },
             SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
                 match item.get("type").and_then(|t| t.as_str()) {
                     Some("web_search_call") => web_search_render(item),
                     _ => None,
                 }
-            }
+            },
         }
     }
 }
@@ -441,7 +444,7 @@ async fn tool_call_render(
                     Err(err) => {
                         error!("session {session_id}: malformed shell arguments: {err}");
                         return None;
-                    }
+                    },
                 };
                 // Do not check for permission if job is already finished
                 let decisions = if finished {
@@ -457,7 +460,7 @@ async fn tool_call_render(
                                 "session {session_id}: failed to check permission decision: {err}"
                             );
                             return None;
-                        }
+                        },
                     }
                 };
                 return Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
@@ -480,11 +483,11 @@ async fn tool_call_render(
                 description: None,
                 decisions: vec![],
             }))
-        }
+        },
         Err(err) => {
             error!("session {session_id}: malformed tool call: {err}");
             None
-        }
+        },
     }
 }
 
@@ -582,24 +585,24 @@ impl SessionManagerClient {
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {}
+            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {},
             SessionEvent::Chat(ChatEvent::Done) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Done
-            }
+            },
             SessionEvent::Err(_message) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Error
-            }
+            },
             SessionEvent::UserPrompt(_) => {
                 // whenever new prompt coming, we consider the state as running.
                 self.terminal = TerminalState::Running;
-            }
+            },
             event @ SessionEvent::Chat(
                 ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
             ) => {
                 self.delta.push(event);
-            }
+            },
         }
     }
 }
@@ -616,7 +619,7 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
                     session.session_id
                 );
                 continue;
-            }
+            },
         };
 
         sessions.insert(
@@ -640,14 +643,14 @@ fn to_session_list_item(session: scry_storage::Session) -> Option<SessionListIte
                 session.session_id
             );
             return None;
-        }
+        },
     };
     let provider_id = match session.provider_id.as_str() {
         "codex" => ProviderId::Codex,
         other => {
             error!("skip session {session_id} with unknown provider_id {other:?}");
             return None;
-        }
+        },
     };
     Some(SessionListItem {
         session_id,
