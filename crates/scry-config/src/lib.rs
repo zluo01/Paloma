@@ -1,5 +1,5 @@
 use log::warn;
-use scry_utils::xml::Element;
+use scry_utils::Element;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 

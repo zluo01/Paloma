@@ -3,15 +3,14 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::entity::ToolResult;
 use dashmap::DashMap;
-use scry_utils::xml::Element;
+use scry_utils::Element;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use uuid::Uuid;
-
-use crate::entity::ToolResult;
 
 /// Bounded mpsc capacity for the actor's incoming event queue.
 const PROCESS_MANAGER_CHANNEL_CAPACITY: usize = 128;

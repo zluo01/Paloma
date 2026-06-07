@@ -8,7 +8,7 @@ use scry_config::{
 use scry_permission::{
     ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
 };
-use scry_utils::future::CompletableFuture;
+use scry_utils::CompletableFuture;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
