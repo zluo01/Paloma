@@ -25,13 +25,13 @@ CREATE TABLE IF NOT EXISTS permissions
 );
 
 CREATE TABLE IF NOT EXISTS history
-(   
+(
     id          INTEGER PRIMARY KEY,
     session_id  TEXT    NOT NULL
         REFERENCES sessions (session_id)
             ON DELETE CASCADE,
     timestamp   INTEGER NOT NULL DEFAULT (unixepoch()),
-    payloadType TEXT    NOT NULL,
+    payload_type TEXT    NOT NULL,
     payload     TEXT    NOT NULL
 );
 

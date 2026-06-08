@@ -255,15 +255,13 @@ impl EntryType {
 
 #[derive(Debug, FromRow)]
 pub struct FileEntry {
-    #[sqlx(rename = "payloadType")]
-    pub t: EntryType,
+    pub payload_type: EntryType,
     pub payload: Value,
 }
 
 #[derive(Debug, FromRow)]
 pub struct RestoreEntry {
-    #[sqlx(rename = "payloadType")]
-    pub t: EntryType,
+    pub payload_type: EntryType,
     pub payload: Value,
     pub finished: bool,
 }

@@ -236,7 +236,7 @@ impl SessionManager {
             .restore_history(&session_id.to_string())
             .await?
         {
-            let (event, finished) = match entry.t {
+            let (event, finished) = match entry.payload_type {
                 EntryType::ResponseItem => (response_item_to_event(entry.payload), entry.finished),
                 EntryType::EventMsg => continue,
             };
@@ -343,7 +343,7 @@ impl SessionManager {
             .get_history(&session_id.to_string())
             .await?
             .into_iter()
-            .filter_map(|entry| match entry.t {
+            .filter_map(|entry| match entry.payload_type {
                 EntryType::ResponseItem => Some(response_item_to_event(entry.payload)),
                 EntryType::EventMsg => None,
             })
