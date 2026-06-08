@@ -1,14 +1,24 @@
-use std::{path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::Duration,
+};
 
 use serde_json::Value;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
-    FromRow, Pool, Sqlite,
+    Pool, Sqlite,
 };
 use uuid::Uuid;
 
 use super::queries;
-use crate::error::{Result, StorageError};
+use crate::{
+    db::entity::{
+        ConnectedProvider, EntryType, FileEntry, Plugin, PluginConfig, PreferModelConfig,
+        RestoreEntry, Session, Transport,
+    },
+    error::{Result, StorageError},
+};
 
 #[derive(Clone)]
 pub struct Storage {
@@ -163,6 +173,45 @@ impl Storage {
             .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
     }
 
+    pub async fn insert_mcp(
+        &self,
+        name: &str,
+        transport: Transport,
+        timeout: i64,
+        env: &HashMap<String, String>,
+        args: &PluginConfig,
+    ) -> Result<()> {
+        sqlx::query(queries::INSERT_MCP_QUERY)
+            .bind(name)
+            .bind(transport)
+            .bind(timeout)
+            .bind(serde_json::to_string(env)?)
+            .bind(serde_json::to_string(args)?)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| match &e {
+                sqlx::Error::Database(db) if db.is_unique_violation() => {
+                    StorageError::Duplicate(name.to_string())
+                },
+                _ => e.into(),
+            })?;
+        Ok(())
+    }
+
+    pub async fn all_mcp_plugins(&self) -> Result<Vec<Plugin>> {
+        let plugins = sqlx::query_as::<_, Plugin>(queries::GET_ALL_MCP_QUERY)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(plugins)
+    }
+
+    pub async fn disabled_plugins(&self) -> Result<HashSet<String>> {
+        let names = sqlx::query_scalar::<_, String>(queries::DISABLED_PLUGINS_QUERY)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(names.into_iter().collect())
+    }
+
     pub async fn is_command_allowed(&self, command: &str) -> Result<bool> {
         let allowed: bool = sqlx::query_scalar(queries::MATCH_PERMISSION_QUERY)
             .bind(command)
@@ -213,57 +262,6 @@ impl Storage {
 
         Ok(entries)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub struct ConnectedProvider {
-    pub provider_id: String,
-    pub auth_kind: String,
-    pub secret: String,
-    pub model: String,
-    pub effort: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub struct Session {
-    pub session_id: String,
-    pub provider_id: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub struct PreferModelConfig {
-    pub model: String,
-    pub effort: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum EntryType {
-    ResponseItem,
-    EventMsg,
-}
-
-impl EntryType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            EntryType::ResponseItem => "response_item",
-            EntryType::EventMsg => "event_msg",
-        }
-    }
-}
-
-#[derive(Debug, FromRow)]
-pub struct FileEntry {
-    pub payload_type: EntryType,
-    pub payload: Value,
-}
-
-#[derive(Debug, FromRow)]
-pub struct RestoreEntry {
-    pub payload_type: EntryType,
-    pub payload: Value,
-    pub finished: bool,
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {

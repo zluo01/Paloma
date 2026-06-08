@@ -105,7 +105,8 @@ impl TurnManager {
                 prompt,
                 reply,
             } => {
-                self.start_chat(provider_id, session_id, prompt, reply);
+                self.start_chat(provider_id, session_id, prompt, reply)
+                    .await;
             },
             TurnStepEvent::ToolCall {
                 provider_id,
@@ -122,7 +123,7 @@ impl TurnManager {
         Ok(())
     }
 
-    fn start_chat(
+    async fn start_chat(
         &mut self,
         provider_id: ProviderId,
         session_id: Uuid,
@@ -135,7 +136,7 @@ impl TurnManager {
         let permission_client = self.permission_workflow_client.clone();
         let event_tx = self.event_tx.clone();
         let turn_map = self.turn_map.clone();
-        let tools = self.tool_controller.tool_schemas();
+        let tools = self.tool_controller.tool_schemas().await;
 
         let handle = tokio::spawn(async move {
             let stream = match open_stream(
@@ -196,7 +197,7 @@ impl TurnManager {
         let storage = self.storage.clone();
         let event_tx = self.event_tx.clone();
         let turn_map = self.turn_map.clone();
-        let tools = tool_controller.tool_schemas();
+        let tools = tool_controller.tool_schemas().await;
 
         let handle = tokio::spawn(async move {
             // Run all tool calls concurrently.

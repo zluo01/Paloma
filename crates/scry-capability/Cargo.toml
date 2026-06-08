@@ -9,6 +9,8 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
+rmcp = { workspace = true }
+backon = "1.6.0"
 freedesktop-desktop-entry = { workspace = true }
 strsim = { workspace = true }
 notify = { workspace = true }
@@ -28,6 +30,7 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 dashmap = { workspace = true }
 scry-utils = { path = "../scry-utils" }
+scry-storage = { path = "../scry-storage" }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.3", default-features = false, features = ["signal"] }

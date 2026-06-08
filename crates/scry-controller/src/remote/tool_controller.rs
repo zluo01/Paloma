@@ -1,8 +1,15 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::{Arc, RwLock},
+};
 
 use dashmap::DashMap;
 use log::error;
-use scry_capability::{DynTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema};
+use scry_capability::{
+    DynTool, HealthStatus, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema,
+    ToolSpec,
+};
+use scry_storage::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -12,7 +19,9 @@ use crate::remote::{
 };
 
 pub struct ToolController {
-    handlers: DashMap<&'static str, Arc<dyn DynTool>>,
+    handlers: DashMap<String, Arc<dyn DynTool>>,
+    tool_specs: RwLock<Arc<BTreeMap<String, ToolSpec>>>,
+    storage: Storage,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
@@ -26,36 +35,87 @@ pub struct ToolCallPayload {
 }
 
 impl ToolController {
-    pub fn new(
+    pub async fn new(
+        storage: Storage,
         process_manager_client: ProcessManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Self {
-        let handlers: DashMap<&'static str, Arc<dyn DynTool>> = DashMap::new();
+        let handlers: DashMap<String, Arc<dyn DynTool>> = DashMap::new();
+        let mut tool_specs: BTreeMap<String, ToolSpec> = BTreeMap::new();
 
         let shell: Arc<dyn DynTool> = Arc::new(Shell::new(process_manager_client));
-        handlers.insert(Shell::NAME, shell);
+        for spec in shell.specs().await.unwrap() {
+            tool_specs.insert(spec.schema.name.clone(), spec);
+        }
+        handlers.insert(Shell::NAME.to_string(), shell);
+
+        // Register configured MCP servers. `McpTool::new` never hard-fails — a
+        // server that can't connect registers itself as `Unhealthy` (filtered
+        // out at schema time) — so a bad server can't block startup.
+        let plugins = storage.all_mcp_plugins().await.unwrap_or_else(|e| {
+            error!("failed to load mcp plugins: {e}");
+            Vec::new()
+        });
+        for plugin in plugins {
+            let name = plugin.name.clone();
+            let (tool, specs) = McpTool::new(&name, plugin).await;
+            for spec in specs {
+                tool_specs.insert(spec.schema.name.clone(), spec);
+            }
+            handlers.insert(name, Arc::new(tool));
+        }
 
         Self {
             handlers,
+            tool_specs: RwLock::new(Arc::new(tool_specs)),
+            storage,
             permission_workflow_client,
         }
     }
 
-    pub fn tool_schemas(&self) -> Vec<ToolSchema> {
-        self.handlers
+    pub async fn tool_schemas(&self) -> Vec<ToolSchema> {
+        let disabled = self.storage.disabled_plugins().await.unwrap_or_else(|e| {
+            error!("fail to get disabled plugins. {}", e);
+            HashSet::new()
+        });
+
+        let running: HashSet<String> = self
+            .handlers
             .iter()
-            .flat_map(|entry| entry.value().schema())
+            .filter(|e| e.health_statue() == HealthStatus::Running)
+            .map(|e| e.key().clone())
+            .collect();
+
+        let tools = self.tool_specs.read().unwrap().clone();
+        tools
+            .values()
+            .filter(|spec| !disabled.contains(&spec.name))
+            .filter(|spec| running.contains(&spec.name))
+            .map(|spec| spec.schema.clone())
             .collect()
+    }
+
+    pub fn retrieve_toolspec(&self, function_call_name: &str) -> Option<ToolSpec> {
+        let tools = self.tool_specs.read().unwrap().clone();
+        tools.get(function_call_name).cloned()
     }
 
     /// We should populate all errors back to the model such that model has context on what happens and what to do next
     /// Also log error so can debug internally
     pub async fn exec(&self, session_id: Uuid, call: &ToolCallPayload) -> String {
-        let Some(tool) = self
-            .handlers
-            .get(call.name.as_str())
-            .map(|t| t.value().clone())
-        else {
+        let spec = match self.retrieve_toolspec(&call.name) {
+            Some(spec) => spec,
+            None => {
+                let msg = format!(
+                    "fail to find tool spec from function call name {}",
+                    &call.name
+                );
+                error!("{}", msg);
+                return msg;
+            },
+        };
+
+        let Some(tool) = self.handlers.get(&spec.name).map(|t| t.value().clone()) else {
             let msg = format!("unknown tool: {}", call.name);
             error!("{msg}");
             return msg;
@@ -76,7 +136,10 @@ impl ToolController {
             }
         }
 
-        match tool.invoke(session_id, call_id.clone(), args).await {
+        match tool
+            .invoke(spec.tool, session_id, call_id.clone(), args)
+            .await
+        {
             Ok(ToolResult::Text(text)) => text,
             Ok(ToolResult::Binary { mime_type, .. }) => format!("<binary output: {mime_type}>"),
             Err(message) => {

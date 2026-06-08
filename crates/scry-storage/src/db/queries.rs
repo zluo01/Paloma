@@ -32,3 +32,9 @@ pub const INSERT_HISTORY: &str = include_str!("queries/history/insert_history.sq
 pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");
 
 pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.sql");
+
+pub const INSERT_MCP_QUERY: &str = include_str!("queries/plugins/insert_mcp.sql");
+
+pub const GET_ALL_MCP_QUERY: &str = include_str!("queries/plugins/get_all_mcp.sql");
+
+pub const DISABLED_PLUGINS_QUERY: &str = include_str!("queries/plugins/disabled_plugins.sql");

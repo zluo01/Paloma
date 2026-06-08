@@ -9,4 +9,5 @@ description = "Leaf utilities for Scry (no workspace deps, no domain types)"
 
 [dependencies]
 futures = { workspace = true }
+sha1 = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }

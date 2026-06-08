@@ -83,14 +83,25 @@ pub trait Tool: Capability {
         args: Self::Args,
     ) -> Result<ToolResult, String>;
 
-    fn schema(&self) -> Vec<ToolSchema> {
-        vec![ToolSchema {
+    fn specs(&self) -> Vec<ToolSpec> {
+        vec![ToolSpec {
             name: Self::NAME.into(),
-            description: Self::DESCRIPTION.into(),
-            parameters: serde_json::to_value(schemars::schema_for!(Self::Args))
-                .expect("JsonSchema output is always serializable"),
+            tool: None,
+            schema: ToolSchema {
+                name: Self::NAME.into(),
+                description: Self::DESCRIPTION.into(),
+                parameters: serde_json::to_value(schemars::schema_for!(Self::Args))
+                    .expect("JsonSchema output is always serializable"),
+            },
         }]
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolSpec {
+    pub name: String,
+    pub tool: Option<String>,
+    pub schema: ToolSchema,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -106,14 +117,36 @@ pub enum ToolResult {
     Binary { mime_type: String, data: Vec<u8> },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum HealthStatus {
+    Running = 0,
+    Unhealthy = 1,
+}
+
+impl HealthStatus {
+    /// Reconstruct from the `u8` held in an `AtomicU8`. Unknown values map to
+    /// `Unhealthy` (fail-safe: don't use a tool in an unclear state).
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            0 => HealthStatus::Running,
+            _ => HealthStatus::Unhealthy,
+        }
+    }
+}
+
 #[async_trait::async_trait]
 pub trait DynTool: Send + Sync {
-    fn schema(&self) -> Vec<ToolSchema>;
+    async fn specs(&self) -> Result<Vec<ToolSpec>, String>;
+
+    fn health_statue(&self) -> HealthStatus;
+
     async fn invoke(
         &self,
+        name: Option<String>,
         session_id: Uuid,
         call_id: String,
-        args: serde_json::Value,
+        args: Value,
     ) -> Result<ToolResult, String>;
 }
 
@@ -122,15 +155,22 @@ impl<T> DynTool for T
 where
     T: Tool + Send + Sync,
 {
-    fn schema(&self) -> Vec<ToolSchema> {
-        Tool::schema(self)
+    async fn specs(&self) -> Result<Vec<ToolSpec>, String> {
+        Ok(Tool::specs(self))
+    }
+
+    /// for all local tool, default is running
+    /// remote or extension should override it
+    fn health_statue(&self) -> HealthStatus {
+        HealthStatus::Running
     }
 
     async fn invoke(
         &self,
+        _name: Option<String>,
         session_id: Uuid,
         call_id: String,
-        args: serde_json::Value,
+        args: Value,
     ) -> Result<ToolResult, String> {
         let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
         Tool::invoke(self, session_id, call_id, parsed).await

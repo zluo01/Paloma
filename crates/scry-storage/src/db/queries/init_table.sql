@@ -26,13 +26,24 @@ CREATE TABLE IF NOT EXISTS permissions
 
 CREATE TABLE IF NOT EXISTS history
 (
-    id          INTEGER PRIMARY KEY,
-    session_id  TEXT    NOT NULL
+    id           INTEGER PRIMARY KEY,
+    session_id   TEXT    NOT NULL
         REFERENCES sessions (session_id)
             ON DELETE CASCADE,
-    timestamp   INTEGER NOT NULL DEFAULT (unixepoch()),
+    timestamp    INTEGER NOT NULL DEFAULT (unixepoch()),
     payload_type TEXT    NOT NULL,
-    payload     TEXT    NOT NULL
+    payload      TEXT    NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_session ON history (session_id);
+
+CREATE TABLE IF NOT EXISTS plugins
+(
+    name        TEXT PRIMARY KEY NOT NULL,
+    plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('native', 'mcp')),
+    transport   TEXT             NOT NULL CHECK (transport IN ('local', 'http')),
+    timeout     INTEGER          NOT NULL DEFAULT 300,
+    disabled    INTEGER          NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+    env         TEXT             NOT NULL DEFAULT '{}',
+    args        TEXT             NOT NULL
+);

@@ -1,4 +1,6 @@
+mod entity;
 mod queries;
 mod storage;
 
-pub use storage::{ConnectedProvider, EntryType, Session, Storage};
+pub use entity::{ConnectedProvider, EntryType, Plugin, PluginConfig, Session};
+pub use storage::Storage;
