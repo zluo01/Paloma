@@ -128,10 +128,10 @@ impl ToolController {
 
         let call_id = &call.call_id;
 
-        // Shell commands must clear the permission workflow before they run.
-        if call.name == Shell::NAME {
-            if let Err(msg) = self.authorize_shell(call_id.clone()).await {
-                error!("shell permission gate for {call_id}: {msg}");
+        // Shell or MCP commands must clear the permission workflow before they run.
+        if call.name == Shell::NAME || spec.tool.is_some() {
+            if let Err(msg) = self.authorize(call_id.clone()).await {
+                error!("error happens when waiting permission for {call_id}: {msg}");
                 return msg;
             }
         }
@@ -150,7 +150,7 @@ impl ToolController {
     }
 
     /// Wait and Get the user decision on permission
-    async fn authorize_shell(&self, call_id: String) -> Result<(), String> {
+    async fn authorize(&self, call_id: String) -> Result<(), String> {
         let decision = self
             .permission_workflow_client
             .wait_decision(call_id)
@@ -162,6 +162,9 @@ impl ToolController {
             Some(PermissionState::Deny) => Err("command was denied by the user".into()),
             Some(PermissionState::Timeout) => {
                 Err("permission request timed out; command was not executed".into())
+            },
+            Some(PermissionState::Error) => {
+                Err("the command could not be validated for permission (it may be empty or malformed); it was not executed".into())
             },
             None => Err("permission request was cancelled; command was not executed".into()),
         }

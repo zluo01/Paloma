@@ -68,10 +68,6 @@ impl AppContext {
             PermissionWorkflowManager::new(permission_controller);
         tokio::spawn(async move { permission_workflow_manager.run().await });
 
-        let (mut session_manager, session_manager_client) =
-            SessionManager::new(storage.clone(), permission_workflow_client.clone()).await?;
-        tokio::spawn(async move { session_manager.run().await });
-
         let (mut process_manager, process_manager_client) = ProcessManager::new();
         tokio::spawn(async move { process_manager.run().await });
 
@@ -83,6 +79,14 @@ impl AppContext {
             )
             .await,
         );
+
+        let (mut session_manager, session_manager_client) = SessionManager::new(
+            storage.clone(),
+            tool_controller.clone(),
+            permission_workflow_client.clone(),
+        )
+        .await?;
+        tokio::spawn(async move { session_manager.run().await });
 
         let (mut turn_manager, turn_manager_client) = TurnManager::new(
             storage,

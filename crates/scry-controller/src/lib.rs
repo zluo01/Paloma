@@ -1,5 +1,6 @@
 mod connect_controller;
 mod entity;
+mod helper;
 mod local;
 mod provider_controller;
 mod remote;

@@ -1,7 +1,9 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 use log::error;
-use scry_capability::{Shell, ShellArgs, Tool};
 use scry_provider::{ChatEvent, ProviderId};
 use scry_storage::{EntryType, Storage, StorageError};
 use serde_json::Value;
@@ -10,7 +12,9 @@ use uuid::Uuid;
 
 use crate::{
     entity::{ChatRenderEvent, RenderEvent},
+    helper::{extract_args, Disposition},
     remote::{tool_controller::ToolCallPayload, PermissionWorkflowManagerClient},
+    ToolController,
 };
 
 #[derive(Clone, Debug)]
@@ -80,6 +84,7 @@ pub struct SessionManager {
     event_rx: mpsc::Receiver<SessionStreamingEvent>,
     updates_tx: broadcast::Sender<SessionUpdate>,
     storage: Storage,
+    tool_controller: Arc<ToolController>,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
@@ -92,6 +97,7 @@ pub struct SessionManagerClient {
 impl SessionManager {
     pub async fn new(
         storage: Storage,
+        tool_controller: Arc<ToolController>,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Result<(Self, SessionManagerClient)> {
         let sessions: HashMap<Uuid, Session> = restore_sessions(&storage).await?;
@@ -104,6 +110,7 @@ impl SessionManager {
             event_rx: rx,
             updates_tx: updates_tx.clone(),
             storage,
+            tool_controller,
             permission_workflow_client,
         };
         let client = SessionManagerClient {
@@ -207,7 +214,11 @@ impl SessionManager {
         };
 
         let render_event = payload
-            .to_render_event(&self.permission_workflow_client, session_id)
+            .to_render_event(
+                &self.permission_workflow_client,
+                self.tool_controller.clone(),
+                session_id,
+            )
             .await;
         session.update(payload);
 
@@ -287,6 +298,7 @@ impl SessionManager {
                 SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                     match tool_call_render(
                         &self.permission_workflow_client,
+                        self.tool_controller.clone(),
                         session_id,
                         item,
                         finished,
@@ -299,7 +311,11 @@ impl SessionManager {
                 },
                 SessionEvent::UserPrompt(_) => {
                     match event
-                        .to_render_event(&self.permission_workflow_client, session_id)
+                        .to_render_event(
+                            &self.permission_workflow_client,
+                            self.tool_controller.clone(),
+                            session_id,
+                        )
                         .await
                     {
                         Some(r) => r,
@@ -324,7 +340,11 @@ impl SessionManager {
         // re-subscribing UI catches up on the current turn's partial output.
         for event in &session.delta {
             if let Some(render) = event
-                .to_render_event(&self.permission_workflow_client, session_id)
+                .to_render_event(
+                    &self.permission_workflow_client,
+                    self.tool_controller.clone(),
+                    session_id,
+                )
                 .await
             {
                 let _ = self.updates_tx.send(SessionUpdate {
@@ -362,6 +382,7 @@ impl SessionEvent {
     async fn to_render_event(
         &self,
         permission_workflow_manager_client: &PermissionWorkflowManagerClient,
+        tool_controller: Arc<ToolController>,
         session_id: Uuid,
     ) -> Option<RenderEvent> {
         match self {
@@ -402,7 +423,14 @@ impl SessionEvent {
             },
             SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
                 // Live tool calls are always still pending when first rendered.
-                tool_call_render(permission_workflow_manager_client, session_id, item, false).await
+                tool_call_render(
+                    permission_workflow_manager_client,
+                    tool_controller,
+                    session_id,
+                    item,
+                    false,
+                )
+                .await
             },
             SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
                 match item.get("type").and_then(|t| t.as_str()) {
@@ -428,57 +456,53 @@ fn web_search_render(item: &Value) -> Option<RenderEvent> {
 
 async fn tool_call_render(
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
+    tool_controller: Arc<ToolController>,
     session_id: Uuid,
     item: &Value,
     finished: bool,
 ) -> Option<RenderEvent> {
+    // handle tool call permission rendering
     match serde_json::from_value::<ToolCallPayload>(item.clone()) {
         Ok(call) => {
-            // special handling for shell due to require user permission input
-            if call.name == Shell::NAME {
-                let args = match serde_json::from_str::<ShellArgs>(&call.arguments) {
-                    Ok(args) => args,
-                    Err(err) => {
-                        error!("session {session_id}: malformed shell arguments: {err}");
-                        return None;
-                    },
-                };
-                // Do not check for permission if job is already finished
-                let decisions = if finished {
-                    vec![]
-                } else {
-                    match permission_workflow_manager_client
-                        .check_decision(session_id, call.call_id)
-                        .await
-                    {
-                        Ok(decisions) => decisions,
-                        Err(err) => {
-                            error!(
-                                "session {session_id}: failed to check permission decision: {err}"
-                            );
-                            return None;
-                        },
-                    }
-                };
-                return Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-                    name: call.name,
-                    arguments: args.command.join(" "),
-                    description: Some(args.description),
-                    decisions,
-                }));
-            }
+            // unknown tool name (no toolspec) renders plainly, like any non-gated tool
+            let disposition = tool_controller
+                .retrieve_toolspec(&call.name)
+                .map(|spec| extract_args(spec, &call.arguments))
+                .unwrap_or(Disposition::Passthrough);
 
-            // Pretty print if it is json, otherwise, raw string
-            let arguments = serde_json::from_str::<Value>(call.arguments.as_str())
-                .ok()
-                .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                .unwrap_or(call.arguments);
+            let (arguments, description, decisions) = match disposition {
+                Disposition::Gated(command, description) => {
+                    let decisions = if finished {
+                        vec![]
+                    } else {
+                        match permission_workflow_manager_client
+                            .check_decision(session_id, call.call_id)
+                            .await
+                        {
+                            Ok(d) => d,
+                            Err(err) => {
+                                error!("session {session_id}: failed to check permission decision: {err}");
+                                return None;
+                            },
+                        }
+                    };
+                    (command.join(" "), description, decisions)
+                },
+                Disposition::Passthrough => {
+                    let args = serde_json::from_str::<Value>(&call.arguments)
+                        .ok()
+                        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                        .unwrap_or(call.arguments);
+                    (args, None, vec![])
+                },
+                Disposition::Skip => return None,
+            };
 
             Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
                 name: call.name,
                 arguments,
-                description: None,
-                decisions: vec![],
+                description,
+                decisions,
             }))
         },
         Err(err) => {

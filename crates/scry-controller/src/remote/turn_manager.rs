@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::error;
-use scry_capability::{Shell, ShellArgs, Tool, ToolSchema};
+use scry_capability::ToolSchema;
 use scry_provider::{ChatEvent, ChatRequest, ChatStream, ProviderError, ProviderId};
 use scry_storage::{Storage, StorageError};
 use tokio::{
@@ -13,6 +13,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
+    helper::{extract_args, Disposition},
     remote::{
         session_manager::{SessionManagerClient, SessionManagerError},
         tool_controller::{ToolCallPayload, ToolController},
@@ -131,6 +132,7 @@ impl TurnManager {
         reply: oneshot::Sender<Result<()>>,
     ) {
         let provider_controller = self.provider_controller.clone();
+        let tool_controller = self.tool_controller.clone();
         let storage = self.storage.clone();
         let session_client = self.session_manager_client.clone();
         let permission_client = self.permission_workflow_client.clone();
@@ -164,6 +166,7 @@ impl TurnManager {
             run_step(
                 stream,
                 &session_client,
+                tool_controller,
                 &permission_client,
                 &event_tx,
                 &turn_map,
@@ -259,6 +262,7 @@ impl TurnManager {
             run_step(
                 stream,
                 &session_client,
+                tool_controller,
                 &permission_client,
                 &event_tx,
                 &turn_map,
@@ -289,9 +293,11 @@ fn mark_step_done(turn_map: &DashMap<Uuid, TurnState>, session_id: Uuid) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_step(
     stream: ChatStream,
     session_client: &SessionManagerClient,
+    tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     event_tx: &mpsc::Sender<TurnStepEvent>,
     turn_map: &DashMap<Uuid, TurnState>,
@@ -301,6 +307,7 @@ async fn run_step(
     let (tool_calls, errored) = exhaust_events(
         stream,
         session_client,
+        tool_controller,
         permission_workflow_manager_client,
         session_id,
     )
@@ -353,6 +360,7 @@ async fn open_stream(
 async fn exhaust_events(
     mut stream: ChatStream,
     session_client: &SessionManagerClient,
+    tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     session_id: Uuid,
 ) -> (Vec<ToolCallPayload>, bool) {
@@ -364,29 +372,33 @@ async fn exhaust_events(
                 if let ChatEvent::ToolCallItem { item } = &chat_event {
                     match serde_json::from_value::<ToolCallPayload>(item.clone()) {
                         Ok(call) => {
-                            // it should be ok to log error here since later on, when actual tool call happens
-                            // it will still fail with missing call_id or session_id which then
-                            // we can populate the error back to the LLM.
-                            if call.name == Shell::NAME {
-                                match serde_json::from_str::<ShellArgs>(&call.arguments) {
-                                    Ok(args) => {
+                            match tool_controller.retrieve_toolspec(&call.name) {
+                                // it should be ok to only log error here since later on, when actual tool call happens
+                                // it will still fail with missing call_id, session_id or missing tool name.
+                                // Then we can populate the error back to the LLM.
+                                Some(toolspec) => {
+                                    let command = match extract_args(toolspec, &call.arguments) {
+                                        Disposition::Gated(command, _) => Some(command),
+                                        Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
+                                        Disposition::Passthrough => None,
+                                    };
+
+                                    if let Some(command) = command {
                                         if let Err(err) = permission_workflow_manager_client
                                             .init_permission_workflow(
                                                 session_id,
                                                 call.call_id.clone(),
-                                                args.command,
+                                                command,
                                             )
                                             .await
                                         {
                                             error!("session {session_id}: failed to init permission workflow: {err}");
                                         }
-                                    },
-                                    Err(err) => error!(
-                                        "session {session_id}: malformed shell arguments: {err}"
-                                    ),
-                                }
+                                    }
+                                    tool_calls.push(call);
+                                },
+                                None => error!("fail to find function call name {}", &call.name),
                             }
-                            tool_calls.push(call);
                         },
                         Err(err) => error!("session {session_id}: malformed tool call: {err}"),
                     }

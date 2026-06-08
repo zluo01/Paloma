@@ -26,6 +26,7 @@ struct SessionPermission {
 pub enum PermissionState {
     Allow,
     Deny,
+    Error,
     Timeout,
 }
 
@@ -66,7 +67,7 @@ enum PermissionWorkflowEvent {
         session_id: Uuid,
         call_id: String,
         command: Vec<String>,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<()>,
     },
     CheckDecision {
         session_id: Uuid,
@@ -154,10 +155,9 @@ impl PermissionWorkflowManager {
                 command,
                 reply,
             } => {
-                let result = self
-                    .init_permission_workflow(session_id, call_id, command)
+                self.init_permission_workflow(session_id, call_id, command)
                     .await;
-                let _ = reply.send(result);
+                let _ = reply.send(());
             },
             PermissionWorkflowEvent::CheckDecision {
                 session_id,
@@ -184,47 +184,72 @@ impl PermissionWorkflowManager {
         session_id: Uuid,
         call_id: String,
         command: Vec<String>,
-    ) -> Result<()> {
+    ) {
         let session = self.session_permission.entry(session_id).or_default();
         let session_allows =
             session.always || session.allowlist.contains(command.join(" ").as_str());
-
-        let decision = self.permission_controller.classify(&command).await?;
 
         let now = Instant::now();
         let timeout_at = now + Duration::from_secs(PERMISSION_DECISION_TIMEOUT_SECS);
         let evict_at = now + Duration::from_secs(PERMISSION_EVICT_TTL_SECS);
 
-        // only bypass permission check if the command is a composite
-        if session_allows && decision.command_type() == &CommandType::Composite {
-            self.permission_tracker.insert(
-                call_id,
-                PermissionRequest {
-                    decision: PermissionDecision::new(CommandType::Composite, ArgvDecision::Allow),
-                    tracker: CompletableFuture::completed(PermissionState::Allow),
-                    command,
-                    timeout_at,
-                    evict_at,
-                },
-            );
-        } else {
-            let tracker = match decision.decision() {
-                ArgvDecision::Allow => CompletableFuture::completed(PermissionState::Allow),
-                ArgvDecision::NotExecutable => CompletableFuture::completed(PermissionState::Deny),
-                _ => CompletableFuture::pending(),
-            };
-            self.permission_tracker.insert(
-                call_id,
-                PermissionRequest {
-                    decision,
-                    tracker,
-                    command,
-                    timeout_at,
-                    evict_at,
-                },
-            );
-        }
-        Ok(())
+        match self.permission_controller.classify(&command).await {
+            Ok(decision) => {
+                // only bypass permission check if the command is a composite
+                if session_allows && decision.command_type() == &CommandType::Composite {
+                    self.permission_tracker.insert(
+                        call_id,
+                        PermissionRequest {
+                            decision: PermissionDecision::new(
+                                CommandType::Composite,
+                                ArgvDecision::Allow,
+                            ),
+                            tracker: CompletableFuture::completed(PermissionState::Allow),
+                            command,
+                            timeout_at,
+                            evict_at,
+                        },
+                    );
+                } else {
+                    let tracker = match decision.decision() {
+                        ArgvDecision::Allow => CompletableFuture::completed(PermissionState::Allow),
+                        ArgvDecision::NotExecutable => {
+                            CompletableFuture::completed(PermissionState::Deny)
+                        },
+                        _ => CompletableFuture::pending(),
+                    };
+                    self.permission_tracker.insert(
+                        call_id,
+                        PermissionRequest {
+                            decision,
+                            tracker,
+                            command,
+                            timeout_at,
+                            evict_at,
+                        },
+                    );
+                }
+            },
+            Err(e) => {
+                error!(
+                    "Error happen when try to classify permission for command {:?}. {}",
+                    &command, e
+                );
+                self.permission_tracker.insert(
+                    call_id,
+                    PermissionRequest {
+                        decision: PermissionDecision::new(
+                            CommandType::Composite,
+                            ArgvDecision::NotExecutable,
+                        ),
+                        tracker: CompletableFuture::completed(PermissionState::Error),
+                        command,
+                        timeout_at,
+                        evict_at,
+                    },
+                );
+            },
+        };
     }
 
     fn handle_check_decision(
@@ -461,7 +486,7 @@ impl PermissionWorkflowManagerClient {
             .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
         reply_rx
             .await
-            .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)
     }
 
     /// The option menu to present for a pending request.
