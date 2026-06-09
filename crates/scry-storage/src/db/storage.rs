@@ -28,6 +28,10 @@ pub struct Storage {
 impl Storage {
     pub async fn new(db_path: &Path) -> Result<Self> {
         let pool = create_pool(db_path).await?;
+        Self::from_pool(pool).await
+    }
+
+    pub async fn from_pool(pool: Pool<Sqlite>) -> Result<Self> {
         initialize(&pool).await?;
         Ok(Self { pool })
     }
@@ -285,23 +289,21 @@ async fn initialize(pool: &Pool<Sqlite>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use sqlx::Row;
-    use tempfile::TempDir;
 
     use super::*;
 
-    /// Spin up a `Storage` backed by a fresh file in a tempdir.
-    /// Returns the `TempDir` guard so the directory survives the test.
-    async fn fresh_storage() -> (Storage, TempDir) {
-        let tmp = TempDir::new().expect("tempdir");
-        let storage = Storage::new(&tmp.path().join("scry.db"))
+    async fn fresh_storage() -> Storage {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(":memory:"))
             .await
-            .expect("Storage::new");
-        (storage, tmp)
+            .expect("in-memory pool");
+        Storage::from_pool(pool).await.expect("Storage::from_pool")
     }
 
     #[tokio::test]
     async fn new_creates_database() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         // Sanity: the table exists and is empty.
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
             .fetch_one(storage.pool())
@@ -312,10 +314,21 @@ mod tests {
 
     #[tokio::test]
     async fn new_is_idempotent_across_reopens() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("scry.db");
+        let uri = "file:scry_reopen_idempotent?mode=memory&cache=shared";
+        let keepalive = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(uri)
+            .await
+            .expect("keepalive pool");
 
-        let first = Storage::new(&path).await.expect("first open");
+        let first = Storage::from_pool(
+            SqlitePoolOptions::new()
+                .connect(uri)
+                .await
+                .expect("first pool"),
+        )
+        .await
+        .expect("first open");
         first
             .insert_provider(
                 "anthropic",
@@ -330,17 +343,26 @@ mod tests {
 
         // Second open must succeed (regression for missing IF NOT EXISTS)
         // and must see the previously inserted row.
-        let second = Storage::new(&path).await.expect("second open");
+        let second = Storage::from_pool(
+            SqlitePoolOptions::new()
+                .connect(uri)
+                .await
+                .expect("second pool"),
+        )
+        .await
+        .expect("second open");
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
             .fetch_one(second.pool())
             .await
             .unwrap();
         assert_eq!(count, 1);
+
+        drop(keepalive);
     }
 
     #[tokio::test]
     async fn insert_provider_writes_row() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider(
                 "anthropic",
@@ -367,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_provider_duplicate_returns_duplicate_error() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "tok-1", "gpt-5", "medium")
             .await
@@ -386,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_provider_rejects_bad_auth_kind() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let err = storage
             .insert_provider("openai", "magic_link", "x", "gpt-5", "medium")
             .await
@@ -399,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_provider_changes_row() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "old-token", "gpt-5", "medium")
             .await
@@ -420,7 +442,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_provider_nonexistent_returns_not_found() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let err = storage
             .update_provider("ghost", "api_key", "x")
             .await
@@ -434,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_preferences_changes_model_and_effort_only() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
@@ -462,7 +484,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_preferences_nonexistent_returns_not_found() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let err = storage
             .update_preferences("ghost", "gpt-5", "medium")
             .await
@@ -476,7 +498,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_provider_removes_row() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("anthropic", "api_key", "x", "claude-sonnet-4-5", "medium")
             .await
@@ -493,7 +515,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_provider_nonexistent_returns_not_found() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let err = storage
             .delete_provider("ghost")
             .await
@@ -507,14 +529,14 @@ mod tests {
 
     #[tokio::test]
     async fn connected_providers_returns_empty_when_no_rows() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let rows = storage.connected_providers().await.expect("query");
         assert!(rows.is_empty(), "expected empty, got {rows:?}");
     }
 
     #[tokio::test]
     async fn connected_providers_returns_all_inserted_ids() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider(
                 "anthropic",
@@ -543,7 +565,7 @@ mod tests {
 
     #[tokio::test]
     async fn connected_providers_reflects_deletes() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider(
                 "anthropic",
@@ -573,7 +595,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_session_persists_title_and_defaults() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
@@ -604,7 +626,7 @@ mod tests {
 
     #[tokio::test]
     async fn all_sessions_orders_by_last_update_latest_first() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
@@ -642,7 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn touch_session_bumps_last_update() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage
             .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
             .await
@@ -678,7 +700,7 @@ mod tests {
 
     #[tokio::test]
     async fn touch_session_nonexistent_returns_not_found() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         let err = storage
             .touch_session("019e1234-5678-7000-8000-0000000000fe")
             .await
@@ -692,13 +714,13 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_command_is_not_allowed() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         assert!(!storage.is_command_allowed("cargo build").await.unwrap());
     }
 
     #[tokio::test]
     async fn exact_permission_allows_only_the_exact_command() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage.add_permission("git status", false).await.unwrap();
 
         assert!(storage.is_command_allowed("git status").await.unwrap());
@@ -708,7 +730,7 @@ mod tests {
 
     #[tokio::test]
     async fn glob_permission_matches_on_token_boundary() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage.add_permission("cargo build", true).await.unwrap();
 
         // Exact prefix and any space-separated continuation are allowed.
@@ -728,7 +750,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_permission_widens_exact_to_glob_in_place() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage.add_permission("cargo build", false).await.unwrap();
         assert!(!storage
             .is_command_allowed("cargo build -j 8")
@@ -751,7 +773,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_permission_sets_with_glob_exactly() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage.add_permission("cargo build", true).await.unwrap();
         assert!(storage
             .is_command_allowed("cargo build -j 8")
@@ -769,7 +791,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_permission_refreshes_updated_at_on_conflict() {
-        let (storage, _tmp) = fresh_storage().await;
+        let storage = fresh_storage().await;
         storage.add_permission("cargo build", false).await.unwrap();
 
         // Backdate so the bump is observable regardless of clock resolution.

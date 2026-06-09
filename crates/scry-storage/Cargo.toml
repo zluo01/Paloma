@@ -8,7 +8,7 @@ publish.workspace = true
 description = "Storage primitives for Scry."
 
 [dependencies]
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "json"] }
+sqlx = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "rt"] }
 thiserror = { workspace = true }
 serde = { workspace = true }
@@ -17,4 +17,3 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
-tempfile = "3.27.0"
