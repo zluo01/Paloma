@@ -1,2 +1,2 @@
-INSERT INTO history (session_id, payloadType, payload)
+INSERT INTO history (session_id, payload_type, payload)
 VALUES (?, ?, ?);

@@ -1,4 +1,4 @@
-SELECT h.payloadType,
+SELECT h.payload_type,
        h.payload,
        EXISTS (SELECT 1
                FROM history o
