@@ -8,7 +8,12 @@ publish.workspace = true
 description = "Permission checker for Scry."
 
 [dependencies]
+regex = "1.12.4"
 tree-sitter = "0.26.9"
 tree-sitter-bash = "0.25.1"
 scry-storage = { path = "../scry-storage" }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+sqlx = { workspace = true }
