@@ -47,6 +47,8 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
             Ok(ArgvDecision::NotExecutable)
         },
 
+        Some("pkexec" | "osascript") => Ok(ArgvDecision::AskNoPersist),
+
         Some("rm")
             if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
         {
