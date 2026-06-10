@@ -1,12 +1,14 @@
 //! Bash composite parser, Logic partially ported from openai/codex
 //! (`codex-rs/shell-command/src/bash.rs`).
 
+use std::path::Path;
+
 use tree_sitter::{Node, Parser, Tree};
 use tree_sitter_bash::LANGUAGE as BASH;
 
 use crate::{
+    constants::SHELLS,
     error::{PermissionError, Result},
-    utils::is_supported_shell,
 };
 
 pub(crate) fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String>>>> {
@@ -27,7 +29,7 @@ pub(crate) fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String
 
 /// Parse the provided bash source using tree-sitter-bash, returning a `Tree`
 /// on success or `None` if parsing failed.
-fn try_parse_shell(shell_lc_arg: &str) -> Option<Tree> {
+pub(crate) fn try_parse_shell(shell_lc_arg: &str) -> Option<Tree> {
     let lang = BASH.into();
     let mut parser = Parser::new();
     parser
@@ -38,7 +40,7 @@ fn try_parse_shell(shell_lc_arg: &str) -> Option<Tree> {
 }
 
 /// If `command` has the shape `[shell, -c|-lc, script]` where `shell` is in
-/// [`crate::utils::SHELLS`], return the inner script. Otherwise `None`.
+/// [`crate::constants::SHELLS`], return the inner script. Otherwise `None`.
 fn extract_bash_command(command: &[String]) -> Option<&str> {
     let [shell, flag, script] = command else {
         return None;
@@ -50,6 +52,14 @@ fn extract_bash_command(command: &[String]) -> Option<&str> {
         return None;
     }
     Some(script)
+}
+
+fn is_supported_shell(shell: &str) -> bool {
+    let name = Path::new(shell)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(shell);
+    SHELLS.contains(name)
 }
 
 /// Parse a script which may contain multiple simple commands joined only by
@@ -511,5 +521,23 @@ mod tests {
         ]));
         assert!(is_complex(&["bash", "-lc", "FOO=bar ls"]));
         assert!(is_complex(&["bash", "-lc", "sleep 1 &"]));
+    }
+
+    #[test]
+    fn parse_wrapper_commands() {
+        assert_eq!(
+            parsed(&[
+                "bash",
+                "-lc",
+                "timeout 75 aria2c --dir=/tmp 'magnet:?xt=urn:btih:123456'"
+            ]),
+            vec![vec![
+                "timeout".to_string(),
+                "75".to_string(),
+                "aria2c".to_string(),
+                "--dir=/tmp".to_string(),
+                "magnet:?xt=urn:btih:123456".to_string(),
+            ]]
+        );
     }
 }

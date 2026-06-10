@@ -4,9 +4,9 @@
 use std::{collections::HashSet, path::Path, sync::LazyLock};
 
 use crate::{
+    constants::SHELLS,
     entity::ArgvDecision,
     error::{PermissionError, Result},
-    utils::SHELLS,
 };
 
 static ALWAYS_ALLOWED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {

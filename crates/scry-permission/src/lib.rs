@@ -1,14 +1,15 @@
+mod constants;
 mod entity;
 mod error;
 mod parser;
 mod safety;
-mod utils;
 
 pub use entity::ArgvDecision;
 pub use error::{PermissionError, Result};
 use scry_storage::Storage;
 
 pub use crate::entity::{CommandType, PermissionDecision};
+use crate::parser::try_parse_shell;
 
 pub struct PermissionController {
     storage: Storage,
@@ -16,6 +17,9 @@ pub struct PermissionController {
 
 impl PermissionController {
     pub fn new(storage: Storage) -> Self {
+        // call on start up to panic on any tree-sitter parser config issues.
+        let _ = try_parse_shell("true");
+
         Self { storage }
     }
 
