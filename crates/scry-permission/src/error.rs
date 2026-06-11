@@ -2,6 +2,8 @@
 pub enum PermissionError {
     #[error("empty command error.")]
     EmptyCommand,
+    #[error("invalid command: {0}")]
+    InvalidCommand(String),
     #[error(transparent)]
     Storage(#[from] scry_storage::StorageError),
 }
