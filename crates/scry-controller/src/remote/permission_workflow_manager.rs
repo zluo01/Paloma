@@ -202,6 +202,7 @@ impl PermissionWorkflowManager {
                         PermissionRequest {
                             decision: PermissionDecision::new(
                                 CommandType::Composite,
+                                vec![], // should not be used.
                                 ArgvDecision::Allow,
                             ),
                             tracker: CompletableFuture::completed(PermissionState::Allow),
@@ -240,6 +241,7 @@ impl PermissionWorkflowManager {
                     PermissionRequest {
                         decision: PermissionDecision::new(
                             CommandType::Composite,
+                            vec![], // should not be used.
                             ArgvDecision::NotExecutable,
                         ),
                         tracker: CompletableFuture::completed(PermissionState::Error),
@@ -281,9 +283,10 @@ impl PermissionWorkflowManager {
                         });
 
                         // allow global for generated options
+                        // we should generate the option from the stripped inner command.
                         user_options.append(&mut generate_decision_options(
                             call_id.clone(),
-                            &state.command,
+                            &state.decision.parsed_commands()[0],
                         ));
 
                         // deny options
