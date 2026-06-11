@@ -160,9 +160,6 @@ impl ToolController {
         match decision.await {
             Some(PermissionState::Allow) => Ok(()),
             Some(PermissionState::Deny) => Err("command was denied by the user".into()),
-            Some(PermissionState::Timeout) => {
-                Err("permission request timed out; command was not executed".into())
-            },
             Some(PermissionState::Error) => {
                 Err("the command could not be validated for permission (it may be empty or malformed); it was not executed".into())
             },

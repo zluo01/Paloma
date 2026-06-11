@@ -4,11 +4,8 @@ use std::{
 };
 
 use futures::{future::BoxFuture, FutureExt};
-use log::{debug, error};
-use scry_config::{
-    PERMISSION_DECISION_TIMEOUT_SECS, PERMISSION_EVICT_TTL_SECS,
-    PERMISSION_WORKFLOW_CHANNEL_CAPACITY,
-};
+use log::error;
+use scry_config::{PERMISSION_EVICT_TTL_SECS, PERMISSION_WORKFLOW_CHANNEL_CAPACITY};
 use scry_permission::{
     ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
 };
@@ -27,15 +24,28 @@ pub enum PermissionState {
     Allow,
     Deny,
     Error,
-    Timeout,
 }
 
 struct PermissionRequest {
     decision: PermissionDecision,
     tracker: CompletableFuture<PermissionState>,
     command: Vec<String>,
-    timeout_at: Instant,
-    evict_at: Instant,
+    /// `None` while pending (kept forever). Set when the request resolves,
+    /// scheduling eviction `PERMISSION_EVICT_TTL_SECS` later.
+    evict_at: Option<Instant>,
+}
+
+impl PermissionRequest {
+    /// The eviction deadline for a request that resolves now.
+    fn evict_deadline() -> Instant {
+        Instant::now() + Duration::from_secs(PERMISSION_EVICT_TTL_SECS)
+    }
+
+    /// Resolve the request and schedule its eviction.
+    fn resolve(&mut self, state: PermissionState) {
+        self.tracker.complete(state);
+        self.evict_at = Some(Self::evict_deadline());
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -115,7 +125,7 @@ impl PermissionWorkflowManager {
     }
 
     pub async fn run(&mut self) {
-        let mut sweep = tokio::time::interval(Duration::from_secs(1));
+        let mut sweep = tokio::time::interval(Duration::from_secs(60));
         loop {
             tokio::select! {
                 maybe_event = self.event_rx.recv() => {
@@ -129,22 +139,11 @@ impl PermissionWorkflowManager {
         }
     }
 
-    /// Handle timeout and eviction, same thread as mpsc, so no need to worry about thread-safe
+    /// Handle complete jobs eviction, same thread as mpsc, so no need to worry about thread-safe
     fn sweep(&mut self) {
         let now = Instant::now();
-        self.permission_tracker.retain(|call_id, request| {
-            if now >= request.evict_at {
-                if !request.tracker.is_completed() {
-                    error!("permission for {call_id} evicted while still pending; this indicates a bug");
-                }
-                return false;
-            }
-            if now >= request.timeout_at && !request.tracker.is_completed() {
-                request.tracker.complete(PermissionState::Timeout);
-                debug!("permission for {call_id} is timed out");
-            }
-            true
-        });
+        self.permission_tracker
+            .retain(|_, request| request.evict_at.is_none_or(|deadline| now < deadline));
     }
 
     async fn handle_event(&mut self, event: PermissionWorkflowEvent) -> Result<()> {
@@ -189,10 +188,6 @@ impl PermissionWorkflowManager {
         let session_allows =
             session.always || session.allowlist.contains(command.join(" ").as_str());
 
-        let now = Instant::now();
-        let timeout_at = now + Duration::from_secs(PERMISSION_DECISION_TIMEOUT_SECS);
-        let evict_at = now + Duration::from_secs(PERMISSION_EVICT_TTL_SECS);
-
         match self.permission_controller.classify(&command).await {
             Ok(decision) => {
                 // only bypass permission check if the command is a composite
@@ -207,17 +202,20 @@ impl PermissionWorkflowManager {
                             ),
                             tracker: CompletableFuture::completed(PermissionState::Allow),
                             command,
-                            timeout_at,
-                            evict_at,
+                            evict_at: Some(PermissionRequest::evict_deadline()),
                         },
                     );
                 } else {
-                    let tracker = match decision.decision() {
-                        ArgvDecision::Allow => CompletableFuture::completed(PermissionState::Allow),
-                        ArgvDecision::NotExecutable => {
-                            CompletableFuture::completed(PermissionState::Deny)
-                        },
-                        _ => CompletableFuture::pending(),
+                    let (tracker, evict_at) = match decision.decision() {
+                        ArgvDecision::Allow => (
+                            CompletableFuture::completed(PermissionState::Allow),
+                            Some(PermissionRequest::evict_deadline()),
+                        ),
+                        ArgvDecision::NotExecutable => (
+                            CompletableFuture::completed(PermissionState::Deny),
+                            Some(PermissionRequest::evict_deadline()),
+                        ),
+                        _ => (CompletableFuture::pending(), None),
                     };
                     self.permission_tracker.insert(
                         call_id,
@@ -225,7 +223,6 @@ impl PermissionWorkflowManager {
                             decision,
                             tracker,
                             command,
-                            timeout_at,
                             evict_at,
                         },
                     );
@@ -246,8 +243,7 @@ impl PermissionWorkflowManager {
                         ),
                         tracker: CompletableFuture::completed(PermissionState::Error),
                         command,
-                        timeout_at,
-                        evict_at,
+                        evict_at: Some(PermissionRequest::evict_deadline()),
                     },
                 );
             },
@@ -326,8 +322,7 @@ impl PermissionWorkflowManager {
             UserDecision::AllowOnce { call_id } => {
                 get_permission_request_guard(&mut self.permission_tracker, &call_id)
                     .await?
-                    .tracker
-                    .complete(PermissionState::Allow);
+                    .resolve(PermissionState::Allow);
                 Ok(PermissionState::Allow)
             },
             // for normal allow, it can either be exact allow or wildcard allow(glob enabled)
@@ -342,7 +337,7 @@ impl PermissionWorkflowManager {
                 self.permission_controller
                     .add_permission(command, glob)
                     .await?;
-                request.tracker.complete(PermissionState::Allow);
+                request.resolve(PermissionState::Allow);
                 Ok(PermissionState::Allow)
             },
             // AllowSession only happens to composite, which can either be
@@ -360,14 +355,14 @@ impl PermissionWorkflowManager {
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.allowlist.insert(command);
-                        request.tracker.complete(PermissionState::Allow);
+                        request.resolve(PermissionState::Allow);
                         Ok(PermissionState::Allow)
                     },
                     None => {
                         // Decision arrived without a prior init for this
                         // session — a bug. Deny the tracker so the waiter
-                        // unblocks instead of hanging until the timeout.
-                        request.tracker.complete(PermissionState::Deny);
+                        // unblocks instead of hanging forever.
+                        request.resolve(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     },
                 }
@@ -382,11 +377,11 @@ impl PermissionWorkflowManager {
                 match self.session_permission.get_mut(&session_id) {
                     Some(session) => {
                         session.always = true;
-                        request.tracker.complete(PermissionState::Allow);
+                        request.resolve(PermissionState::Allow);
                         Ok(PermissionState::Allow)
                     },
                     None => {
-                        request.tracker.complete(PermissionState::Deny);
+                        request.resolve(PermissionState::Deny);
                         Err(PermissionWorkflowError::MissingSession(session_id))
                     },
                 }
@@ -394,8 +389,7 @@ impl PermissionWorkflowManager {
             UserDecision::Deny { call_id } => {
                 get_permission_request_guard(&mut self.permission_tracker, &call_id)
                     .await?
-                    .tracker
-                    .complete(PermissionState::Deny);
+                    .resolve(PermissionState::Deny);
                 Ok(PermissionState::Deny)
             },
         }
@@ -411,15 +405,12 @@ async fn get_permission_request_guard<'a>(
         .ok_or_else(|| PermissionWorkflowError::MissingCallerId(call_id.to_string()))?;
 
     if request.tracker.is_completed() {
-        return Err(match request.tracker.get().await {
-            Some(PermissionState::Timeout) => {
-                PermissionWorkflowError::AlreadyTimedOut(call_id.to_string())
-            },
-            _ => {
-                error!("Unexpected attempt to complete on completed future {call_id}. This indicates a bug.");
-                PermissionWorkflowError::AlreadyResolved(call_id.to_string())
-            },
-        });
+        error!(
+            "Unexpected attempt to complete on completed future {call_id}. This indicates a bug."
+        );
+        return Err(PermissionWorkflowError::AlreadyResolved(
+            call_id.to_string(),
+        ));
     }
 
     Ok(request)
@@ -562,9 +553,6 @@ pub enum PermissionWorkflowError {
 
     #[error("permission workflow channel closed")]
     ChannelClosed,
-
-    #[error("permission for {0} already timed out")]
-    AlreadyTimedOut(String),
 
     #[error("permission for {0} was already resolved")]
     AlreadyResolved(String),

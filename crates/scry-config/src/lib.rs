@@ -13,11 +13,8 @@ pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
 pub const HOTKEY_CHANNEL_CAPACITY: usize = 8;
 pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
 
-/// How long the tool executor waits for the user to resolve a permission
-/// prompt before giving up and refusing to run the command.
-pub const PERMISSION_DECISION_TIMEOUT_SECS: u64 = 300;
-
-/// How long we preserve the permission action in memory
+/// How long a resolved permission request is kept in memory after it
+/// completes before it is evicted.
 pub const PERMISSION_EVICT_TTL_SECS: u64 = 600;
 
 pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
