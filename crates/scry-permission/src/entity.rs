@@ -28,16 +28,25 @@ pub enum CommandType {
 #[derive(Clone)]
 pub struct PermissionDecision {
     t: CommandType,
+    parsed_commands: Vec<Vec<String>>,
     decision: ArgvDecision,
 }
 
 impl PermissionDecision {
-    pub fn new(t: CommandType, decision: ArgvDecision) -> Self {
-        Self { t, decision }
+    pub fn new(t: CommandType, parsed_commands: Vec<Vec<String>>, decision: ArgvDecision) -> Self {
+        Self {
+            t,
+            parsed_commands,
+            decision,
+        }
     }
 
     pub fn command_type(&self) -> &CommandType {
         &self.t
+    }
+
+    pub fn parsed_commands(&self) -> &[Vec<String>] {
+        &self.parsed_commands
     }
 
     pub fn decision(&self) -> ArgvDecision {

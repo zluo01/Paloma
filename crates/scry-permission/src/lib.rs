@@ -10,8 +10,10 @@ pub use error::{PermissionError, Result};
 use scry_storage::Storage;
 
 pub use crate::entity::{CommandType, PermissionDecision};
-use crate::parser::try_parse_shell;
-use crate::transparent::{strip_transparent_command, StripTransparentWrapperError};
+use crate::{
+    parser::try_parse_shell,
+    transparent::{strip_transparent_command, StripTransparentWrapperError},
+};
 
 pub struct PermissionController {
     storage: Storage,
@@ -30,6 +32,7 @@ impl PermissionController {
             // Unparseable composite: always ask, never persist globally.
             return Ok(PermissionDecision::new(
                 CommandType::Composite,
+                vec![command.to_vec()],
                 ArgvDecision::AskNoPersist,
             ));
         };
@@ -39,7 +42,11 @@ impl PermissionController {
             return match strip_transparent_command(&commands[0]) {
                 Ok(inner) => {
                     let decision = self.decide(inner).await?;
-                    Ok(PermissionDecision::new(CommandType::Simple, decision))
+                    Ok(PermissionDecision::new(
+                        CommandType::Simple,
+                        vec![inner.to_vec()],
+                        decision,
+                    ))
                 },
                 // Malformed wrapper invocation — the real tool would reject it.
                 Err(
@@ -53,7 +60,8 @@ impl PermissionController {
                     | StripTransparentWrapperError::UnsafeToStrip { .. }
                     | StripTransparentWrapperError::DepthExceeded,
                 ) => Ok(PermissionDecision::new(
-                    CommandType::Simple,
+                    CommandType::Composite,
+                    vec![commands[0].clone()],
                     ArgvDecision::AskNoPersist,
                 )),
             };
@@ -61,8 +69,8 @@ impl PermissionController {
 
         // Composite
         let mut strictest: Option<ArgvDecision> = None;
-        for argv in commands {
-            let decision = self.decide(&argv).await?;
+        for argv in &commands {
+            let decision = self.decide(argv).await?;
             if strictest.is_none_or(|prev| decision.severity() > prev.severity()) {
                 strictest = Some(decision);
             }
@@ -76,7 +84,11 @@ impl PermissionController {
         } else {
             folded
         };
-        Ok(PermissionDecision::new(CommandType::Composite, decision))
+        Ok(PermissionDecision::new(
+            CommandType::Composite,
+            commands,
+            decision,
+        ))
     }
 
     pub async fn add_permission(&self, prefix: String, with_glob: bool) -> Result<()> {
@@ -133,6 +145,30 @@ mod tests {
 
         assert!(matches!(decision.command_type(), CommandType::Simple));
         assert_eq!(decision.decision(), ArgvDecision::Unknown);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&[
+                "aria2c",
+                "--dir=/tmp",
+                "magnet:?xt=urn:btih:123456"
+            ])]
+        );
+    }
+
+    #[tokio::test]
+    async fn classifies_pkexec_single_command_should_ask_no_persist() {
+        let controller = PermissionController::new(fresh_storage().await);
+        let decision = controller
+            .classify(&argv(&["pkexec", "systemctl", "restart", "aria2"]))
+            .await
+            .expect("classify");
+
+        assert!(matches!(decision.command_type(), CommandType::Simple));
+        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["pkexec", "systemctl", "restart", "aria2"])]
+        );
     }
 
     #[tokio::test]
@@ -145,21 +181,27 @@ mod tests {
 
         assert!(matches!(decision.command_type(), CommandType::Simple));
         assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+        assert_eq!(decision.parsed_commands(), &[argv(&["sudo", "a", "b"])]);
     }
 
     #[tokio::test]
     async fn unparseable_complex_command_is_ask_no_persist() {
         // A complex script (control flow, substitutions, …) can't be split
         // into atoms, so it always asks and never persists.
-        let decision = classify(&[
-            "bash",
-            "-lc",
-            "for d in /tmp/*; do echo \"$d\"; done",
-        ])
-        .await
-        .expect("classify");
+        let decision = classify(&["bash", "-lc", "for d in /tmp/*; do echo \"$d\"; done"])
+            .await
+            .expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        // Unparseable: the raw command is kept as a single atom.
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&[
+                "bash",
+                "-lc",
+                "for d in /tmp/*; do echo \"$d\"; done"
+            ])]
+        );
     }
 
     // ------------------------------------------------------------------
@@ -173,6 +215,7 @@ mod tests {
             .expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::Allow);
+        assert_eq!(decision.parsed_commands(), &[argv(&["ls"]), argv(&["pwd"])]);
     }
 
     #[tokio::test]
@@ -182,6 +225,10 @@ mod tests {
             .expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["ls"]), argv(&["cargo", "build"])]
+        );
     }
 
     #[tokio::test]
@@ -191,6 +238,10 @@ mod tests {
             .expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["ls"]), argv(&["rm", "-rf", "x"])]
+        );
     }
 
     #[tokio::test]
@@ -200,6 +251,10 @@ mod tests {
             .expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["ls"]), argv(&["sudo", "rm", "x"])]
+        );
     }
 
     // ------------------------------------------------------------------
@@ -211,6 +266,8 @@ mod tests {
         let decision = classify(&["timeout", "5", "ls"]).await.expect("classify");
         assert!(matches!(decision.command_type(), CommandType::Simple));
         assert_eq!(decision.decision(), ArgvDecision::Allow);
+        // The stripped inner command, not the wrapped original.
+        assert_eq!(decision.parsed_commands(), &[argv(&["ls"])]);
     }
 
     #[tokio::test]
@@ -236,8 +293,12 @@ mod tests {
         let decision = classify(&["timeout", "--frobnicate", "5", "ls"])
             .await
             .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Simple));
+        assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["timeout", "--frobnicate", "5", "ls"])]
+        );
     }
 
     #[tokio::test]
@@ -245,8 +306,12 @@ mod tests {
         let decision = classify(&["env", "-C", "/tmp", "make"])
             .await
             .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Simple));
+        assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(
+            decision.parsed_commands(),
+            &[argv(&["env", "-C", "/tmp", "make"])]
+        );
     }
 
     #[tokio::test]
@@ -254,7 +319,8 @@ mod tests {
         let mut parts = vec!["nohup"; 9];
         parts.push("ls");
         let decision = classify(&parts).await.expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Simple));
+        assert!(matches!(decision.command_type(), CommandType::Composite));
         assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        assert_eq!(decision.parsed_commands(), &[argv(&parts)]);
     }
 }
