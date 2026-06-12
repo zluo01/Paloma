@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS plugins
     disabled    INTEGER          NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
     env         TEXT             NOT NULL DEFAULT '{}',
     args        TEXT             NOT NULL,
+    creation    INTEGER          NOT NULL DEFAULT (unixepoch()),
     -- Native plugins run in-process; only mcp plugins may go over http.
     CHECK (NOT (plugin_type = 'native' AND transport = 'http'))
 );
