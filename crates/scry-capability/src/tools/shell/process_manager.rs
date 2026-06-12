@@ -1,6 +1,7 @@
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
+use scry_config::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT};
 use scry_utils::Element;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,12 +19,8 @@ const PROCESS_MANAGER_CHANNEL_CAPACITY: usize = 128;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// Grace period to flush buffered pipe bytes after the process group is killed.
 const IO_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
-/// Per-stream in-memory payload cap shown to the model; past this bytes spill to a tempfile and the in-memory text freezes at this prefix.
-const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 /// Per-syscall buffer size for the read loop; pure performance knob, unrelated to caps.
 const READ_BUFFER_BYTES: usize = 8 * 1024;
-/// Root directory under /tmp where spilled output files live; never cleaned by the process — relies on system tmp lifecycle.
-const SPILL_ROOT: &str = "/tmp/scry";
 
 #[derive(Debug)]
 pub struct ProcessExecRequest {
@@ -128,7 +125,7 @@ impl ProcessManager {
         // Per-invocation spill directory keyed by call_id. If we cannot
         // create it, spill is disabled for this exec and overflow bytes fall
         // back to discard.
-        let spill_dir = PathBuf::from(SPILL_ROOT).join(&request.call_id);
+        let spill_dir = SPILL_ROOT.join(&request.call_id);
         let spill_paths = match std::fs::create_dir_all(&spill_dir) {
             Ok(()) => Some((spill_dir.join("out"), spill_dir.join("err"))),
             Err(e) => {

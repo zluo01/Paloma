@@ -13,8 +13,9 @@ use rmcp::{
     transport::{StreamableHttpClientTransport, TokioChildProcess},
     RoleClient, ServiceExt,
 };
+use scry_config::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT};
 use scry_storage::{Plugin, PluginArgs};
-use scry_utils::mcp_function_name_encode;
+use scry_utils::{mcp_function_name_encode, write_spill_file, Element};
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -153,7 +154,7 @@ impl DynTool for McpTool {
         &self,
         name: Option<String>, // mcp tool name
         _session_id: Uuid,
-        _call_id: String,
+        call_id: String,
         args: Value,
     ) -> std::result::Result<ToolResult, String> {
         let tool = name.ok_or("MCP tool call requires a tool name")?;
@@ -227,8 +228,36 @@ impl DynTool for McpTool {
                 .join("\n"),
         };
 
-        Ok(ToolResult::Text(text))
+        Ok(ToolResult::Text(
+            truncate_payload(&tool, &call_id, text).await,
+        ))
     }
+}
+
+/// Truncate payload if exceed [`MAX_STREAM_PAYLOAD_BYTES`] to prevent
+/// `Your input exceeds the context window of this model. Please adjust your input and try again.`
+async fn truncate_payload(tool: &str, call_id: &str, text: String) -> String {
+    if text.len() <= MAX_STREAM_PAYLOAD_BYTES {
+        return text;
+    }
+
+    let mut end = MAX_STREAM_PAYLOAD_BYTES;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    let spill_path = write_spill_file(&SPILL_ROOT, call_id, "out", text.as_bytes()).await;
+
+    Element::new("mcp_output")
+        .attr("tool", tool)
+        .attr("total_bytes", text.len())
+        .attr("truncated", "true")
+        .attr_if_some(
+            "full_output",
+            spill_path.as_ref().map(|p| p.display().to_string()),
+        )
+        .cdata(format!("{}...", &text[..end]))
+        .to_string()
 }
 
 async fn connect(

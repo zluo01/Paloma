@@ -17,6 +17,15 @@ pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
 /// completes before it is evicted.
 pub const PERMISSION_EVICT_TTL_SECS: u64 = 600;
 
+/// Per-payload cap on tool output shown inline to the model; anything past
+/// these spills to a file under [`SPILL_ROOT`] and the inline text freezes
+/// at this prefix. Shared by all tools that will output to llm.
+pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
+
+/// Root directory where spilled tool output lives, keyed by call id; never
+/// cleaned by the process — relies on the system tmp lifecycle.
+pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp/scry"));
+
 pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));

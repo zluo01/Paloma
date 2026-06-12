@@ -29,6 +29,7 @@ tokio = { workspace = true, features = [
 thiserror = { workspace = true }
 uuid = { workspace = true }
 dashmap = { workspace = true }
+scry-config = { path = "../scry-config" }
 scry-utils = { path = "../scry-utils" }
 scry-storage = { path = "../scry-storage" }
 
