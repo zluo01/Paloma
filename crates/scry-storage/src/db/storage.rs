@@ -204,6 +204,28 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn update_plugin(
+        &self,
+        name: &str,
+        transport: Transport,
+        timeout: i64,
+        env: &HashMap<String, String>,
+        args: &PluginArgs,
+    ) -> Result<()> {
+        let result = sqlx::query(queries::UPDATE_PLUGIN_QUERY)
+            .bind(transport)
+            .bind(timeout)
+            .bind(serde_json::to_string(env)?)
+            .bind(serde_json::to_string(args)?)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(name.to_string()));
+        }
+        Ok(())
+    }
+
     pub async fn all_mcp_plugins(&self) -> Result<Vec<Plugin>> {
         let plugins = sqlx::query_as::<_, Plugin>(queries::GET_ALL_MCP_QUERY)
             .fetch_all(&self.pool)
