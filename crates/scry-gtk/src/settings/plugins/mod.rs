@@ -4,17 +4,15 @@ mod modal;
 
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
-use adw::{prelude::*, ActionRow, ButtonRow, ExpanderRow};
+use adw::{prelude::*, ActionRow, AlertDialog, ButtonRow, ExpanderRow};
 use gtk4::{
-    glib, AlertDialog, Align, Box as GtkBox, Button, Image, ListBox, Orientation, Switch, Widget,
-    Window,
+    glib, Align, Box as GtkBox, Button, Image, ListBox, Orientation, Switch, Widget, Window,
 };
 use libadwaita as adw;
+use modal::SubmitDone;
 use scry_capability::HealthStatus;
 use scry_controller::{McpServer, Plugin, PluginArgs, PluginType};
 use scry_core::AppContext;
-
-use modal::SubmitDone;
 
 use crate::runtime;
 
@@ -289,10 +287,11 @@ fn submit(servers: McpSection, editing: bool, config: Plugin, done: SubmitDone) 
 }
 
 fn show_error(window: &Window, message: &str) {
-    AlertDialog::builder()
-        .modal(true)
-        .message("Plugin operation failed")
-        .detail(message)
-        .build()
-        .show(Some(window));
+    let dialog = AlertDialog::builder()
+        .heading("Plugin Operation Failed")
+        .body(message)
+        .close_response("close")
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.present(Some(window));
 }

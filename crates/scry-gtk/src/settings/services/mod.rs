@@ -9,10 +9,10 @@ use std::{
     sync::Arc,
 };
 
-use adw::{prelude::*, ComboRow, ExpanderRow};
+use adw::{prelude::*, AlertDialog, ComboRow, ExpanderRow, ResponseAppearance};
 use gtk4::{
-    gdk, glib, AlertDialog, Align, Box as GtkBox, Button, Image, ListBox, Orientation, StringList,
-    Widget, Window,
+    gdk, glib, Align, Box as GtkBox, Button, Image, ListBox, Orientation, StringList, Widget,
+    Window,
 };
 use libadwaita as adw;
 use scry_controller::ConnectorConnection;
@@ -360,36 +360,28 @@ fn append_disconnect(card: &Card) {
         let card = card.clone();
         button.connect_clicked(move |_| {
             let dialog = AlertDialog::builder()
-                .modal(true)
-                .message(format!("Disconnect {}?", card.provider.name))
-                .detail(
-                    "Stored credentials will be removed. You'll need to sign in again to reconnect.",
-                )
-                .buttons(["Cancel", "Disconnect"])
-                .cancel_button(0)
-                .default_button(0)
+                .heading(format!("Disconnect {}?", card.provider.name))
+                .body("Stored credentials will be removed. You'll need to sign in again to reconnect.")
+                .default_response("cancel")
+                .close_response("cancel")
                 .build();
+            dialog.add_responses(&[("cancel", "Cancel"), ("disconnect", "Disconnect")]);
+            dialog.set_response_appearance("disconnect", ResponseAppearance::Destructive);
 
-            let card = card.clone();
             let window = card.window.clone();
-            dialog.choose(
-                Some(&window),
-                None::<&gtk4::gio::Cancellable>,
-                move |result| {
-                    if !matches!(result, Ok(1)) {
-                        return;
+            let card = card.clone();
+            dialog.connect_response(Some("disconnect"), move |_, _| {
+                let card = card.clone();
+                let app = card.app.clone();
+                let id = card.provider.id;
+                glib::MainContext::default().spawn_local(async move {
+                    match runtime::spawn(async move { app.connect.disconnect(id).await }).await {
+                        Ok(()) => refresh(card),
+                        Err(e) => log::warn!("disconnect failed: {e}"),
                     }
-                    let app = card.app.clone();
-                    let id = card.provider.id;
-                    glib::MainContext::default().spawn_local(async move {
-                        match runtime::spawn(async move { app.connect.disconnect(id).await }).await
-                        {
-                            Ok(()) => refresh(card),
-                            Err(e) => log::warn!("disconnect failed: {e}"),
-                        }
-                    });
-                },
-            );
+                });
+            });
+            dialog.present(Some(&window));
         });
     }
     card.actions.append(&button);
