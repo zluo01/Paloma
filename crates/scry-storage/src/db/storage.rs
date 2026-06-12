@@ -14,7 +14,7 @@ use uuid::Uuid;
 use super::queries;
 use crate::{
     db::entity::{
-        ConnectedProvider, EntryType, FileEntry, Plugin, PluginConfig, PreferModelConfig,
+        ConnectedProvider, EntryType, FileEntry, Plugin, PluginArgs, PluginType, PreferModelConfig,
         RestoreEntry, Session, Transport,
     },
     error::{Result, StorageError},
@@ -177,16 +177,18 @@ impl Storage {
             .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
     }
 
-    pub async fn insert_mcp(
+    pub async fn insert_plugin(
         &self,
         name: &str,
+        plugin_type: PluginType,
         transport: Transport,
         timeout: i64,
         env: &HashMap<String, String>,
-        args: &PluginConfig,
+        args: &PluginArgs,
     ) -> Result<()> {
-        sqlx::query(queries::INSERT_MCP_QUERY)
+        sqlx::query(queries::INSERT_PLUGIN_QUERY)
             .bind(name)
+            .bind(plugin_type)
             .bind(transport)
             .bind(timeout)
             .bind(serde_json::to_string(env)?)
@@ -207,6 +209,29 @@ impl Storage {
             .fetch_all(&self.pool)
             .await?;
         Ok(plugins)
+    }
+
+    pub async fn delete_plugin(&self, name: &str) -> Result<()> {
+        let result = sqlx::query(queries::DELETE_PLUGIN_QUERY)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(name.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn toggle_plugin(&self, name: &str, disabled: bool) -> Result<()> {
+        let result = sqlx::query(queries::DISABLE_PLUGIN_QUERY)
+            .bind(disabled)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(name.to_string()));
+        }
+        Ok(())
     }
 
     pub async fn disabled_plugins(&self) -> Result<HashSet<String>> {

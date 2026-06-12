@@ -57,13 +57,20 @@ pub struct RestoreEntry {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
+pub enum PluginType {
+    Native,
+    Mcp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
 pub enum Transport {
     Local,
     Http,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PluginConfig {
+pub enum PluginArgs {
     Local { command: String, args: Vec<String> },
     Remote { url: String, requires_auth: bool },
 }
@@ -77,5 +84,5 @@ pub struct Plugin {
     #[sqlx(json)]
     pub env: HashMap<String, String>,
     #[sqlx(json)]
-    pub args: PluginConfig,
+    pub args: PluginArgs,
 }
