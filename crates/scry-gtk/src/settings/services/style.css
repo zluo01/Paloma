@@ -1,4 +1,10 @@
-/* Device-code cells — the stock theme has no OTP-style display. */
+/* Green "Connected" subtitle — libadwaita has no .success label class. */
+.scry-connected .subtitle {
+    color: #2ec27e;
+}
+
+/* Connect modal: device-code cells — no OTP-style display in the stock
+ * theme. */
 .scry-otp-cell {
     font-size: 20px;
     font-weight: 700;
@@ -10,7 +16,7 @@
     font-size: 20px;
 }
 
-/* Success check mark. */
+/* Connect modal: success check mark. */
 .scry-connect-check {
     font-size: 36px;
     color: #2ec27e;

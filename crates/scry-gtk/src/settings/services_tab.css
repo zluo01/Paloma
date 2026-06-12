@@ -1,4 +1,0 @@
-/* Green "Connected" subtitle — libadwaita has no .success label class. */
-.scry-connected .subtitle {
-    color: #2ec27e;
-}

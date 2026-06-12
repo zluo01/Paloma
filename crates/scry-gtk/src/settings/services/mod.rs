@@ -1,6 +1,8 @@
 // Services tab — one expander row per supported LLM provider, with
 // connect / disconnect controls and nested model-preference rows.
 
+mod connect_modal;
+
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -17,11 +19,12 @@ use scry_controller::ConnectorConnection;
 use scry_core::AppContext;
 use scry_provider::ProviderId;
 
-use super::{connect_modal, section, update_placeholder, Section};
+use super::{section, update_placeholder, Section};
 use crate::runtime;
 
-/// Green "Connected" subtitle; libadwaita has no .success label class.
-pub(crate) const CSS: &str = include_str!("services_tab.css");
+/// The settings styling the stock theme can't express: the green
+/// "Connected" subtitle and the connect modal's OTP display.
+pub(crate) const CSS: &str = include_str!("style.css");
 
 /// Static description of one provider row.
 struct Provider {

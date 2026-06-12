@@ -1,5 +1,7 @@
 // Plugins tab — native plugins (none yet) and user-managed MCP servers.
 
+mod modal;
+
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use adw::{prelude::*, ActionRow, ButtonRow, ExpanderRow};
@@ -12,7 +14,8 @@ use scry_capability::HealthStatus;
 use scry_controller::{McpServer, Plugin, PluginArgs, PluginType};
 use scry_core::AppContext;
 
-use super::plugin_modal::{self, SubmitDone};
+use modal::SubmitDone;
+
 use crate::runtime;
 
 /// Build the Plugins tab; `window` parents the dialogs it opens.
@@ -56,7 +59,7 @@ pub fn build(app: Arc<AppContext>, window: Window) -> Widget {
                 Rc::new(move |config, done| submit(servers.clone(), false, config, done))
             };
             let taken = servers.names.borrow().clone();
-            plugin_modal::open(&servers.window, taken, None, on_submit);
+            modal::open(&servers.window, taken, None, on_submit);
         });
     }
 
@@ -172,7 +175,7 @@ fn edit_button(servers: &McpSection, config: &Plugin) -> Button {
         // Keeping its own name is not a duplicate.
         let mut taken = servers.names.borrow().clone();
         taken.remove(&config.name);
-        plugin_modal::open(&servers.window, taken, Some(config.clone()), on_submit);
+        modal::open(&servers.window, taken, Some(config.clone()), on_submit);
     });
     button
 }

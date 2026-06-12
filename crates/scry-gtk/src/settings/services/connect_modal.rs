@@ -13,9 +13,6 @@ use scry_provider::{Connection, ProviderId};
 
 use crate::runtime;
 
-/// OTP-style code cells and the success check; the rest is stock theme.
-pub(crate) const CSS: &str = include_str!("connect_modal.css");
-
 /// Open the dialog and run the connect flow. Returns immediately; the flow
 /// runs asynchronously. `on_connected` fires only on success, right before
 /// the dialog auto-closes.

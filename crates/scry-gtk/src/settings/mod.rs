@@ -1,10 +1,8 @@
 // Settings window, opened from the tray. Closing it only dismisses the
 // window; the rest of the process keeps running.
 
-mod connect_modal;
-mod plugin_modal;
-mod plugins_tab;
-mod services_tab;
+mod plugins;
+mod services;
 
 use std::sync::Arc;
 
@@ -21,7 +19,7 @@ use scry_core::AppContext;
 
 /// CSS fragments contributed by the settings tabs and modals.
 /// Aggregated into the global stylesheet by `crate::style::load`.
-pub(crate) const CSS_PARTS: &[&str] = &[services_tab::CSS, connect_modal::CSS];
+pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
 
 /// Build and present the settings window. Returns the window so the caller
 /// can re-present it instead of stacking duplicates.
@@ -40,12 +38,12 @@ pub fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWindow {
         .transition_duration(150)
         .build();
     stack.add_titled(
-        &services_tab::build(state.clone(), window.clone().upcast()),
+        &services::build(state.clone(), window.clone().upcast()),
         Some("services"),
         "Services",
     );
     stack.add_titled(
-        &plugins_tab::build(state, window.clone().upcast()),
+        &plugins::build(state, window.clone().upcast()),
         Some("plugins"),
         "Plugins",
     );
