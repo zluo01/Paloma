@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use scry_capability::ProcessManager;
 use scry_controller::{
-    ConnectController, LocalQuery, PermissionWorkflowManager, ProviderController, RemoteQuery,
-    SessionManager, ToolController, TurnManager,
+    ConnectController, LocalQuery, PermissionWorkflowManager, PluginConnectionController,
+    ProviderController, RemoteQuery, SessionManager, ToolController, TurnManager,
 };
 use scry_permission::PermissionController;
 use scry_storage::Storage;
@@ -19,6 +19,7 @@ pub struct AppContext {
     pub connect: ConnectController,
     pub local_query: LocalQuery,
     pub remote_query: RemoteQuery,
+    pub plugin: PluginConnectionController,
     pub hotkey: broadcast::Sender<()>,
     pub tray_events: broadcast::Sender<TrayEvent>,
 }
@@ -31,7 +32,7 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (connect, remote_query) = Self::init_llm(storage).await?;
+        let (connect, remote_query, plugin) = Self::init_llm(storage).await?;
         let local_query = Self::init_local()?;
 
         let (hotkey, _) = broadcast::channel(scry_config::HOTKEY_CHANNEL_CAPACITY);
@@ -41,12 +42,15 @@ impl AppContext {
             connect,
             local_query,
             remote_query,
+            plugin,
             hotkey,
             tray_events,
         }))
     }
 
-    async fn init_llm(storage: Storage) -> Result<(ConnectController, RemoteQuery), AppError> {
+    async fn init_llm(
+        storage: Storage,
+    ) -> Result<(ConnectController, RemoteQuery, PluginConnectionController), AppError> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .read_timeout(Duration::from_secs(900))
@@ -80,6 +84,8 @@ impl AppContext {
             .await,
         );
 
+        let plugin = PluginConnectionController::new(storage.clone(), Arc::clone(&tool_controller));
+
         let (mut session_manager, session_manager_client) = SessionManager::new(
             storage.clone(),
             tool_controller.clone(),
@@ -104,7 +110,7 @@ impl AppContext {
             Arc::clone(&provider_controller),
         );
 
-        Ok((connect, remote_query))
+        Ok((connect, remote_query, plugin))
     }
 
     fn init_local() -> Result<LocalQuery, AppError> {

@@ -1,4 +1,5 @@
 mod permission_workflow_manager;
+mod provider_controller;
 mod remote_query;
 mod session_manager;
 mod tool_controller;
@@ -8,9 +9,10 @@ pub use permission_workflow_manager::{
     PermissionState, PermissionWorkflowError, PermissionWorkflowManager,
     PermissionWorkflowManagerClient, UserDecision,
 };
+pub use provider_controller::{ProviderController, ProviderControllerError};
 pub use remote_query::{RemoteQuery, RemoteQueryError};
 pub use session_manager::{
     SessionEvent, SessionManager, SessionManagerError, SessionUpdate, TerminalState,
 };
-pub use tool_controller::ToolController;
+pub use tool_controller::{ToolController, ToolControllerError, ToolStatus};
 pub use turn_manager::TurnManager;

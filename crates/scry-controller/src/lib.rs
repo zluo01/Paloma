@@ -2,15 +2,20 @@ mod connector;
 mod entity;
 mod helper;
 mod local;
-mod provider_controller;
 mod remote;
 
-pub use connector::{ConnectController, ConnectError, Connector, ConnectorConnection};
+pub use connector::{
+    ConnectController, ConnectError, Connector, ConnectorConnection, McpServer,
+    PluginConnectionController, PluginConnectionError,
+};
 pub use entity::{ChatRenderEvent, LocalRenderEvent, RenderEvent};
 pub use local::{LocalQuery, LocalQueryInitError};
-pub use provider_controller::{ProviderController, ProviderControllerError};
 pub use remote::{
-    PermissionState, PermissionWorkflowError, PermissionWorkflowManager, RemoteQuery,
-    RemoteQueryError, SessionManager, SessionManagerError, SessionUpdate, TerminalState,
-    ToolController, TurnManager, UserDecision,
+    PermissionState, PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
+    ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager, SessionManagerError,
+    SessionUpdate, TerminalState, ToolController, ToolControllerError, ToolStatus, TurnManager,
+    UserDecision,
 };
+// Storage entity types that appear in this crate's public API, re-exported
+// so UI crates don't need a direct scry-storage dependency.
+pub use scry_storage::{Plugin, PluginArgs, PluginType, Transport};

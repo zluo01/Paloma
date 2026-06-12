@@ -13,7 +13,7 @@ use rmcp::{
     transport::{StreamableHttpClientTransport, TokioChildProcess},
     RoleClient, ServiceExt,
 };
-use scry_storage::{Plugin, PluginConfig};
+use scry_storage::{Plugin, PluginArgs};
 use scry_utils::mcp_function_name_encode;
 use serde_json::Value;
 use tokio::{
@@ -32,16 +32,19 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct McpTool {
     name: String,
+    description: String,
     timeout: i64,
     client: Option<RunningService<RoleClient, ()>>,
     status: AtomicU8,
+    error: Option<String>,
 }
 
 impl McpTool {
-    pub async fn new(name: &str, config: Plugin) -> (Self, Vec<ToolSpec>) {
+    pub async fn new(config: &Plugin) -> (Self, Vec<ToolSpec>) {
         // make sure problematic mcp server will not hang the startup
         let init = timeout(CONNECTION_TIMEOUT, async {
-            let client = attempt_with_retry(|| connect(name, &config.args, &config.env)).await?;
+            let client =
+                attempt_with_retry(|| connect(&config.name, &config.args, &config.env)).await?;
             let tools = client.list_all_tools().await?;
             Ok::<_, McpToolError>((client, tools))
         })
@@ -49,36 +52,47 @@ impl McpTool {
 
         match init {
             Ok(Ok((client, tools))) => {
-                let schemas = tools_to_specs(name, tools);
+                let schemas = tools_to_specs(&config.name, tools);
+                let description = client
+                    .peer_info()
+                    .and_then(|info| info.server_info.description.as_deref())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
                 let tool = Self {
-                    name: name.to_string(),
+                    name: config.name.to_string(),
+                    description,
                     timeout: config.timeout,
                     client: Some(client),
                     status: AtomicU8::new(HealthStatus::Running as u8),
+                    error: None,
                 };
                 (tool, schemas)
             },
             Ok(Err(error)) => {
-                error!("failed to connect to mcp server {name}: {error}");
-                (Self::unhealthy(name, config), Vec::new())
+                error!(
+                    "failed to connect to mcp server {}: {}",
+                    &config.name, error
+                );
+                (Self::unhealthy(config, &error), Vec::new())
             },
             Err(_elapsed) => {
-                error!(
-                    "mcp server {name} connect timed out after {}s",
-                    CONNECTION_TIMEOUT.as_secs()
-                );
-                (Self::unhealthy(name, config), Vec::new())
+                let error = McpToolError::InitTimeout(CONNECTION_TIMEOUT.as_secs());
+                error!("mcp server {}: {}", &config.name, error);
+                (Self::unhealthy(config, &error), Vec::new())
             },
         }
     }
 
     /// unhealthy constructor
-    fn unhealthy(name: &str, config: Plugin) -> Self {
+    fn unhealthy(config: &Plugin, error: &McpToolError) -> Self {
         Self {
-            name: name.to_string(),
+            name: config.name.to_string(),
+            description: String::new(),
             timeout: config.timeout,
             client: None,
             status: AtomicU8::new(HealthStatus::Unhealthy as u8),
+            error: Some(error.to_string()),
         }
     }
 }
@@ -125,6 +139,14 @@ impl DynTool for McpTool {
 
     fn health_statue(&self) -> HealthStatus {
         HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+
+    fn error(&self) -> Option<&str> {
+        self.error.as_deref()
     }
 
     async fn invoke(
@@ -211,12 +233,12 @@ impl DynTool for McpTool {
 
 async fn connect(
     name: &str,
-    cfg: &PluginConfig,
+    cfg: &PluginArgs,
     env: &HashMap<String, String>,
 ) -> Result<RunningService<RoleClient, ()>> {
     match cfg {
         // Local process over stdio
-        PluginConfig::Local { command, args } => {
+        PluginArgs::Local { command, args } => {
             let mut cmd = Command::new(command);
 
             for (key, value) in env {
@@ -245,7 +267,7 @@ async fn connect(
             Ok(().serve(transport).await?)
         },
         // Plain HTTP
-        PluginConfig::Remote {
+        PluginArgs::Remote {
             url,
             requires_auth: false,
         } => Ok(
@@ -253,7 +275,7 @@ async fn connect(
                 .await?,
         ),
         // OAuth-protected HTTP — not implemented yet.
-        PluginConfig::Remote {
+        PluginArgs::Remote {
             requires_auth: true,
             ..
         } => Err(McpToolError::Unsupported(
@@ -301,6 +323,9 @@ pub enum McpToolError {
 
     #[error("failed to initialize MCP client: {0}")]
     Init(Box<rmcp::service::ClientInitializeError>),
+
+    #[error("initialization timed out after {0}s")]
+    InitTimeout(u64),
 
     #[error("MCP request failed: {0}")]
     Service(#[from] rmcp::service::ServiceError),

@@ -141,6 +141,14 @@ pub trait DynTool: Send + Sync {
 
     fn health_statue(&self) -> HealthStatus;
 
+    fn description(&self) -> &str {
+        ""
+    }
+
+    fn error(&self) -> Option<&str> {
+        None
+    }
+
     async fn invoke(
         &self,
         name: Option<String>,

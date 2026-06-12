@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -9,7 +9,7 @@ use scry_capability::{
     DynTool, HealthStatus, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema,
     ToolSpec,
 };
-use scry_storage::Storage;
+use scry_storage::{Plugin, PluginType, Storage, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -17,6 +17,12 @@ use uuid::Uuid;
 use crate::remote::{
     permission_workflow_manager::PermissionState, PermissionWorkflowManagerClient,
 };
+
+pub struct ToolStatus {
+    pub description: String,
+    pub status: HealthStatus,
+    pub error: Option<String>,
+}
 
 pub struct ToolController {
     handlers: DashMap<String, Arc<dyn DynTool>>,
@@ -58,7 +64,7 @@ impl ToolController {
         });
         for plugin in plugins {
             let name = plugin.name.clone();
-            let (tool, specs) = McpTool::new(&name, plugin).await;
+            let (tool, specs) = McpTool::new(&plugin).await;
             for spec in specs {
                 tool_specs.insert(spec.schema.name.clone(), spec);
             }
@@ -98,6 +104,113 @@ impl ToolController {
     pub fn retrieve_toolspec(&self, function_call_name: &str) -> Option<ToolSpec> {
         let tools = self.tool_specs.read().unwrap().clone();
         tools.get(function_call_name).cloned()
+    }
+
+    /// get all non-built-in tools status, keyed by tool name
+    pub async fn get_tools_status(&self) -> HashMap<String, ToolStatus> {
+        self.handlers
+            .iter()
+            .filter(|entry| entry.key() != Shell::NAME)
+            .map(|entry| {
+                (
+                    entry.key().clone(),
+                    ToolStatus {
+                        description: entry.value().description().to_string(),
+                        status: entry.value().health_statue(),
+                        error: entry.value().error().map(str::to_string),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// add new tool to the controller in runtime
+    pub async fn register_tool(&self, config: &Plugin) -> Result<()> {
+        let name = config.name.clone();
+        let (tool, specs) = McpTool::new(config).await;
+        // fail to init
+        if tool.health_statue() == HealthStatus::Unhealthy {
+            return Err(ToolControllerError::FailToInitialize {
+                reason: tool.error().map(str::to_string),
+            });
+        }
+
+        {
+            let mut current = self.tool_specs.write().unwrap();
+            let mut tools = (**current).clone();
+            for spec in specs {
+                tools.insert(spec.schema.name.clone(), spec);
+            }
+            *current = Arc::new(tools);
+        }
+
+        self.handlers.insert(name, Arc::new(tool));
+
+        // persist in db after fully init
+        self.storage
+            .insert_plugin(
+                &config.name,
+                PluginType::Mcp,
+                config.transport,
+                config.timeout,
+                &config.env,
+                &config.args,
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// remove the tool from the controller in runtime
+    pub async fn deregister_tool(&self, name: &str) -> Result<()> {
+        self.handlers.remove(name);
+
+        {
+            let mut specs = self.tool_specs.write().unwrap();
+            let mut tools = (**specs).clone();
+            tools.retain(|_, spec| spec.name != name);
+            *specs = Arc::new(tools);
+        }
+
+        self.storage.delete_plugin(name).await?;
+        Ok(())
+    }
+
+    /// update tool with new setting or simply reinit the tool
+    pub async fn update_tool(&self, config: &Plugin) -> Result<()> {
+        let name = config.name.clone();
+        let (tool, specs) = McpTool::new(config).await;
+        // fail to init
+        if tool.health_statue() == HealthStatus::Unhealthy {
+            return Err(ToolControllerError::FailToInitialize {
+                reason: tool.error().map(str::to_string),
+            });
+        }
+
+        self.handlers.remove(&name);
+
+        {
+            let mut current = self.tool_specs.write().unwrap();
+            let mut tools = (**current).clone();
+            // remove the old specs
+            tools.retain(|_, spec| spec.name != name);
+            // add the new specs
+            for spec in specs {
+                tools.insert(spec.schema.name.clone(), spec);
+            }
+            *current = Arc::new(tools);
+        }
+
+        self.handlers.insert(name, Arc::new(tool));
+        self.storage
+            .update_plugin(
+                &config.name,
+                config.transport,
+                config.timeout,
+                &config.env,
+                &config.args,
+            )
+            .await?;
+        Ok(())
     }
 
     /// We should populate all errors back to the model such that model has context on what happens and what to do next
@@ -150,7 +263,7 @@ impl ToolController {
     }
 
     /// Wait and Get the user decision on permission
-    async fn authorize(&self, call_id: String) -> Result<(), String> {
+    async fn authorize(&self, call_id: String) -> std::result::Result<(), String> {
         let decision = self
             .permission_workflow_client
             .wait_decision(call_id)
@@ -167,3 +280,14 @@ impl ToolController {
         }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum ToolControllerError {
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    #[error("fail to initialize mcp plugin: {}", reason.as_deref().unwrap_or("unknown error"))]
+    FailToInitialize { reason: Option<String> },
+}
+
+type Result<T> = std::result::Result<T, ToolControllerError>;
