@@ -12,7 +12,10 @@ use adw::{
     prelude::*, ApplicationWindow as AdwApplicationWindow, NavigationPage, NavigationSplitView,
     Sidebar, SidebarItem, SidebarSection, ToolbarView,
 };
-use gtk4::{Application, ApplicationWindow, PolicyType, ScrolledWindow, Stack};
+use gtk4::{
+    Align, Application, ApplicationWindow, Box as GtkBox, Label, ListBox, ListBoxRow, Orientation,
+    PolicyType, ScrolledWindow, SelectionMode, Stack, Widget,
+};
 use libadwaita as adw;
 use scry_core::AppContext;
 
@@ -37,12 +40,12 @@ pub fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWindow {
         .transition_duration(150)
         .build();
     stack.add_titled(
-        &services_tab::build(state, window.clone().upcast()),
+        &services_tab::build(state.clone(), window.clone().upcast()),
         Some("services"),
         "Services",
     );
     stack.add_titled(
-        &plugins_tab::build(window.clone().upcast()),
+        &plugins_tab::build(state, window.clone().upcast()),
         Some("plugins"),
         "Plugins",
     );
@@ -95,4 +98,60 @@ pub fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWindow {
     window.set_content(Some(&split));
     window.present();
     window.upcast()
+}
+
+#[derive(Clone)]
+pub(crate) struct Section {
+    pub(crate) root: GtkBox,
+    pub(crate) list: ListBox,
+    pub(crate) placeholder: ListBoxRow,
+}
+
+pub(crate) fn section(title: &str, placeholder: &str) -> Section {
+    let placeholder = ListBoxRow::builder()
+        .activatable(false)
+        .child(
+            &Label::builder()
+                .label(placeholder)
+                .margin_top(16)
+                .margin_bottom(16)
+                .css_classes(["dim-label"])
+                .build(),
+        )
+        .build();
+
+    let list = ListBox::builder()
+        .selection_mode(SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .build();
+    list.append(&placeholder);
+
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.append(
+        &Label::builder()
+            .label(title)
+            .halign(Align::Start)
+            .css_classes(["heading"])
+            .build(),
+    );
+    root.append(&list);
+    Section {
+        root,
+        list,
+        placeholder,
+    }
+}
+
+/// Show the placeholder only when the section has no other rows.
+pub(crate) fn update_placeholder(section: &Section) {
+    let mut has_rows = false;
+    let mut child = section.list.first_child();
+    while let Some(c) = child {
+        if &c != section.placeholder.upcast_ref::<Widget>() {
+            has_rows = true;
+            break;
+        }
+        child = c.next_sibling();
+    }
+    section.placeholder.set_visible(!has_rows);
 }

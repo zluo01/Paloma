@@ -11,6 +11,7 @@ description = "GTK4/Linux frontend: overlay UI, settings, hotkey portal, and tra
 gtk4 = { version = "0.11.3", features = ["v4_14"] }
 gtk4-layer-shell = "0.8.0"
 libadwaita = { version = "0.9.1", features = ["v1_9"] }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = [
   "rt-multi-thread",
   "macros",

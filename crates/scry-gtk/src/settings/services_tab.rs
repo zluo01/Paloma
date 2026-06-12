@@ -9,15 +9,15 @@ use std::{
 
 use adw::{prelude::*, ComboRow, ExpanderRow};
 use gtk4::{
-    gdk, glib, AlertDialog, Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow,
-    Orientation, SelectionMode, StringList, Widget, Window,
+    gdk, glib, AlertDialog, Align, Box as GtkBox, Button, Image, ListBox, Orientation, StringList,
+    Widget, Window,
 };
 use libadwaita as adw;
 use scry_controller::ConnectorConnection;
 use scry_core::AppContext;
 use scry_provider::ProviderId;
 
-use super::connect_modal;
+use super::{connect_modal, section, update_placeholder, Section};
 use crate::runtime;
 
 /// Green "Connected" subtitle; libadwaita has no .success label class.
@@ -36,69 +36,6 @@ const PROVIDERS: &[Provider] = &[Provider {
     name: "Codex",
     logo: include_bytes!("assets/openai.svg"),
 }];
-
-/// A titled boxed list; providers move between the "Connected" and
-/// "Available" sections as their connection state changes.
-///
-/// The empty-state text is a regular hidden/shown row rather than
-/// `ListBox::set_placeholder`: a placeholder stays a CSS child of the
-/// list, which steals `:last-child` and breaks the boxed-list corner
-/// rounding of the real last row.
-#[derive(Clone)]
-struct Section {
-    root: GtkBox,
-    list: ListBox,
-    placeholder: ListBoxRow,
-}
-
-fn section(title: &str, placeholder: &str) -> Section {
-    let placeholder = ListBoxRow::builder()
-        .activatable(false)
-        .child(
-            &Label::builder()
-                .label(placeholder)
-                .margin_top(16)
-                .margin_bottom(16)
-                .css_classes(["dim-label"])
-                .build(),
-        )
-        .build();
-
-    let list = ListBox::builder()
-        .selection_mode(SelectionMode::None)
-        .css_classes(["boxed-list"])
-        .build();
-    list.append(&placeholder);
-
-    let root = GtkBox::new(Orientation::Vertical, 8);
-    root.append(
-        &Label::builder()
-            .label(title)
-            .halign(Align::Start)
-            .css_classes(["heading"])
-            .build(),
-    );
-    root.append(&list);
-    Section {
-        root,
-        list,
-        placeholder,
-    }
-}
-
-/// Show the placeholder only when the section has no provider rows.
-fn update_placeholder(section: &Section) {
-    let mut has_rows = false;
-    let mut child = section.list.first_child();
-    while let Some(c) = child {
-        if &c != section.placeholder.upcast_ref::<Widget>() {
-            has_rows = true;
-            break;
-        }
-        child = c.next_sibling();
-    }
-    section.placeholder.set_visible(!has_rows);
-}
 
 /// The widgets of one provider row that its handlers repaint, plus the
 /// context they need. Cheap to clone into signal closures.
