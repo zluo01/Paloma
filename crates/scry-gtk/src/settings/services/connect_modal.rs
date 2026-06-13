@@ -4,8 +4,8 @@
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
-use adw::{prelude::*, Dialog, ToolbarView};
-use gtk4::{gio, glib, Align, Box as GtkBox, Button, Label, Orientation, Spinner};
+use adw::{prelude::*, Dialog, Spinner, ToolbarView};
+use gtk4::{gio, glib, Align, Box as GtkBox, Button, Label, Orientation};
 use libadwaita as adw;
 use log::warn;
 use scry_core::AppContext;
@@ -107,10 +107,8 @@ fn clear(body: &GtkBox) {
 
 fn show_loading(body: &GtkBox) {
     clear(body);
-    let spinner = Spinner::builder()
-        .spinning(true)
-        .halign(Align::Center)
-        .build();
+    let spinner = Spinner::new();
+    spinner.set_halign(Align::Center);
     spinner.set_size_request(32, 32);
     body.append(&spinner);
     body.append(

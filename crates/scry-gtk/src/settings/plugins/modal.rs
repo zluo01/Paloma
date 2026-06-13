@@ -346,7 +346,7 @@ fn flag(row: &impl IsA<gtk4::Widget>, error: bool, reason: &str) {
     }
 }
 
-/// validate if input is valid url
+/// True for an absolute http(s) URL with a non-empty host.
 fn is_valid_url(text: &str) -> bool {
     match glib::Uri::parse(text, glib::UriFlags::NONE) {
         Ok(uri) => {
