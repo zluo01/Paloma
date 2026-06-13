@@ -4,7 +4,7 @@ use log::error;
 use scry_capability::HealthStatus;
 use scry_storage::{Plugin, PluginType, Storage, StorageError};
 
-use crate::{remote::ToolControllerError, ToolController};
+use crate::{remote::ToolControllerError, HealthLevel, ToolController};
 
 pub struct McpServer {
     pub config: Plugin,
@@ -24,6 +24,22 @@ impl PluginConnectionController {
             storage,
             tool_controller,
         }
+    }
+
+    /// aggregate health of all plugins
+    pub async fn health_level(&self) -> HealthLevel {
+        let servers = match self.list_mcps().await {
+            Ok(servers) => servers,
+            Err(e) => {
+                error!("plugin health_level: {e}");
+                return HealthLevel::Inactive;
+            },
+        };
+        let healthy = servers
+            .iter()
+            .filter(|server| server.status == HealthStatus::Running)
+            .count();
+        HealthLevel::from_counts(servers.len(), healthy)
     }
 
     /// list all configured MCP servers
