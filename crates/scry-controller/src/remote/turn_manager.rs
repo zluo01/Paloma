@@ -336,7 +336,7 @@ async fn open_stream(
     tools: Vec<ToolSchema>,
 ) -> Result<ChatStream> {
     let client = provider_controller.client(provider_id)?;
-    let config = storage.prefer_model_config(provider_id.as_str()).await?;
+    let config = storage.prefer_model_config(&provider_id).await?;
 
     if let Some(prompt) = prompt {
         let user_prompt = client.construct_user_prompt(prompt);

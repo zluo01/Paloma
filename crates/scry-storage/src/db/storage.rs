@@ -15,7 +15,7 @@ use super::queries;
 use crate::{
     db::entity::{
         ConnectedProvider, EntryType, FileEntry, Plugin, PluginArgs, PluginType, PreferModelConfig,
-        RestoreEntry, Session, Transport,
+        ProviderId, RestoreEntry, Session, Transport,
     },
     error::{Result, StorageError},
     AuthKind,
@@ -43,7 +43,7 @@ impl Storage {
 
     pub async fn insert_provider(
         &self,
-        provider_id: &str,
+        provider_id: &ProviderId,
         auth_kind: &AuthKind,
         secret: &str,
         model: &str,
@@ -59,7 +59,7 @@ impl Storage {
             .await
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
-                    StorageError::Duplicate(provider_id.to_string())
+                    StorageError::Duplicate(provider_id.as_str().to_owned())
                 },
                 _ => e.into(),
             })?;
@@ -68,8 +68,8 @@ impl Storage {
 
     pub async fn update_provider(
         &self,
-        provider_id: &str,
-        auth_kind: &str,
+        provider_id: &ProviderId,
+        auth_kind: &AuthKind,
         secret: &str,
     ) -> Result<()> {
         let result = sqlx::query(queries::UPDATE_PROVIDER_QUERY)
@@ -79,14 +79,14 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
         }
         Ok(())
     }
 
     pub async fn update_preferences(
         &self,
-        provider_id: &str,
+        provider_id: &ProviderId,
         model: &str,
         effort: &str,
     ) -> Result<()> {
@@ -97,18 +97,18 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
         }
         Ok(())
     }
 
-    pub async fn delete_provider(&self, provider_id: &str) -> Result<()> {
+    pub async fn delete_provider(&self, provider_id: &ProviderId) -> Result<()> {
         let result = sqlx::query(queries::DELETE_PROVIDER_QUERY)
             .bind(provider_id)
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
         }
         Ok(())
     }
@@ -116,7 +116,7 @@ impl Storage {
     pub async fn create_new_session(
         &self,
         session_id: Uuid,
-        provider_id: &str,
+        provider_id: &ProviderId,
         title: &str,
     ) -> Result<()> {
         sqlx::query(queries::CREATE_NEW_SESSION_QUERY)
@@ -170,12 +170,12 @@ impl Storage {
         Ok(providers)
     }
 
-    pub async fn prefer_model_config(&self, provider_id: &str) -> Result<PreferModelConfig> {
+    pub async fn prefer_model_config(&self, provider_id: &ProviderId) -> Result<PreferModelConfig> {
         sqlx::query_as::<_, PreferModelConfig>(queries::PREFER_MODEL_CONFIG_QUERY)
             .bind(provider_id)
             .fetch_optional(&self.pool)
             .await?
-            .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
+            .ok_or_else(|| StorageError::NotFound(provider_id.as_str().to_owned()))
     }
 
     pub async fn insert_plugin(
@@ -290,7 +290,7 @@ impl Storage {
     ) -> Result<()> {
         sqlx::query(queries::INSERT_HISTORY)
             .bind(session_id)
-            .bind(payload_type.as_str())
+            .bind(payload_type)
             .bind(serde_json::to_string(payload)?)
             .execute(&self.pool)
             .await?;
@@ -379,7 +379,7 @@ mod tests {
         .expect("first open");
         first
             .insert_provider(
-                "anthropic",
+                &ProviderId::Codex,
                 &AuthKind::ApiKey,
                 "sk-1",
                 "claude-sonnet-4-5",
@@ -413,7 +413,7 @@ mod tests {
         let storage = fresh_storage().await;
         storage
             .insert_provider(
-                "anthropic",
+                &ProviderId::Codex,
                 &AuthKind::ApiKey,
                 "sk-abc",
                 "claude-sonnet-4-5",
@@ -425,12 +425,12 @@ mod tests {
         let row = sqlx::query(
             "SELECT provider_id, auth_kind, secret FROM provider_credentials WHERE provider_id = ?",
         )
-        .bind("anthropic")
+        .bind("codex")
         .fetch_one(storage.pool())
         .await
         .unwrap();
 
-        assert_eq!(row.get::<String, _>("provider_id"), "anthropic");
+        assert_eq!(row.get::<String, _>("provider_id"), "codex");
         assert_eq!(row.get::<String, _>("auth_kind"), "api_key");
         assert_eq!(row.get::<String, _>("secret"), "sk-abc");
     }
@@ -439,12 +439,24 @@ mod tests {
     async fn insert_provider_duplicate_returns_duplicate_error() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok-1", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok-1",
+                "gpt-5",
+                "medium",
+            )
             .await
             .expect("first insert");
 
         let err = storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok-2", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok-2",
+                "gpt-5",
+                "medium",
+            )
             .await
             .expect_err("second insert must fail");
 
@@ -458,12 +470,18 @@ mod tests {
     async fn update_provider_changes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "old-token", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "old-token",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
 
         storage
-            .update_provider("codex", "oauth", "new-token")
+            .update_provider(&ProviderId::Codex, &AuthKind::Oauth, "new-token")
             .await
             .expect("update");
 
@@ -479,13 +497,13 @@ mod tests {
     async fn update_provider_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
         let err = storage
-            .update_provider("ghost", "api_key", "x")
+            .update_provider(&ProviderId::Codex, &AuthKind::ApiKey, "x")
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "ghost"),
-            "expected NotFound(\"ghost\"), got {err:?}",
+            matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+            "expected NotFound(\"codex\"), got {err:?}",
         );
     }
 
@@ -493,12 +511,18 @@ mod tests {
     async fn update_preferences_changes_model_and_effort_only() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
 
         storage
-            .update_preferences("codex", "gpt-5-mini", "high")
+            .update_preferences(&ProviderId::Codex, "gpt-5-mini", "high")
             .await
             .expect("update prefs");
 
@@ -521,13 +545,13 @@ mod tests {
     async fn update_preferences_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
         let err = storage
-            .update_preferences("ghost", "gpt-5", "medium")
+            .update_preferences(&ProviderId::Codex, "gpt-5", "medium")
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "ghost"),
-            "expected NotFound(\"ghost\"), got {err:?}",
+            matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+            "expected NotFound(\"codex\"), got {err:?}",
         );
     }
 
@@ -536,7 +560,7 @@ mod tests {
         let storage = fresh_storage().await;
         storage
             .insert_provider(
-                "anthropic",
+                &ProviderId::Codex,
                 &AuthKind::ApiKey,
                 "x",
                 "claude-sonnet-4-5",
@@ -545,7 +569,10 @@ mod tests {
             .await
             .unwrap();
 
-        storage.delete_provider("anthropic").await.expect("delete");
+        storage
+            .delete_provider(&ProviderId::Codex)
+            .await
+            .expect("delete");
 
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
             .fetch_one(storage.pool())
@@ -558,13 +585,13 @@ mod tests {
     async fn delete_provider_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
         let err = storage
-            .delete_provider("ghost")
+            .delete_provider(&ProviderId::Codex)
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "ghost"),
-            "expected NotFound(\"ghost\"), got {err:?}",
+            matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+            "expected NotFound(\"codex\"), got {err:?}",
         );
     }
 
@@ -580,71 +607,42 @@ mod tests {
         let storage = fresh_storage().await;
         storage
             .insert_provider(
-                "anthropic",
-                &AuthKind::ApiKey,
-                "sk-a",
-                "claude-sonnet-4-5",
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
                 "medium",
             )
             .await
             .unwrap();
-        storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
-            .await
-            .unwrap();
 
-        let mut ids: Vec<String> = storage
+        let ids: Vec<ProviderId> = storage
             .connected_providers()
             .await
             .expect("query")
             .into_iter()
             .map(|p| p.provider_id)
             .collect();
-        ids.sort();
-        assert_eq!(ids, vec!["anthropic".to_string(), "codex".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn connected_providers_reflects_deletes() {
-        let storage = fresh_storage().await;
-        storage
-            .insert_provider(
-                "anthropic",
-                &AuthKind::ApiKey,
-                "sk-a",
-                "claude-sonnet-4-5",
-                "medium",
-            )
-            .await
-            .unwrap();
-        storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
-            .await
-            .unwrap();
-
-        storage.delete_provider("anthropic").await.unwrap();
-
-        let ids: Vec<String> = storage
-            .connected_providers()
-            .await
-            .expect("query")
-            .into_iter()
-            .map(|p| p.provider_id)
-            .collect();
-        assert_eq!(ids, vec!["codex".to_string()]);
+        assert_eq!(ids, vec![ProviderId::Codex]);
     }
 
     #[tokio::test]
     async fn create_session_persists_title_and_defaults() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
 
         let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000001").unwrap();
         storage
-            .create_new_session(session_id, "codex", "my first chat")
+            .create_new_session(session_id, &ProviderId::Codex, "my first chat")
             .await
             .expect("create session");
 
@@ -669,7 +667,13 @@ mod tests {
     async fn all_sessions_orders_by_last_update_latest_first() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
 
@@ -678,7 +682,7 @@ mod tests {
         let middle = Uuid::parse_str("019e1234-5678-7000-8000-00000000000c").unwrap();
         for (id, title) in [(oldest, "oldest"), (newest, "newest"), (middle, "middle")] {
             storage
-                .create_new_session(id, "codex", title)
+                .create_new_session(id, &ProviderId::Codex, title)
                 .await
                 .unwrap();
         }
@@ -707,13 +711,19 @@ mod tests {
     async fn touch_session_bumps_last_update() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
 
         let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000003").unwrap();
         storage
-            .create_new_session(session_id, "codex", "t")
+            .create_new_session(session_id, &ProviderId::Codex, "t")
             .await
             .unwrap();
 

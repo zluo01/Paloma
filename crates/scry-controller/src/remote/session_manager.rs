@@ -139,7 +139,7 @@ impl SessionManager {
             } => {
                 let result = self
                     .storage
-                    .create_new_session(session_id, provider_id.as_str(), &title)
+                    .create_new_session(session_id, &provider_id, &title)
                     .await
                     .map_err(SessionManagerError::from)
                     .and_then(|()| match self.sessions.entry(session_id) {

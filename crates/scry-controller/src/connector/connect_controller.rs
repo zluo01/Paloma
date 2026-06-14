@@ -4,8 +4,7 @@ use dashmap::DashMap;
 use scry_provider::{
     Auth, CodexConnector, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
 };
-use scry_storage::{ConnectedProvider, Storage, StorageError};
-use serde::{Deserialize, Serialize};
+use scry_storage::{AuthKind, ConnectedProvider, Storage, StorageError};
 
 use crate::{ProviderController, ProviderControllerError};
 
@@ -82,7 +81,7 @@ impl ConnectController {
     }
 
     pub async fn disconnect(&self, provider_id: ProviderId) -> Result<(), ConnectError> {
-        self.storage.delete_provider(provider_id.as_str()).await?;
+        self.storage.delete_provider(&provider_id).await?;
         self.provider_controller.remove_provider(provider_id);
         Ok(())
     }
@@ -94,18 +93,18 @@ impl ConnectController {
         effort: &str,
     ) -> Result<(), ConnectError> {
         self.storage
-            .update_preferences(provider_id.as_str(), model, effort)
+            .update_preferences(&provider_id, model, effort)
             .await?;
         Ok(())
     }
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, ConnectError> {
-        let connected: HashMap<String, ConnectedProvider> = self
+        let connected: HashMap<ProviderId, ConnectedProvider> = self
             .storage
             .connected_providers()
             .await?
             .into_iter()
-            .map(|p| (p.provider_id.clone(), p))
+            .map(|p| (p.provider_id, p))
             .collect();
 
         let mut ids: Vec<ProviderId> = self.handlers.iter().map(|entry| *entry.key()).collect();
@@ -113,7 +112,7 @@ impl ConnectController {
 
         let mut connectors = Vec::with_capacity(ids.len());
         for id in ids {
-            let connection = match connected.get(id.as_str()) {
+            let connection = match connected.get(&id) {
                 Some(cred) => {
                     let available_models = self.provider_controller.provider_models(id).await;
                     Some(ConnectorConnection {
@@ -146,13 +145,12 @@ impl ConnectController {
         prefer_model: &str,
         prefer_effort: &str,
     ) -> Result<(), ConnectError> {
-        let kind = auth.kind_str();
         match auth {
             Auth::ApiKey(secret) => {
                 self.storage
                     .insert_provider(
-                        provider_id.as_str(),
-                        kind,
+                        &provider_id,
+                        &AuthKind::ApiKey,
                         secret,
                         prefer_model,
                         prefer_effort,
@@ -168,8 +166,8 @@ impl ConnectController {
                     .ok_or(ConnectError::MissingRefreshToken)?;
                 self.storage
                     .insert_provider(
-                        provider_id.as_str(),
-                        kind,
+                        &provider_id,
+                        &AuthKind::Oauth,
                         secret,
                         prefer_model,
                         prefer_effort,
@@ -181,14 +179,13 @@ impl ConnectController {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Connector {
     pub id: ProviderId,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub connection: Option<ConnectorConnection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorConnection {
     pub prefer_model: String,
     pub prefer_effort: String,

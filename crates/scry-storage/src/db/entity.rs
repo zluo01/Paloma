@@ -4,6 +4,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
+pub enum ProviderId {
+    Codex,
+}
+
+impl ProviderId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderId::Codex => "codex",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum AuthKind {
@@ -13,7 +27,7 @@ pub enum AuthKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ConnectedProvider {
-    pub provider_id: String,
+    pub provider_id: ProviderId,
     pub auth_kind: AuthKind,
     pub secret: String,
     pub model: String,
@@ -38,15 +52,6 @@ pub struct PreferModelConfig {
 pub enum EntryType {
     ResponseItem,
     EventMsg,
-}
-
-impl EntryType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            EntryType::ResponseItem => "response_item",
-            EntryType::EventMsg => "event_msg",
-        }
-    }
 }
 
 #[derive(Debug, FromRow)]
