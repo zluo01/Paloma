@@ -213,8 +213,8 @@ fn add_row(card: &Card, row: impl IsA<Widget>) {
 /// effort list and saves that model's default effort; picking an effort
 /// saves it for the current model.
 fn add_picker_rows(card: &Card, conn: &ConnectorConnection) {
-    let models = match &conn.available_models {
-        Some(models) if !models.is_empty() => Rc::new(models.clone()),
+    let models = match &conn.status.model {
+        models if !models.is_empty() => Rc::new(models.clone()),
         // No catalogue (fetch failed): show the stored preferences, read-only.
         _ => {
             for (title, value, tooltip) in [

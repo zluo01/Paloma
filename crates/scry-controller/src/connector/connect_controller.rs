@@ -1,12 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
 use dashmap::DashMap;
+use log::error;
 use scry_provider::{
-    Auth, CodexConnector, Connection, Model, ProviderAuthenticator, ProviderError, ProviderId,
+    Auth, CodexConnector, Connection, ProviderAuthenticator, ProviderError, ProviderHealthStatus,
+    ProviderId,
 };
 use scry_storage::{AuthKind, ConnectedProvider, Storage, StorageError};
 
-use crate::{ProviderController, ProviderControllerError};
+use crate::{remote::ProviderStatis, HealthLevel, ProviderController};
 
 pub struct ConnectController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>>,
@@ -41,48 +43,74 @@ impl ConnectController {
         &self,
         provider_id: ProviderId,
         payload: Connection,
-    ) -> Result<Auth, ConnectError> {
+    ) -> Result<(), ConnectError> {
         let handler = self.handler(provider_id)?;
         let auth = handler.finalize_connection(payload).await?;
 
-        self.provider_controller
-            .new_provider(provider_id, &auth)
+        // init to db first so during initialization, we have target to update for tokens.
+        let (kind, secret) = match &auth {
+            Auth::ApiKey(secret) => (AuthKind::ApiKey, secret.as_str()),
+            Auth::OAuth { refresh_token, .. } => (
+                AuthKind::Oauth,
+                refresh_token
+                    .as_deref()
+                    .ok_or(ConnectError::MissingRefreshToken)?,
+            ),
+        };
+        self.storage
+            .insert_provider(&provider_id, &kind, secret, "", "")
             .await?;
 
-        // We just registered the runtime client, so a `None` here is
-        // a real failure (network blip / bad auth) rather than a
-        // missing handler — bail so the caller can surface it.
-        let models = self
+        // then we try to init the new runtime.
+        match self
             .provider_controller
-            .provider_models(provider_id)
-            .await
-            .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
-        let default = models
-            .first()
-            .ok_or(ConnectError::NoModelsAvailable(provider_id))?;
-
-        // Persist credentials. On failure, roll back the in-memory
-        // registration so the daemon doesn't carry a ghost runtime that
-        // won't survive a restart.
-        if let Err(e) = self
-            .persist(
-                provider_id,
-                &auth,
-                &default.id,
-                &default.default_reasoning_effort,
-            )
+            .new_provider(provider_id, &auth)
             .await
         {
-            self.provider_controller.remove_provider(provider_id);
-            return Err(e);
-        }
+            Some(client) => {
+                if client.health_statue() == ProviderHealthStatus::Unhealthy {
+                    // cleanup from provider and the db
+                    self.provider_controller.remove_provider(&provider_id);
+                    self.storage.delete_provider(&provider_id).await?;
+                    return Err(ConnectError::FailToInit(
+                        client.error().unwrap_or_else(|| "unknown error".into()),
+                    ));
+                }
 
-        Ok(auth)
+                // Record the runtime's default model/effort as the stored
+                // preferences; with no usable catalogue, fail the connection.
+                let models = client.models().await.unwrap_or_default();
+                match models.first() {
+                    Some(default) => {
+                        self.storage
+                            .update_preferences(
+                                &provider_id,
+                                &default.id,
+                                &default.default_reasoning_effort,
+                            )
+                            .await?;
+                        Ok(())
+                    },
+                    None => {
+                        self.provider_controller.remove_provider(&provider_id);
+                        self.storage.delete_provider(&provider_id).await?;
+                        Err(ConnectError::NoModelsAvailable(provider_id))
+                    },
+                }
+            },
+            None => {
+                error!(
+                    "duplicate initialization for provider {:?}. This indicate a bug.",
+                    &provider_id
+                );
+                Err(ConnectError::FailToInit("Already Init.".into()))
+            },
+        }
     }
 
     pub async fn disconnect(&self, provider_id: ProviderId) -> Result<(), ConnectError> {
         self.storage.delete_provider(&provider_id).await?;
-        self.provider_controller.remove_provider(provider_id);
+        self.provider_controller.remove_provider(&provider_id);
         Ok(())
     }
 
@@ -107,25 +135,35 @@ impl ConnectController {
             .map(|p| (p.provider_id, p))
             .collect();
 
+        let mut statuses = self.provider_controller.available_providers().await;
+
         let mut ids: Vec<ProviderId> = self.handlers.iter().map(|entry| *entry.key()).collect();
         ids.sort_by_key(|id| id.as_str());
 
         let mut connectors = Vec::with_capacity(ids.len());
         for id in ids {
-            let connection = match connected.get(&id) {
-                Some(cred) => {
-                    let available_models = self.provider_controller.provider_models(id).await;
-                    Some(ConnectorConnection {
-                        prefer_model: cred.model.clone(),
-                        prefer_effort: cred.effort.clone(),
-                        available_models,
-                    })
-                },
-                None => None,
+            // A connection needs both the stored prefs and a live runtime status.
+            let connection = match (connected.get(&id), statuses.remove(&id)) {
+                (Some(cred), Some(status)) => Some(ConnectorConnection {
+                    prefer_model: cred.model.clone(),
+                    prefer_effort: cred.effort.clone(),
+                    status,
+                }),
+                _ => None,
             };
             connectors.push(Connector { id, connection });
         }
         Ok(connectors)
+    }
+
+    /// overall health level for all model connections.
+    pub async fn health_level(&self) -> HealthLevel {
+        let providers = self.provider_controller.available_providers().await;
+        let healthy = providers
+            .values()
+            .filter(|status| status.status == ProviderHealthStatus::Running)
+            .count();
+        HealthLevel::from_counts(providers.len(), healthy)
     }
 
     fn handler(
@@ -137,59 +175,17 @@ impl ConnectController {
             .map(|h| Arc::clone(h.value()))
             .ok_or(ConnectError::UnknownProvider(provider_id))
     }
-
-    async fn persist(
-        &self,
-        provider_id: ProviderId,
-        auth: &Auth,
-        prefer_model: &str,
-        prefer_effort: &str,
-    ) -> Result<(), ConnectError> {
-        match auth {
-            Auth::ApiKey(secret) => {
-                self.storage
-                    .insert_provider(
-                        &provider_id,
-                        &AuthKind::ApiKey,
-                        secret,
-                        prefer_model,
-                        prefer_effort,
-                    )
-                    .await?;
-            },
-            Auth::OAuth {
-                refresh_token,
-                expires_at: _,
-            } => {
-                let secret = refresh_token
-                    .as_deref()
-                    .ok_or(ConnectError::MissingRefreshToken)?;
-                self.storage
-                    .insert_provider(
-                        &provider_id,
-                        &AuthKind::Oauth,
-                        secret,
-                        prefer_model,
-                        prefer_effort,
-                    )
-                    .await?;
-            },
-        }
-        Ok(())
-    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Connector {
     pub id: ProviderId,
     pub connection: Option<ConnectorConnection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorConnection {
     pub prefer_model: String,
     pub prefer_effort: String,
-    pub available_models: Option<Vec<Model>>,
+    pub status: ProviderStatis,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -203,11 +199,11 @@ pub enum ConnectError {
     #[error("provider {0:?} returned no models")]
     NoModelsAvailable(ProviderId),
 
-    #[error(transparent)]
-    Provider(#[from] ProviderError),
+    #[error("fail to init provider runtime: {0}")]
+    FailToInit(String),
 
     #[error(transparent)]
-    Runtime(#[from] ProviderControllerError),
+    Provider(#[from] ProviderError),
 
     #[error(transparent)]
     Storage(#[from] StorageError),

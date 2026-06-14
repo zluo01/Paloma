@@ -9,7 +9,7 @@ pub use permission_workflow_manager::{
     PermissionState, PermissionWorkflowError, PermissionWorkflowManager,
     PermissionWorkflowManagerClient, UserDecision,
 };
-pub use provider_controller::{ProviderController, ProviderControllerError};
+pub use provider_controller::{ProviderController, ProviderControllerError, ProviderStatis};
 pub use remote_query::{RemoteQuery, RemoteQueryError};
 pub use session_manager::{
     SessionEvent, SessionManager, SessionManagerError, SessionUpdate, TerminalState,
