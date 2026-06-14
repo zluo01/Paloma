@@ -40,6 +40,9 @@ const CLIENT_VERSION: &str = "0.139.0";
 
 const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a fetched model catalogue is served from cache before a refetch.
+const MODELS_CACHE_TTL_SECS: i64 = 60 * 60;
+
 pub struct CodexRuntime {
     request: reqwest::Client,
     refresh_token: Arc<RwLock<Auth>>,
@@ -47,6 +50,7 @@ pub struct CodexRuntime {
     storage: Storage,
     status: AtomicU8,
     error: RwLock<Option<String>>,
+    models: RwLock<Option<AvailableModels>>,
 }
 
 impl CodexRuntime {
@@ -76,13 +80,19 @@ impl CodexRuntime {
         };
 
         match fetch_access_token(&request, &auth, &storage).await {
-            Ok((new_tokens, auth)) => Self {
-                request,
-                refresh_token: Arc::new(RwLock::new(auth)),
-                tokens: Arc::new(RwLock::new(new_tokens)),
-                storage,
-                status: AtomicU8::new(ProviderHealthStatus::Running as u8),
-                error: RwLock::new(None),
+            Ok((access_token, auth)) => match fetch_models(&request, &access_token).await {
+                Ok(models) => Self {
+                    request,
+                    refresh_token: Arc::new(RwLock::new(auth)),
+                    tokens: Arc::new(RwLock::new(access_token)),
+                    storage,
+                    status: AtomicU8::new(ProviderHealthStatus::Running as u8),
+                    error: RwLock::new(None),
+                    models: RwLock::new(Some(models)),
+                },
+                Err(e) => {
+                    Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
+                },
             },
             Err(e) => Self::unhealthy(request, storage, format!("fail to connect to codex: {e}")),
         }
@@ -103,6 +113,7 @@ impl CodexRuntime {
             storage,
             status: AtomicU8::new(ProviderHealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
+            models: RwLock::new(None),
         }
     }
 
@@ -406,12 +417,22 @@ impl ProviderClient for CodexRuntime {
     }
 
     async fn models(&self) -> Result<Vec<Model>> {
+        // Serve the cached catalogue while it's still fresh.
+        if let Some(cached) = self.models.read().unwrap().as_ref() {
+            if unix_now() < cached.expires_at {
+                return Ok(cached.models.clone());
+            }
+        }
+
         let token = self.refresh().await.map_err(|e| {
             self.mark_unhealthy(e.to_string());
             e
         })?;
+        let result = fetch_models(&self.request, &token).await?;
 
-        Ok(fetch_models(&self.request, &token).await?)
+        let models = result.models.clone();
+        *self.models.write().unwrap() = Some(result);
+        Ok(models)
     }
 
     fn health_statue(&self) -> ProviderHealthStatus {
@@ -473,11 +494,7 @@ async fn fetch_access_token(
         .await?;
 
     // get the epoch time current access token will expire
-    let expires_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64
-        + response.expires_in;
+    let expires_at = unix_now() + response.expires_in;
 
     Ok((
         AccessToken {
@@ -507,7 +524,7 @@ fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<Vec<Model>> {
+async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<AvailableModels> {
     let url = format!("{MODELS_URL}?client_version={CLIENT_VERSION}");
     let response: ModelsResponse = request
         .get(&url)
@@ -532,7 +549,7 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
             .then_with(|| a.slug.cmp(&b.slug))
     });
 
-    Ok(models
+    let available_models = models
         .into_iter()
         .map(|m| Model {
             id: m.slug,
@@ -544,7 +561,24 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
                 .map(|p| p.effort)
                 .collect(),
         })
-        .collect())
+        .collect();
+    Ok(AvailableModels {
+        models: available_models,
+        expires_at: unix_now() + MODELS_CACHE_TTL_SECS,
+    })
+}
+
+struct AvailableModels {
+    models: Vec<Model>,
+    expires_at: i64,
+}
+
+/// unix epoch in seconds.
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 /// Tokens derived from a refresh-token exchange. Held together under one lock
