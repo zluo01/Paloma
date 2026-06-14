@@ -348,6 +348,7 @@ async fn initialize(pool: &Pool<Sqlite>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use sqlx::Row;
 
     use super::*;
@@ -364,12 +365,8 @@ mod tests {
     #[tokio::test]
     async fn new_creates_database() {
         let storage = fresh_storage().await;
-        // Sanity: the table exists and is empty.
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
-        assert_eq!(count, 0);
+        let providers = storage.connected_providers().await.expect("providers");
+        assert!(providers.is_empty(), "expected empty, got {providers:?}");
     }
 
     #[tokio::test]
@@ -411,11 +408,8 @@ mod tests {
         )
         .await
         .expect("second open");
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
-            .fetch_one(second.pool())
-            .await
-            .unwrap();
-        assert_eq!(count, 1);
+        let providers = second.connected_providers().await.expect("providers");
+        assert_eq!(providers.len(), 1);
 
         drop(keepalive);
     }
@@ -586,11 +580,8 @@ mod tests {
             .await
             .expect("delete");
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
-        assert_eq!(count, 0);
+        let providers = storage.connected_providers().await.expect("providers");
+        assert!(providers.is_empty(), "expected empty, got {providers:?}");
     }
 
     #[tokio::test]
@@ -642,11 +633,8 @@ mod tests {
         );
         assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
-        assert_eq!(count, 2);
+        let providers = storage.connected_providers().await.expect("providers");
+        assert_eq!(providers.len(), 2);
     }
 
     #[tokio::test]
@@ -959,12 +947,12 @@ mod tests {
 
         // `last_update` isn't returned by `all_sessions`; read it directly to
         // confirm the insert populated it.
-        let last_update: i64 =
-            sqlx::query_scalar("SELECT last_update FROM sessions WHERE session_id = ?")
-                .bind(session_id.to_string())
-                .fetch_one(storage.pool())
-                .await
-                .unwrap();
+        let row = sqlx::query("SELECT last_update FROM sessions WHERE session_id = ?")
+            .bind(session_id.to_string())
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        let last_update = row.get::<i64, _>("last_update");
         assert!(last_update > 0);
     }
 
@@ -1045,12 +1033,12 @@ mod tests {
             .expect("touch");
 
         // `last_update` isn't returned by `all_sessions`; read it directly.
-        let last_update: i64 =
-            sqlx::query_scalar("SELECT last_update FROM sessions WHERE session_id = ?")
-                .bind(session_id.to_string())
-                .fetch_one(storage.pool())
-                .await
-                .unwrap();
+        let row = sqlx::query("SELECT last_update FROM sessions WHERE session_id = ?")
+            .bind(session_id.to_string())
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        let last_update = row.get::<i64, _>("last_update");
         assert!(last_update > 1000, "expected bump, got {last_update}");
     }
 
@@ -1066,6 +1054,60 @@ mod tests {
             matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000fe"),
             "expected NotFound, got {err:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn delete_session_cascades_to_history() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        let session_id = Uuid::parse_str("019e1234-5678-7000-8000-000000000004").unwrap();
+        storage
+            .create_new_session(session_id, &ProviderId::Codex, "with history")
+            .await
+            .unwrap();
+
+        let session_id = session_id.to_string();
+        storage
+            .insert_history(
+                &session_id,
+                EntryType::ResponseItem,
+                &json!({"type": "message", "text": "hello"}),
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_history(
+                &session_id,
+                EntryType::EventMsg,
+                &json!({"type": "event", "name": "done"}),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(storage.get_history(&session_id).await.unwrap().len(), 2);
+
+        storage
+            .delete_session(&session_id)
+            .await
+            .expect("delete session");
+
+        assert!(storage
+            .all_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .all(|session| session.session_id != session_id));
+        assert!(storage.get_history(&session_id).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -1120,11 +1162,11 @@ mod tests {
             .await
             .unwrap());
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM permissions")
-            .fetch_one(storage.pool())
+        let rows = sqlx::query("SELECT prefix FROM permissions")
+            .fetch_all(storage.pool())
             .await
             .unwrap();
-        assert_eq!(count, 1, "upsert must not create a second row");
+        assert_eq!(rows.len(), 1, "upsert must not create a second row");
     }
 
     #[tokio::test]
@@ -1159,12 +1201,12 @@ mod tests {
 
         storage.add_permission("cargo build", true).await.unwrap();
 
-        let updated_at: i64 =
-            sqlx::query_scalar("SELECT updated_at FROM permissions WHERE prefix = ?")
-                .bind("cargo build")
-                .fetch_one(storage.pool())
-                .await
-                .unwrap();
+        let row = sqlx::query("SELECT updated_at FROM permissions WHERE prefix = ?")
+            .bind("cargo build")
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        let updated_at = row.get::<i64, _>("updated_at");
         assert!(updated_at > 1000, "expected refresh, got {updated_at}");
     }
 }
