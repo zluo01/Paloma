@@ -18,6 +18,7 @@ use crate::{
         RestoreEntry, Session, Transport,
     },
     error::{Result, StorageError},
+    AuthKind,
 };
 
 #[derive(Clone)]
@@ -43,7 +44,7 @@ impl Storage {
     pub async fn insert_provider(
         &self,
         provider_id: &str,
-        auth_kind: &str,
+        auth_kind: &AuthKind,
         secret: &str,
         model: &str,
         effort: &str,
@@ -379,7 +380,7 @@ mod tests {
         first
             .insert_provider(
                 "anthropic",
-                "api_key",
+                &AuthKind::ApiKey,
                 "sk-1",
                 "claude-sonnet-4-5",
                 "medium",
@@ -413,7 +414,7 @@ mod tests {
         storage
             .insert_provider(
                 "anthropic",
-                "api_key",
+                &AuthKind::ApiKey,
                 "sk-abc",
                 "claude-sonnet-4-5",
                 "medium",
@@ -438,12 +439,12 @@ mod tests {
     async fn insert_provider_duplicate_returns_duplicate_error() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok-1", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok-1", "gpt-5", "medium")
             .await
             .expect("first insert");
 
         let err = storage
-            .insert_provider("codex", "oauth", "tok-2", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok-2", "gpt-5", "medium")
             .await
             .expect_err("second insert must fail");
 
@@ -454,23 +455,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_provider_rejects_bad_auth_kind() {
-        let storage = fresh_storage().await;
-        let err = storage
-            .insert_provider("openai", "magic_link", "x", "gpt-5", "medium")
-            .await
-            .expect_err("CHECK constraint should reject unknown auth_kind");
-
-        // A CHECK violation is a database error, not a unique violation,
-        // so it surfaces as `Sqlx`, not `Duplicate`.
-        assert!(matches!(err, StorageError::Sqlx(_)), "got {err:?}");
-    }
-
-    #[tokio::test]
     async fn update_provider_changes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "old-token", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "old-token", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -505,7 +493,7 @@ mod tests {
     async fn update_preferences_changes_model_and_effort_only() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -547,7 +535,13 @@ mod tests {
     async fn delete_provider_removes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("anthropic", "api_key", "x", "claude-sonnet-4-5", "medium")
+            .insert_provider(
+                "anthropic",
+                &AuthKind::ApiKey,
+                "x",
+                "claude-sonnet-4-5",
+                "medium",
+            )
             .await
             .unwrap();
 
@@ -587,7 +581,7 @@ mod tests {
         storage
             .insert_provider(
                 "anthropic",
-                "api_key",
+                &AuthKind::ApiKey,
                 "sk-a",
                 "claude-sonnet-4-5",
                 "medium",
@@ -595,7 +589,7 @@ mod tests {
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -616,7 +610,7 @@ mod tests {
         storage
             .insert_provider(
                 "anthropic",
-                "api_key",
+                &AuthKind::ApiKey,
                 "sk-a",
                 "claude-sonnet-4-5",
                 "medium",
@@ -624,7 +618,7 @@ mod tests {
             .await
             .unwrap();
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -644,7 +638,7 @@ mod tests {
     async fn create_session_persists_title_and_defaults() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -675,7 +669,7 @@ mod tests {
     async fn all_sessions_orders_by_last_update_latest_first() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -713,7 +707,7 @@ mod tests {
     async fn touch_session_bumps_last_update() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider("codex", "oauth", "tok", "gpt-5", "medium")
+            .insert_provider("codex", &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 

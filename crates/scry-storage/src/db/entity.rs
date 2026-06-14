@@ -4,10 +4,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
+pub enum AuthKind {
+    ApiKey,
+    Oauth,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ConnectedProvider {
     pub provider_id: String,
-    pub auth_kind: String,
+    pub auth_kind: AuthKind,
     pub secret: String,
     pub model: String,
     pub effort: String,
