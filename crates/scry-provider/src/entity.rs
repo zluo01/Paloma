@@ -78,7 +78,7 @@ pub enum Auth {
     OAuth {
         refresh_token: Option<String>,
         /// Absolute access-token expiry in epoch time.
-        expires_at: Option<i64>,
+        expires_at: Option<u64>,
     },
 }
 

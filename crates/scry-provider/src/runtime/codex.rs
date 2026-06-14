@@ -9,8 +9,9 @@ use std::{
 use base64::Engine;
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{stream, StreamExt};
+use log::error;
 use scry_storage::{AuthKind, Storage};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
@@ -42,7 +43,7 @@ const CLIENT_VERSION: &str = "0.139.0";
 const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long a fetched model catalogue is served from cache before a refetch.
-const MODELS_CACHE_TTL_SECS: i64 = 60 * 60;
+const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(1).as_secs();
 
 pub struct CodexRuntime {
     request: reqwest::Client,
@@ -92,10 +93,14 @@ impl CodexRuntime {
                     models: Mutex::new(Some(models)),
                 },
                 Err(e) => {
+                    error!("fail to fetch models on initialization. {e}");
                     Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
                 },
             },
-            Err(e) => Self::unhealthy(request, storage, format!("fail to connect to codex: {e}")),
+            Err(e) => {
+                error!("fail to refresh for access token on initialization. {e}");
+                Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
+            },
         }
     }
 
@@ -132,7 +137,8 @@ impl CodexRuntime {
             Auth::OAuth {
                 expires_at: Some(expires_at),
                 ..
-            } => expires_at.saturating_sub(300).max(0) as u64, // 5 mins before expiration
+            // 5-minute margin before the token actually expires.
+            } => expires_at.saturating_sub(Duration::from_mins(5).as_secs()),
             _ => 0,
         };
         let now = SystemTime::now()
@@ -437,11 +443,12 @@ impl ProviderClient for CodexRuntime {
                     Some(models)
                 },
                 Err(e) => {
-                    log::error!("codex: failed to refresh model catalogue: {e}");
+                    error!("failed to refresh model catalogue: {e}");
                     cache.as_ref().map(|cached| cached.models.clone())
                 },
             },
             Err(e) => {
+                error!("failed to get access token to refresh model catalogue: {e}");
                 self.mark_unhealthy(e.to_string());
                 cache.as_ref().map(|cached| cached.models.clone())
             },
@@ -477,16 +484,12 @@ impl ProviderClient for CodexRuntime {
 
 async fn fetch_access_token(
     request: &reqwest::Client,
-    refresh_token: &Auth,
+    auth: &Auth,
     storage: &Storage,
 ) -> Result<(AccessToken, Auth)> {
     let response: RefreshResponse = request
         .post(TOKEN_URL)
-        .json(&serde_json::json!({
-            "client_id": CLIENT_ID,
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        }))
+        .json(&RefreshRequest::new(auth)?)
         .send()
         .await?
         .error_for_status()?
@@ -583,15 +586,15 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
 
 struct AvailableModels {
     models: Vec<Model>,
-    expires_at: i64,
+    expires_at: u64,
 }
 
 /// unix epoch in seconds.
-fn unix_now() -> i64 {
+fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as i64
+        .as_secs()
 }
 
 /// Tokens derived from a refresh-token exchange. Held together under one lock
@@ -603,10 +606,36 @@ struct AccessToken {
     chatgpt_account_id: String,
 }
 
+#[derive(Serialize)]
+struct RefreshRequest<'a> {
+    client_id: &'a str,
+    grant_type: &'a str,
+    refresh_token: &'a str,
+}
+
+impl<'a> RefreshRequest<'a> {
+    /// Build the refresh-grant body from a stored OAuth credential, failing
+    /// if it carries no refresh token.
+    fn new(auth: &'a Auth) -> Result<Self> {
+        let Auth::OAuth {
+            refresh_token: Some(refresh_token),
+            ..
+        } = auth
+        else {
+            return Err(ProviderError::Other("missing a refresh_token".into()));
+        };
+        Ok(Self {
+            client_id: CLIENT_ID,
+            grant_type: "refresh_token",
+            refresh_token,
+        })
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RefreshResponse {
     /// Seconds until `access_token` expires (e.g. `863999` ≈ 10 days).
-    expires_in: i64,
+    expires_in: u64,
     refresh_token: String,
     access_token: String,
     id_token: String,
