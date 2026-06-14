@@ -159,7 +159,7 @@ impl ConnectController {
             },
             Auth::OAuth {
                 refresh_token,
-                expires_in: _,
+                expires_at: _,
             } => {
                 let secret = refresh_token
                     .as_deref()

@@ -1,18 +1,22 @@
 use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, RwLock,
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use base64::Engine;
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{stream, StreamExt};
-use scry_storage::Storage;
+use scry_storage::{AuthKind, Storage};
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     entity::{
-        ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, ProviderId,
+        ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError,
+        ProviderHealthStatus, ProviderId,
     },
     Auth, Result,
 };
@@ -32,93 +36,111 @@ const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 ///   <https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs#L35-L38>
 /// Current published version (the source of truth — bump to match):
 ///   <https://www.npmjs.com/package/@openai/codex>
-const CLIENT_VERSION: &str = "0.130.0";
+const CLIENT_VERSION: &str = "0.139.0";
 
 const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct CodexRuntime {
     request: reqwest::Client,
-    refresh_token: Arc<RwLock<String>>,
-    tokens: Arc<RwLock<RefreshTokens>>,
+    refresh_token: Arc<RwLock<Auth>>,
+    tokens: Arc<RwLock<AccessToken>>,
+    storage: Storage,
+    status: AtomicU8,
+    error: RwLock<Option<String>>,
 }
 
 impl CodexRuntime {
-    pub async fn new(credential: &Auth, request: reqwest::Client) -> Result<Self> {
-        let refresh_token = match credential {
+    pub async fn new(credential: &Auth, request: reqwest::Client, storage: Storage) -> Self {
+        let auth = match credential {
             Auth::OAuth {
-                refresh_token: Some(rt),
+                refresh_token: Some(_),
                 ..
-            } => rt.clone(),
+            } => credential.clone(),
             Auth::OAuth {
                 refresh_token: None,
                 ..
             } => {
-                return Err(ProviderError::Other(
+                return Self::unhealthy(
+                    request,
+                    storage,
                     "Codex credential is missing a refresh_token".into(),
-                ));
+                )
             },
             Auth::ApiKey(_) => {
-                return Err(ProviderError::Other(
+                return Self::unhealthy(
+                    request,
+                    storage,
                     "Codex does not support api_key credentials".into(),
-                ));
+                )
             },
         };
 
-        Ok(Self {
+        match fetch_access_token(&request, &auth, &storage).await {
+            Ok((new_tokens, auth)) => Self {
+                request,
+                refresh_token: Arc::new(RwLock::new(auth)),
+                tokens: Arc::new(RwLock::new(new_tokens)),
+                storage,
+                status: AtomicU8::new(ProviderHealthStatus::Running as u8),
+                error: RwLock::new(None),
+            },
+            Err(e) => Self::unhealthy(request, storage, format!("fail to connect to codex: {e}")),
+        }
+    }
+
+    /// unhealthy constructor
+    fn unhealthy(request: reqwest::Client, storage: Storage, error_msg: String) -> Self {
+        Self {
             request,
-            refresh_token: Arc::new(RwLock::new(refresh_token)),
-            tokens: Arc::new(RwLock::new(RefreshTokens {
+            refresh_token: Arc::new(RwLock::new(Auth::OAuth {
+                refresh_token: None,
+                expires_at: None,
+            })),
+            tokens: Arc::new(RwLock::new(AccessToken {
                 access_token: String::new(),
                 chatgpt_account_id: String::new(),
             })),
-        })
+            storage,
+            status: AtomicU8::new(ProviderHealthStatus::Unhealthy as u8),
+            error: RwLock::new(Some(error_msg)),
+        }
     }
-}
 
-async fn fetch_access_token(
-    request: &reqwest::Client,
-    refresh_token: &str,
-) -> Result<(RefreshTokens, String, i64)> {
-    let response: RefreshResponse = request
-        .post(TOKEN_URL)
-        .json(&serde_json::json!({
-            "client_id": CLIENT_ID,
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        }))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    /// Flag the runtime unhealthy and record `error` for status reporting.
+    fn mark_unhealthy(&self, error: String) {
+        self.status
+            .store(ProviderHealthStatus::Unhealthy as u8, Ordering::Relaxed);
+        *self.error.write().unwrap() = Some(error);
+    }
 
-    let chatgpt_account_id = extract_chatgpt_account_id(&response.id_token)
-        .ok_or_else(|| ProviderError::Other("id_token missing chatgpt_account_id claim".into()))?;
+    /// refresh access token if the current token is close to expired or already expired,
+    /// otherwise return the current access token
+    async fn refresh(&self) -> Result<AccessToken> {
+        let valid_until = match *self.refresh_token.read().unwrap() {
+            Auth::OAuth {
+                expires_at: Some(expires_at),
+                ..
+            } => expires_at.saturating_sub(300).max(0) as u64, // 5 mins before expiration
+            _ => 0,
+        };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-    Ok((
-        RefreshTokens {
-            access_token: response.access_token,
-            chatgpt_account_id,
-        },
-        response.refresh_token,
-        response.expires_in,
-    ))
-}
+        // Still valid: hand back the cached token untouched.
+        if now <= valid_until {
+            return Ok(self.tokens.read().unwrap().clone());
+        }
 
-/// Decode a JWT's middle segment (claims) and pull out
-/// `https://api.openai.com/auth.chatgpt_account_id`.
-///
-/// No signature verification: we received this token over our own TLS exchange
-/// with `auth.openai.com`, so the bytes can't have been tampered with in transit.
-fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
-    let payload_b64 = id_token.split('.').nth(1)?;
-    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload_b64)
-        .ok()?;
-    let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
-    claims["https://api.openai.com/auth"]["chatgpt_account_id"]
-        .as_str()
-        .map(str::to_string)
+        // Expired (or about to): rotate the token and cache the new pair.
+        let current_refresh_token = self.refresh_token.read().unwrap().clone();
+        let (new_tokens, auth) =
+            fetch_access_token(&self.request, &current_refresh_token, &self.storage).await?;
+        *self.refresh_token.write().unwrap() = auth;
+        *self.tokens.write().unwrap() = new_tokens.clone();
+        Ok(new_tokens)
+    }
 }
 
 #[async_trait::async_trait]
@@ -127,38 +149,19 @@ impl ProviderClient for CodexRuntime {
         ProviderId::Codex
     }
 
-    async fn refresh(&self, storage: &Storage) -> Result<Option<Auth>> {
-        let current_refresh_token = self.refresh_token.read().unwrap().clone();
-        let (new_tokens, new_refresh_token, expires_in) =
-            fetch_access_token(&self.request, &current_refresh_token).await?;
-        *self.tokens.write().unwrap() = new_tokens;
-        *self.refresh_token.write().unwrap() = new_refresh_token.clone();
-
-        // codex refresh token follows "rotate on use"
-        // so we need to proactively update the db whenever we refresh.
-        storage
-            .update_provider(ProviderId::Codex.as_str(), "oauth", &new_refresh_token)
-            .await?;
-
-        Ok(Some(Auth::OAuth {
-            refresh_token: Some(new_refresh_token),
-            expires_in: Some(expires_in),
-        }))
-    }
-
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
-        let (access_token, account_id) = {
-            let guard = self.tokens.read().unwrap();
-            (guard.access_token.clone(), guard.chatgpt_account_id.clone())
-        };
+        let token = self.refresh().await.map_err(|e| {
+            self.mark_unhealthy(e.to_string());
+            e
+        })?;
 
         let body = build_request_body(&request);
 
         let response = self
             .request
             .post(RESPONSES_URL)
-            .bearer_auth(&access_token)
-            .header("chatgpt-account-id", &account_id)
+            .bearer_auth(&token.access_token)
+            .header("chatgpt-account-id", &token.chatgpt_account_id)
             .header("originator", "srcy")
             .header(reqwest::header::USER_AGENT, "scry-codex")
             .header(reqwest::header::ACCEPT, "text/event-stream")
@@ -403,49 +406,20 @@ impl ProviderClient for CodexRuntime {
     }
 
     async fn models(&self) -> Result<Vec<Model>> {
-        let (access_token, account_id) = {
-            let guard = self.tokens.read().unwrap();
-            (guard.access_token.clone(), guard.chatgpt_account_id.clone())
-        };
+        let token = self.refresh().await.map_err(|e| {
+            self.mark_unhealthy(e.to_string());
+            e
+        })?;
 
-        let url = format!("{MODELS_URL}?client_version={CLIENT_VERSION}");
-        let response: ModelsResponse = self
-            .request
-            .get(&url)
-            .bearer_auth(&access_token)
-            .header("chatgpt-account-id", &account_id)
-            .header("OpenAI-Beta", "responses=experimental")
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        Ok(fetch_models(&self.request, &token).await?)
+    }
 
-        let mut models: Vec<RawModel> = response
-            .models
-            .into_iter()
-            .filter(|m| m.supported_in_api && m.visibility == "list")
-            .collect();
-        // Higher priority first; tie-break alphabetically on slug.
-        models.sort_by(|a, b| {
-            b.priority
-                .cmp(&a.priority)
-                .then_with(|| a.slug.cmp(&b.slug))
-        });
+    fn health_statue(&self) -> ProviderHealthStatus {
+        ProviderHealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    }
 
-        Ok(models
-            .into_iter()
-            .map(|m| Model {
-                id: m.slug,
-                name: m.display_name,
-                default_reasoning_effort: m.default_reasoning_level.unwrap_or("medium".to_string()),
-                supported_reasoning_efforts: m
-                    .supported_reasoning_levels
-                    .into_iter()
-                    .map(|p| p.effort)
-                    .collect(),
-            })
-            .collect())
+    fn error(&self) -> Option<String> {
+        self.error.read().unwrap().clone()
     }
 
     fn construct_user_prompt(&self, prompt: String) -> Value {
@@ -467,10 +441,117 @@ impl ProviderClient for CodexRuntime {
     }
 }
 
+async fn fetch_access_token(
+    request: &reqwest::Client,
+    refresh_token: &Auth,
+    storage: &Storage,
+) -> Result<(AccessToken, Auth)> {
+    let response: RefreshResponse = request
+        .post(TOKEN_URL)
+        .json(&serde_json::json!({
+            "client_id": CLIENT_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let chatgpt_account_id = extract_chatgpt_account_id(&response.id_token)
+        .ok_or_else(|| ProviderError::Other("id_token missing chatgpt_account_id claim".into()))?;
+
+    // codex refresh token follows "rotate on use"
+    // so we need to proactively update the db whenever we refresh.
+    storage
+        .update_provider(
+            &ProviderId::Codex,
+            &AuthKind::Oauth,
+            &response.refresh_token,
+        )
+        .await?;
+
+    // get the epoch time current access token will expire
+    let expires_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+        + response.expires_in;
+
+    Ok((
+        AccessToken {
+            access_token: response.access_token,
+            chatgpt_account_id,
+        },
+        Auth::OAuth {
+            refresh_token: Some(response.refresh_token),
+            expires_at: Some(expires_at),
+        },
+    ))
+}
+
+/// Decode a JWT's middle segment (claims) and pull out
+/// `https://api.openai.com/auth.chatgpt_account_id`.
+///
+/// No signature verification: we received this token over our own TLS exchange
+/// with `auth.openai.com`, so the bytes can't have been tampered with in transit.
+fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
+    let payload_b64 = id_token.split('.').nth(1)?;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+    claims["https://api.openai.com/auth"]["chatgpt_account_id"]
+        .as_str()
+        .map(str::to_string)
+}
+
+async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<Vec<Model>> {
+    let url = format!("{MODELS_URL}?client_version={CLIENT_VERSION}");
+    let response: ModelsResponse = request
+        .get(&url)
+        .bearer_auth(&token.access_token)
+        .header("chatgpt-account-id", &token.chatgpt_account_id)
+        .header("OpenAI-Beta", "responses=experimental")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let mut models: Vec<RawModel> = response
+        .models
+        .into_iter()
+        .filter(|m| m.supported_in_api && m.visibility == "list")
+        .collect();
+    // Higher priority first; tie-break alphabetically on slug.
+    models.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| a.slug.cmp(&b.slug))
+    });
+
+    Ok(models
+        .into_iter()
+        .map(|m| Model {
+            id: m.slug,
+            name: m.display_name,
+            default_reasoning_effort: m.default_reasoning_level.unwrap_or("medium".to_string()),
+            supported_reasoning_efforts: m
+                .supported_reasoning_levels
+                .into_iter()
+                .map(|p| p.effort)
+                .collect(),
+        })
+        .collect())
+}
+
 /// Tokens derived from a refresh-token exchange. Held together under one lock
 /// so a refresh rotates `access_token` (and re-derives `chatgpt_account_id`)
 /// atomically.
-struct RefreshTokens {
+#[derive(Clone)]
+struct AccessToken {
     access_token: String,
     chatgpt_account_id: String,
 }

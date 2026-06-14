@@ -1,6 +1,6 @@
 use futures::stream::BoxStream;
 use scry_capability::ToolSchema;
-use scry_storage::Storage;
+pub use scry_storage::ProviderId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -11,11 +11,13 @@ pub type ChatStream = BoxStream<'static, Result<ChatEvent>>;
 pub trait ProviderClient: Send + Sync {
     fn id(&self) -> ProviderId;
 
-    async fn refresh(&self, storage: &Storage) -> Result<Option<Auth>>;
-
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream>;
 
     async fn models(&self) -> Result<Vec<Model>>;
+
+    fn health_statue(&self) -> ProviderHealthStatus;
+
+    fn error(&self) -> Option<String>;
 
     fn construct_user_prompt(&self, prompt: String) -> Value;
 
@@ -29,6 +31,22 @@ pub trait ProviderAuthenticator: Send + Sync {
     async fn init_connection(&self) -> Result<Connection>;
 
     async fn finalize_connection(&self, payload: Connection) -> Result<Auth>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ProviderHealthStatus {
+    Running = 0,
+    Unhealthy = 1,
+}
+
+impl ProviderHealthStatus {
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            0 => ProviderHealthStatus::Running,
+            _ => ProviderHealthStatus::Unhealthy,
+        }
+    }
 }
 
 pub enum Connection {
@@ -53,27 +71,14 @@ pub enum Connection {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderId {
-    Codex,
-}
-
-impl ProviderId {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ProviderId::Codex => "codex",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Auth {
     ApiKey(String),
     OAuth {
         refresh_token: Option<String>,
-        expires_in: Option<i64>,
+        /// Absolute access-token expiry in epoch time.
+        expires_at: Option<i64>,
     },
 }
 
