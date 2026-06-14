@@ -34,16 +34,12 @@ impl ConnectController {
         }
     }
 
-    pub async fn init(&self, provider_id: ProviderId) -> Result<Connection, ConnectError> {
+    pub async fn init(&self, provider_id: ProviderId) -> Result<Connection> {
         let handler = self.handler(provider_id)?;
         Ok(handler.init_connection().await?)
     }
 
-    pub async fn finalize(
-        &self,
-        provider_id: ProviderId,
-        payload: Connection,
-    ) -> Result<(), ConnectError> {
+    pub async fn finalize(&self, provider_id: ProviderId, payload: Connection) -> Result<()> {
         let handler = self.handler(provider_id)?;
         let auth = handler.finalize_connection(payload).await?;
 
@@ -108,7 +104,7 @@ impl ConnectController {
         }
     }
 
-    pub async fn disconnect(&self, provider_id: ProviderId) -> Result<(), ConnectError> {
+    pub async fn disconnect(&self, provider_id: ProviderId) -> Result<()> {
         self.storage.delete_provider(&provider_id).await?;
         self.provider_controller.remove_provider(&provider_id);
         Ok(())
@@ -119,14 +115,26 @@ impl ConnectController {
         provider_id: ProviderId,
         model: &str,
         effort: &str,
-    ) -> Result<(), ConnectError> {
+    ) -> Result<()> {
         self.storage
             .update_preferences(&provider_id, model, effort)
             .await?;
         Ok(())
     }
 
-    pub async fn available_connectors(&self) -> Result<Vec<Connector>, ConnectError> {
+    /// update preferred model with prefer model and effort
+    pub async fn set_preferred(
+        &self,
+        provider_id: ProviderId,
+        model: &str,
+        effort: &str,
+    ) -> Result<()> {
+        self.set_preferences(provider_id, model, effort).await?;
+        self.storage.set_preferred(&provider_id).await?;
+        Ok(())
+    }
+
+    pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
         let connected: HashMap<ProviderId, ConnectedProvider> = self
             .storage
             .connected_providers()
@@ -145,6 +153,7 @@ impl ConnectController {
             // A connection needs both the stored prefs and a live runtime status.
             let connection = match (connected.get(&id), statuses.remove(&id)) {
                 (Some(cred), Some(status)) => Some(ConnectorConnection {
+                    preferred: cred.preferred,
                     prefer_model: cred.model.clone(),
                     prefer_effort: cred.effort.clone(),
                     status,
@@ -166,10 +175,7 @@ impl ConnectController {
         HealthLevel::from_counts(providers.len(), healthy)
     }
 
-    fn handler(
-        &self,
-        provider_id: ProviderId,
-    ) -> Result<Arc<dyn ProviderAuthenticator>, ConnectError> {
+    fn handler(&self, provider_id: ProviderId) -> Result<Arc<dyn ProviderAuthenticator>> {
         self.handlers
             .get(&provider_id)
             .map(|h| Arc::clone(h.value()))
@@ -183,6 +189,7 @@ pub struct Connector {
 }
 
 pub struct ConnectorConnection {
+    pub preferred: bool,
     pub prefer_model: String,
     pub prefer_effort: String,
     pub status: ProviderStatis,
@@ -208,3 +215,5 @@ pub enum ConnectError {
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
+
+type Result<T> = std::result::Result<T, ConnectError>;

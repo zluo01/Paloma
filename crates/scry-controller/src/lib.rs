@@ -5,8 +5,8 @@ mod local;
 mod remote;
 
 pub use connector::{
-    ConnectController, ConnectError, Connector, ConnectorConnection, McpServer,
-    PluginConnectionController, PluginConnectionError,
+    ConnectController, Connector, ConnectorConnection, McpServer, PluginConnectionController,
+    PluginConnectionError,
 };
 pub use entity::{ChatRenderEvent, HealthLevel, LocalRenderEvent, RenderEvent};
 pub use local::{LocalQuery, LocalQueryInitError};
