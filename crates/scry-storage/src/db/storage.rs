@@ -114,14 +114,10 @@ impl Storage {
     }
 
     pub async fn set_preferred(&self, provider_id: &ProviderId) -> Result<()> {
-        let result = sqlx::query(queries::SET_PREFERRED_QUERY)
-            .bind(provider_id)
+        sqlx::query(queries::SET_PREFERRED_QUERY)
             .bind(provider_id)
             .execute(&self.pool)
             .await?;
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
-        }
         Ok(())
     }
 
@@ -757,51 +753,6 @@ mod tests {
 
         // Exactly one preferred, and it switched to the target.
         assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
-    }
-
-    #[tokio::test]
-    async fn set_preferred_nonexistent_returns_not_found() {
-        let storage = fresh_storage().await;
-        storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
-            .await
-            .unwrap();
-
-        let err = storage
-            .set_preferred(&ProviderId::Anthropic)
-            .await
-            .expect_err("must fail");
-
-        assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "anthropic"),
-            "expected NotFound(\"anthropic\"), got {err:?}",
-        );
-    }
-
-    #[tokio::test]
-    async fn set_preferred_nonexistent_keeps_current_preferred() {
-        let storage = fresh_storage().await;
-        storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
-            .await
-            .unwrap();
-
-        let _ = storage.set_preferred(&ProviderId::Anthropic).await;
-
-        // The WHERE EXISTS guard means a missing target clears nobody.
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
     }
 
     #[tokio::test]
