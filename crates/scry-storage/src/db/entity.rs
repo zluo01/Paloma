@@ -8,12 +8,18 @@ use sqlx::FromRow;
 #[sqlx(rename_all = "snake_case")]
 pub enum ProviderId {
     Codex,
+    ClaudeCode,
+    OpenAI,
+    Anthropic,
 }
 
 impl ProviderId {
     pub fn as_str(&self) -> &'static str {
         match self {
             ProviderId::Codex => "codex",
+            ProviderId::ClaudeCode => "claude_code",
+            ProviderId::OpenAI => "open_ai",
+            ProviderId::Anthropic => "anthropic",
         }
     }
 }
@@ -32,6 +38,7 @@ pub struct ConnectedProvider {
     pub secret: String,
     pub model: String,
     pub effort: String,
+    pub preferred: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]

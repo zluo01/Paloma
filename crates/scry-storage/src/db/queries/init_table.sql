@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS provider_credentials
     auth_kind   TEXT             NOT NULL CHECK (auth_kind IN ('api_key', 'oauth')),
     secret      TEXT             NOT NULL,
     model       TEXT             NOT NULL,
-    effort      TEXT             NOT NULL
+    effort      TEXT             NOT NULL,
+    preferred   INTEGER          NOT NULL DEFAULT 0 CHECK (preferred IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS sessions

@@ -31,6 +31,7 @@ impl ProviderController {
                 ProviderId::Codex => {
                     Arc::new(CodexRuntime::new(&auth, request.clone(), storage.clone()).await)
                 },
+                _ => todo!(),
             };
             handlers.insert(client.id(), client);
         }
@@ -58,6 +59,7 @@ impl ProviderController {
             ProviderId::Codex => {
                 Arc::new(CodexRuntime::new(auth, self.request.clone(), self.storage.clone()).await)
             },
+            _ => todo!(),
         };
 
         self.handlers.insert(provider_id, client.clone());

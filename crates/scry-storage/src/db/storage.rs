@@ -113,6 +113,18 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn set_preferred(&self, provider_id: &ProviderId) -> Result<()> {
+        let result = sqlx::query(queries::SET_PREFERRED_QUERY)
+            .bind(provider_id)
+            .bind(provider_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
+        }
+        Ok(())
+    }
+
     pub async fn create_new_session(
         &self,
         session_id: Uuid,
@@ -596,6 +608,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_provider_nonexistent_keeps_current_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        let err = storage
+            .delete_provider(&ProviderId::Anthropic)
+            .await
+            .expect_err("must fail");
+
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == "anthropic"),
+            "expected NotFound(\"anthropic\"), got {err:?}",
+        );
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_credentials")
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
     async fn connected_providers_returns_empty_when_no_rows() {
         let storage = fresh_storage().await;
         let rows = storage.connected_providers().await.expect("query");
@@ -624,6 +678,257 @@ mod tests {
             .map(|p| p.provider_id)
             .collect();
         assert_eq!(ids, vec![ProviderId::Codex]);
+    }
+
+    /// The providers currently flagged preferred — at most one under the
+    /// insert / `set_preferred` invariant.
+    async fn preferred_ids(storage: &Storage) -> Vec<ProviderId> {
+        storage
+            .connected_providers()
+            .await
+            .expect("connected providers")
+            .into_iter()
+            .filter(|p| p.preferred)
+            .map(|p| p.provider_id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn insert_provider_first_is_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+    }
+
+    #[tokio::test]
+    async fn insert_provider_later_is_not_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        // First connect stays preferred; a later one does not steal it.
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+    }
+
+    #[tokio::test]
+    async fn set_preferred_moves_preference() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        storage
+            .set_preferred(&ProviderId::OpenAI)
+            .await
+            .expect("set preferred");
+
+        // Exactly one preferred, and it switched to the target.
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+    }
+
+    #[tokio::test]
+    async fn set_preferred_nonexistent_returns_not_found() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        let err = storage
+            .set_preferred(&ProviderId::Anthropic)
+            .await
+            .expect_err("must fail");
+
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == "anthropic"),
+            "expected NotFound(\"anthropic\"), got {err:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn set_preferred_nonexistent_keeps_current_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        let _ = storage.set_preferred(&ProviderId::Anthropic).await;
+
+        // The WHERE EXISTS guard means a missing target clears nobody.
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+    }
+
+    #[tokio::test]
+    async fn delete_preferred_provider_promotes_survivor() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        storage
+            .delete_provider(&ProviderId::Codex)
+            .await
+            .expect("delete preferred");
+
+        // The lone survivor should inherit the preference.
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+    }
+
+    #[tokio::test]
+    async fn delete_preferred_keeps_one_preferred_among_survivors() {
+        let storage = fresh_storage().await;
+        for id in [ProviderId::Codex, ProviderId::OpenAI, ProviderId::Anthropic] {
+            storage
+                .insert_provider(&id, &AuthKind::ApiKey, "sk", "model", "medium")
+                .await
+                .unwrap();
+        }
+
+        storage
+            .delete_provider(&ProviderId::Codex)
+            .await
+            .expect("delete preferred");
+
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+    }
+
+    #[tokio::test]
+    async fn delete_non_preferred_provider_keeps_current_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        storage
+            .delete_provider(&ProviderId::OpenAI)
+            .await
+            .expect("delete non-preferred");
+
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+    }
+
+    #[tokio::test]
+    async fn connect_into_empty_is_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .delete_provider(&ProviderId::Codex)
+            .await
+            .expect("delete last");
+
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
     }
 
     #[tokio::test]
