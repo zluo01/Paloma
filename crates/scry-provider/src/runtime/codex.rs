@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicU8, Ordering},
-        Arc, RwLock,
+        RwLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -12,6 +12,7 @@ use futures::{stream, StreamExt};
 use scry_storage::{AuthKind, Storage};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::{
     entity::{
@@ -45,12 +46,12 @@ const MODELS_CACHE_TTL_SECS: i64 = 60 * 60;
 
 pub struct CodexRuntime {
     request: reqwest::Client,
-    refresh_token: Arc<RwLock<Auth>>,
-    tokens: Arc<RwLock<AccessToken>>,
     storage: Storage,
+    refresh_token: RwLock<Auth>,
+    tokens: RwLock<AccessToken>,
     status: AtomicU8,
     error: RwLock<Option<String>>,
-    models: RwLock<Option<AvailableModels>>,
+    models: Mutex<Option<AvailableModels>>,
 }
 
 impl CodexRuntime {
@@ -83,12 +84,12 @@ impl CodexRuntime {
             Ok((access_token, auth)) => match fetch_models(&request, &access_token).await {
                 Ok(models) => Self {
                     request,
-                    refresh_token: Arc::new(RwLock::new(auth)),
-                    tokens: Arc::new(RwLock::new(access_token)),
+                    refresh_token: RwLock::new(auth),
+                    tokens: RwLock::new(access_token),
                     storage,
                     status: AtomicU8::new(ProviderHealthStatus::Running as u8),
                     error: RwLock::new(None),
-                    models: RwLock::new(Some(models)),
+                    models: Mutex::new(Some(models)),
                 },
                 Err(e) => {
                     Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
@@ -102,18 +103,18 @@ impl CodexRuntime {
     fn unhealthy(request: reqwest::Client, storage: Storage, error_msg: String) -> Self {
         Self {
             request,
-            refresh_token: Arc::new(RwLock::new(Auth::OAuth {
+            refresh_token: RwLock::new(Auth::OAuth {
                 refresh_token: None,
                 expires_at: None,
-            })),
-            tokens: Arc::new(RwLock::new(AccessToken {
+            }),
+            tokens: RwLock::new(AccessToken {
                 access_token: String::new(),
                 chatgpt_account_id: String::new(),
-            })),
+            }),
             storage,
             status: AtomicU8::new(ProviderHealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
-            models: RwLock::new(None),
+            models: Mutex::new(None),
         }
     }
 
@@ -161,10 +162,10 @@ impl ProviderClient for CodexRuntime {
     }
 
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
-        let token = self.refresh().await.map_err(|e| {
-            self.mark_unhealthy(e.to_string());
-            e
-        })?;
+        let token = self
+            .refresh()
+            .await
+            .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
 
         let body = build_request_body(&request);
 
@@ -416,23 +417,35 @@ impl ProviderClient for CodexRuntime {
         Ok(Box::pin(stream))
     }
 
-    async fn models(&self) -> Result<Vec<Model>> {
+    async fn models(&self) -> Option<Vec<Model>> {
+        // Hold the lock across the refetch: concurrent callers single-flight
+        // — the first refetches, the rest wait and pick up its cached result.
+        let mut cache = self.models.lock().await;
+
         // Serve the cached catalogue while it's still fresh.
-        if let Some(cached) = self.models.read().unwrap().as_ref() {
+        if let Some(cached) = cache.as_ref() {
             if unix_now() < cached.expires_at {
-                return Ok(cached.models.clone());
+                return Some(cached.models.clone());
             }
         }
 
-        let token = self.refresh().await.map_err(|e| {
-            self.mark_unhealthy(e.to_string());
-            e
-        })?;
-        let result = fetch_models(&self.request, &token).await?;
-
-        let models = result.models.clone();
-        *self.models.write().unwrap() = Some(result);
-        Ok(models)
+        match self.refresh().await {
+            Ok(access_token) => match fetch_models(&self.request, &access_token).await {
+                Ok(result) => {
+                    let models = result.models.clone();
+                    *cache = Some(result);
+                    Some(models)
+                },
+                Err(e) => {
+                    log::error!("codex: failed to refresh model catalogue: {e}");
+                    cache.as_ref().map(|cached| cached.models.clone())
+                },
+            },
+            Err(e) => {
+                self.mark_unhealthy(e.to_string());
+                cache.as_ref().map(|cached| cached.models.clone())
+            },
+        }
     }
 
     fn health_statue(&self) -> ProviderHealthStatus {

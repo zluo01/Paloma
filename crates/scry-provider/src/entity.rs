@@ -13,7 +13,7 @@ pub trait ProviderClient: Send + Sync {
 
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream>;
 
-    async fn models(&self) -> Result<Vec<Model>>;
+    async fn models(&self) -> Option<Vec<Model>>;
 
     fn health_statue(&self) -> ProviderHealthStatus;
 
