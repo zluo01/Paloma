@@ -5,7 +5,7 @@ mod parser;
 mod safety;
 mod transparent;
 
-pub use entity::{ArgvDecision, CommandType, PermissionDecision};
+pub use entity::{ArgvDecision, CommandType, PermissionDecision, PermissionState, UserDecision};
 pub use error::{PermissionError, Result};
 
 use crate::{

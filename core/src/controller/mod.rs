@@ -10,7 +10,7 @@ pub use connector::{
 pub use entity::{ChatRenderEvent, LocalRenderEvent, RenderEvent};
 pub use local::{LocalQuery, LocalQueryInitError};
 pub use remote::{
-    PermissionState, PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
+    PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
     ProviderControllerError, RemoteQuery, SessionManager, SessionManagerError, SessionUpdate,
-    TerminalState, ToolController, ToolControllerError, TurnManager, UserDecision,
+    TerminalState, ToolController, ToolControllerError, TurnManager,
 };

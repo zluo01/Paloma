@@ -12,6 +12,7 @@ use crate::{
     config::{PERMISSION_EVICT_TTL_SECS, PERMISSION_WORKFLOW_CHANNEL_CAPACITY},
     permission::{
         ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
+        PermissionState, UserDecision,
     },
     utils::CompletableFuture,
 };
@@ -20,13 +21,6 @@ use crate::{
 struct SessionPermission {
     always: bool,
     allowlist: HashSet<String>,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum PermissionState {
-    Allow,
-    Deny,
-    Error,
 }
 
 struct PermissionRequest {
@@ -49,29 +43,6 @@ impl PermissionRequest {
         self.tracker.complete(state);
         self.evict_at = Some(Self::evict_deadline());
     }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum UserDecision {
-    AllowOnce {
-        call_id: String,
-    },
-    Allow {
-        call_id: String,
-        command: String,
-        glob: bool,
-    },
-    AllowSession {
-        session_id: Uuid,
-        call_id: String,
-    },
-    IgnorePermission {
-        session_id: Uuid,
-        call_id: String,
-    },
-    Deny {
-        call_id: String,
-    },
 }
 
 /// Messages for the permission workflow manager.

@@ -13,9 +13,10 @@ use crate::{
     capability::{
         DynTool, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema, ToolSpec,
     },
-    controller::{PermissionState, remote::PermissionWorkflowManagerClient},
+    controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
     entity::{HealthStatus, Plugin, PluginType},
+    permission::PermissionState,
 };
 
 pub struct ToolStatus {

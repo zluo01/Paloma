@@ -1,4 +1,4 @@
-use crate::{capability::Item, controller::UserDecision};
+use crate::{capability::Item, permission::UserDecision};
 
 #[derive(Clone, Debug)]
 pub enum RenderEvent {

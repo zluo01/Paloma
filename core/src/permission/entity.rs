@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgvDecision {
@@ -52,4 +54,34 @@ impl PermissionDecision {
     pub fn decision(&self) -> ArgvDecision {
         self.decision
     }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum PermissionState {
+    Allow,
+    Deny,
+    Error,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum UserDecision {
+    AllowOnce {
+        call_id: String,
+    },
+    Allow {
+        call_id: String,
+        command: String,
+        glob: bool,
+    },
+    AllowSession {
+        session_id: Uuid,
+        call_id: String,
+    },
+    IgnorePermission {
+        session_id: Uuid,
+        call_id: String,
+    },
+    Deny {
+        call_id: String,
+    },
 }

@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::{
     config::ENVIRONMENT_CONTEXT,
     controller::{
-        PermissionState, PermissionWorkflowError, ProviderController, ProviderControllerError,
-        SessionManagerError, SessionUpdate, TerminalState, UserDecision,
+        PermissionWorkflowError, ProviderController, ProviderControllerError, SessionManagerError,
+        SessionUpdate, TerminalState,
         remote::{
             PermissionWorkflowManagerClient, SessionEvent,
             session_manager::{SessionListItem, SessionManagerClient},
@@ -16,6 +16,7 @@ use crate::{
         },
     },
     entity::ProviderId,
+    permission::{PermissionState, UserDecision},
 };
 
 const MAX_TITLE_CHARS: usize = 56;

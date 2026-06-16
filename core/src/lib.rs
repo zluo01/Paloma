@@ -26,12 +26,13 @@ mod utils;
 pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use config::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, PermissionState,
-    RenderEvent, SessionUpdate, TerminalState, UserDecision,
+    ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, RenderEvent,
+    SessionUpdate, TerminalState,
 };
 pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
 };
+pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
 
 #[derive(Debug, Clone, Copy)]
