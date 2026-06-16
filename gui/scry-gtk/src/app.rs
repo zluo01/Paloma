@@ -1,25 +1,31 @@
 //! Single-process bootstrap.
 //!
 //! One binary, one process: GTK on the main thread, tokio on a static
-//! multi-threaded runtime, controllers shared via `Arc<AppContext>`.
+//! multi-threaded runtime, backend controllers shared via `Arc<AppContext>`.
 //! Portal/tray services run on tokio; GTK-facing behavior is coordinated
-//! by `overlay::OverlayController`.
+//! by `overlay::OverlayController`. The hotkey and tray broadcast channels
+//! are UI-only coordination, owned here rather than by the backend.
 
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use gtk4::{gio, glib, prelude::*};
 use libadwaita::{Application, ApplicationWindow};
 use log::{error, warn};
-use scry_core::{AppContext, TrayEvent};
-use tokio::sync::broadcast::error::RecvError;
+use scry_core::AppContext;
+use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{
     runtime::tokio_runtime,
-    services, style,
+    services::{self, tray::TrayEvent},
+    style,
     widgets::{overlay, settings},
 };
 
 const APP_ID: &str = "dev.scry.Scry";
+
+/// Capacity of the UI coordination channels (hotkey activations, tray menu
+/// actions). Small: subscribers consume promptly on the GTK thread.
+const UI_CHANNEL_CAPACITY: usize = 8;
 
 type OpenSettingsFn = Rc<dyn Fn()>;
 
@@ -36,7 +42,7 @@ fn init_logging() {
 pub(crate) fn run() -> ExitCode {
     init_logging();
 
-    // Build the shared app state on the static tokio runtime, so any
+    // Build the shared backend state on the static tokio runtime, so any
     // tasks it spawns (refresh loops) live on the same runtime that
     // services subsequent runtime::spawn calls.
     let app_state = match tokio_runtime().block_on(AppContext::build()) {
@@ -47,10 +53,14 @@ pub(crate) fn run() -> ExitCode {
         },
     };
 
-    // Background services. Both fan their events out via broadcast
-    // channels; GTK subscribers are installed during activation.
+    // UI coordination channels: hotkey activations (portal -> overlay) and
+    // tray menu actions (tray -> app). Both fan out via broadcast; GTK
+    // subscribers are installed during activation.
+    let (hotkey, _) = broadcast::channel::<()>(UI_CHANNEL_CAPACITY);
+    let (tray_events, _) = broadcast::channel::<TrayEvent>(UI_CHANNEL_CAPACITY);
+
     tokio_runtime().spawn({
-        let hotkey = app_state.hotkey.clone();
+        let hotkey = hotkey.clone();
         async move {
             if let Err(e) = services::portal::run(hotkey).await {
                 warn!("portal: exited with error: {e}");
@@ -58,7 +68,7 @@ pub(crate) fn run() -> ExitCode {
         }
     });
     tokio_runtime().spawn({
-        let events = app_state.tray_events.clone();
+        let events = tray_events.clone();
         async move { services::tray::run(events).await }
     });
 
@@ -72,8 +82,9 @@ pub(crate) fn run() -> ExitCode {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
-    let app_for_activate = app_state.clone();
-    gapp.connect_activate(move |g| on_activate(g, app_for_activate.clone()));
+    gapp.connect_activate(move |g| {
+        on_activate(g, app_state.clone(), hotkey.clone(), tray_events.clone());
+    });
 
     let exit = gapp.run_with_args::<&str>(&[]);
     if exit != glib::ExitCode::SUCCESS {
@@ -83,7 +94,12 @@ pub(crate) fn run() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn on_activate(gapp: &Application, app: Arc<AppContext>) {
+fn on_activate(
+    gapp: &Application,
+    app: Arc<AppContext>,
+    hotkey: broadcast::Sender<()>,
+    tray_events: broadcast::Sender<TrayEvent>,
+) {
     style::load();
 
     // One deduped settings opener shared by the tray menu and overlay bar.
@@ -91,9 +107,9 @@ fn on_activate(gapp: &Application, app: Arc<AppContext>) {
 
     // The controller installs all overlay subscriptions and signal handlers.
     // Its signal/future closures keep it alive after activation returns.
-    let _controller = overlay::OverlayController::new(gapp, app.clone(), open_settings.clone());
+    let _controller = overlay::OverlayController::new(gapp, app, hotkey, open_settings.clone());
 
-    install_tray_watcher(gapp.clone(), app, open_settings);
+    install_tray_watcher(gapp.clone(), tray_events, open_settings);
 }
 
 /// Open-or-re-present the settings window. Opening when one already exists
@@ -119,8 +135,12 @@ fn make_settings_opener(gapp: Application, app: Arc<AppContext>) -> OpenSettings
 }
 
 /// Tray click -> open the settings window or quit the app.
-fn install_tray_watcher(gapp: Application, app: Arc<AppContext>, open_settings: OpenSettingsFn) {
-    let mut rx = app.tray_events.subscribe();
+fn install_tray_watcher(
+    gapp: Application,
+    tray_events: broadcast::Sender<TrayEvent>,
+    open_settings: OpenSettingsFn,
+) {
+    let mut rx = tray_events.subscribe();
 
     glib::spawn_future_local(async move {
         loop {

@@ -1,10 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::sync::broadcast;
-
 use crate::{
     capability::ProcessManager,
-    config::{DATABASE_PATH, HOTKEY_CHANNEL_CAPACITY},
+    config::DATABASE_PATH,
     controller::{
         ConnectController, LocalQuery, LocalQueryInitError, PermissionWorkflowManager,
         PluginConnectionController, ProviderController, ProviderControllerError, RemoteQuery,
@@ -35,19 +33,11 @@ pub use entity::{
 pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
 
-#[derive(Debug, Clone, Copy)]
-pub enum TrayEvent {
-    OpenSettings,
-    Quit,
-}
-
 pub struct AppContext {
     pub connect: ConnectController,
     pub local_query: LocalQuery,
     pub remote_query: RemoteQuery,
     pub plugin: PluginConnectionController,
-    pub hotkey: broadcast::Sender<()>,
-    pub tray_events: broadcast::Sender<TrayEvent>,
 }
 
 impl AppContext {
@@ -61,16 +51,11 @@ impl AppContext {
         let (connect, remote_query, plugin) = Self::init_llm(storage).await?;
         let local_query = Self::init_local()?;
 
-        let (hotkey, _) = broadcast::channel(HOTKEY_CHANNEL_CAPACITY);
-        let (tray_events, _) = broadcast::channel(HOTKEY_CHANNEL_CAPACITY);
-
         Ok(Arc::new(Self {
             connect,
             local_query,
             remote_query,
             plugin,
-            hotkey,
-            tray_events,
         }))
     }
 

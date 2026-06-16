@@ -20,7 +20,10 @@ use scry_core::{
     Action, ActionOutcome, AppContext, ChatRenderEvent, Connector, LocalRenderEvent, ProviderId,
     RenderEvent, SessionUpdate, TerminalState, UserDecision,
 };
-use tokio::sync::{broadcast::error::RecvError, mpsc};
+use tokio::sync::{
+    broadcast::{self, error::RecvError},
+    mpsc,
+};
 use uuid::Uuid;
 
 use super::{
@@ -39,6 +42,9 @@ pub(crate) struct OverlayController {
 struct ControllerInner {
     overlay: Overlay,
     app: Arc<AppContext>,
+    /// UI-only hotkey channel (portal -> overlay); the controller subscribes
+    /// to toggle the overlay on each activation.
+    hotkey: broadcast::Sender<()>,
     open_settings: Rc<dyn Fn()>,
     chat: ChatState,
     latest_query_id: Cell<u64>,
@@ -55,12 +61,14 @@ impl OverlayController {
     pub(crate) fn new(
         gapp: &Application,
         app: Arc<AppContext>,
+        hotkey: broadcast::Sender<()>,
         open_settings: Rc<dyn Fn()>,
     ) -> Self {
         let controller = Self {
             inner: Rc::new(ControllerInner {
                 overlay: super::build(gapp),
                 app,
+                hotkey,
                 open_settings,
                 chat: ChatState::default(),
                 latest_query_id: Cell::new(0),
@@ -82,7 +90,7 @@ impl OverlayController {
     }
 
     fn install_hotkey_watcher(&self) {
-        let mut rx = self.inner.app.hotkey.subscribe();
+        let mut rx = self.inner.hotkey.subscribe();
         let controller = self.clone();
         glib::spawn_future_local(async move {
             loop {

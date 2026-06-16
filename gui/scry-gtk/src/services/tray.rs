@@ -13,8 +13,14 @@ use ksni::{
     menu::{MenuItem, StandardItem},
 };
 use log::{info, warn};
-use scry_core::TrayEvent;
 use tokio::sync::broadcast;
+
+/// A tray menu action, forwarded to the GTK thread over a broadcast channel.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TrayEvent {
+    OpenSettings,
+    Quit,
+}
 
 const TRAY_ID: &str = "dev.scry.Scry";
 const TRAY_TITLE: &str = "Scry";
