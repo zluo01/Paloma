@@ -206,6 +206,7 @@ impl SessionManager {
             },
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
+        let errored = matches!(&payload, SessionEvent::Err(_));
 
         let render_event = payload
             .to_render_event(
@@ -225,6 +226,14 @@ impl SessionManager {
 
         if let Some(event) = render_event {
             let _ = self.updates_tx.send(SessionUpdate { session_id, event });
+        }
+
+        // a failed turn left partial items; roll the session back to its last
+        // completed message so the next request starts from a valid state.
+        if errored {
+            if let Err(err) = self.storage.rollback_history(&session_id.to_string()).await {
+                error!("session {session_id}: rollback after error failed: {err}");
+            }
         }
 
         Ok(())
@@ -401,7 +410,6 @@ impl SessionEvent {
             },
             SessionEvent::Chat(ChatEvent::Done) => Some(RenderEvent::Done),
             SessionEvent::Err(message) => Some(RenderEvent::Error {
-                // TODO need to check when it is the first prompt, but somehow error happens, should we keep the session and remove the prompt or we should remove the whole session
                 message: message.clone(),
             }),
             SessionEvent::UserPrompt(item) => {
@@ -656,7 +664,7 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
     }
 
     // cleanup history
-    storage.recover().await?;
+    storage.recover_history().await?;
 
     Ok(sessions)
 }

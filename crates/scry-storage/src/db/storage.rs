@@ -326,8 +326,18 @@ impl Storage {
     /// Prune partially-written turns left by a crash or cold start: for every
     /// session whose newest history item isn't a completed assistant message,
     /// drop everything back to (and including) the last user prompt.
-    pub async fn recover(&self) -> Result<()> {
+    pub async fn recover_history(&self) -> Result<()> {
         sqlx::query(queries::RECOVER).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// Roll one session back to its last completed assistant message, dropping
+    /// everything after it. Used to clean up a failed turn or on user request.
+    pub async fn rollback_history(&self, session_id: &str) -> Result<()> {
+        sqlx::query(queries::ROLLBACK)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
@@ -1173,7 +1183,13 @@ mod tests {
 
     async fn seed_provider(storage: &Storage) {
         storage
-            .insert_provider(&ProviderId::Codex, &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
             .unwrap();
     }
@@ -1226,7 +1242,7 @@ mod tests {
         )
         .await;
 
-        storage.recover().await.unwrap();
+        storage.recover_history().await.unwrap();
 
         let history = storage.get_history(&id.to_string()).await.unwrap();
         assert_eq!(history.len(), 2);
@@ -1240,7 +1256,7 @@ mod tests {
         let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a1").unwrap();
         seed_session(&storage, id, &[user(), assistant_done()]).await;
 
-        storage.recover().await.unwrap();
+        storage.recover_history().await.unwrap();
 
         assert_eq!(history_len(&storage, id).await, 2);
     }
@@ -1252,7 +1268,7 @@ mod tests {
         let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a2").unwrap();
         seed_session(&storage, id, &[user(), reasoning()]).await;
 
-        storage.recover().await.unwrap();
+        storage.recover_history().await.unwrap();
 
         assert_eq!(history_len(&storage, id).await, 0);
     }
@@ -1265,7 +1281,7 @@ mod tests {
         // A trailing user prompt has no `status`, so it isn't a completed message.
         seed_session(&storage, id, &[user(), assistant_done(), user()]).await;
 
-        storage.recover().await.unwrap();
+        storage.recover_history().await.unwrap();
 
         assert_eq!(history_len(&storage, id).await, 2);
     }
@@ -1294,18 +1310,93 @@ mod tests {
         seed_session(
             &storage,
             dropped_tool_call,
-            &[user(), assistant_done(), user(), reasoning(), function_call()],
+            &[
+                user(),
+                assistant_done(),
+                user(),
+                reasoning(),
+                function_call(),
+            ],
         )
         .await;
         seed_session(&storage, no_completed_turn, &[user(), reasoning()]).await;
-        seed_session(&storage, dangling_prompt, &[user(), assistant_done(), user()]).await;
+        seed_session(
+            &storage,
+            dangling_prompt,
+            &[user(), assistant_done(), user()],
+        )
+        .await;
 
-        storage.recover().await.unwrap();
+        storage.recover_history().await.unwrap();
 
         assert_eq!(history_len(&storage, finished_single).await, 2);
         assert_eq!(history_len(&storage, finished_multi).await, 4);
         assert_eq!(history_len(&storage, dropped_tool_call).await, 2);
         assert_eq!(history_len(&storage, no_completed_turn).await, 0);
         assert_eq!(history_len(&storage, dangling_prompt).await, 2);
+    }
+
+    // ---- rollback ----
+
+    #[tokio::test]
+    async fn rollback_drops_items_after_last_completed_message() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000b0").unwrap();
+        seed_session(
+            &storage,
+            id,
+            &[
+                user(),
+                assistant_done(),
+                user(),
+                reasoning(),
+                function_call(),
+            ],
+        )
+        .await;
+
+        storage.rollback_history(&id.to_string()).await.unwrap();
+
+        let history = storage.get_history(&id.to_string()).await.unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.last().unwrap().payload["status"], "completed");
+    }
+
+    #[tokio::test]
+    async fn rollback_empties_session_without_completed_message() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000b2").unwrap();
+        seed_session(&storage, id, &[user(), reasoning()]).await;
+
+        storage.rollback_history(&id.to_string()).await.unwrap();
+
+        assert_eq!(history_len(&storage, id).await, 0);
+    }
+
+    #[tokio::test]
+    async fn rollback_only_affects_target_session() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let target = Uuid::parse_str("019e1234-5678-7000-8000-0000000000b3").unwrap();
+        let other = Uuid::parse_str("019e1234-5678-7000-8000-0000000000b4").unwrap();
+        seed_session(
+            &storage,
+            target,
+            &[user(), assistant_done(), user(), reasoning()],
+        )
+        .await;
+        seed_session(
+            &storage,
+            other,
+            &[user(), assistant_done(), user(), reasoning()],
+        )
+        .await;
+
+        storage.rollback_history(&target.to_string()).await.unwrap();
+
+        assert_eq!(history_len(&storage, target).await, 2);
+        assert_eq!(history_len(&storage, other).await, 4);
     }
 }

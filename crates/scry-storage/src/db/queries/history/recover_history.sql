@@ -1,6 +1,3 @@
--- For every session whose newest history item isn't a completed assistant
--- message, delete from the last user prompt (inclusive) to the end: that turn
--- never finished, so its items are invalid input for the next request.
 DELETE
 FROM history
 WHERE session_id IN (SELECT last.session_id
