@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="ScrySettingsWindow" parent="AdwApplicationWindow">
+    <property name="default-width">820</property>
+    <property name="default-height">560</property>
+    <property name="title">Settings</property>
+    <property name="content">
+      <object class="AdwNavigationSplitView">
+        <property name="max-sidebar-width">200</property>
+        <property name="sidebar">
+          <object class="AdwNavigationPage">
+            <property name="title">Settings</property>
+            <property name="child">
+              <object class="AdwToolbarView" id="sidebar_host">
+                <child type="top">
+                  <object class="AdwHeaderBar">
+                    <property name="show-title">false</property>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </property>
+        <property name="content">
+          <object class="AdwNavigationPage" id="content_page">
+            <property name="title">Services</property>
+            <property name="child">
+              <object class="AdwToolbarView">
+                <child type="top">
+                  <object class="AdwHeaderBar"/>
+                </child>
+                <property name="content">
+                  <object class="GtkStack" id="stack">
+                    <property name="transition-type">crossfade</property>
+                    <property name="transition-duration">150</property>
+                  </object>
+                </property>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

@@ -1,0 +1,89 @@
+/* Results panel; the card chrome comes from .scry-surface. */
+.scry-result-card {
+    padding: 16px 20px;
+}
+
+/* Per-handler section header (e.g. "Applications"): small and dim so
+   the items dominate. */
+.scry-section-header {
+    color: alpha(currentColor, 0.55);
+    font-size: 11px;
+    font-weight: 600;
+    margin: 6px 4px 4px 4px;
+}
+
+/* Item rows are `.flat` buttons (theme provides fill + hover). `.selected`
+   is keyboard selection driven by code (a CSS class, not GTK focus — the
+   entry keeps focus). */
+.scry-item,
+.scry-item-header {
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+.scry-item.selected,
+.scry-item-header.selected {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+/* "Chat about it" pseudo-row: success accent marks the mode switch. */
+.scry-chat-action {
+    margin-top: 8px;
+    background: color-mix(in srgb, var(--success-bg-color) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--success-bg-color) 35%, transparent);
+}
+
+.scry-chat-action:hover {
+    background: color-mix(in srgb, var(--success-bg-color) 20%, transparent);
+}
+
+.scry-chat-action.selected {
+    background: var(--success-bg-color);
+    border-color: transparent;
+}
+
+.scry-chat-action.selected .scry-item-icon,
+.scry-chat-action.selected .scry-item-title {
+    color: var(--success-fg-color);
+}
+
+.scry-chat-action .scry-item-icon,
+.scry-chat-action .scry-item-title {
+    color: var(--success-color);
+}
+
+.scry-chat-action .scry-item-title {
+    font-weight: 600;
+}
+
+.scry-item-icon {
+    margin-right: 4px;
+}
+
+.scry-item-title {
+    font-size: 14px;
+}
+
+/* Chevron on multi-action item headers; icon swap happens in code. */
+.scry-item-chevron {
+    color: alpha(currentColor, 0.5);
+    margin-left: 6px;
+}
+
+/* Expanded action list, indented under its parent item. */
+.scry-item-actions {
+    margin: 2px 0 4px 36px;
+}
+
+.scry-item-action {
+    padding: 4px 10px;
+    margin: 1px 0;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.scry-item-action.selected {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}

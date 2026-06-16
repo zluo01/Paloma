@@ -4,24 +4,21 @@ mod modal;
 
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
-use adw::{prelude::*, ActionRow, AlertDialog, ButtonRow, ExpanderRow};
-use gtk4::{
-    glib, Align, Box as GtkBox, Button, Image, ListBox, Orientation, Switch, Widget, Window,
+use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, glib};
+use libadwaita::{
+    ActionRow, AlertDialog, ApplicationWindow, ButtonRow, ExpanderRow, PreferencesGroup,
+    PreferencesPage, prelude::*,
 };
-use libadwaita as adw;
 use modal::SubmitDone;
-use scry_capability::HealthStatus;
-use scry_controller::{McpServer, Plugin, PluginArgs, PluginType};
-use scry_core::AppContext;
+use scry_core::{AppContext, HealthStatus, McpServer, Plugin, PluginArgs, PluginType};
 
+use super::Group;
 use crate::runtime;
 
-/// Build the Plugins tab; `window` parents the dialogs it opens.
-pub fn build(app: Arc<AppContext>, window: Window) -> Widget {
-    // Both lists end in an add row, which doubles as the empty state.
-    let plugins = super::section("Plugins", "");
-    plugins.placeholder.set_visible(false);
-    plugins.list.append(
+pub(super) fn build(app: Arc<AppContext>, window: ApplicationWindow) -> PreferencesPage {
+    // Both groups end in an add row, which doubles as the empty state.
+    let plugins = PreferencesGroup::builder().title("Plugins").build();
+    plugins.add(
         &ButtonRow::builder()
             .title("Add Plugin…")
             .start_icon_name("list-add-symbolic")
@@ -30,19 +27,16 @@ pub fn build(app: Arc<AppContext>, window: Window) -> Widget {
             .build(),
     );
 
-    let mcp = super::section("MCP Servers", "");
-    mcp.placeholder.set_visible(false);
-
+    let mcp = Group::new("MCP Servers");
     let add = ButtonRow::builder()
         .title("Add MCP Server…")
         .start_icon_name("list-add-symbolic")
         .build();
-    mcp.list.append(&add);
+    mcp.add(add.clone());
 
     let servers = McpSection {
-        list: mcp.list.clone(),
+        group: mcp.clone(),
         add: add.clone(),
-        rows: Rc::new(RefCell::new(Vec::new())),
         names: Rc::new(RefCell::new(HashSet::new())),
         app,
         window,
@@ -61,57 +55,41 @@ pub fn build(app: Arc<AppContext>, window: Window) -> Widget {
         });
     }
 
-    let page = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(24)
-        .margin_top(24)
-        .margin_bottom(24)
-        .margin_start(24)
-        .margin_end(24)
-        .valign(Align::Start)
-        .build();
-    page.append(&plugins.root);
-    page.append(&mcp.root);
-    page.upcast()
+    let page = PreferencesPage::new();
+    page.add(&plugins);
+    page.add(&mcp.widget);
+    page
 }
 
-/// The MCP server list plus the context its row handlers need. Cheap to
-/// clone into signal closures.
 #[derive(Clone)]
 struct McpSection {
-    list: ListBox,
+    group: Group,
     add: ButtonRow,
-    /// Server rows currently in the list, so a refresh can remove them.
-    rows: Rc<RefCell<Vec<Widget>>>,
     /// Names of the listed servers; the add dialog rejects duplicates.
     names: Rc<RefCell<HashSet<String>>>,
     app: Arc<AppContext>,
-    window: Window,
+    window: ApplicationWindow,
 }
 
-/// Re-fetch the configured servers and rebuild the list.
 fn refresh(servers: McpSection) {
-    glib::MainContext::default().spawn_local(async move {
-        let app = servers.app.clone();
-        match runtime::spawn(async move { app.plugin.list_mcps().await }).await {
+    let app = servers.app.clone();
+    runtime::spawn_with(
+        async move { app.plugin.list_mcps().await },
+        move |result| match result {
             Ok(list) => {
                 *servers.names.borrow_mut() = list.iter().map(|s| s.config.name.clone()).collect();
-                for row in servers.rows.borrow_mut().drain(..) {
-                    servers.list.remove(&row);
-                }
+                servers.group.clear();
                 for server in list {
-                    let row: Widget = mcp_row(&servers, &server).upcast();
-                    servers.list.insert(&row, servers.add.index());
-                    servers.rows.borrow_mut().push(row);
+                    servers.group.add(mcp_row(&servers, &server));
                 }
+                // The add row sits last so new servers appear above it.
+                servers.group.add(servers.add.clone());
             },
             Err(e) => log::warn!("list_mcps failed: {e}"),
-        }
-    });
+        },
+    );
 }
 
-/// One MCP server: collapsed shows name, description, and the controls;
-/// expanding reveals the stored configuration.
 fn mcp_row(servers: &McpSection, server: &McpServer) -> ExpanderRow {
     let config = &server.config;
     let row = ExpanderRow::builder()
@@ -139,13 +117,7 @@ fn mcp_row(servers: &McpSection, server: &McpServer) -> ExpanderRow {
         .build();
     match server.status {
         HealthStatus::Running => actions.append(&toggle(servers, config)),
-        HealthStatus::Unhealthy => actions.append(
-            &Image::builder()
-                .icon_name("dialog-information-symbolic")
-                .tooltip_text(server.error.as_deref().unwrap_or("unknown error"))
-                .valign(Align::Center)
-                .build(),
-        ),
+        HealthStatus::Unhealthy => actions.append(&super::unhealthy_icon(server.error.as_deref())),
     }
     actions.append(&edit_button(servers, config));
     actions.append(&remove_button(servers, config));
@@ -153,8 +125,6 @@ fn mcp_row(servers: &McpSection, server: &McpServer) -> ExpanderRow {
     row
 }
 
-/// Re-opens the add dialog pre-filled with this server's configuration;
-/// saving replaces the old registration.
 fn edit_button(servers: &McpSection, config: &Plugin) -> Button {
     let button = Button::builder()
         .icon_name("document-edit-symbolic")
@@ -203,7 +173,6 @@ fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {
     props
 }
 
-/// Enabled/disabled switch; persists the new state either way.
 fn toggle(servers: &McpSection, config: &Plugin) -> Switch {
     let switch = Switch::builder()
         .active(!config.disabled)
@@ -215,17 +184,16 @@ fn toggle(servers: &McpSection, config: &Plugin) -> Switch {
     let name = config.name.clone();
     switch.connect_state_set(move |_, state| {
         let servers = servers.clone();
+        let app = servers.app.clone();
         let name = name.clone();
-        glib::MainContext::default().spawn_local(async move {
-            let result = runtime::spawn({
-                let app = servers.app.clone();
-                async move { app.plugin.toggle_plugin(&name, !state).await }
-            })
-            .await;
-            if let Err(e) = result {
-                show_error(&servers.window, &e.to_string());
-            }
-        });
+        runtime::spawn_with(
+            async move { app.plugin.toggle_plugin(&name, !state).await },
+            move |result| {
+                if let Err(e) = result {
+                    show_error(&servers.window, &e.to_string());
+                }
+            },
+        );
         glib::Propagation::Proceed
     });
     switch
@@ -243,50 +211,40 @@ fn remove_button(servers: &McpSection, config: &Plugin) -> Button {
     let name = config.name.clone();
     button.connect_clicked(move |_| {
         let servers = servers.clone();
+        let app = servers.app.clone();
         let name = name.clone();
-        glib::MainContext::default().spawn_local(async move {
-            let result = runtime::spawn({
-                let app = servers.app.clone();
-                let name = name.clone();
-                async move { app.plugin.remove_plugin(&name, PluginType::Mcp).await }
-            })
-            .await;
-            match result {
+        runtime::spawn_with(
+            async move { app.plugin.remove_plugin(&name, PluginType::Mcp).await },
+            move |result| match result {
                 Ok(()) => refresh(servers),
                 Err(e) => show_error(&servers.window, &e.to_string()),
-            }
-        });
+            },
+        );
     });
     button
 }
 
-/// Register the submitted config — replacing the same-named plugin when
-/// `editing`. The outcome goes to `done`: the dialog closes on success
-/// and shows the failure in its banner otherwise.
 fn submit(servers: McpSection, editing: bool, config: Plugin, done: SubmitDone) {
-    glib::MainContext::default().spawn_local(async move {
-        let result = runtime::spawn({
-            let app = servers.app.clone();
-            async move {
-                if editing {
-                    app.plugin.update_plugin(PluginType::Mcp, config).await
-                } else {
-                    app.plugin.add_mcp(config).await
-                }
+    let app = servers.app.clone();
+    runtime::spawn_with(
+        async move {
+            if editing {
+                app.plugin.update_plugin(PluginType::Mcp, config).await
+            } else {
+                app.plugin.add_mcp(config).await
             }
-        })
-        .await;
-        match result {
+        },
+        move |result| match result {
             Ok(()) => {
                 refresh(servers);
                 done(Ok(()));
             },
             Err(e) => done(Err(e.to_string())),
-        }
-    });
+        },
+    );
 }
 
-fn show_error(window: &Window, message: &str) {
+fn show_error(window: &ApplicationWindow, message: &str) {
     let dialog = AlertDialog::builder()
         .heading("Plugin Operation Failed")
         .body(message)

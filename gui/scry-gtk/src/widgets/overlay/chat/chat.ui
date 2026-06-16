@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="ScryChat" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="halign">center</property>
+    <property name="valign">start</property>
+    <property name="visible">false</property>
+    <style>
+      <class name="scry-chat-card"/>
+    </style>
+    <child>
+      <object class="GtkBox" id="turns_box">
+        <property name="orientation">vertical</property>
+      </object>
+    </child>
+  </template>
+</interface>

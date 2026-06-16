@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="ScryBar" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="halign">start</property>
+    <property name="valign">start</property>
+    <property name="spacing">6</property>
+    <style>
+      <class name="scry-surface"/>
+      <class name="scry-card"/>
+    </style>
+    <child>
+      <object class="GtkSearchEntry" id="entry">
+        <property name="placeholder-text">Search or ask Scry…</property>
+        <property name="hexpand">true</property>
+        <style>
+          <class name="scry-entry"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">horizontal</property>
+        <property name="spacing">12</property>
+        <style>
+          <class name="scry-bar-strip"/>
+        </style>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">6</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkBox" id="models_dot">
+                <property name="valign">center</property>
+                <style>
+                  <class name="scry-status-dot"/>
+                  <class name="scry-status-inactive"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">Models</property>
+                <style>
+                  <class name="scry-status-label"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">6</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkBox" id="plugins_dot">
+                <property name="valign">center</property>
+                <style>
+                  <class name="scry-status-dot"/>
+                  <class name="scry-status-inactive"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">Plugins</property>
+                <style>
+                  <class name="scry-status-label"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="hexpand">true</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox" id="controls">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">2</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkButton" id="settings_button">
+                <property name="icon-name">emblem-system-symbolic</property>
+                <property name="tooltip-text">Settings</property>
+                <property name="valign">center</property>
+                <style>
+                  <class name="flat"/>
+                  <class name="circular"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="sessions_button">
+                <property name="icon-name">document-open-recent-symbolic</property>
+                <property name="tooltip-text">Sessions</property>
+                <property name="valign">center</property>
+                <style>
+                  <class name="flat"/>
+                  <class name="circular"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

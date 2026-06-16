@@ -1,0 +1,34 @@
+[package]
+name = "scry-gtk"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+description = "GTK4/Linux frontend: overlay UI, settings, hotkey portal, and tray"
+
+[[bin]]
+name = "scry"
+path = "src/main.rs"
+
+[dependencies]
+ashpd = { version = "0.13.11", default-features = false, features = [
+    "tokio",
+    "global_shortcuts",
+] }
+env_logger = "0.11.10"
+futures = { workspace = true }
+gtk4 = { version = "0.11.3", features = ["v4_22"] }
+gtk4-layer-shell = "0.8.0"
+ksni = { version = "0.3.5", default-features = false, features = ["tokio"] }
+libadwaita = { version = "0.9.1", features = ["v1_9"] }
+log = { workspace = true }
+pulldown-cmark = { version = "0.13.4", default-features = false }
+scry-core = { path = "../../core" }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+uuid = { workspace = true, features = ["v7", "std"] }

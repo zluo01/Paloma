@@ -1,0 +1,29 @@
+/* Sessions panel; the card chrome comes from .scry-surface. Rows are
+   AdwActionRows in a single-selection ListBox — hover, selection, and
+   disabled states come from the theme. */
+.scry-sessions-card {
+    padding: 10px;
+}
+
+.scry-sessions-header {
+    color: alpha(currentColor, 0.55);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    margin: 0 4px 6px 4px;
+}
+
+.scry-sessions-list {
+    background: transparent;
+}
+
+.scry-sessions-list > row {
+    border-radius: 8px;
+}
+
+.scry-sessions-empty {
+    color: alpha(currentColor, 0.45);
+    font-size: 12px;
+    font-style: italic;
+    padding: 4px;
+}

@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["core", "gui/scry-gtk"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.93.0"
+
+[workspace.dependencies]
+futures = "0.3.32"
+log = "0.4.29"
+serde_json = "1.0.149"
+tokio = { version = "1.52.3", default-features = false }
+uuid = { version = "1.23.1", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

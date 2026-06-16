@@ -4,19 +4,17 @@
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
-use adw::{prelude::*, Dialog, Spinner, ToolbarView};
-use gtk4::{gio, glib, Align, Box as GtkBox, Button, Label, Orientation};
-use libadwaita as adw;
+use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, gio, glib};
+use libadwaita::{Dialog, Spinner, ToolbarView, prelude::*};
 use log::warn;
-use scry_core::AppContext;
-use scry_provider::{Connection, ProviderId};
+use scry_core::{AppContext, Connection, ProviderId};
 
-use crate::runtime;
+use crate::{runtime, widgets::clear_children};
 
 /// Open the dialog and run the connect flow. Returns immediately; the flow
 /// runs asynchronously. `on_connected` fires only on success, right before
 /// the dialog auto-closes.
-pub fn open(
+pub(super) fn open(
     parent: &impl IsA<gtk4::Widget>,
     app: Arc<AppContext>,
     provider_id: ProviderId,
@@ -41,7 +39,7 @@ pub fn open(
         .build();
 
     let view = ToolbarView::new();
-    view.add_top_bar(&adw::HeaderBar::new());
+    view.add_top_bar(&libadwaita::HeaderBar::new());
     view.set_content(Some(&body));
     dialog.set_child(Some(&view));
     show_loading(&body);
@@ -77,7 +75,7 @@ pub fn open(
                     &body,
                     &dialog,
                     "Provider did not return a device-code challenge.",
-                )
+                );
             },
             Err(e) => return show_error(&body, &dialog, &e.to_string()),
         };
@@ -99,14 +97,8 @@ pub fn open(
     dialog.present(Some(parent));
 }
 
-fn clear(body: &GtkBox) {
-    while let Some(child) = body.first_child() {
-        body.remove(&child);
-    }
-}
-
 fn show_loading(body: &GtkBox) {
-    clear(body);
+    clear_children(body);
     let spinner = Spinner::new();
     spinner.set_halign(Align::Center);
     spinner.set_size_request(32, 32);
@@ -121,7 +113,7 @@ fn show_loading(body: &GtkBox) {
 }
 
 fn show_challenge(body: &GtkBox, verification_uri: &str, user_code: &str) {
-    clear(body);
+    clear_children(body);
 
     body.append(
         &Label::builder()
@@ -176,7 +168,7 @@ fn show_challenge(body: &GtkBox, verification_uri: &str, user_code: &str) {
 }
 
 fn show_success(body: &GtkBox) {
-    clear(body);
+    clear_children(body);
     body.append(
         &Label::builder()
             .label("✓")
@@ -194,7 +186,7 @@ fn show_success(body: &GtkBox) {
 }
 
 fn show_error(body: &GtkBox, dialog: &Dialog, message: &str) {
-    clear(body);
+    clear_children(body);
 
     body.append(
         &Label::builder()
@@ -224,7 +216,6 @@ fn show_error(body: &GtkBox, dialog: &Dialog, message: &str) {
     body.append(&close);
 }
 
-/// Best-effort open the URL in the user's default browser.
 fn launch_url(uri: &str) {
     let launcher = gio::AppLaunchContext::new();
     if let Err(e) = gio::AppInfo::launch_default_for_uri(uri, Some(&launcher)) {

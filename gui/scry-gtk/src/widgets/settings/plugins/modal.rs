@@ -8,12 +8,11 @@ use std::{
     time::Duration,
 };
 
-use adw::{
-    prelude::*, Banner, ComboRow, Dialog, EntryRow, ExpanderRow, SpinRow, SwitchRow, ToolbarView,
+use gtk4::{Box as GtkBox, Button, ListBox, Orientation, SelectionMode, StringList, glib};
+use libadwaita::{
+    Banner, ComboRow, Dialog, EntryRow, ExpanderRow, SpinRow, SwitchRow, ToolbarView, prelude::*,
 };
-use gtk4::{glib, Box as GtkBox, Button, ListBox, Orientation, SelectionMode, StringList};
-use libadwaita as adw;
-use scry_controller::{Plugin, PluginArgs, Transport};
+use scry_core::{Plugin, PluginArgs, Transport};
 
 /// Default plugin timeout, in seconds. Matches the storage default.
 const DEFAULT_TIMEOUT: i64 = 300;
@@ -24,7 +23,7 @@ const VALIDATE_DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Outcome callback handed to `on_submit`: report `Ok` to close the
 /// dialog, `Err(message)` to keep it open with the message in its banner.
-pub type SubmitDone = Rc<dyn Fn(Result<(), String>)>;
+pub(super) type SubmitDone = Rc<dyn Fn(Result<(), String>)>;
 
 /// Open the dialog. `taken` is the set of existing plugin names (new names
 /// must be unique; when editing, pass the set without the edited plugin's
@@ -33,7 +32,7 @@ pub type SubmitDone = Rc<dyn Fn(Result<(), String>)>;
 /// completed config when the user confirms and must eventually call the
 /// provided [`SubmitDone`]; closing the dialog any other way submits
 /// nothing.
-pub fn open(
+pub(super) fn open(
     parent: &impl IsA<gtk4::Widget>,
     taken: HashSet<String>,
     initial: Option<Plugin>,
@@ -55,7 +54,7 @@ pub fn open(
         .css_classes(["suggested-action"])
         .build();
 
-    let header = adw::HeaderBar::builder()
+    let header = libadwaita::HeaderBar::builder()
         .show_start_title_buttons(false)
         .show_end_title_buttons(false)
         .build();

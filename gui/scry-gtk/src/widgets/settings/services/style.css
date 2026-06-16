@@ -1,6 +1,12 @@
-/* Green "Connected" subtitle — libadwaita has no .success label class. */
+/* Subtitle color tracks the provider's health, via libadwaita tokens so it
+   follows the theme. Scoped to .subtitle since AdwExpanderRow exposes no
+   handle to apply .success/.error to that label directly. */
 .scry-connected .subtitle {
-    color: #2ec27e;
+    color: var(--success-color);
+}
+
+.scry-error .subtitle {
+    color: var(--error-color);
 }
 
 /* Connect modal: device-code cells — no OTP-style display in the stock
@@ -19,5 +25,5 @@
 /* Connect modal: success check mark. */
 .scry-connect-check {
     font-size: 36px;
-    color: #2ec27e;
+    color: var(--success-color);
 }

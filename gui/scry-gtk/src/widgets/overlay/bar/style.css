@@ -1,0 +1,106 @@
+/* Two-row search bar; the card chrome comes from .scry-surface. */
+.scry-card {
+    padding: 10px 14px;
+}
+
+/* Flatten the search entry: no border, no focus ring, transparent
+   fill. The entry node and its inner `text` node both need overriding
+   because the theme styles both. */
+.scry-entry,
+.scry-entry > text {
+    background: transparent;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    min-height: 34px;
+    font-size: 17px;
+    font-weight: 400;
+}
+
+/* Zero the entry's own horizontal padding so the magnifier position
+   is fully determined by the icon rule below. */
+.scry-entry {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Built-in search / clear icons. */
+.scry-entry > image {
+    color: alpha(currentColor, 0.5);
+    margin: 0 6px;
+    -gtk-icon-size: 18px;
+}
+
+.scry-entry > text > placeholder {
+    color: alpha(currentColor, 0.45);
+}
+
+.scry-entry > text > selection {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+/* Lead margin centers the 8px status dot under the magnifier icon:
+   icon center = 6px margin + 9px half-icon = 15px; 15 - 4px half-dot. */
+.scry-bar-strip {
+    margin-left: 11px;
+}
+
+/* Labelled health indicators: small glowing LED beads. Lit states get
+   a glossy top-left highlight (radial-gradient) over a saturated fill
+   and a colored outer glow (box-shadow) so the dot emits its color. */
+.scry-status-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 9999px;
+}
+
+.scry-status-label {
+    font-size: 11px;
+    color: alpha(currentColor, 0.55);
+}
+
+/* Off: a dim, unlit bead — flat, no glow. */
+.scry-status-inactive {
+    background: alpha(currentColor, 0.28);
+}
+
+.scry-status-healthy {
+    background: radial-gradient(
+        circle at 35% 30%,
+        color-mix(in srgb, var(--success-bg-color) 45%, white),
+        var(--success-bg-color) 70%
+    );
+    box-shadow:
+        0 0 7px 0 color-mix(in srgb, var(--success-bg-color) 60%, transparent),
+        0 0 3px 0 var(--success-bg-color);
+}
+
+.scry-status-degraded {
+    background: radial-gradient(
+        circle at 35% 30%,
+        color-mix(in srgb, var(--warning-bg-color) 45%, white),
+        var(--warning-bg-color) 70%
+    );
+    box-shadow:
+        0 0 7px 0 color-mix(in srgb, var(--warning-bg-color) 60%, transparent),
+        0 0 3px 0 var(--warning-bg-color);
+}
+
+.scry-status-down {
+    background: radial-gradient(
+        circle at 35% 30%,
+        color-mix(in srgb, var(--error-bg-color) 45%, white),
+        var(--error-bg-color) 70%
+    );
+    box-shadow:
+        0 0 7px 0 color-mix(in srgb, var(--error-bg-color) 60%, transparent),
+        0 0 3px 0 var(--error-bg-color);
+}
+
+/* Flat model selector, reference-style plain text + chevron. */
+.scry-model-dropdown > button {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
