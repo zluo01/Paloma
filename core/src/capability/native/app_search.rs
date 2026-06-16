@@ -252,10 +252,10 @@ fn score_field(query: &str, field: &str) -> Option<i64> {
         return Some(1_350 - length_penalty(query, &acronym));
     }
 
-    if query.len() >= 3 {
-        if let Some(index) = field.find(query) {
-            return Some(1_000 - index as i64);
-        }
+    if query.len() >= 3
+        && let Some(index) = field.find(query)
+    {
+        return Some(1_000 - index as i64);
     }
 
     if query.len() >= 5 {
@@ -298,23 +298,21 @@ fn keep(de: &DesktopEntry, current_desktop: Option<&[String]>, seen: &mut HashSe
         return false;
     }
 
-    if let (Some(not_show), Some(current)) = (de.not_show_in(), current_desktop) {
-        if not_show
+    if let (Some(not_show), Some(current)) = (de.not_show_in(), current_desktop)
+        && not_show
             .iter()
             .any(|d| current.iter().any(|c| c.eq_ignore_ascii_case(d)))
-        {
-            return false;
-        }
+    {
+        return false;
     }
 
     if let Some(only_show) = de.only_show_in() {
-        if let Some(current) = current_desktop {
-            if !only_show
+        if let Some(current) = current_desktop
+            && !only_show
                 .iter()
                 .any(|d| current.iter().any(|c| c.eq_ignore_ascii_case(d)))
-            {
-                return false;
-            }
+        {
+            return false;
         }
     } else if de.no_display() {
         return false;

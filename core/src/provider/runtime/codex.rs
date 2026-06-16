@@ -429,10 +429,10 @@ impl ProviderClient for CodexRuntime {
         let mut cache = self.models.lock().await;
 
         // Serve the cached catalogue while it's still fresh.
-        if let Some(cached) = cache.as_ref() {
-            if unix_now() < cached.expires_at {
-                return Some(cached.models.clone());
-            }
+        if let Some(cached) = cache.as_ref()
+            && unix_now() < cached.expires_at
+        {
+            return Some(cached.models.clone());
         }
 
         match self.refresh().await {

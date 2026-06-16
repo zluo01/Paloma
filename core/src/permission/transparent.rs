@@ -212,14 +212,14 @@ fn strip_env(args: &[String]) -> Result<&[String]> {
             // token for these, so the value is inline-only — a comma-separated
             // signal list.
             "--default-signal" | "--ignore-signal" | "--block-signal" => {
-                if let Some(list) = inline {
-                    if list.is_empty() || !list.split(',').all(|s| VALID_SIGNAL.is_match(s)) {
-                        return Err(StripTransparentWrapperError::InvalidFlagValue {
-                            wrapper: WRAPPER,
-                            flag: flag.to_owned(),
-                            value: list.to_owned(),
-                        });
-                    }
+                if let Some(list) = inline
+                    && (list.is_empty() || !list.split(',').all(|s| VALID_SIGNAL.is_match(s)))
+                {
+                    return Err(StripTransparentWrapperError::InvalidFlagValue {
+                        wrapper: WRAPPER,
+                        flag: flag.to_owned(),
+                        value: list.to_owned(),
+                    });
                 }
             },
             // These change execution semantics, so judging the inner command
@@ -250,13 +250,11 @@ fn strip_env(args: &[String]) -> Result<&[String]> {
     }
     // In print mode the real tool refuses a trailing command; with no command
     // it just prints the environment, handled by the empty return below.
-    if print_mode {
-        if let Some(command) = args.get(i) {
-            return Err(StripTransparentWrapperError::InvalidCommand {
-                wrapper: WRAPPER,
-                found: command.clone(),
-            });
-        }
+    if print_mode && let Some(command) = args.get(i) {
+        return Err(StripTransparentWrapperError::InvalidCommand {
+            wrapper: WRAPPER,
+            found: command.clone(),
+        });
     }
     // env treats any operand containing `=` as an assignment; assignments can
     // change what the inner command does (LD_PRELOAD, PATH, …), never strip.

@@ -242,11 +242,11 @@ impl ToolController {
         let call_id = &call.call_id;
 
         // Shell or MCP commands must clear the permission workflow before they run.
-        if call.name == Shell::NAME || spec.tool.is_some() {
-            if let Err(msg) = self.authorize(call_id.clone()).await {
-                error!("error happens when waiting permission for {call_id}: {msg}");
-                return msg;
-            }
+        if (call.name == Shell::NAME || spec.tool.is_some())
+            && let Err(msg) = self.authorize(call_id.clone()).await
+        {
+            error!("error happens when waiting permission for {call_id}: {msg}");
+            return msg;
         }
 
         match tool

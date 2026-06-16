@@ -307,10 +307,10 @@ impl TurnManager {
 }
 
 fn mark_step_done(turn_map: &DashMap<Uuid, TurnState>, session_id: Uuid) {
-    if let Some(mut state) = turn_map.get_mut(&session_id) {
-        if matches!(*state, TurnState::Running(_)) {
-            *state = TurnState::Done;
-        }
+    if let Some(mut state) = turn_map.get_mut(&session_id)
+        && matches!(*state, TurnState::Running(_))
+    {
+        *state = TurnState::Done;
     }
 }
 
@@ -404,19 +404,18 @@ async fn exhaust_events(
                                         Disposition::Passthrough => None,
                                     };
 
-                                    if let Some(command) = command {
-                                        if let Err(err) = permission_workflow_manager_client
+                                    if let Some(command) = command
+                                        && let Err(err) = permission_workflow_manager_client
                                             .init_permission_workflow(
                                                 session_id,
                                                 call.call_id.clone(),
                                                 command,
                                             )
                                             .await
-                                        {
-                                            error!(
-                                                "session {session_id}: failed to init permission workflow: {err}"
-                                            );
-                                        }
+                                    {
+                                        error!(
+                                            "session {session_id}: failed to init permission workflow: {err}"
+                                        );
                                     }
                                     tool_calls.push(call);
                                 },
@@ -445,10 +444,8 @@ async fn exhaust_events(
             _ => (false, true),
         };
 
-        if forward {
-            if let Err(err) = session_client.add_event(session_id, session_event).await {
-                error!("failed to insert event for session {session_id}: {err}");
-            }
+        if forward && let Err(err) = session_client.add_event(session_id, session_event).await {
+            error!("failed to insert event for session {session_id}: {err}");
         }
 
         if is_terminal {
