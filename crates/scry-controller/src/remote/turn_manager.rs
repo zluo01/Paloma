@@ -62,7 +62,7 @@ enum TurnStepEvent {
     /// cancelling the call
     Cancel {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<bool>>,
     },
     /// Drop the turn fully, cleanup when user wanna delete a session
     Drop {
@@ -122,8 +122,7 @@ impl TurnManager {
                 self.tool_call(provider_id, session_id, tool_calls).await;
             },
             TurnStepEvent::Cancel { session_id, reply } => {
-                self.abort_turn(session_id);
-                let _ = reply.send(Ok(()));
+                let _ = reply.send(Ok(self.abort_turn(session_id)));
             },
             TurnStepEvent::Drop { session_id, reply } => {
                 self.drop_turn(session_id);
@@ -284,12 +283,17 @@ impl TurnManager {
         self.turn_map.insert(session_id, TurnState::Running(handle));
     }
 
-    fn abort_turn(&mut self, session_id: Uuid) {
-        if let Some(mut state) = self.turn_map.get_mut(&session_id) {
-            if let TurnState::Running(handle) = &*state {
+    fn abort_turn(&mut self, session_id: Uuid) -> bool {
+        let Some(mut state) = self.turn_map.get_mut(&session_id) else {
+            return false;
+        };
+        match &*state {
+            TurnState::Running(handle) => {
                 handle.abort();
-            }
-            *state = TurnState::Cancelled;
+                *state = TurnState::Cancelled;
+                true
+            },
+            TurnState::Cancelled | TurnState::Done => false,
         }
     }
 
@@ -474,7 +478,7 @@ impl TurnManagerClient {
             .map_err(|_| TurnManagerError::ChannelClosed)?
     }
 
-    pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
+    pub async fn cancel(&self, session_id: Uuid) -> Result<bool> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(TurnStepEvent::Cancel {
