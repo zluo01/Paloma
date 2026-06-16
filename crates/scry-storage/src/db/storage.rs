@@ -340,6 +340,16 @@ impl Storage {
             .await?;
         Ok(())
     }
+
+    /// Delete a session (cascading its history) when it holds no completed
+    /// assistant message. Returns whether a session was removed.
+    pub async fn delete_empty_session(&self, session_id: &str) -> Result<bool> {
+        let result = sqlx::query(queries::DELETE_EMPTY_SESSION)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {
@@ -1398,5 +1408,39 @@ mod tests {
 
         assert_eq!(history_len(&storage, target).await, 2);
         assert_eq!(history_len(&storage, other).await, 4);
+    }
+
+    // ---- delete_empty_session ----
+
+    #[tokio::test]
+    async fn delete_empty_session_removes_session_without_completed_message() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000c0").unwrap();
+        seed_session(&storage, id, &[user()]).await;
+
+        let removed = storage.delete_empty_session(&id.to_string()).await.unwrap();
+
+        assert!(removed);
+        assert!(storage
+            .all_sessions()
+            .await
+            .unwrap()
+            .iter()
+            .all(|s| s.session_id != id.to_string()));
+        assert_eq!(history_len(&storage, id).await, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_empty_session_keeps_session_with_completed_message() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000c1").unwrap();
+        seed_session(&storage, id, &[user(), assistant_done()]).await;
+
+        let removed = storage.delete_empty_session(&id.to_string()).await.unwrap();
+
+        assert!(!removed);
+        assert_eq!(history_len(&storage, id).await, 2);
     }
 }

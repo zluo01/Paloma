@@ -39,6 +39,8 @@ pub const RECOVER: &str = include_str!("queries/history/recover_history.sql");
 
 pub const ROLLBACK: &str = include_str!("queries/history/rollback_history.sql");
 
+pub const DELETE_EMPTY_SESSION: &str = include_str!("queries/sessions/delete_empty_session.sql");
+
 pub const INSERT_PLUGIN_QUERY: &str = include_str!("queries/plugins/insert_plugin.sql");
 
 pub const GET_ALL_MCP_QUERY: &str = include_str!("queries/plugins/get_all_mcp.sql");

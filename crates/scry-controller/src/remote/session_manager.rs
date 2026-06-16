@@ -246,9 +246,7 @@ impl SessionManager {
         // a failed turn left partial items; roll the session back to its last
         // completed message so the next request starts from a valid state.
         if errored {
-            self.storage
-                .rollback_history(&session_id.to_string())
-                .await?
+            self.rollback_session(session_id).await?;
         }
 
         Ok(())
@@ -276,8 +274,26 @@ impl SessionManager {
                 session_id,
                 event: RenderEvent::Cancel,
             });
-            self.storage
-                .rollback_history(&session_id.to_string())
+            self.rollback_session(session_id).await?;
+        }
+        Ok(())
+    }
+
+    /// rollback current session history due to error or cancel
+    /// if it is the first prompt of the session triggered, we delete the session from db
+    /// then cleanup the in-memory cache for session and permission.
+    async fn rollback_session(&mut self, session_id: Uuid) -> Result<()> {
+        self.storage
+            .rollback_history(&session_id.to_string())
+            .await?;
+        if self
+            .storage
+            .delete_empty_session(&session_id.to_string())
+            .await?
+        {
+            self.sessions.remove(&session_id);
+            self.permission_workflow_client
+                .remove_permission(session_id)
                 .await?;
         }
         Ok(())
