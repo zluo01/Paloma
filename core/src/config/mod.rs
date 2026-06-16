@@ -1,13 +1,10 @@
 use std::{path::PathBuf, sync::LazyLock};
 
-use log::warn;
-
 use crate::utils::Element;
 
 const APP_DIR: &str = "scry";
 
 pub const RENDER_CHANNEL_CAPACITY: usize = 128;
-pub const SESSION_WRITER_CHANNEL_CAPACITY: usize = 32;
 pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const TURN_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
@@ -33,10 +30,6 @@ pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".conf
 
 pub static DATABASE_PATH: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("scry.db"));
 
-pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUNTIME_DIR.join("scry.sock"));
-
-static RUNTIME_DIR: LazyLock<PathBuf> = LazyLock::new(build_runtime_dir);
-
 static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(build_home_dir);
 
 /// Static system prompt sent as the `instructions` field on every LLM call.
@@ -59,17 +52,6 @@ fn build_environment_context() -> String {
         .child(Element::new("home").plain_text(home))
         .child(Element::new("shell").plain_text(shell))
         .to_string()
-}
-
-fn build_runtime_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let user = std::env::var("USER").unwrap_or_else(|_| "unknown".into());
-            warn!("XDG_RUNTIME_DIR is unset; falling back to /tmp/scry-{user}");
-            PathBuf::from(format!("/tmp/scry-{user}"))
-        })
-        .join(APP_DIR)
 }
 
 fn build_home_dir() -> PathBuf {

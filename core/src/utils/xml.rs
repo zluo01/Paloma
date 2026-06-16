@@ -58,18 +58,6 @@ impl Element {
         }
         self
     }
-
-    pub fn children<I>(mut self, children: I) -> Self
-    where
-        I: IntoIterator<Item = Element>,
-    {
-        let iter = children.into_iter();
-        match &mut self.body {
-            Body::Children(v) => v.extend(iter),
-            _ => self.body = Body::Children(iter.collect()),
-        }
-        self
-    }
 }
 
 impl Display for Element {
@@ -291,17 +279,6 @@ mod tests {
             .to_string();
         let expected = "<p>\n<c></c>\n</p>";
         assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn children_iter_appends_in_order() {
-        let kids = (0..3).map(|i| Element::new("k").attr("i", i));
-        let actual = Element::new("parent").children(kids).to_string();
-        assert!(actual.starts_with("<parent>\n<k"));
-        assert!(actual.contains("i=\"0\""));
-        assert!(actual.contains("i=\"1\""));
-        assert!(actual.contains("i=\"2\""));
-        assert!(actual.ends_with("</parent>"));
     }
 
     #[test]
