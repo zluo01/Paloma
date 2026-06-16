@@ -1,0 +1,63 @@
+[package]
+name = "scry-core"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+[dependencies]
+async-trait = "0.1.89"
+backon = "1.6.0"
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+chrono = { version = "0.4.44", default-features = false, features = [
+    "clock",
+    "serde",
+    "std",
+] }
+dashmap = "6.1.0"
+eventsource-stream = "0.2.3"
+freedesktop-desktop-entry = "0.8.1"
+futures = { workspace = true }
+log = { workspace = true }
+notify = "8.2.0"
+notify-debouncer-full = "0.7.0"
+regex = "1.12.4"
+reqwest = { version = "0.13.3", default-features = false, features = [
+    "json",
+    "form",
+    "rustls",
+    "http2",
+    "stream",
+] }
+rmcp = { version = "1.7.0", default-features = false, features = [
+    "client",
+    "auth",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
+schemars = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { workspace = true }
+sha1 = "0.11.0"
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "json"] }
+strsim = "0.11.1"
+thiserror = "2.0.18"
+tokio = { workspace = true, features = [
+    "fs",
+    "io-util",
+    "sync",
+    "rt",
+    "time",
+    "macros",
+    "process",
+] }
+tree-sitter = "0.26.9"
+tree-sitter-bash = "0.25.1"
+uuid = { workspace = true, features = ["v7", "std"] }
+wl-clipboard-rs = "0.9.3"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.3", default-features = false, features = ["signal"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "test-util", "time"] }

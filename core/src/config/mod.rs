@@ -1,0 +1,83 @@
+use std::{path::PathBuf, sync::LazyLock};
+
+use log::warn;
+
+use crate::utils::Element;
+
+const APP_DIR: &str = "scry";
+
+pub const RENDER_CHANNEL_CAPACITY: usize = 128;
+pub const SESSION_WRITER_CHANNEL_CAPACITY: usize = 32;
+pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
+pub const TURN_MANAGER_CHANNEL_CAPACITY: usize = 128;
+pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;
+pub const HOTKEY_CHANNEL_CAPACITY: usize = 8;
+pub const PERMISSION_WORKFLOW_CHANNEL_CAPACITY: usize = 32;
+
+/// How long a resolved permission request is kept in memory after it
+/// completes before it is evicted.
+pub const PERMISSION_EVICT_TTL_SECS: u64 = 600;
+
+/// Per-payload cap on tool output shown inline to the model; anything past
+/// these spills to a file under [`SPILL_ROOT`] and the inline text freezes
+/// at this prefix. Shared by all tools that will output to llm.
+pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
+
+/// Root directory where spilled tool output lives, keyed by call id; never
+/// cleaned by the process — relies on the system tmp lifecycle.
+pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp/scry"));
+
+pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
+
+pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));
+
+pub static DATABASE_PATH: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("scry.db"));
+
+pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUNTIME_DIR.join("scry.sock"));
+
+static RUNTIME_DIR: LazyLock<PathBuf> = LazyLock::new(build_runtime_dir);
+
+static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(build_home_dir);
+
+/// Static system prompt sent as the `instructions` field on every LLM call.
+/// Describes role, tool contract, and behavioral rules.
+///
+/// Complements `ENVIRONMENT_CONTEXT`, which is added once as the first message
+/// of a session and travels back to the model in the replayed history on every
+/// turn — the instruction tells the model *how* to behave, the context tells
+/// it *where* it is running (os, arch, shell, home).
+pub const INSTRUCTION: &str = include_str!("instruction.md");
+
+fn build_environment_context() -> String {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "unknown".into());
+
+    Element::new("environment_context")
+        .child(Element::new("os").plain_text(std::env::consts::OS))
+        .child(Element::new("os_family").plain_text(std::env::consts::FAMILY))
+        .child(Element::new("arch").plain_text(std::env::consts::ARCH))
+        .child(Element::new("home").plain_text(home))
+        .child(Element::new("shell").plain_text(shell))
+        .to_string()
+}
+
+fn build_runtime_dir() -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let user = std::env::var("USER").unwrap_or_else(|_| "unknown".into());
+            warn!("XDG_RUNTIME_DIR is unset; falling back to /tmp/scry-{user}");
+            PathBuf::from(format!("/tmp/scry-{user}"))
+        })
+        .join(APP_DIR)
+}
+
+fn build_home_dir() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .expect("HOME is unset; cannot resolve Scry config paths");
+    if !home.is_absolute() {
+        panic!("HOME is set but not absolute; cannot resolve Scry config paths");
+    }
+    home
+}
