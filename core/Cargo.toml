@@ -54,10 +54,10 @@ tokio = { workspace = true, features = [
 tree-sitter = "0.26.9"
 tree-sitter-bash = "0.25.1"
 uuid = { workspace = true, features = ["v7", "std"] }
-wl-clipboard-rs = "0.9.3"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.3", default-features = false, features = ["signal"] }
+wl-clipboard-rs = "0.9.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "test-util", "time"] }
