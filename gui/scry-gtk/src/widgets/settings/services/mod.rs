@@ -7,7 +7,7 @@ use libadwaita::{
     ActionRow, AlertDialog, ApplicationWindow, ComboRow, ExpanderRow, PreferencesPage,
     ResponseAppearance, prelude::*,
 };
-use scry_core::{AppContext, Connector, ConnectorConnection, ProviderHealthStatus, ProviderId};
+use scry_core::{AppContext, Connector, ConnectorConnection, HealthStatus, ProviderId};
 
 use super::{Group, unhealthy_icon};
 use crate::runtime;
@@ -108,7 +108,7 @@ impl ServiceContent {
             .valign(Align::Center)
             .build();
 
-        if conn.status.status == ProviderHealthStatus::Running {
+        if conn.status.status == HealthStatus::Running {
             row.set_subtitle("Connected");
             row.add_css_class("scry-connected");
             if conn.status.model.is_empty() {
