@@ -4,7 +4,8 @@ use serde_json::Value;
 
 use crate::{
     capability::ToolSchema,
-    db::{ProviderId, StorageError},
+    db::StorageError,
+    entity::{HealthStatus, ProviderId},
 };
 
 pub type Result<T> = std::result::Result<T, ProviderError>;
@@ -18,7 +19,7 @@ pub trait ProviderClient: Send + Sync {
 
     async fn models(&self) -> Option<Vec<Model>>;
 
-    fn health_statue(&self) -> ProviderHealthStatus;
+    fn health_statue(&self) -> HealthStatus;
 
     fn error(&self) -> Option<String>;
 
@@ -34,22 +35,6 @@ pub trait ProviderAuthenticator: Send + Sync {
     async fn init_connection(&self) -> Result<Connection>;
 
     async fn finalize_connection(&self, payload: Connection) -> Result<Auth>;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum ProviderHealthStatus {
-    Running = 0,
-    Unhealthy = 1,
-}
-
-impl ProviderHealthStatus {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => ProviderHealthStatus::Running,
-            _ => ProviderHealthStatus::Unhealthy,
-        }
-    }
 }
 
 pub enum Connection {

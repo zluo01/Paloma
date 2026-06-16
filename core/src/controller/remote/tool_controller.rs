@@ -11,11 +11,11 @@ use uuid::Uuid;
 
 use crate::{
     capability::{
-        DynTool, HealthStatus, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema,
-        ToolSpec,
+        DynTool, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema, ToolSpec,
     },
     controller::{PermissionState, remote::PermissionWorkflowManagerClient},
-    db::{Plugin, PluginType, Storage, StorageError},
+    db::{Storage, StorageError},
+    entity::{HealthStatus, Plugin, PluginType},
 };
 
 pub struct ToolStatus {

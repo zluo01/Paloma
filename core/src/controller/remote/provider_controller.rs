@@ -4,8 +4,9 @@ use dashmap::DashMap;
 use log::error;
 
 use crate::{
-    db::{AuthKind, ProviderId, Storage, StorageError},
-    provider::{Auth, CodexRuntime, Model, ProviderClient, ProviderHealthStatus},
+    db::{AuthKind, Storage, StorageError},
+    entity::{HealthStatus, ProviderId},
+    provider::{Auth, CodexRuntime, Model, ProviderClient},
 };
 
 pub struct ProviderController {
@@ -118,6 +119,6 @@ pub enum ProviderControllerError {
 
 pub struct ProviderStatis {
     pub model: Vec<Model>,
-    pub status: ProviderHealthStatus,
+    pub status: HealthStatus,
     pub error: Option<String>,
 }

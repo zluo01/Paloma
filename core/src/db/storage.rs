@@ -12,12 +12,14 @@ use sqlx::{
 use uuid::Uuid;
 
 use super::{AuthKind, queries};
-use crate::db::{
-    entity::{
-        ConnectedProvider, EntryType, FileEntry, Plugin, PluginArgs, PluginType, PreferModelConfig,
-        ProviderId, RestoreEntry, Session, Transport,
+use crate::{
+    db::{
+        entity::{
+            ConnectedProvider, EntryType, FileEntry, PreferModelConfig, RestoreEntry, Session,
+        },
+        error::{Result, StorageError},
     },
-    error::{Result, StorageError},
+    entity::{Plugin, PluginArgs, PluginType, ProviderId, Transport},
 };
 
 #[derive(Clone)]

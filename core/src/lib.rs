@@ -18,18 +18,21 @@ mod capability;
 mod config;
 mod controller;
 mod db;
+mod entity;
 mod permission;
 mod provider;
 mod utils;
 
-pub use capability::{Action, ActionOutcome, HealthStatus, IconRef, Item};
+pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use config::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, HealthLevel, LocalRenderEvent, McpServer,
-    PermissionState, RenderEvent, SessionUpdate, TerminalState, UserDecision,
+    ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, PermissionState,
+    RenderEvent, SessionUpdate, TerminalState, UserDecision,
 };
-pub use db::{Plugin, PluginArgs, PluginType, ProviderId, Transport};
-pub use provider::{Connection, ProviderHealthStatus};
+pub use entity::{
+    HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
+};
+pub use provider::Connection;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TrayEvent {

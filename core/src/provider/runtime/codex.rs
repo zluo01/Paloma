@@ -16,10 +16,10 @@ use tokio::sync::Mutex;
 
 use crate::{
     config::INSTRUCTION,
-    db::{AuthKind, ProviderId, Storage},
+    db::{AuthKind, Storage},
+    entity::{HealthStatus, ProviderId},
     provider::{
-        Auth, ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError,
-        ProviderHealthStatus, Result,
+        Auth, ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
     },
 };
 
@@ -88,7 +88,7 @@ impl CodexRuntime {
                     refresh_token: RwLock::new(auth),
                     tokens: RwLock::new(access_token),
                     storage,
-                    status: AtomicU8::new(ProviderHealthStatus::Running as u8),
+                    status: AtomicU8::new(HealthStatus::Running as u8),
                     error: RwLock::new(None),
                     models: Mutex::new(Some(models)),
                 },
@@ -117,7 +117,7 @@ impl CodexRuntime {
                 chatgpt_account_id: String::new(),
             }),
             storage,
-            status: AtomicU8::new(ProviderHealthStatus::Unhealthy as u8),
+            status: AtomicU8::new(HealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
             models: Mutex::new(None),
         }
@@ -126,7 +126,7 @@ impl CodexRuntime {
     /// Flag the runtime unhealthy and record `error` for status reporting.
     fn mark_unhealthy(&self, error: String) {
         self.status
-            .store(ProviderHealthStatus::Unhealthy as u8, Ordering::Relaxed);
+            .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
         *self.error.write().unwrap() = Some(error);
     }
 
@@ -455,8 +455,8 @@ impl ProviderClient for CodexRuntime {
         }
     }
 
-    fn health_statue(&self) -> ProviderHealthStatus {
-        ProviderHealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    fn health_statue(&self) -> HealthStatus {
+        HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
     fn error(&self) -> Option<String> {

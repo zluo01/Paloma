@@ -15,7 +15,7 @@ use crate::{
             turn_manager::{TurnManagerClient, TurnManagerError},
         },
     },
-    db::ProviderId,
+    entity::ProviderId,
 };
 
 const MAX_TITLE_CHARS: usize = 56;

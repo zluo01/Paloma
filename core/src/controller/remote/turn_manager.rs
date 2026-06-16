@@ -20,7 +20,8 @@ use crate::{
             tool_controller::ToolCallPayload,
         },
     },
-    db::{ProviderId, Storage, StorageError},
+    db::{Storage, StorageError},
+    entity::ProviderId,
     provider::{ChatEvent, ChatRequest, ChatStream, ProviderError},
 };
 

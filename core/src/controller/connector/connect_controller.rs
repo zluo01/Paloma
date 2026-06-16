@@ -4,12 +4,10 @@ use dashmap::DashMap;
 use log::error;
 
 use crate::{
-    controller::{HealthLevel, ProviderController, remote::ProviderStatis},
-    db::{AuthKind, ConnectedProvider, ProviderId, Storage, StorageError},
-    provider::{
-        Auth, CodexConnector, Connection, ProviderAuthenticator, ProviderError,
-        ProviderHealthStatus,
-    },
+    controller::{ProviderController, remote::ProviderStatis},
+    db::{AuthKind, ConnectedProvider, Storage, StorageError},
+    entity::{HealthLevel, HealthStatus, ProviderId},
+    provider::{Auth, CodexConnector, Connection, ProviderAuthenticator, ProviderError},
 };
 
 pub struct ConnectController {
@@ -66,7 +64,7 @@ impl ConnectController {
             .await
         {
             Some(client) => {
-                if client.health_statue() == ProviderHealthStatus::Unhealthy {
+                if client.health_statue() == HealthStatus::Unhealthy {
                     // cleanup from provider and the db
                     self.provider_controller.remove_provider(&provider_id);
                     self.storage.delete_provider(&provider_id).await?;
@@ -172,7 +170,7 @@ impl ConnectController {
         let providers = self.provider_controller.available_providers().await;
         let healthy = providers
             .values()
-            .filter(|status| status.status == ProviderHealthStatus::Running)
+            .filter(|status| status.status == HealthStatus::Running)
             .count();
         HealthLevel::from_counts(providers.len(), healthy)
     }

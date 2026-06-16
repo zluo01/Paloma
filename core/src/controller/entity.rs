@@ -42,26 +42,3 @@ pub enum ChatRenderEvent {
         decisions: Vec<UserDecision>,
     },
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HealthLevel {
-    /// Nothing active (grey).
-    Inactive,
-    /// Everything running (green).
-    Healthy,
-    /// Something is wrong (orange).
-    Degraded,
-    /// Everything down (red).
-    Down,
-}
-
-impl HealthLevel {
-    pub fn from_counts(total: usize, healthy: usize) -> Self {
-        match (total, healthy) {
-            (0, _) => HealthLevel::Inactive,
-            (total, healthy) if healthy == total => HealthLevel::Healthy,
-            (_, 0) => HealthLevel::Down,
-            _ => HealthLevel::Degraded,
-        }
-    }
-}

@@ -1,28 +1,7 @@
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum ProviderId {
-    Codex,
-    ClaudeCode,
-    OpenAI,
-    Anthropic,
-}
-
-impl ProviderId {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ProviderId::Codex => "codex",
-            ProviderId::ClaudeCode => "claude_code",
-            ProviderId::OpenAI => "open_ai",
-            ProviderId::Anthropic => "anthropic",
-        }
-    }
-}
+use crate::entity::ProviderId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
@@ -72,36 +51,4 @@ pub struct RestoreEntry {
     pub payload_type: EntryType,
     pub payload: Value,
     pub finished: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum PluginType {
-    Native,
-    Mcp,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum Transport {
-    Local,
-    Http,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PluginArgs {
-    Local { command: String, args: Vec<String> },
-    Remote { url: String, requires_auth: bool },
-}
-
-#[derive(Debug, Clone, PartialEq, FromRow)]
-pub struct Plugin {
-    pub name: String,
-    pub transport: Transport,
-    pub timeout: i64,
-    pub disabled: bool,
-    #[sqlx(json)]
-    pub env: HashMap<String, String>,
-    #[sqlx(json)]
-    pub args: PluginArgs,
 }

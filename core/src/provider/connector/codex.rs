@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::ProviderId,
+    entity::ProviderId,
     provider::{Auth, Connection, ProviderAuthenticator, ProviderError, Result},
 };
 

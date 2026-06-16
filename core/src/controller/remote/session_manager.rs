@@ -15,7 +15,8 @@ use crate::{
         helper::{Disposition, extract_args},
         remote::{PermissionWorkflowManagerClient, tool_controller::ToolCallPayload},
     },
-    db::{EntryType, ProviderId, Session as StorageSession, Storage, StorageError},
+    db::{EntryType, Session as StorageSession, Storage, StorageError},
+    entity::ProviderId,
     provider::ChatEvent,
 };
 

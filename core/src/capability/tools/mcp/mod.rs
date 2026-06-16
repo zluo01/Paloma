@@ -22,9 +22,9 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    capability::{DynTool, HealthStatus, ToolResult, ToolSchema, ToolSpec},
+    capability::{DynTool, ToolResult, ToolSchema, ToolSpec},
     config::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
-    db::{Plugin, PluginArgs},
+    entity::{HealthStatus, Plugin, PluginArgs},
     utils::{Element, mcp_function_name_encode, write_spill_file},
 };
 

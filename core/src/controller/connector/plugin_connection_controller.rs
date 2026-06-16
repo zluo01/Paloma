@@ -3,9 +3,9 @@ use std::sync::Arc;
 use log::error;
 
 use crate::{
-    capability::HealthStatus,
-    controller::{HealthLevel, ToolController, ToolControllerError},
-    db::{Plugin, PluginType, Storage, StorageError},
+    controller::{ToolController, ToolControllerError},
+    db::{Storage, StorageError},
+    entity::{HealthLevel, HealthStatus, Plugin, PluginType},
 };
 
 pub struct McpServer {

@@ -7,7 +7,7 @@ mod remote;
 pub use connector::{
     ConnectController, Connector, ConnectorConnection, McpServer, PluginConnectionController,
 };
-pub use entity::{ChatRenderEvent, HealthLevel, LocalRenderEvent, RenderEvent};
+pub use entity::{ChatRenderEvent, LocalRenderEvent, RenderEvent};
 pub use local::{LocalQuery, LocalQueryInitError};
 pub use remote::{
     PermissionState, PermissionWorkflowError, PermissionWorkflowManager, ProviderController,

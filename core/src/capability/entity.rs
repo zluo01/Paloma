@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::entity::HealthStatus;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub title: String,
@@ -115,24 +117,6 @@ pub struct ToolSchema {
 pub enum ToolResult {
     Text(String),
     Binary { mime_type: String, data: Vec<u8> },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum HealthStatus {
-    Running = 0,
-    Unhealthy = 1,
-}
-
-impl HealthStatus {
-    /// Reconstruct from the `u8` held in an `AtomicU8`. Unknown values map to
-    /// `Unhealthy` (fail-safe: don't use a tool in an unclear state).
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => HealthStatus::Running,
-            _ => HealthStatus::Unhealthy,
-        }
-    }
 }
 
 #[async_trait::async_trait]
