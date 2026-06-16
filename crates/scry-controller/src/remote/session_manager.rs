@@ -13,7 +13,9 @@ use uuid::Uuid;
 use crate::{
     entity::{ChatRenderEvent, RenderEvent},
     helper::{extract_args, Disposition},
-    remote::{tool_controller::ToolCallPayload, PermissionWorkflowManagerClient},
+    remote::{
+        tool_controller::ToolCallPayload, PermissionWorkflowError, PermissionWorkflowManagerClient,
+    },
     ToolController,
 };
 
@@ -160,15 +162,7 @@ impl SessionManager {
                 let _ = reply.send(self.restore_session(session_id).await);
             },
             SessionStreamingEvent::RemoveSession { session_id, reply } => {
-                let result = self
-                    .storage
-                    .delete_session(&session_id.to_string())
-                    .await
-                    .map(|()| {
-                        self.sessions.remove(&session_id);
-                    })
-                    .map_err(SessionManagerError::from);
-                let _ = reply.send(result);
+                let _ = reply.send(self.remove_session(session_id).await);
             },
             SessionStreamingEvent::AddEvent {
                 session_id,
@@ -233,6 +227,15 @@ impl SessionManager {
             let _ = self.updates_tx.send(SessionUpdate { session_id, event });
         }
 
+        Ok(())
+    }
+
+    async fn remove_session(&mut self, session_id: Uuid) -> Result<()> {
+        self.storage.delete_session(&session_id.to_string()).await?;
+        self.sessions.remove(&session_id);
+        self.permission_workflow_client
+            .remove_permission(session_id)
+            .await?;
         Ok(())
     }
 
@@ -703,6 +706,9 @@ pub enum SessionManagerError {
 
     #[error(transparent)]
     Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    PermissionWorkflow(#[from] PermissionWorkflowError),
 }
 
 type Result<T> = std::result::Result<T, SessionManagerError>;

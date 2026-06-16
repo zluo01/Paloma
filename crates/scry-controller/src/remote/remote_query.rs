@@ -100,6 +100,15 @@ impl RemoteQuery {
             .await?)
     }
 
+    pub async fn remove_session(&self, session_id: Uuid) -> Result<()> {
+        // make sure we stop all active llm calls first.
+        self.turn_manager_client.drop(session_id).await?;
+        Ok(self
+            .session_manager_client
+            .remove_session(session_id)
+            .await?)
+    }
+
     pub async fn decide(&self, user_decision: UserDecision) -> Result<PermissionState> {
         Ok(self
             .permission_workflow_client

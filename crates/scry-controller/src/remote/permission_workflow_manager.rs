@@ -92,6 +92,10 @@ enum PermissionWorkflowEvent {
         user_decision: UserDecision,
         reply: oneshot::Sender<Result<PermissionState>>,
     },
+    RemovePermission {
+        session_id: Uuid,
+        reply: oneshot::Sender<()>,
+    },
 }
 
 pub struct PermissionWorkflowManager {
@@ -173,6 +177,10 @@ impl PermissionWorkflowManager {
                 reply,
             } => {
                 let _ = reply.send(self.handle_user_decision(user_decision).await);
+            },
+            PermissionWorkflowEvent::RemovePermission { session_id, reply } => {
+                self.session_permission.remove(&session_id);
+                let _ = reply.send(());
             },
         };
         Ok(())
@@ -534,6 +542,20 @@ impl PermissionWorkflowManagerClient {
         reply_rx
             .await
             .map_err(|_| PermissionWorkflowError::ChannelClosed)?
+    }
+
+    pub async fn remove_permission(&self, session_id: Uuid) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::RemovePermission {
+                session_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)
     }
 }
 

@@ -64,6 +64,11 @@ enum TurnStepEvent {
         session_id: Uuid,
         reply: oneshot::Sender<Result<()>>,
     },
+    /// Drop the turn fully, cleanup when user wanna delete a session
+    Drop {
+        session_id: Uuid,
+        reply: oneshot::Sender<Result<()>>,
+    },
 }
 
 impl TurnManager {
@@ -118,6 +123,10 @@ impl TurnManager {
             },
             TurnStepEvent::Cancel { session_id, reply } => {
                 self.abort_turn(session_id);
+                let _ = reply.send(Ok(()));
+            },
+            TurnStepEvent::Drop { session_id, reply } => {
+                self.drop_turn(session_id);
                 let _ = reply.send(Ok(()));
             },
         }
@@ -281,6 +290,14 @@ impl TurnManager {
                 handle.abort();
             }
             *state = TurnState::Cancelled;
+        }
+    }
+
+    fn drop_turn(&mut self, session_id: Uuid) {
+        if let Some((_, state)) = self.turn_map.remove(&session_id) {
+            if let TurnState::Running(handle) = state {
+                handle.abort();
+            }
         }
     }
 }
@@ -461,6 +478,20 @@ impl TurnManagerClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(TurnStepEvent::Cancel {
+                session_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| TurnManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| TurnManagerError::ChannelClosed)?
+    }
+
+    pub async fn drop(&self, session_id: Uuid) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(TurnStepEvent::Drop {
                 session_id,
                 reply: reply_tx,
             })
