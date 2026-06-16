@@ -6,6 +6,7 @@ use crate::remote::UserDecision;
 pub enum RenderEvent {
     Local(LocalRenderEvent),
     Chat(ChatRenderEvent),
+    Cancel,
     Done,
     Error { message: String },
 }

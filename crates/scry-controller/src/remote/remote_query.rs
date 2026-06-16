@@ -83,7 +83,8 @@ impl RemoteQuery {
     }
 
     pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
-        Ok(self.turn_manager_client.cancel(session_id).await?)
+        self.turn_manager_client.cancel(session_id).await?;
+        Ok(self.session_manager_client.cancel_event(session_id).await?)
     }
 
     // use for cleanup newly created session but the chat fails

@@ -52,6 +52,10 @@ enum SessionStreamingEvent {
         session_id: Uuid,
         payload: SessionEvent,
     },
+    CancelEvent {
+        session_id: Uuid,
+        reply: oneshot::Sender<Result<()>>,
+    },
     ConstructMessages {
         session_id: Uuid,
         reply: oneshot::Sender<Result<Vec<Value>>>,
@@ -73,10 +77,11 @@ pub enum TerminalState {
     Running,
     Done,
     Error,
+    Cancel,
 }
 
 struct Session {
-    /// only store delta, clear on DONE or ERROR
+    /// only store delta, clear on DONE, ERROR or CANCEL
     delta: Vec<SessionEvent>,
     terminal: TerminalState,
 }
@@ -189,6 +194,9 @@ impl SessionManager {
                     .map_err(SessionManagerError::from);
                 let _ = reply.send(result);
             },
+            SessionStreamingEvent::CancelEvent { session_id, reply } => {
+                let _ = reply.send(self.cancel_event(session_id).await);
+            },
         }
         Ok(())
     }
@@ -197,6 +205,13 @@ impl SessionManager {
         let Some(session) = self.sessions.get_mut(&session_id) else {
             return Err(SessionManagerError::UnknownSession(session_id));
         };
+
+        // should not trigger add event unless it is user prompt
+        if session.terminal != TerminalState::Running
+            && !matches!(&payload, SessionEvent::UserPrompt(_))
+        {
+            return Err(SessionManagerError::SessionNotRunning(session_id));
+        }
 
         let entry = match &payload {
             SessionEvent::UserPrompt(item)
@@ -231,9 +246,9 @@ impl SessionManager {
         // a failed turn left partial items; roll the session back to its last
         // completed message so the next request starts from a valid state.
         if errored {
-            if let Err(err) = self.storage.rollback_history(&session_id.to_string()).await {
-                error!("session {session_id}: rollback after error failed: {err}");
-            }
+            self.storage
+                .rollback_history(&session_id.to_string())
+                .await?
         }
 
         Ok(())
@@ -245,6 +260,26 @@ impl SessionManager {
         self.permission_workflow_client
             .remove_permission(session_id)
             .await?;
+        Ok(())
+    }
+
+    async fn cancel_event(&mut self, session_id: Uuid) -> Result<()> {
+        let Some(session) = self.sessions.get_mut(&session_id) else {
+            return Err(SessionManagerError::UnknownSession(session_id));
+        };
+
+        // we should only able to cancel on running state
+        if session.terminal == TerminalState::Running {
+            session.terminal = TerminalState::Cancel;
+            session.delta.clear();
+            let _ = self.updates_tx.send(SessionUpdate {
+                session_id,
+                event: RenderEvent::Cancel,
+            });
+            self.storage
+                .rollback_history(&session_id.to_string())
+                .await?;
+        }
         Ok(())
     }
 
@@ -555,6 +590,20 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)
     }
 
+    pub async fn cancel_event(&self, session_id: Uuid) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::CancelEvent {
+                session_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
     pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
@@ -711,6 +760,9 @@ pub enum SessionManagerError {
 
     #[error("session {0} already exists")]
     SessionAlreadyExists(Uuid),
+
+    #[error("session {0} is not running. This indicates a bug.")]
+    SessionNotRunning(Uuid),
 
     #[error("session channel closed")]
     ChannelClosed,
