@@ -35,6 +35,8 @@ pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");
 
 pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.sql");
 
+pub const RECOVER: &str = include_str!("queries/history/recover.sql");
+
 pub const INSERT_PLUGIN_QUERY: &str = include_str!("queries/plugins/insert_plugin.sql");
 
 pub const GET_ALL_MCP_QUERY: &str = include_str!("queries/plugins/get_all_mcp.sql");

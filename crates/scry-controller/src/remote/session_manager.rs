@@ -655,6 +655,9 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
         );
     }
 
+    // cleanup history
+    storage.recover().await?;
+
     Ok(sessions)
 }
 

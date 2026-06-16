@@ -322,6 +322,14 @@ impl Storage {
 
         Ok(entries)
     }
+
+    /// Prune partially-written turns left by a crash or cold start: for every
+    /// session whose newest history item isn't a completed assistant message,
+    /// drop everything back to (and including) the last user prompt.
+    pub async fn recover(&self) -> Result<()> {
+        sqlx::query(queries::RECOVER).execute(&self.pool).await?;
+        Ok(())
+    }
 }
 
 async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {
@@ -1159,5 +1167,145 @@ mod tests {
             .unwrap();
         let updated_at = row.get::<i64, _>("updated_at");
         assert!(updated_at > 1000, "expected refresh, got {updated_at}");
+    }
+
+    // ---- recover ----
+
+    async fn seed_provider(storage: &Storage) {
+        storage
+            .insert_provider(&ProviderId::Codex, &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .await
+            .unwrap();
+    }
+
+    async fn seed_session(storage: &Storage, id: Uuid, items: &[Value]) {
+        storage
+            .create_new_session(id, &ProviderId::Codex, "s")
+            .await
+            .unwrap();
+        for item in items {
+            storage
+                .insert_history(&id.to_string(), EntryType::ResponseItem, item)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn history_len(storage: &Storage, id: Uuid) -> usize {
+        storage.get_history(&id.to_string()).await.unwrap().len()
+    }
+
+    fn user() -> Value {
+        json!({ "type": "message", "role": "user" })
+    }
+    fn assistant_done() -> Value {
+        json!({ "type": "message", "role": "assistant", "status": "completed" })
+    }
+    fn reasoning() -> Value {
+        json!({ "type": "reasoning" })
+    }
+    fn function_call() -> Value {
+        json!({ "type": "function_call", "call_id": "c1" })
+    }
+
+    #[tokio::test]
+    async fn recover_prunes_unfinished_turn_back_to_last_prompt() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a0").unwrap();
+        seed_session(
+            &storage,
+            id,
+            &[
+                user(),
+                assistant_done(),
+                user(),
+                reasoning(),
+                function_call(),
+            ],
+        )
+        .await;
+
+        storage.recover().await.unwrap();
+
+        let history = storage.get_history(&id.to_string()).await.unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.last().unwrap().payload["status"], "completed");
+    }
+
+    #[tokio::test]
+    async fn recover_keeps_session_ending_in_completed_message() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a1").unwrap();
+        seed_session(&storage, id, &[user(), assistant_done()]).await;
+
+        storage.recover().await.unwrap();
+
+        assert_eq!(history_len(&storage, id).await, 2);
+    }
+
+    #[tokio::test]
+    async fn recover_empties_session_with_no_completed_turn() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a2").unwrap();
+        seed_session(&storage, id, &[user(), reasoning()]).await;
+
+        storage.recover().await.unwrap();
+
+        assert_eq!(history_len(&storage, id).await, 0);
+    }
+
+    #[tokio::test]
+    async fn recover_prunes_dangling_user_prompt() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a3").unwrap();
+        // A trailing user prompt has no `status`, so it isn't a completed message.
+        seed_session(&storage, id, &[user(), assistant_done(), user()]).await;
+
+        storage.recover().await.unwrap();
+
+        assert_eq!(history_len(&storage, id).await, 2);
+    }
+
+    #[tokio::test]
+    async fn recover_only_touches_unfinished_sessions() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+
+        // Two finished sessions (one single-turn, one multi-turn) stay intact;
+        // three unfinished sessions with different broken tails are each pruned
+        // back to their last completed turn in a single recover pass.
+        let finished_single = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a4").unwrap();
+        let finished_multi = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a5").unwrap();
+        let dropped_tool_call = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a6").unwrap();
+        let no_completed_turn = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a7").unwrap();
+        let dangling_prompt = Uuid::parse_str("019e1234-5678-7000-8000-0000000000a8").unwrap();
+
+        seed_session(&storage, finished_single, &[user(), assistant_done()]).await;
+        seed_session(
+            &storage,
+            finished_multi,
+            &[user(), assistant_done(), user(), assistant_done()],
+        )
+        .await;
+        seed_session(
+            &storage,
+            dropped_tool_call,
+            &[user(), assistant_done(), user(), reasoning(), function_call()],
+        )
+        .await;
+        seed_session(&storage, no_completed_turn, &[user(), reasoning()]).await;
+        seed_session(&storage, dangling_prompt, &[user(), assistant_done(), user()]).await;
+
+        storage.recover().await.unwrap();
+
+        assert_eq!(history_len(&storage, finished_single).await, 2);
+        assert_eq!(history_len(&storage, finished_multi).await, 4);
+        assert_eq!(history_len(&storage, dropped_tool_call).await, 2);
+        assert_eq!(history_len(&storage, no_completed_turn).await, 0);
+        assert_eq!(history_len(&storage, dangling_prompt).await, 2);
     }
 }
