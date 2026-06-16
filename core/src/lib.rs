@@ -20,7 +20,16 @@ mod controller;
 mod db;
 mod permission;
 mod provider;
-pub mod utils;
+mod utils;
+
+pub use capability::{Action, ActionOutcome, HealthStatus, IconRef, Item};
+pub use config::RENDER_CHANNEL_CAPACITY;
+pub use controller::{
+    ChatRenderEvent, Connector, ConnectorConnection, HealthLevel, LocalRenderEvent, McpServer,
+    PermissionState, RenderEvent, SessionUpdate, TerminalState, UserDecision,
+};
+pub use db::{Plugin, PluginArgs, PluginType, ProviderId, Transport};
+pub use provider::{Connection, ProviderHealthStatus};
 
 #[derive(Debug, Clone, Copy)]
 pub enum TrayEvent {
