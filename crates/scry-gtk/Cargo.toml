@@ -28,8 +28,4 @@ ashpd = { version = "0.13.11", default-features = false, features = [
 ksni = { version = "0.3.5", default-features = false, features = ["tokio"] }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 uuid = { workspace = true }
-scry-capability = { path = "../scry-capability" }
-scry-config = { path = "../scry-config" }
-scry-controller = { path = "../scry-controller" }
 scry-core = { path = "../scry-core" }
-scry-provider = { path = "../scry-provider" }

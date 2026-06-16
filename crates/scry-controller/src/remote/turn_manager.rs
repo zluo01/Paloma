@@ -298,10 +298,8 @@ impl TurnManager {
     }
 
     fn drop_turn(&mut self, session_id: Uuid) {
-        if let Some((_, state)) = self.turn_map.remove(&session_id) {
-            if let TurnState::Running(handle) = state {
-                handle.abort();
-            }
+        if let Some((_, TurnState::Running(handle))) = self.turn_map.remove(&session_id) {
+            handle.abort();
         }
     }
 }

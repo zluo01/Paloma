@@ -16,6 +16,7 @@ pub use remote::{
     SessionUpdate, TerminalState, ToolController, ToolControllerError, ToolStatus, TurnManager,
     UserDecision,
 };
+pub use scry_provider::{Connection, ProviderHealthStatus, ProviderId};
 // Storage entity types that appear in this crate's public API, re-exported
 // so UI crates don't need a direct scry-storage dependency.
 pub use scry_storage::{Plugin, PluginArgs, PluginType, Transport};

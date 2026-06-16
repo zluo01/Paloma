@@ -1,6 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
 use scry_capability::ProcessManager;
+pub use scry_capability::{Action, ActionOutcome, HealthStatus, IconRef, Item};
+pub use scry_config::RENDER_CHANNEL_CAPACITY;
+pub use scry_controller::{
+    ChatRenderEvent, Connection, Connector, ConnectorConnection, HealthLevel, LocalRenderEvent,
+    McpServer, PermissionState, Plugin, PluginArgs, PluginType, ProviderHealthStatus, ProviderId,
+    RenderEvent, SessionUpdate, TerminalState, Transport, UserDecision,
+};
 use scry_controller::{
     ConnectController, LocalQuery, PermissionWorkflowManager, PluginConnectionController,
     ProviderController, RemoteQuery, SessionManager, ToolController, TurnManager,
