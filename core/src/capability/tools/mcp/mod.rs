@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::{
     capability::{DynTool, ToolResult, ToolSchema, ToolSpec},
-    config::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
+    constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     entity::{HealthStatus, Plugin, PluginArgs},
     utils::{Element, mcp_function_name_encode, write_spill_file},
 };

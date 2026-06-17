@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
-    config::{SESSION_BROADCAST_CHANNEL_CAPACITY, SESSION_MANAGER_CHANNEL_CAPACITY},
+    constants::{SESSION_BROADCAST_CHANNEL_CAPACITY, SESSION_MANAGER_CHANNEL_CAPACITY},
     controller::{
         ChatRenderEvent, PermissionWorkflowError, RenderEvent, ToolController,
         helper::{Disposition, extract_args},

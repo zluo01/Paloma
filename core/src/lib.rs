@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     capability::ProcessManager,
-    config::DATABASE_PATH,
+    constants::DATABASE_PATH,
     controller::{
         ConnectController, LocalQuery, LocalQueryInitError, PermissionWorkflowManager,
         PluginConnectionController, ProviderController, ProviderControllerError, RemoteQuery,
@@ -13,7 +13,7 @@ use crate::{
 };
 
 mod capability;
-mod config;
+mod constants;
 mod controller;
 mod db;
 mod entity;
@@ -22,7 +22,7 @@ mod provider;
 mod utils;
 
 pub use capability::{Action, ActionOutcome, IconRef, Item};
-pub use config::RENDER_CHANNEL_CAPACITY;
+pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, RenderEvent,
     SessionUpdate, TerminalState,

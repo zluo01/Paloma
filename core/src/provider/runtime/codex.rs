@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::{
-    config::INSTRUCTION,
+    constants::INSTRUCTION,
     db::{AuthKind, Storage},
     entity::{HealthStatus, ProviderId},
     provider::{

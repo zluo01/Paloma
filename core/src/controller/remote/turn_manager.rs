@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     capability::ToolSchema,
-    config::TURN_MANAGER_CHANNEL_CAPACITY,
+    constants::TURN_MANAGER_CHANNEL_CAPACITY,
     controller::{
         ProviderController, ProviderControllerError, SessionManagerError, ToolController,
         helper::{Disposition, extract_args},

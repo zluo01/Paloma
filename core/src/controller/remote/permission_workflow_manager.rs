@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
-    config::{PERMISSION_EVICT_TTL_SECS, PERMISSION_WORKFLOW_CHANNEL_CAPACITY},
+    constants::{PERMISSION_EVICT_TTL_SECS, PERMISSION_WORKFLOW_CHANNEL_CAPACITY},
     permission::{
         ArgvDecision, CommandType, PermissionController, PermissionDecision, PermissionError,
         PermissionState, UserDecision,

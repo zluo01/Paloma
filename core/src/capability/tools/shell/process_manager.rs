@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     capability::ToolResult,
-    config::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
+    constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     utils::Element,
 };
 

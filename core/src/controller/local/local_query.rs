@@ -8,7 +8,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
     capability::{Action, ActionOutcome, AppSearch, Clipboard, QueryHandler},
-    config::RENDER_CHANNEL_CAPACITY,
+    constants::RENDER_CHANNEL_CAPACITY,
     controller::{LocalRenderEvent, RenderEvent, entity::QueryResponse},
 };
 

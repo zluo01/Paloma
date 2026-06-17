@@ -5,7 +5,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
-    config::ENVIRONMENT_CONTEXT,
+    constants::ENVIRONMENT_CONTEXT,
     controller::{
         PermissionWorkflowError, ProviderController, ProviderControllerError, SessionManagerError,
         SessionUpdate, TerminalState,
