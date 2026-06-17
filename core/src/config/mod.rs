@@ -4,7 +4,7 @@ use crate::utils::Element;
 
 const APP_DIR: &str = "scry";
 
-pub const RENDER_CHANNEL_CAPACITY: usize = 128;
+pub const RENDER_CHANNEL_CAPACITY: usize = 8;
 pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const TURN_MANAGER_CHANNEL_CAPACITY: usize = 128;
 pub const SESSION_BROADCAST_CHANNEL_CAPACITY: usize = 512;

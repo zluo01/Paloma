@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use futures::{Stream, stream};
 use log::error;
 use serde::Serialize;
 use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
     capability::{Action, ActionOutcome, AppSearch, Clipboard, QueryHandler},
+    config::RENDER_CHANNEL_CAPACITY,
     controller::{LocalRenderEvent, RenderEvent, entity::QueryResponse},
 };
 
@@ -31,64 +33,55 @@ impl LocalQuery {
         Ok(Self { handlers })
     }
 
-    pub async fn query(&self, input: &str, render_tx: mpsc::Sender<RenderEvent>) {
-        if input.trim().is_empty() {
+    pub fn query(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
+        let (render_tx, mut render_rx) = mpsc::channel(RENDER_CHANNEL_CAPACITY);
+
+        let handlers: Vec<Arc<dyn QueryHandler>> = self
+            .handlers
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect();
+        let input = input.to_owned();
+
+        tokio::spawn(async move {
+            if input.trim().is_empty() {
+                let _ = render_tx.send(RenderEvent::Done).await;
+                return;
+            }
+
+            let mut set = JoinSet::new();
+            for handler in handlers {
+                let input = input.clone();
+                set.spawn_blocking(move || QueryResponse {
+                    id: handler.id(),
+                    name: handler.metadata().name,
+                    items: handler.query(&input),
+                });
+            }
+
+            while let Some(joined) = set.join_next().await {
+                let event = match joined {
+                    Ok(response) => RenderEvent::Local(LocalRenderEvent::Append { response }),
+                    Err(err) => RenderEvent::Error {
+                        message: err.to_string(),
+                    },
+                };
+                if render_tx.send(event).await.is_err() {
+                    error!("failed to send render response.");
+                    return;
+                }
+            }
+
             if render_tx.send(RenderEvent::Done).await.is_err() {
-                error!("local query: failed to send done event for empty input");
+                error!("failed to send done event.");
             }
-            return;
-        }
+        });
 
-        let mut set = JoinSet::new();
-        for entry in self.handlers.iter() {
-            let id = *entry.key();
-            let name = entry.value().metadata().name;
-            let handler = Arc::clone(entry.value());
-            let input = input.to_owned();
-            set.spawn_blocking(move || QueryResponse {
-                id,
-                name,
-                items: handler.query(&input),
-            });
-        }
-
-        while let Some(joined) = set.join_next().await {
-            match joined {
-                Ok(response) => {
-                    let id = response.id;
-                    if render_tx
-                        .send(RenderEvent::Local(LocalRenderEvent::Append { response }))
-                        .await
-                        .is_err()
-                    {
-                        error!("local query: failed to send render response for handler {id}");
-                        return;
-                    }
-                },
-                Err(err) => {
-                    let message = err.to_string();
-                    if render_tx
-                        .send(RenderEvent::Error {
-                            message: message.clone(),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        error!("local query: failed to send join error to renderer: {message}");
-                    }
-                },
-            }
-        }
-
-        if render_tx.send(RenderEvent::Done).await.is_err() {
-            error!("local query: failed to send done event to renderer");
-        }
+        stream::poll_fn(move |cx| render_rx.poll_recv(cx))
     }
 
-    pub fn run(&self, id: String, action: Action) -> Option<ActionOutcome> {
-        self.handlers
-            .get(id.as_str())
-            .map(|handler| handler.run(action))
+    pub fn run(&self, id: &str, action: Action) -> Option<ActionOutcome> {
+        self.handlers.get(id).map(|handler| handler.run(action))
     }
 }
 
