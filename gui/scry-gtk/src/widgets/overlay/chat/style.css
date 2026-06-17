@@ -11,12 +11,22 @@
     margin-bottom: 24px;
 }
 
+/* Trailing margins only ever pad the bottom of the card; drop them so the last
+   turn and last section end flush against the card padding. */
+.scry-chat-turn:last-child {
+    margin-bottom: 0;
+}
+
 /* Role sections: a colored left rule per role, using libadwaita's
    standalone colors (contrast-safe in both light and dark). */
 .scry-chat-section {
     border-left: 2px solid alpha(currentColor, 0.15);
     padding-left: 10px;
     margin-bottom: 12px;
+}
+
+.scry-chat-section:last-child {
+    margin-bottom: 0;
 }
 
 .scry-chat-section-user {
@@ -80,9 +90,8 @@
     color: var(--warning-color);
 }
 
-/* Chat bodies: TextViews (Thinking, Scry) and selectable Labels (You,
-   Tool). Both are read-only — transparent fill, no caret, no focus
-   ring — but stay selectable for copy.
+/* Chat text nodes are read-only but selectable: transparent fill, no caret,
+   no focus ring.
    TextView node tree: textview.view > text > selection.
    Label exposes its selection node directly: label > selection. */
 .scry-chat-text,
@@ -117,10 +126,8 @@
     margin-bottom: 6px;
 }
 
-/* Pending permission prompt: caption over a vertical button stack. Buttons
-   use the theme's suggested/destructive-action classes; the warning one has
-   no built-in equivalent. `.selected` is the keyboard highlight — a
-   focus-ring outline, since the buttons never take real focus. */
+/* Pending permission prompt. `.selected` is a keyboard highlight because the
+   buttons never take real focus. */
 .scry-chat-tool-decisions {
     margin-top: 10px;
 }
@@ -131,7 +138,7 @@
     color: var(--warning-color);
 }
 
-/* Compact, native-weight buttons — the theme's default min-height/size reads
+/* Compact, native-weight buttons; the theme's default min-height/size reads
    oversized next to the chat text. */
 .scry-chat-decision {
     min-height: 0;
@@ -141,7 +148,7 @@
 }
 
 /* Secondary actions are flat: Deny uses the theme's .destructive-action.
-   Only "Stop asking" needs custom color — libadwaita has no warning button. */
+   Only "Stop asking" needs custom color; libadwaita has no warning button. */
 .scry-chat-decision-warning {
     color: var(--warning-color);
 }

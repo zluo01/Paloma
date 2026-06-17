@@ -1,14 +1,8 @@
-//! Overlay keyboard dispatch, in priority order:
+//! Overlay keyboard dispatch.
 //!
-//! 1. Sessions popup open — arrows navigate, Enter activates,
-//!    Esc/Shift+Left closes.
-//! 2. Shift+Right — opens the sessions popup.
-//! 3. Otherwise — Escape collapses actions / exits chat / hides the
-//!    overlay; arrows move the selection (chat: the pending permission
-//!    prompts); Enter confirms the highlighted permission or submits
-//!    (chat), activates the selected row / starts a chat (local).
-//!
-//! Pure dispatch over [`Overlay`] state; nothing here owns state.
+//! Transient UI wins first (action panel, then sessions popup); normal local
+//! and chat handling follows. This module only dispatches over [`Overlay`]
+//! state; it does not own any state itself.
 
 use gtk4::{
     gdk::{Key, ModifierType},
@@ -17,6 +11,7 @@ use gtk4::{
 use uuid::Uuid;
 
 use super::{Mode, Overlay};
+use crate::widgets::keymap::{self, BindingId, Context};
 
 pub(super) enum KeyEvent {
     None,
@@ -35,92 +30,131 @@ pub(super) fn handle_key_press(
 ) -> (Propagation, KeyEvent) {
     let shift = state.contains(ModifierType::SHIFT_MASK);
 
-    if overlay.sessions.is_open() {
-        return handle_sessions_key(overlay, key, shift);
+    if overlay.is_action_panel_open() {
+        return handle_action_panel_key(overlay, key, state);
     }
 
-    if shift && key == Key::Right {
-        overlay.sessions.open();
+    if overlay.is_sessions_open() {
+        return handle_sessions_key(overlay, key, state);
+    }
+
+    // Shift+Right opens sessions from either mode, ahead of the mode split.
+    if keymap::match_binding(Context::Global, key, state) == Some(BindingId::OpenSessions) {
+        overlay.open_sessions();
         return (Propagation::Stop, KeyEvent::None);
     }
 
-    match key {
-        Key::Escape => {
-            if overlay.selection.borrow_mut().collapse_action() {
-                return (Propagation::Stop, KeyEvent::None);
-            }
-            if overlay.mode.get() == Mode::Chat {
-                overlay.exit_chat_mode();
-                return (Propagation::Stop, KeyEvent::ChatBackgrounded);
-            }
-            (Propagation::Stop, KeyEvent::HideOverlay)
+    // Ctrl+K opens the action panel, local mode only.
+    if overlay.mode.get() == Mode::Local
+        && keymap::match_binding(Context::Local, key, state) == Some(BindingId::SearchShowActions)
+    {
+        overlay.open_action_panel();
+        return (Propagation::Stop, KeyEvent::None);
+    }
+
+    let ctx = match overlay.mode.get() {
+        Mode::Local => Context::Local,
+        Mode::Chat => Context::Chat,
+    };
+    match keymap::match_binding(ctx, key, state) {
+        Some(BindingId::SearchClose) => (Propagation::Stop, KeyEvent::HideOverlay),
+        Some(BindingId::ChatExit) => {
+            overlay.exit_chat_mode();
+            (Propagation::Stop, KeyEvent::ChatBackgrounded)
         },
-        Key::Up | Key::Down if overlay.mode.get() == Mode::Chat => {
-            let delta = if key == Key::Up { -1 } else { 1 };
-            if overlay.navigate_decisions(delta) {
+        // Falls through (Proceed) when no pending decision consumes the arrow.
+        Some(BindingId::ChatMovePrompt) => {
+            if overlay.navigate_decisions(move_delta(key)) {
                 (Propagation::Stop, KeyEvent::None)
             } else {
                 (Propagation::Proceed, KeyEvent::None)
             }
         },
-        Key::Up | Key::Down if overlay.selection.borrow().is_empty() => {
-            (Propagation::Proceed, KeyEvent::None)
+        // Falls through (Proceed) when there's no selection to move.
+        Some(BindingId::SearchMove) => {
+            if overlay.selection.borrow().is_empty() {
+                (Propagation::Proceed, KeyEvent::None)
+            } else {
+                overlay.selection.borrow_mut().navigate(move_delta(key));
+                overlay.scroll_selection_into_view();
+                (Propagation::Stop, KeyEvent::None)
+            }
         },
-        Key::Up => {
-            overlay.selection.borrow_mut().navigate(-1);
-            overlay.scroll_selection_into_view();
-            (Propagation::Stop, KeyEvent::None)
+        // Shift+Return (or a consumed decision) is swallowed, not submitted.
+        Some(BindingId::ChatSend) => {
+            if !shift && !overlay.activate_selected_decision() {
+                (
+                    Propagation::Stop,
+                    KeyEvent::SubmitChat(overlay.input_text()),
+                )
+            } else {
+                (Propagation::Stop, KeyEvent::None)
+            }
         },
-        Key::Down => {
-            overlay.selection.borrow_mut().navigate(1);
-            overlay.scroll_selection_into_view();
-            (Propagation::Stop, KeyEvent::None)
+        Some(BindingId::SearchOpen) => {
+            if overlay.selection.borrow().is_empty() {
+                (Propagation::Stop, KeyEvent::StartChat(overlay.input_text()))
+            } else {
+                overlay.activate_selection();
+                (Propagation::Stop, KeyEvent::None)
+            }
         },
-        Key::Return | Key::KP_Enter => {
-            let event = match overlay.mode.get() {
-                Mode::Chat if !shift && !overlay.activate_selected_decision() => {
-                    KeyEvent::SubmitChat(overlay.input_text())
-                },
-                Mode::Chat => KeyEvent::None,
-                Mode::Local if !overlay.selection.borrow().is_empty() => {
-                    overlay.activate_selection();
-                    KeyEvent::None
-                },
-                Mode::Local => KeyEvent::StartChat(overlay.input_text()),
-            };
-            (Propagation::Stop, event)
-        },
-        _ => (Propagation::Proceed, KeyEvent::None),
+        // `ChatInterrupt` effects (copy selection / interrupt stream) live in the
+        // controller; when it doesn't consume the event, this path falls through.
+        None | Some(BindingId::ChatInterrupt) => (Propagation::Proceed, KeyEvent::None),
+        Some(other) => unreachable!("unhandled keymap binding in mode dispatch: {other:?}"),
     }
 }
 
-fn handle_sessions_key(overlay: &Overlay, key: Key, shift: bool) -> (Propagation, KeyEvent) {
-    let event = match key {
-        Key::Escape => {
-            overlay.sessions.close();
+/// Navigation step for a move binding: `Up` goes up the list, `Down` down.
+fn move_delta(key: Key) -> i32 {
+    match key {
+        Key::Up => -1,
+        Key::Down => 1,
+        _ => unreachable!("move bindings only declare Up/Down"),
+    }
+}
+
+fn handle_action_panel_key(
+    overlay: &Overlay,
+    key: Key,
+    state: ModifierType,
+) -> (Propagation, KeyEvent) {
+    match keymap::match_binding(Context::Panel, key, state) {
+        Some(BindingId::PanelMove) => overlay.navigate_action_panel(move_delta(key)),
+        Some(BindingId::PanelRun) => overlay.activate_action_panel(),
+        Some(BindingId::PanelClose) => overlay.close_action_panel(),
+        // Modal: swallow unbound keys so typing doesn't leak to the entry.
+        None => {},
+        Some(other) => unreachable!("match_binding(Context::Panel) returned {other:?}"),
+    }
+    (Propagation::Stop, KeyEvent::None)
+}
+
+fn handle_sessions_key(
+    overlay: &Overlay,
+    key: Key,
+    state: ModifierType,
+) -> (Propagation, KeyEvent) {
+    let event = match keymap::match_binding(Context::Sessions, key, state) {
+        Some(BindingId::SessionMove) => {
+            overlay.sessions.navigate(move_delta(key));
             KeyEvent::None
         },
-        Key::Left if shift => {
-            overlay.sessions.close();
-            KeyEvent::None
-        },
-        Key::Up => {
-            overlay.sessions.navigate(-1);
-            KeyEvent::None
-        },
-        Key::Down => {
-            overlay.sessions.navigate(1);
-            KeyEvent::None
-        },
-        Key::Delete | Key::KP_Delete => overlay
-            .sessions
-            .selected_session()
-            .map_or(KeyEvent::None, KeyEvent::SessionDeleted),
-        Key::Return | Key::KP_Enter => overlay
+        Some(BindingId::SessionOpen) => overlay
             .sessions
             .activate_selected()
             .map_or(KeyEvent::None, KeyEvent::SessionSelected),
-        _ => KeyEvent::None,
+        Some(BindingId::SessionDelete) => overlay
+            .sessions
+            .selected_session()
+            .map_or(KeyEvent::None, KeyEvent::SessionDeleted),
+        Some(BindingId::SessionClose) => {
+            overlay.close_sessions();
+            KeyEvent::None
+        },
+        None => KeyEvent::None,
+        Some(other) => unreachable!("match_binding(Context::Sessions) returned {other:?}"),
     };
     (Propagation::Stop, event)
 }

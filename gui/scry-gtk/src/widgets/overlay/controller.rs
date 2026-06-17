@@ -1,8 +1,8 @@
-//! App-side coordinator for the overlay.
+//! Overlay controller.
 //!
-//! The overlay owns GTK widgets and local UI state; this controller owns
-//! application behavior around it: subscriptions, controller calls, chat
-//! session lifecycle, and settings/model actions.
+//! Bridges GTK events to core services: hotkeys, local queries, chat sessions,
+//! session-list updates, settings, and model selection. GTK updates stay on the
+//! main context; service calls run through the runtime helpers.
 
 use std::{
     cell::{Cell, RefCell},
@@ -10,9 +10,10 @@ use std::{
     sync::Arc,
 };
 
+use futures::StreamExt;
 use gtk4::{
-    gdk::{Key, ModifierType},
     glib::{self, Propagation},
+    prelude::ActionGroupExt,
 };
 use libadwaita::Application;
 use log::{error, warn};
@@ -20,10 +21,7 @@ use scry_core::{
     Action, ActionOutcome, AppContext, ChatRenderEvent, Connector, LocalRenderEvent, ProviderId,
     RenderEvent, SessionUpdate, TerminalState, UserDecision,
 };
-use tokio::sync::{
-    broadcast::{self, error::RecvError},
-    mpsc,
-};
+use tokio::sync::broadcast::{self, error::RecvError};
 use uuid::Uuid;
 
 use super::{
@@ -31,8 +29,9 @@ use super::{
     bar::ModelChoice,
     connectors::{is_preferred, is_running},
     keys::{self, KeyEvent},
+    results::renders_any,
 };
-use crate::runtime;
+use crate::{runtime, widgets::keymap};
 
 #[derive(Clone)]
 pub(crate) struct OverlayController {
@@ -42,10 +41,9 @@ pub(crate) struct OverlayController {
 struct ControllerInner {
     overlay: Overlay,
     app: Arc<AppContext>,
-    /// UI-only hotkey channel (portal -> overlay); the controller subscribes
-    /// to toggle the overlay on each activation.
+    /// UI-only hotkey activations; each event toggles the overlay.
     hotkey: broadcast::Sender<()>,
-    open_settings: Rc<dyn Fn()>,
+    gapp: Application,
     chat: ChatState,
     latest_query_id: Cell<u64>,
     selected_provider: Cell<ProviderId>,
@@ -62,14 +60,13 @@ impl OverlayController {
         gapp: &Application,
         app: Arc<AppContext>,
         hotkey: broadcast::Sender<()>,
-        open_settings: Rc<dyn Fn()>,
     ) -> Self {
         let controller = Self {
             inner: Rc::new(ControllerInner {
                 overlay: super::build(gapp),
                 app,
                 hotkey,
-                open_settings,
+                gapp: gapp.clone(),
                 chat: ChatState::default(),
                 latest_query_id: Cell::new(0),
                 selected_provider: Cell::new(ProviderId::Codex),
@@ -85,8 +82,29 @@ impl OverlayController {
         self.install_key_handler();
         self.install_bar_actions();
         self.install_model_picker();
+        self.install_session_handlers();
         self.install_session_update_watcher();
         self.refresh_sessions_panel();
+    }
+
+    /// Set once on the panel; rebuilt session rows reuse these typed callbacks.
+    fn install_session_handlers(&self) {
+        // Weak capture: the controller owns the overlay which owns `SessionsView`,
+        // so a strong capture here would close a controller -> overlay -> sessions
+        // -> callback -> controller cycle.
+        let weak = Rc::downgrade(&self.inner);
+        self.inner.overlay.set_on_session_activated(move |id| {
+            if let Some(inner) = weak.upgrade() {
+                OverlayController { inner }.restore_session(id);
+            }
+        });
+
+        let weak = Rc::downgrade(&self.inner);
+        self.inner.overlay.set_on_session_deleted(move |id| {
+            if let Some(inner) = weak.upgrade() {
+                OverlayController { inner }.delete_session(id);
+            }
+        });
     }
 
     fn install_hotkey_watcher(&self) {
@@ -114,16 +132,20 @@ impl OverlayController {
         let overlay = self.inner.overlay.clone();
         let controller = self.clone();
         self.inner.overlay.connect_key_pressed(move |key, state| {
-            // Ctrl+C interrupts an in-flight chat turn, unless there's a
-            // selection to copy (let it fall through to the entry's copy).
-            if key == Key::c
-                && state.contains(ModifierType::CONTROL_MASK)
+            // Ctrl+C in chat: copy a text selection if there is one, else
+            // interrupt a streaming response.
+            if keymap::match_binding(keymap::Context::Chat, key, state)
+                == Some(keymap::BindingId::ChatInterrupt)
                 && overlay.is_chat_mode()
-                && controller.inner.chat.in_flight.get()
                 && !overlay.entry_has_selection()
             {
-                controller.cancel_active_chat();
-                return Propagation::Stop;
+                if overlay.copy_chat_selection() {
+                    return Propagation::Stop;
+                }
+                if controller.inner.chat.in_flight.get() {
+                    controller.cancel_active_chat();
+                    return Propagation::Stop;
+                }
             }
             let (propagation, event) = keys::handle_key_press(&overlay, key, state);
             controller.handle_key_event(event);
@@ -135,7 +157,7 @@ impl OverlayController {
         let controller = self.clone();
         self.inner.overlay.connect_settings_clicked(move || {
             controller.hide_overlay();
-            (controller.inner.open_settings)();
+            controller.inner.gapp.activate_action("settings", None);
         });
 
         let controller = self.clone();
@@ -157,8 +179,8 @@ impl OverlayController {
         let app = self.inner.app.clone();
 
         glib::spawn_future_local(async move {
-            // Shared permission-decision handler for every tool-call section this
-            // watcher renders.
+            // All tool-call rows rendered by this watcher share the same
+            // decision bridge back to the remote-query service.
             let on_decide: OnDecideFn = Rc::new(move |decision: UserDecision, apply| {
                 let app = app.clone();
                 runtime::spawn_with(
@@ -218,6 +240,13 @@ impl OverlayController {
         }
     }
 
+    /// Present (or re-focus) the overlay without ever toggling it closed. Used by
+    /// the application's `activate` handler on a second launch; `Overlay::show`
+    /// focuses the entry even when the window is already visible.
+    pub(crate) fn present_overlay(&self) {
+        self.show_overlay();
+    }
+
     fn hide_overlay(&self) {
         if self.inner.overlay.hide() {
             self.background_chat();
@@ -230,8 +259,7 @@ impl OverlayController {
         self.inner.chat.in_flight.set(false);
     }
 
-    /// Cancel the in-flight turn on the active session. The UI updates from
-    /// the resulting `RenderEvent::Cancel` broadcast, not here.
+    /// UI changes come from the eventual `RenderEvent::Cancel` broadcast.
     fn cancel_active_chat(&self) {
         let Some(session_id) = *self.inner.chat.active_session.borrow() else {
             return;
@@ -259,24 +287,20 @@ impl OverlayController {
 
         if text.is_empty() {
             self.inner.overlay.clear_results();
+            self.inner.overlay.hide_results();
             return;
         }
 
+        // Keep previous results visible until this query has something to show;
+        // otherwise the content window briefly unmaps between keystrokes.
         let app_for_query = self.inner.app.clone();
-        let (render_tx, mut render_rx) =
-            mpsc::channel::<RenderEvent>(scry_core::RENDER_CHANNEL_CAPACITY);
-
-        self.inner.overlay.clear_results();
-
-        runtime::spawn_with(
-            async move {
-                app_for_query.local_query.query(&text, render_tx).await;
-            },
-            |_| {},
-        );
-
         let controller = self.clone();
         glib::MainContext::default().spawn_local(async move {
+            // The query runs on the runtime and streams render events back;
+            // consume them here on the GTK main context.
+            let mut render_stream =
+                runtime::spawn(async move { app_for_query.local_query.query(&text) }).await;
+
             let on_invoke: InvokeFn = {
                 let controller = controller.clone();
                 Rc::new(move |handler_id, action| {
@@ -284,15 +308,26 @@ impl OverlayController {
                 })
             };
 
+            // Keep previous results until the new query renders something. A
+            // response counts only if it has renderable (action-bearing) items;
+            // clearing waits for that. So an all-action-less query leaves the
+            // stale rows up while the stream is pending, then `Done` clears and
+            // hides them (the no-results path) rather than appending the chat row.
             let mut has_results = false;
-            while let Some(event) = render_rx.recv().await {
+            while let Some(event) = render_stream.next().await {
                 if query_id != controller.inner.latest_query_id.get() {
                     break;
                 }
 
                 match event {
                     RenderEvent::Local(LocalRenderEvent::Append { response }) => {
-                        has_results |= !response.items.is_empty();
+                        if !renders_any(&response.items) {
+                            continue;
+                        }
+                        if !has_results {
+                            controller.inner.overlay.clear_results();
+                            has_results = true;
+                        }
                         controller.inner.overlay.append_section(
                             response.id,
                             &response.name,
@@ -307,11 +342,16 @@ impl OverlayController {
                             overlay.append_chat_action(Rc::new(move || {
                                 chat_controller.start_chat_from_current_input();
                             }));
+                        } else {
+                            controller.inner.overlay.clear_results();
+                            controller.inner.overlay.hide_results();
                         }
                         break;
                     },
                     RenderEvent::Error { message } => {
                         warn!("query render: {message}");
+                        controller.inner.overlay.clear_results();
+                        controller.inner.overlay.hide_results();
                         break;
                     },
                     RenderEvent::Chat(_) | RenderEvent::Cancel => {
@@ -405,6 +445,8 @@ impl OverlayController {
     }
 
     fn restore_session(&self, id: Uuid) {
+        // Session selection is a controller action; the panel only reports the id.
+        self.inner.overlay.close_sessions();
         if *self.inner.chat.active_session.borrow() == Some(id) {
             return;
         }
@@ -479,7 +521,7 @@ impl OverlayController {
         }
     }
 
-    fn invoke_action(&self, handler_id: String, action: Action) {
+    fn invoke_action(&self, handler_id: &'static str, action: Action) {
         let Some(outcome) = self.inner.app.local_query.run(handler_id, action) else {
             return;
         };
@@ -509,8 +551,8 @@ impl OverlayController {
                             )
                         })
                         .collect();
-                    // A failed first turn drops its session backend-side; if our
-                    // active one is gone, reset so the next prompt opens a fresh one.
+                    // A failed first turn drops its new session backend-side. If
+                    // the active session disappeared, the next prompt must start fresh.
                     let active = *controller.inner.chat.active_session.borrow();
                     if let Some(active) = active
                         && !formatted.iter().any(|(id, _, _)| *id == active)
@@ -518,18 +560,7 @@ impl OverlayController {
                         controller.inner.chat.active_session.borrow_mut().take();
                         controller.inner.overlay.set_active_session(None);
                     }
-                    let on_selected: Rc<dyn Fn(Uuid)> = {
-                        let controller = controller.clone();
-                        Rc::new(move |id| controller.restore_session(id))
-                    };
-                    let on_delete: Rc<dyn Fn(Uuid)> = {
-                        let controller = controller.clone();
-                        Rc::new(move |id| controller.delete_session(id))
-                    };
-                    controller
-                        .inner
-                        .overlay
-                        .set_sessions(&formatted, on_selected, on_delete);
+                    controller.inner.overlay.set_sessions(&formatted);
                 },
                 Err(err) => warn!("refresh sessions: {err}"),
             },
@@ -543,11 +574,13 @@ impl OverlayController {
                 let app = self.inner.app.clone();
                 async move { app.remote_query.remove_session(id).await }
             },
-            move |result| {
-                if let Err(err) = result {
+            move |result| match result {
+                Ok(()) => controller.inner.overlay.remove_session(id),
+                Err(err) => {
                     error!("delete session {id}: {err}. This indicates a bug.");
-                }
-                controller.refresh_sessions_panel();
+                    // The UI may now be stale; fetch the authoritative list.
+                    controller.refresh_sessions_panel();
+                },
             },
         );
     }
@@ -607,8 +640,7 @@ impl OverlayController {
     }
 }
 
-/// The provider to drive chat with: preferred-and-running, else the first
-/// running one.
+/// Use the preferred running provider, falling back to the first running one.
 fn preferred_provider(connectors: &[Connector]) -> Option<ProviderId> {
     connectors
         .iter()

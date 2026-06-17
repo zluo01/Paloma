@@ -1,44 +1,47 @@
-//! Sessions popup in its own layer window, positioned right of the bar.
-//! Rows are `AdwActionRow`s in a single-selection `ListBox`; the popup
-//! window never takes keyboard (`KeyboardMode::None`), so list focus
-//! can't conflict with the bar's entry — the key handler forwards
-//! arrows/Enter as selection and activation. The active session's row
-//! is disabled so it can't be re-restored on top of itself.
+//! Sessions popup for the overlay.
+//!
+//! The popup lives in a non-focusable layer window, so keyboard navigation is
+//! driven by the bar's key handler instead of `ListBox` focus. The active
+//! session row is disabled to prevent restoring a session onto itself.
 
 use std::rc::Rc;
 
-use gtk4::{
-    Align, ApplicationWindow, Button, ListBoxRow, ScrolledWindow, glib, subclass::prelude::*,
-};
+use gtk4::{Align, Button, ListBoxRow, ScrolledWindow, glib, prelude::*, subclass::prelude::*};
 use libadwaita::{ActionRow, prelude::*};
 use uuid::Uuid;
 
 use super::{OVERLAY_CONTENT_HEIGHT_PX, SESSIONS_WIDTH_PX};
 
-/// Sessions panel styling: header, transparent list, empty state.
 pub(super) const CSS: &str = include_str!("style.css");
 
 mod imp {
-    use std::cell::{Cell, OnceCell, RefCell};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     use gtk4::{
-        ApplicationWindow, Box as GtkBox, CompositeTemplate, Label, ListBox, glib, prelude::*,
-        subclass::prelude::*,
+        Box as GtkBox, CompositeTemplate, Label, ListBox, glib, prelude::*, subclass::prelude::*,
     };
     use libadwaita::ActionRow;
     use uuid::Uuid;
+
+    /// Typed callback for row activation/deletion.
+    pub type SessionCallback = Rc<dyn Fn(Uuid)>;
 
     #[derive(CompositeTemplate, Default)]
     #[template(file = "sessions.ui")]
     pub struct SessionsView {
         #[template_child]
         pub list: TemplateChild<ListBox>,
-        pub window: OnceCell<ApplicationWindow>,
         pub rows: RefCell<Vec<(Uuid, ActionRow)>>,
-        /// Session currently shown on the chat surface; its row is disabled.
         pub active: Cell<Option<Uuid>>,
-        /// Panel height (golden section of the monitor), for centering on the bar.
         pub height: Cell<i32>,
+        /// Row-widget activation / delete callbacks. The keyboard path returns
+        /// ids directly via `activate_selected` / `selected_session`, so it
+        /// doesn't use these.
+        pub on_activated: RefCell<Option<SessionCallback>>,
+        pub on_deleted: RefCell<Option<SessionCallback>>,
     }
 
     #[glib::object_subclass]
@@ -59,7 +62,6 @@ mod imp {
     impl ObjectImpl for SessionsView {
         fn constructed(&self) {
             self.parent_constructed();
-            // ListBox shows this whenever it has no rows.
             let empty = Label::new(Some("No sessions yet"));
             empty.add_css_class("scry-sessions-empty");
             self.list.set_placeholder(Some(&empty));
@@ -77,24 +79,15 @@ glib::wrapper! {
 }
 
 impl SessionsView {
-    /// `window` is a prepared (hidden) layer window; this fills it.
-    pub(super) fn new(window: ApplicationWindow) -> Self {
+    pub(super) fn new() -> Self {
         let view: Self = glib::Object::new();
         view.set_width_request(SESSIONS_WIDTH_PX);
         view.set_height_request(OVERLAY_CONTENT_HEIGHT_PX);
         view.imp().height.set(OVERLAY_CONTENT_HEIGHT_PX);
-        window.set_child(Some(&view));
-        let _ = view.imp().window.set(window);
         view
     }
 
-    /// The layer window this panel fills; positioned by the overlay.
-    pub(super) fn window(&self) -> &ApplicationWindow {
-        self.imp().window.get().expect("window set in new")
-    }
-
-    /// Fix the panel height (the golden section of the monitor) so it can be
-    /// vertically centered on the bar.
+    /// Mirror the layer-window height so the popup can be centered beside the bar.
     pub(super) fn set_height(&self, px: i32) {
         self.set_height_request(px);
         self.imp().height.set(px);
@@ -104,37 +97,21 @@ impl SessionsView {
         self.imp().height.get()
     }
 
-    pub(super) fn is_open(&self) -> bool {
-        self.window().is_visible()
-    }
-
-    pub(super) fn open(&self) {
-        if self.window().is_visible() {
-            return;
-        }
-        self.window().present();
-        // No initial selection: the first arrow steps off the active session
-        // (see `navigate`), not from the top of the list.
-        self.scroll_to_active();
-    }
-
-    pub(super) fn close(&self) {
-        if !self.window().is_visible() {
-            return;
-        }
-        self.window().set_visible(false);
+    pub(super) fn clear_selection(&self) {
         self.imp().list.select_row(None::<&ListBoxRow>);
     }
 
-    /// Rebuild the list, one row per `(id, provider, title)`. Resets the
-    /// keyboard selection; if the popup is open, the first selectable row
-    /// is re-selected so arrow navigation keeps working.
-    pub(super) fn set_sessions(
-        &self,
-        on_session_click: Rc<dyn Fn(Uuid)>,
-        on_delete: Rc<dyn Fn(Uuid)>,
-        sessions: &[(Uuid, String, String)],
-    ) {
+    pub(super) fn set_on_session_activated(&self, f: impl Fn(Uuid) + 'static) {
+        *self.imp().on_activated.borrow_mut() = Some(Rc::new(f));
+    }
+
+    pub(super) fn set_on_session_deleted(&self, f: impl Fn(Uuid) + 'static) {
+        *self.imp().on_deleted.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// `select_first` is true while the popup is open, so keyboard navigation
+    /// keeps an anchor after the list is rebuilt.
+    pub(super) fn set_sessions(&self, sessions: &[(Uuid, String, String)], select_first: bool) {
         let list = &self.imp().list;
         while let Some(row) = list.first_child() {
             list.remove(&row);
@@ -160,15 +137,23 @@ impl SessionsView {
 
             let id_copy = *id;
 
-            let view = self.clone();
-            let on_click = on_session_click.clone();
-            row.connect_activated(move |_| {
-                if view.imp().active.get() == Some(id_copy) {
-                    return;
+            row.connect_activated(glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_| {
+                    // The row should already be insensitive; keep this defensive
+                    // for programmatic activation.
+                    if view.imp().active.get() == Some(id_copy) {
+                        return;
+                    }
+                    // Clone the callback out before invoking so arbitrary
+                    // controller code never runs while the `RefCell` is borrowed.
+                    let cb = view.imp().on_activated.borrow().clone();
+                    if let Some(cb) = cb {
+                        cb(id_copy);
+                    }
                 }
-                view.close();
-                on_click(id_copy);
-            });
+            ));
 
             let delete = Button::builder()
                 .icon_name("user-trash-symbolic")
@@ -176,8 +161,16 @@ impl SessionsView {
                 .valign(Align::Center)
                 .css_classes(["flat", "circular"])
                 .build();
-            let on_delete = on_delete.clone();
-            delete.connect_clicked(move |_| on_delete(id_copy));
+            delete.connect_clicked(glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_| {
+                    let cb = view.imp().on_deleted.borrow().clone();
+                    if let Some(cb) = cb {
+                        cb(id_copy);
+                    }
+                }
+            ));
             row.add_suffix(&delete);
 
             list.append(&row);
@@ -186,8 +179,18 @@ impl SessionsView {
         *self.imp().rows.borrow_mut() = new_rows;
         self.sync_row_states();
 
-        if self.is_open() {
+        if select_first {
             self.select_first_enabled();
+        }
+    }
+
+    /// Remove a single session's row in place, preserving scroll position and
+    /// the rest of the list (unlike a full `set_sessions` rebuild).
+    pub(super) fn remove_session(&self, id: Uuid) {
+        let mut rows = self.imp().rows.borrow_mut();
+        if let Some(pos) = rows.iter().position(|(rid, _)| *rid == id) {
+            let (_, row) = rows.remove(pos);
+            self.imp().list.remove(&row);
         }
     }
 
@@ -196,7 +199,6 @@ impl SessionsView {
         self.sync_row_states();
     }
 
-    /// Move the keyboard selection by `delta`, skipping the active row.
     pub(super) fn navigate(&self, delta: i32) {
         let rows = self.imp().rows.borrow();
         if rows.is_empty() {
@@ -204,8 +206,8 @@ impl SessionsView {
         }
         let list = &self.imp().list;
         let active = self.imp().active.get();
-        // With nothing selected yet (just opened), step off the active session:
-        // Down -> active + 1, Up -> active - 1.
+        // If no row is selected, anchor navigation at the active row so Up and
+        // Down move to its neighboring sessions.
         let current = list
             .selected_row()
             .map(|row| row.index() as usize)
@@ -224,8 +226,6 @@ impl SessionsView {
         }
     }
 
-    /// Activate the keyboard-selected row: close the popup and return the
-    /// row's session id to the caller.
     pub(super) fn activate_selected(&self) -> Option<Uuid> {
         let selected = self.imp().list.selected_row()?;
         let index = selected.index();
@@ -239,12 +239,9 @@ impl SessionsView {
         if self.imp().active.get() == Some(id) {
             return None;
         }
-        self.close();
         Some(id)
     }
 
-    /// The keyboard-selected session id (without closing the popup); used by
-    /// the Delete key. The active row can't be selected, so it's never returned.
     pub(super) fn selected_session(&self) -> Option<Uuid> {
         let index = self.imp().list.selected_row()?.index();
         if index < 0 {
@@ -257,9 +254,7 @@ impl SessionsView {
             .map(|(id, _)| *id)
     }
 
-    /// Center the active session's row when the popup opens, so the user sees
-    /// where they currently are.
-    fn scroll_to_active(&self) {
+    pub(super) fn scroll_to_active(&self) {
         let active = self.imp().active.get();
         let row = self
             .imp()
@@ -273,8 +268,6 @@ impl SessionsView {
         }
     }
 
-    /// Disable the active session's row and drop the selection if it
-    /// landed on it.
     fn sync_row_states(&self) {
         let active = self.imp().active.get();
         let list = &self.imp().list;
@@ -300,12 +293,10 @@ impl SessionsView {
     }
 }
 
-/// Scroll `row` to the vertical center of its scroller, deferring until the
-/// row is allocated (the popup lays out a frame or two after it's shown).
+/// Scroll `row` to the vertical center after the popup has laid out.
 fn center_when_allocated(row: &ActionRow) {
     row.add_tick_callback(|row, _clock| {
-        // The row's bounds in the list (the scrollable content); `None`/zero
-        // until the popup has laid out.
+        // Bounds are unavailable until the row has been allocated.
         let bounds = row.parent().and_then(|list| row.compute_bounds(&list));
         let Some(bounds) = bounds.filter(|b| b.height() > 0.0) else {
             return glib::ControlFlow::Continue;
@@ -323,7 +314,7 @@ fn center_when_allocated(row: &ActionRow) {
     });
 }
 
-/// Scroll `row` just enough to bring it fully into view (for arrow nav).
+/// Scroll only enough to keep keyboard navigation visible.
 fn bring_into_view(row: &ActionRow) {
     let Some(bounds) = row.parent().and_then(|list| row.compute_bounds(&list)) else {
         return;

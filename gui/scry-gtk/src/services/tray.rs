@@ -1,12 +1,8 @@
-// System tray icon (StatusNotifierItem).
-//
-// Pure DBus via `ksni`; no GTK in this module. Activations and menu
-// selections are forwarded as `TrayEvent` over a broadcast channel
-// consumed by the main app on the GTK thread.
-//
-// Activation model (KDE convention):
-//   * Left click  → `activate` → OpenSettings
-//   * Right click → context menu with "Open Settings" + "Quit"
+//! System tray icon (StatusNotifierItem).
+//!
+//! `ScryTray` is moved into `ksni` during registration. `ksni` owns the
+//! long-lived D-Bus service and calls this type for activations and menu
+//! selections; callbacks broadcast `TrayEvent`s for GTK to consume.
 
 use ksni::{
     Tray, TrayMethods,
@@ -24,11 +20,10 @@ pub(crate) enum TrayEvent {
 
 const TRAY_ID: &str = "dev.scry.Scry";
 const TRAY_TITLE: &str = "Scry";
-/// Freedesktop icon name. Themes that ship `preferences-system` (most
-/// of them) will render a gear; otherwise the panel falls back to the
-/// item's title text.
+/// Freedesktop icon name; panels fall back to the title if the theme lacks it.
 const TRAY_ICON: &str = "preferences-system";
 
+/// State owned by the `ksni` service while the tray is registered.
 struct ScryTray {
     events: broadcast::Sender<TrayEvent>,
 }
@@ -84,8 +79,12 @@ impl Tray for ScryTray {
     }
 }
 
-/// Spawn the tray icon. Returns once the SNI registration completes
-/// (or is logged-and-ignored if the host is unavailable).
+/// Register the tray icon with the StatusNotifierItem host.
+///
+/// `ksni::TrayMethods::spawn` starts the background D-Bus service and returns
+/// once registration is complete. This wrapper currently drops the returned
+/// handle, so the service lives for the process lifetime and cannot be updated
+/// or shut down explicitly.
 pub(crate) async fn run(events: broadcast::Sender<TrayEvent>) {
     let tray = ScryTray { events };
     match tray.spawn().await {

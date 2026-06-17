@@ -1,337 +1,375 @@
-// Add-plugin dialog: a small form for registering an MCP server, either a
-// local command or a remote HTTP endpoint.
+//! Add/edit dialog for MCP server plugins.
+//!
+//! The dialog owns validation and form-to-[`Plugin`] conversion. Persistence is
+//! delegated through [`OnSubmit`] so the page can decide whether the config is a
+//! create or update.
 
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
     time::Duration,
 };
 
-use gtk4::{Box as GtkBox, Button, ListBox, Orientation, SelectionMode, StringList, glib};
-use libadwaita::{
-    Banner, ComboRow, Dialog, EntryRow, ExpanderRow, SpinRow, SwitchRow, ToolbarView, prelude::*,
-};
+use gtk4::{glib, prelude::*, subclass::prelude::*};
+use libadwaita::{EntryRow, prelude::*};
 use scry_core::{Plugin, PluginArgs, Transport};
-
-/// Default plugin timeout, in seconds. Matches the storage default.
-const DEFAULT_TIMEOUT: i64 = 300;
 
 /// Delay between the last keystroke and a validation pass, so fields
 /// aren't flagged red mid-typing.
 const VALIDATE_DEBOUNCE: Duration = Duration::from_millis(300);
 
-/// Outcome callback handed to `on_submit`: report `Ok` to close the
-/// dialog, `Err(message)` to keep it open with the message in its banner.
+/// Completion callback passed to [`OnSubmit`].
+///
+/// `Ok(())` closes the dialog. `Err(message)` keeps it open and displays the
+/// message in the banner.
 pub(super) type SubmitDone = Rc<dyn Fn(Result<(), String>)>;
 
-/// Open the dialog. `taken` is the set of existing plugin names (new names
-/// must be unique; when editing, pass the set without the edited plugin's
-/// own name). `initial` pre-fills the form for editing; its name and
-/// disabled state carry over unchanged. `on_submit` fires with the
-/// completed config when the user confirms and must eventually call the
-/// provided [`SubmitDone`]; closing the dialog any other way submits
-/// nothing.
+/// Form submission hook owned by the page.
+///
+/// The dialog passes a validated [`Plugin`] and waits for the caller to report
+/// persistence success or failure through [`SubmitDone`].
+pub(super) type OnSubmit = Rc<dyn Fn(Plugin, SubmitDone)>;
+
+mod imp {
+    use std::{
+        cell::{Cell, RefCell},
+        collections::HashSet,
+    };
+
+    use gtk4::{Button, CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+    use libadwaita::{
+        Banner, ComboRow, EntryRow, SpinRow, SwitchRow, prelude::*, subclass::prelude::*,
+    };
+
+    use super::OnSubmit;
+
+    #[derive(CompositeTemplate, Default)]
+    #[template(file = "plugin_dialog.ui")]
+    pub struct PluginDialog {
+        #[template_child]
+        pub cancel: TemplateChild<Button>,
+        #[template_child]
+        pub add: TemplateChild<Button>,
+        #[template_child]
+        pub banner: TemplateChild<Banner>,
+        #[template_child]
+        pub name: TemplateChild<EntryRow>,
+        #[template_child]
+        pub kind: TemplateChild<ComboRow>,
+        #[template_child]
+        pub command: TemplateChild<EntryRow>,
+        #[template_child]
+        pub args: TemplateChild<EntryRow>,
+        #[template_child]
+        pub url: TemplateChild<EntryRow>,
+        #[template_child]
+        pub requires_auth: TemplateChild<SwitchRow>,
+        #[template_child]
+        pub timeout: TemplateChild<SpinRow>,
+        #[template_child]
+        pub env: TemplateChild<EntryRow>,
+
+        /// Names unavailable to this form; validation rejects duplicates.
+        pub taken: RefCell<HashSet<String>>,
+        /// Preserved from the edited plugin; the dialog does not expose it.
+        pub disabled: Cell<bool>,
+        pub on_submit: RefCell<Option<OnSubmit>>,
+        /// Pending debounced validation pass, cancelled on close or retype.
+        pub pending: RefCell<Option<glib::SourceId>>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for PluginDialog {
+        const NAME: &'static str = "ScryPluginDialog";
+        type Type = super::PluginDialog;
+        type ParentType = libadwaita::Dialog;
+
+        fn class_init(klass: &mut Self::Class) {
+            klass.bind_template();
+        }
+
+        fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
+            obj.init_template();
+        }
+    }
+
+    impl ObjectImpl for PluginDialog {
+        fn constructed(&self) {
+            self.parent_constructed();
+
+            let obj = self.obj();
+            self.banner
+                .connect_button_clicked(|banner| banner.set_revealed(false));
+
+            self.kind.connect_selected_notify(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.on_kind_changed()
+            ));
+
+            for row in [&self.name, &self.command, &self.args, &self.url, &self.env] {
+                row.connect_changed(glib::clone!(
+                    #[weak]
+                    obj,
+                    move |_| obj.queue_validate()
+                ));
+            }
+
+            self.cancel.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| {
+                    obj.close();
+                }
+            ));
+            self.add.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.on_add_clicked()
+            ));
+            // Dismissing the dialog cancels pending validation against widgets
+            // that are no longer visible.
+            obj.connect_closed(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.cancel_pending()
+            ));
+        }
+    }
+
+    impl WidgetImpl for PluginDialog {}
+    impl AdwDialogImpl for PluginDialog {}
+}
+
+glib::wrapper! {
+    pub struct PluginDialog(ObjectSubclass<imp::PluginDialog>)
+        @extends libadwaita::Dialog, gtk4::Widget,
+        @implements gtk4::Accessible, gtk4::Buildable, gtk4::ConstraintTarget;
+}
+
+/// Open the add/edit dialog.
+///
+/// `taken` contains names the user may not choose. When editing, omit the
+/// edited plugin's own name so keeping it is allowed. `initial` pre-fills edit
+/// state. `on_submit` receives the completed config and must eventually call
+/// [`SubmitDone`]. Closing the dialog without confirming submits nothing.
 pub(super) fn open(
     parent: &impl IsA<gtk4::Widget>,
     taken: HashSet<String>,
     initial: Option<Plugin>,
-    on_submit: Rc<dyn Fn(Plugin, SubmitDone)>,
+    on_submit: OnSubmit,
 ) {
-    let editing = initial.is_some();
-    // Not edited by the form; carried over from the edited plugin.
-    let disabled = initial.as_ref().is_some_and(|p| p.disabled);
+    PluginDialog::new(taken, initial, on_submit).present(Some(parent));
+}
 
-    let dialog = Dialog::builder()
-        .title(if editing { "Edit Plugin" } else { "Add Plugin" })
-        .content_width(440)
-        .build();
+impl PluginDialog {
+    fn new(taken: HashSet<String>, initial: Option<Plugin>, on_submit: OnSubmit) -> Self {
+        let dialog: Self = glib::Object::new();
+        let editing = initial.is_some();
+        let imp = dialog.imp();
+        imp.taken.replace(taken);
+        imp.disabled
+            .set(initial.as_ref().is_some_and(|p| p.disabled));
+        imp.on_submit.replace(Some(on_submit));
 
-    let cancel = Button::with_label("Cancel");
-    let add = Button::builder()
-        .label(if editing { "Save" } else { "Add" })
-        .sensitive(false)
-        .css_classes(["suggested-action"])
-        .build();
+        dialog.set_title(if editing { "Edit Plugin" } else { "Add Plugin" });
+        imp.add.set_label(if editing { "Save" } else { "Add" });
 
-    let header = libadwaita::HeaderBar::builder()
-        .show_start_title_buttons(false)
-        .show_end_title_buttons(false)
-        .build();
-    header.pack_start(&cancel);
-    header.pack_end(&add);
-
-    // One continuous group; the Type row hides/shows the rows that only
-    // apply to its selection. Advanced (optional) fields sit in an
-    // expander at the end.
-    let name = EntryRow::builder().title("Name").build();
-    let kind = ComboRow::builder()
-        .title("Type")
-        .model(&StringList::new(&["Local command", "Remote server"]))
-        .build();
-    let command = EntryRow::builder().title("Command").build();
-    let args = EntryRow::builder().title("Arguments").build();
-    let url = EntryRow::builder().title("URL").visible(false).build();
-    let requires_auth = SwitchRow::builder()
-        .title("Requires authentication")
-        .visible(false)
-        .build();
-
-    let timeout = SpinRow::with_range(1.0, 3600.0, 10.0);
-    timeout.set_title("Timeout");
-    timeout.set_subtitle("Seconds. Defaults to 300.");
-    timeout.set_value(DEFAULT_TIMEOUT as f64);
-
-    let env = EntryRow::builder()
-        .title("Environment variables (JSON)")
-        .build();
-    env.set_tooltip_text(Some(r#"e.g. {"API_KEY": "secret"}"#));
-
-    let advanced = ExpanderRow::builder()
-        .title("Advanced")
-        .subtitle("Optional")
-        .build();
-    advanced.add_row(&timeout);
-    advanced.add_row(&env);
-
-    let form = ListBox::builder()
-        .selection_mode(SelectionMode::None)
-        .css_classes(["boxed-list"])
-        .margin_top(12)
-        .margin_bottom(24)
-        .margin_start(24)
-        .margin_end(24)
-        .build();
-    for row in [
-        name.clone().upcast::<gtk4::Widget>(),
-        kind.clone().upcast(),
-        command.clone().upcast(),
-        args.clone().upcast(),
-        url.clone().upcast(),
-        requires_auth.clone().upcast(),
-        advanced.upcast(),
-    ] {
-        form.append(&row);
+        // Pre-fill after construction so changing the kind can update visible
+        // rows and validation can arm the confirm button.
+        if let Some(initial) = initial {
+            dialog.prefill(initial);
+        }
+        dialog
     }
 
-    // Submit failures land here; the dialog stays open for corrections.
-    let banner = Banner::new("");
-    banner.set_button_label(Some("Dismiss"));
-    banner.connect_button_clicked(|banner| banner.set_revealed(false));
+    /// Validate required fields and structured JSON fields.
+    ///
+    /// Empty required fields keep Add disabled. Invalid fields also get
+    /// Adwaita's red error outline and an explanatory tooltip.
+    fn validate(&self) -> bool {
+        let imp = self.imp();
+        let name = imp.name.get();
+        let kind = imp.kind.get();
+        let command = imp.command.get();
+        let args = imp.args.get();
+        let url = imp.url.get();
+        let env = imp.env.get();
 
-    let body = GtkBox::new(Orientation::Vertical, 0);
-    body.append(&banner);
-    body.append(&form);
+        let filled = |row: &EntryRow| !row.text().trim().is_empty();
 
-    let view = ToolbarView::new();
-    view.add_top_bar(&header);
-    view.set_content(Some(&body));
-    dialog.set_child(Some(&view));
+        // Name: required and unique among existing plugins.
+        let name_text = name.text();
+        let duplicate = imp.taken.borrow().contains(name_text.trim());
+        flag(&name, duplicate, "A plugin with this name already exists.");
+        let name_ok = filled(&name) && !duplicate;
 
-    // Everything outside Advanced is required. Required-but-empty fields
-    // only keep Add disabled; fields with *invalid* content additionally
-    // get Adwaita's red error outline and a tooltip saying why.
-    let validate: Rc<dyn Fn() -> bool> = {
-        let add = add.clone();
-        let name = name.clone();
-        let kind = kind.clone();
-        let command = command.clone();
-        let args = args.clone();
-        let url = url.clone();
-        let env = env.clone();
-        Rc::new(move || {
-            let filled = |row: &EntryRow| !row.text().trim().is_empty();
-
-            // Name: required and unique among existing plugins.
-            let name_text = name.text();
-            let duplicate = taken.contains(name_text.trim());
-            flag(&name, duplicate, "A plugin with this name already exists.");
-            let name_ok = filled(&name) && !duplicate;
-
-            // Source: command + arguments for local, a valid URL for remote.
-            let source_ok = if kind.selected() == 0 {
-                flag(&url, false, "");
-                filled(&command) && filled(&args)
-            } else {
-                let url_text = url.text();
-                let url_text = url_text.trim();
-                let invalid = !url_text.is_empty() && !is_valid_url(url_text);
-                flag(&url, invalid, "Must be a valid http(s) URL.");
-                !url_text.is_empty() && !invalid
-            };
-
-            // Env: optional, but must be a JSON object of string values.
-            let env_text = env.text();
-            let env_text = env_text.trim();
-            let env_invalid = !env_text.is_empty()
-                && serde_json::from_str::<HashMap<String, String>>(env_text).is_err();
+        // Source: command plus JSON arguments for local, valid URL for remote.
+        let source_ok = if kind.selected() == 0 {
+            flag(&url, false, "");
+            // Args are optional, but must be a JSON array of strings so
+            // values with spaces keep their boundaries.
+            let args_invalid = parse_args(&args.text()).is_err();
             flag(
-                &env,
-                env_invalid,
-                r#"Must be a JSON object like {"KEY": "value"}."#,
+                &args,
+                args_invalid,
+                r#"Must be a JSON array like ["--flag", "value"]."#,
             );
+            filled(&command) && !args_invalid
+        } else {
+            flag(&args, false, "");
+            let url_text = url.text();
+            let url_text = url_text.trim();
+            let invalid = !url_text.is_empty() && !is_valid_url(url_text);
+            flag(&url, invalid, "Must be a valid http(s) URL.");
+            !url_text.is_empty() && !invalid
+        };
 
-            let ok = name_ok && source_ok && !env_invalid;
-            add.set_sensitive(ok);
-            ok
-        })
-    };
+        // Env: optional, but must be a JSON object of string values.
+        let env_invalid = parse_env(&env.text()).is_err();
+        flag(
+            &env,
+            env_invalid,
+            r#"Must be a JSON object like {"KEY": "value"}."#,
+        );
 
-    // Debounced re-validation for text fields: disable Add immediately,
-    // validate once typing pauses. The Add handler re-validates
-    // synchronously, so the debounce window can't let a stale-enabled
-    // button submit an invalid form.
-    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
-    let queue_validate: Rc<dyn Fn()> = {
-        let validate = validate.clone();
-        let pending = pending.clone();
-        let add = add.clone();
-        Rc::new(move || {
-            add.set_sensitive(false);
-            if let Some(source) = pending.borrow_mut().take() {
-                source.remove();
+        let ok = name_ok && source_ok && !env_invalid;
+        imp.add.set_sensitive(ok);
+        ok
+    }
+
+    /// Disable Add immediately and validate after the user stops typing.
+    fn queue_validate(&self) {
+        let imp = self.imp();
+        imp.add.set_sensitive(false);
+        if let Some(source) = imp.pending.borrow_mut().take() {
+            source.remove();
+        }
+        let id = glib::timeout_add_local_once(
+            VALIDATE_DEBOUNCE,
+            glib::clone!(
+                #[weak(rename_to = dialog)]
+                self,
+                move || {
+                    // The source is gone once it fires; forget its id so a later
+                    // keystroke doesn't try to remove it again.
+                    dialog.imp().pending.borrow_mut().take();
+                    dialog.validate();
+                }
+            ),
+        );
+        imp.pending.replace(Some(id));
+    }
+
+    fn cancel_pending(&self) {
+        if let Some(source) = self.imp().pending.borrow_mut().take() {
+            source.remove();
+        }
+    }
+
+    fn on_kind_changed(&self) {
+        let imp = self.imp();
+        let local = imp.kind.selected() == 0;
+        imp.command.set_visible(local);
+        imp.args.set_visible(local);
+        imp.url.set_visible(!local);
+        imp.requires_auth.set_visible(!local);
+        self.validate();
+    }
+
+    fn on_add_clicked(&self) {
+        if !self.validate() {
+            return;
+        }
+        let imp = self.imp();
+        // Lock the button while the submission is in flight; it comes back
+        // (with the banner) only if the submission fails.
+        imp.banner.set_revealed(false);
+        imp.add.set_sensitive(false);
+
+        // Parsed with the same helpers `validate()` uses; the form is valid here.
+        let env_map = parse_env(&imp.env.text()).expect("plugin form validated before submit");
+
+        let (transport, plugin_args) = if imp.kind.selected() == 0 {
+            (
+                Transport::Local,
+                PluginArgs::Local {
+                    command: imp.command.text().trim().to_string(),
+                    args: parse_args(&imp.args.text())
+                        .expect("plugin form validated before submit"),
+                },
+            )
+        } else {
+            (
+                Transport::Http,
+                PluginArgs::Remote {
+                    url: imp.url.text().trim().to_string(),
+                    requires_auth: imp.requires_auth.is_active(),
+                },
+            )
+        };
+
+        // Weak capture lets the outcome callback no-op if the dialog closes
+        // while submission is still in flight.
+        let done: SubmitDone = Rc::new(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            move |result| match result {
+                Ok(()) => {
+                    dialog.close();
+                },
+                Err(message) => {
+                    let imp = dialog.imp();
+                    imp.banner.set_title(&message);
+                    imp.banner.set_revealed(true);
+                    imp.add.set_sensitive(true);
+                },
             }
-            let validate = validate.clone();
-            let pending_done = pending.clone();
-            *pending.borrow_mut() =
-                Some(glib::timeout_add_local_once(VALIDATE_DEBOUNCE, move || {
-                    // The source is gone once it fires; forget its id so a
-                    // later keystroke doesn't try to remove it again.
-                    pending_done.borrow_mut().take();
-                    validate();
-                }));
-        })
-    };
-    for row in [&name, &command, &args, &url, &env] {
-        let queue_validate = queue_validate.clone();
-        row.connect_changed(move |_| queue_validate());
+        ));
+
+        let plugin = Plugin {
+            name: imp.name.text().trim().to_string(),
+            transport,
+            timeout: imp.timeout.value() as i64,
+            disabled: imp.disabled.get(),
+            env: env_map,
+            args: plugin_args,
+        };
+        if let Some(on_submit) = imp.on_submit.borrow().as_ref() {
+            on_submit(plugin, done);
+        }
     }
 
-    {
-        let command = command.clone();
-        let args = args.clone();
-        let url = url.clone();
-        let requires_auth = requires_auth.clone();
-        let validate = validate.clone();
-        kind.connect_selected_notify(move |row| {
-            let local = row.selected() == 0;
-            command.set_visible(local);
-            args.set_visible(local);
-            url.set_visible(!local);
-            requires_auth.set_visible(!local);
-            // No typing burst to absorb on a combo; validate right away.
-            validate();
-        });
-    }
-
-    {
-        let dialog = dialog.clone();
-        cancel.connect_clicked(move |_| {
-            dialog.close();
-        });
-    }
-
-    // Pre-fill after the handlers are wired, so the kind switch updates
-    // the visible rows and validation arms the confirm button.
-    if let Some(initial) = initial {
-        name.set_text(&initial.name);
-        // Names are immutable; updates address the plugin by name.
-        name.set_editable(false);
-        timeout.set_value(initial.timeout as f64);
+    fn prefill(&self, initial: Plugin) {
+        let imp = self.imp();
+        imp.name.set_text(&initial.name);
+        // Names are immutable because updates address the plugin by name.
+        imp.name.set_editable(false);
+        imp.timeout.set_value(initial.timeout as f64);
         if !initial.env.is_empty() {
-            env.set_text(&serde_json::to_string(&initial.env).unwrap_or_default());
+            imp.env
+                .set_text(&serde_json::to_string(&initial.env).unwrap_or_default());
         }
         match &initial.args {
             PluginArgs::Local {
-                command: cmd,
+                command,
                 args: arg_list,
             } => {
-                kind.set_selected(0);
-                command.set_text(cmd);
-                args.set_text(&arg_list.join(" "));
+                imp.kind.set_selected(0);
+                imp.command.set_text(command);
+                if !arg_list.is_empty() {
+                    imp.args
+                        .set_text(&serde_json::to_string(arg_list).unwrap_or_default());
+                }
             },
-            PluginArgs::Remote {
-                url: address,
-                requires_auth: auth,
-            } => {
-                kind.set_selected(1);
-                url.set_text(address);
-                requires_auth.set_active(*auth);
+            PluginArgs::Remote { url, requires_auth } => {
+                imp.kind.set_selected(1);
+                imp.url.set_text(url);
+                imp.requires_auth.set_active(*requires_auth);
             },
         }
-        validate();
+        self.validate();
     }
-
-    {
-        let dialog = dialog.clone();
-        let name = name.clone();
-        let validate = validate.clone();
-        add.connect_clicked(move |button| {
-            if !validate() {
-                return;
-            }
-            // Lock the button while the submission is in flight; it comes
-            // back (with the banner) only if the submission fails.
-            banner.set_revealed(false);
-            button.set_sensitive(false);
-
-            // Validation just confirmed the env text parses.
-            let env_text = env.text();
-            let env_text = env_text.trim();
-            let env_map: HashMap<String, String> = if env_text.is_empty() {
-                HashMap::new()
-            } else {
-                serde_json::from_str(env_text).unwrap_or_default()
-            };
-
-            let (transport, plugin_args) = if kind.selected() == 0 {
-                (
-                    Transport::Local,
-                    PluginArgs::Local {
-                        command: command.text().trim().to_string(),
-                        args: args.text().split_whitespace().map(str::to_string).collect(),
-                    },
-                )
-            } else {
-                (
-                    Transport::Http,
-                    PluginArgs::Remote {
-                        url: url.text().trim().to_string(),
-                        requires_auth: requires_auth.is_active(),
-                    },
-                )
-            };
-
-            let done: SubmitDone = {
-                let dialog = dialog.clone();
-                let banner = banner.clone();
-                let button = button.clone();
-                Rc::new(move |result| match result {
-                    Ok(()) => {
-                        dialog.close();
-                    },
-                    Err(message) => {
-                        banner.set_title(&message);
-                        banner.set_revealed(true);
-                        button.set_sensitive(true);
-                    },
-                })
-            };
-            on_submit(
-                Plugin {
-                    name: name.text().trim().to_string(),
-                    transport,
-                    timeout: timeout.value() as i64,
-                    disabled,
-                    env: env_map,
-                    args: plugin_args,
-                },
-                done,
-            );
-        });
-    }
-
-    dialog.present(Some(parent));
 }
 
 /// Toggle Adwaita's red error outline and an explanatory tooltip.
@@ -353,5 +391,25 @@ fn is_valid_url(text: &str) -> bool {
                 && uri.host().is_some_and(|host| !host.is_empty())
         },
         Err(_) => false,
+    }
+}
+
+/// Parse the optional args field; empty means no args.
+fn parse_args(text: &str) -> Result<Vec<String>, serde_json::Error> {
+    let text = text.trim();
+    if text.is_empty() {
+        Ok(Vec::new())
+    } else {
+        serde_json::from_str(text)
+    }
+}
+
+/// Parse the optional env field; empty means no env.
+fn parse_env(text: &str) -> Result<HashMap<String, String>, serde_json::Error> {
+    let text = text.trim();
+    if text.is_empty() {
+        Ok(HashMap::new())
+    } else {
+        serde_json::from_str(text)
     }
 }

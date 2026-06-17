@@ -1,7 +1,10 @@
-//! Background system-integration services (no GTK).
+//! Desktop integration services.
 //!
-//! Both run forever on the tokio runtime and fan their events out over
-//! broadcast channels consumed by the GTK main thread.
+//! Shortcut and tray run outside GTK and forward UI events through broadcast
+//! channels.
 
-pub(crate) mod portal;
-pub(crate) mod tray;
+mod shortcut;
+mod tray;
+
+pub(crate) use shortcut::Shortcut;
+pub(crate) use tray::{TrayEvent, run as run_tray};

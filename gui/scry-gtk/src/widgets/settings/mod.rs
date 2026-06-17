@@ -1,5 +1,6 @@
 mod plugins;
 mod services;
+mod shortcuts;
 
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
@@ -13,19 +14,26 @@ use scry_core::AppContext;
 pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
 
 mod imp {
+    use std::{cell::OnceCell, rc::Rc};
+
     use gtk4::{CompositeTemplate, Stack, glib};
     use libadwaita::{NavigationPage, ToolbarView, subclass::prelude::*};
+
+    use super::{plugins::PluginsPage, services::ServicesPage};
 
     #[derive(CompositeTemplate, Default)]
     #[template(file = "window.ui")]
     pub struct SettingsWindow {
-        /// The sidebar page's toolbar; its content is set to the AdwSidebar.
+        /// Hosts the dynamic AdwSidebar.
         #[template_child]
         pub sidebar_host: TemplateChild<ToolbarView>,
         #[template_child]
         pub stack: TemplateChild<Stack>,
         #[template_child]
         pub content_page: TemplateChild<NavigationPage>,
+        /// Plain page controllers retained for callbacks and state.
+        pub(super) services: OnceCell<Rc<ServicesPage>>,
+        pub(super) plugins: OnceCell<Rc<PluginsPage>>,
     }
 
     #[glib::object_subclass]
@@ -58,41 +66,80 @@ glib::wrapper! {
             gtk4::ShortcutManager;
 }
 
+/// One settings page: stable stack id plus visible title.
+#[derive(Clone, Copy)]
+struct PageSpec {
+    id: &'static str,
+    title: &'static str,
+}
+
+// Sidebar order.
+const SERVICES_PAGE: PageSpec = PageSpec {
+    id: "services",
+    title: "Services",
+};
+const PLUGINS_PAGE: PageSpec = PageSpec {
+    id: "plugins",
+    title: "Plugins",
+};
+const SHORTCUTS_PAGE: PageSpec = PageSpec {
+    id: "shortcuts",
+    title: "Shortcuts",
+};
+const PAGES: &[PageSpec] = &[SERVICES_PAGE, PLUGINS_PAGE, SHORTCUTS_PAGE];
+
 impl SettingsWindow {
     fn new(app: &Application, state: Arc<AppContext>) -> Self {
         let window: Self = glib::Object::builder().property("application", app).build();
         let imp = window.imp();
 
-        // The sidebar's sections/items don't template cleanly, so it's built
-        // in code and hosted in the templated toolbar.
+        // AdwSidebar sections/items are dynamic, so build them in code.
         let section = SidebarSection::new();
-        section.append(SidebarItem::new("Services"));
-        section.append(SidebarItem::new("Plugins"));
+        for page in PAGES {
+            section.append(SidebarItem::new(page.title));
+        }
         let sidebar = Sidebar::new();
         sidebar.append(section);
         imp.sidebar_host.set_content(Some(&sidebar));
 
+        // Services and Plugins need retained controllers; Shortcuts is widget-only.
+        let parent: ApplicationWindow = window.clone().upcast();
+        let services = services::build(state.clone(), parent.clone());
+        let plugins = plugins::build(state, parent);
         imp.stack.add_titled(
-            &services::build(state.clone(), window.clone().upcast()),
-            Some("services"),
-            "Services",
+            services.widget(),
+            Some(SERVICES_PAGE.id),
+            SERVICES_PAGE.title,
         );
+        imp.stack
+            .add_titled(plugins.widget(), Some(PLUGINS_PAGE.id), PLUGINS_PAGE.title);
         imp.stack.add_titled(
-            &plugins::build(state, window.clone().upcast()),
-            Some("plugins"),
-            "Plugins",
+            &shortcuts::build(),
+            Some(SHORTCUTS_PAGE.id),
+            SHORTCUTS_PAGE.title,
         );
+        // The stack owns widgets; these cells own the plain Rust controllers.
+        imp.services
+            .set(services)
+            .unwrap_or_else(|_| panic!("services page set once in SettingsWindow::new"));
+        imp.plugins
+            .set(plugins)
+            .unwrap_or_else(|_| panic!("plugins page set once in SettingsWindow::new"));
+
+        // Select the first page before connecting the notify handler.
+        if let Some(first) = PAGES.first() {
+            sidebar.set_selected(0);
+            imp.stack.set_visible_child_name(first.id);
+            imp.content_page.set_title(first.title);
+        }
 
         let stack = imp.stack.get();
         let content_page = imp.content_page.get();
         sidebar.connect_selected_notify(move |sidebar| {
-            let name = if sidebar.selected() == 0 {
-                "Services"
-            } else {
-                "Plugins"
-            };
-            stack.set_visible_child_name(&name.to_lowercase());
-            content_page.set_title(name);
+            if let Some(page) = PAGES.get(sidebar.selected() as usize) {
+                stack.set_visible_child_name(page.id);
+                content_page.set_title(page.title);
+            }
         });
 
         window
@@ -106,8 +153,9 @@ pub(crate) fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWind
     window.upcast()
 }
 
-/// An `AdwPreferencesGroup` whose rows are rebuilt on refresh. It tracks the
-/// rows it holds so they can be cleared — the group has no remove-all.
+/// An `AdwPreferencesGroup` whose rows are rebuilt on refresh.
+///
+/// The group tracks its rows because libadwaita does not provide remove-all.
 #[derive(Clone)]
 pub(super) struct Group {
     pub(super) widget: PreferencesGroup,

@@ -1,7 +1,4 @@
-//! Two-row search bar card: the prompt entry on top, a status strip
-//! below — labeled model/plugin health indicators on the left; model
-//! selector and the settings / sessions buttons on the right. Each dot
-//! aggregates a collection's health (connected models, MCP plugins).
+//! Overlay search bar, status strip, and model controls.
 
 use gtk4::{Box as GtkBox, glib, prelude::*, subclass::prelude::*};
 use scry_core::{Connector, HealthLevel};
@@ -9,7 +6,6 @@ use scry_core::{Connector, HealthLevel};
 mod model_picker;
 pub(super) use model_picker::ModelChoice;
 
-/// Search bar styling: card layout, flattened entry, status indicators.
 pub(super) const CSS: &str = include_str!("style.css");
 
 mod imp {
@@ -59,8 +55,8 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            // The preferred-model picker builds its own menu buttons at
-            // runtime; slot them ahead of the settings/sessions buttons.
+            // The picker owns its action group, so its buttons are created in
+            // code and inserted before the static settings/session controls.
             let picker = ModelPicker::new();
             self.controls.prepend(&picker.effort_button);
             self.controls.prepend(&picker.model_button);
@@ -129,7 +125,7 @@ impl Bar {
         self.picker().set_options(connectors);
     }
 
-    /// Repaint both status dots from the controllers' aggregate health.
+    /// Update the model and plugin status dots.
     pub(super) fn set_health(&self, models: HealthLevel, plugins: HealthLevel) {
         set_health_dot(&self.imp().models_dot, models);
         set_health_dot(&self.imp().plugins_dot, plugins);
@@ -140,7 +136,6 @@ impl Bar {
     }
 }
 
-/// CSS class for a status dot at the given health level.
 fn health_level_css_class(level: &HealthLevel) -> &'static str {
     match level {
         HealthLevel::Inactive => "scry-status-inactive",
@@ -150,7 +145,6 @@ fn health_level_css_class(level: &HealthLevel) -> &'static str {
     }
 }
 
-/// Swap a dot's health class to reflect `health`.
 fn set_health_dot(dot: &GtkBox, health: HealthLevel) {
     for state in [
         HealthLevel::Inactive,

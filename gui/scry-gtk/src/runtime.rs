@@ -1,20 +1,16 @@
-// Shared tokio runtime + GTK ↔ tokio bridging helpers.
-//
-// One static multi-threaded tokio runtime services every async call
-// the app makes. GTK runs on its own main loop on the main thread;
-// tokio worker threads handle network, storage, portal, and refresh
-// loops. Anything async that needs to be triggered from a GTK signal
-// handler must be spawned onto tokio via `runtime::spawn`, then its
-// result awaited inside `glib::MainContext::default().spawn_local`
-// so the continuation runs back on the main thread before touching
-// widgets.
+//! Shared tokio runtime and GTK/tokio bridge helpers.
+//!
+//! GTK stays on the main loop. Network, storage, shortcut, and refresh work run
+//! on one static multi-threaded tokio runtime. GTK signal handlers spawn async
+//! work onto tokio, then await the result from the main context before touching
+//! widgets again.
 
 use std::{future::Future, sync::OnceLock};
 
 use gtk4::glib;
 use tokio::runtime::{Builder, Runtime};
 
-/// Process-wide tokio runtime. Initialised lazily on first use.
+/// Process-wide tokio runtime, initialized lazily on first use.
 pub(crate) fn tokio_runtime() -> &'static Runtime {
     static RT: OnceLock<Runtime> = OnceLock::new();
     RT.get_or_init(|| {
@@ -27,19 +23,12 @@ pub(crate) fn tokio_runtime() -> &'static Runtime {
     })
 }
 
-/// Spawn `work` on the shared tokio runtime and return a `Future`
-/// for its result. The returned future is `Send`-agnostic: it can be
-/// awaited from any executor — typically
-/// `glib::MainContext::default().spawn_local` for GTK signal
-/// handlers — so the continuation runs on the caller's thread and
-/// may freely capture `Rc`/widgets.
+/// Run `work` on tokio and await its result from any executor.
 ///
-/// `work` itself must be `Send + 'static` because it is moved onto
-/// a tokio worker thread.
+/// GTK callers usually await this from `spawn_local`, so their continuation
+/// returns to the main thread and can keep using widgets and `Rc`s.
 ///
-/// Cancel semantics match `tokio::spawn`: dropping the returned
-/// future does **not** abort the spawned task. Panics inside the
-/// task surface as a panic when the returned future is awaited.
+/// Dropping the returned future does not abort `work`.
 pub(crate) fn spawn<F, T>(work: F) -> impl Future<Output = T>
 where
     F: Future<Output = T> + Send + 'static,

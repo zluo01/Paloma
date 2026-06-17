@@ -1,13 +1,12 @@
-//! Chat surface: one [`ChatTurn`] per user prompt, each holding role
-//! sections (You / Thinking / Tool / Scry) appended as stream events
-//! arrive. Assistant text renders as markdown; everything is selectable
-//! for copy without being editable.
+//! Chat surface: one [`ChatTurn`] per user prompt, with stream events appended
+//! as role sections. Assistant text renders as markdown; transcript text is
+//! selectable but not editable.
 
 use std::{cell::RefCell, rc::Rc};
 
 use gtk4::{
-    Align, Box as GtkBox, Button, Label, Orientation, TextBuffer, TextView, WrapMode, glib, pango,
-    prelude::*, subclass::prelude::*,
+    Align, Box as GtkBox, Button, Label, Orientation, TextBuffer, TextView, Widget, WrapMode,
+    pango, prelude::*,
 };
 use libadwaita::Spinner;
 
@@ -34,48 +33,15 @@ const TOOL_CLASS: &str = "scry-chat-section-tool";
 /// Chat card, turn, section, and text styling.
 pub(super) const CSS: &str = include_str!("style.css");
 
-mod imp {
-    use std::{cell::RefCell, rc::Rc};
-
-    use gtk4::{Box as GtkBox, CompositeTemplate, glib, subclass::prelude::*};
-
-    use super::{ChatTurn, PendingDecisions};
-
-    #[derive(CompositeTemplate, Default)]
-    #[template(file = "chat.ui")]
-    pub struct ChatView {
-        #[template_child]
-        pub turns_box: TemplateChild<GtkBox>,
-        pub(super) turns: RefCell<Vec<ChatTurn>>,
-        /// Unresolved permission prompts, arrow-key navigable as one
-        /// sequence across tool calls.
-        pub(super) pending_decisions: Rc<RefCell<PendingDecisions>>,
-    }
-
-    #[glib::object_subclass]
-    impl ObjectSubclass for ChatView {
-        const NAME: &'static str = "ScryChat";
-        type Type = super::ChatView;
-        type ParentType = GtkBox;
-
-        fn class_init(klass: &mut Self::Class) {
-            klass.bind_template();
-        }
-
-        fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
-            obj.init_template();
-        }
-    }
-
-    impl ObjectImpl for ChatView {}
-    impl WidgetImpl for ChatView {}
-    impl BoxImpl for ChatView {}
-}
-
-glib::wrapper! {
-    pub struct ChatView(ObjectSubclass<imp::ChatView>)
-        @extends GtkBox, gtk4::Widget,
-        @implements gtk4::Accessible, gtk4::Buildable, gtk4::ConstraintTarget, gtk4::Orientable;
+/// Styled chat card. Clones share the same GTK widgets and state.
+#[derive(Clone)]
+pub(super) struct ChatView {
+    widget: GtkBox,
+    turns_box: GtkBox,
+    turns: Rc<RefCell<Vec<ChatTurn>>>,
+    /// Unresolved permission prompts, arrow-key navigable as one sequence
+    /// across tool calls.
+    pending_decisions: Rc<RefCell<PendingDecisions>>,
 }
 
 struct ChatTurn {
@@ -83,9 +49,7 @@ struct ChatTurn {
     /// sits below the last section without reordering.
     container: GtkBox,
     body: GtkBox,
-    /// Spinner + "Thinking…" shown while the turn is streaming; hidden
-    /// by `mark_complete`, or turned into an error/cancel status by
-    /// `mark_ended`.
+    /// Spinner + status row shown while a turn streams.
     pending: GtkBox,
     spinner: Spinner,
     status: Label,
@@ -103,65 +67,81 @@ struct AssistantBlock {
 
 impl ChatView {
     pub(super) fn new(width: i32) -> Self {
-        let view: Self = glib::Object::new();
-        view.set_width_request(width);
-        view
+        let turns_box = GtkBox::builder().orientation(Orientation::Vertical).build();
+        let widget = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .halign(Align::Center)
+            .valign(Align::Start)
+            .visible(false)
+            .width_request(width)
+            .build();
+        widget.add_css_class("scry-chat-card");
+        widget.append(&turns_box);
+        Self {
+            widget,
+            turns_box,
+            turns: Rc::new(RefCell::new(Vec::new())),
+            pending_decisions: Rc::new(RefCell::new(PendingDecisions::default())),
+        }
+    }
+
+    pub(super) fn widget(&self) -> &GtkBox {
+        &self.widget
     }
 
     pub(super) fn reset(&self) {
-        self.imp().pending_decisions.borrow_mut().clear();
-        self.imp().turns.borrow_mut().clear();
-        clear_children(&self.imp().turns_box);
+        self.pending_decisions.borrow_mut().clear();
+        self.turns.borrow_mut().clear();
+        clear_children(&self.turns_box);
     }
 
     pub(super) fn show(&self) {
-        self.set_visible(true);
+        self.widget.set_visible(true);
     }
 
     pub(super) fn hide(&self) {
-        self.set_visible(false);
+        self.widget.set_visible(false);
     }
 
     pub(super) fn append_text(&self, text: &str) {
-        let mut turns = self.imp().turns.borrow_mut();
-        let turn = current_turn(&mut turns, &self.imp().turns_box);
+        let mut turns = self.turns.borrow_mut();
+        let turn = current_turn(&mut turns, &self.turns_box);
         turn.assistant.push_str(text);
         turn.render_assistant();
     }
 
-    /// Push a new turn with `prompt` as its user bubble. Implicitly
-    /// completes the prior turn — history replay delivers consecutive
-    /// `UserPrompt`s without an intervening `Done`, and a mid-stream
-    /// session switch never delivers one.
+    /// Push a new turn with `prompt` as its user bubble. This also completes
+    /// the prior turn; history replay can deliver consecutive `UserPrompt`s
+    /// without an intervening `Done`.
     pub(super) fn start_turn(&self, prompt: &str) {
-        let mut turns = self.imp().turns.borrow_mut();
+        let mut turns = self.turns.borrow_mut();
         if let Some(prev) = turns.last_mut() {
             prev.mark_complete();
         }
-        turns.push(ChatTurn::new(prompt, &self.imp().turns_box));
+        turns.push(ChatTurn::new(prompt, &self.turns_box));
     }
 
     pub(super) fn finish_turn(&self) {
-        if let Some(turn) = self.imp().turns.borrow_mut().last_mut() {
+        if let Some(turn) = self.turns.borrow_mut().last_mut() {
             turn.mark_complete();
         }
     }
 
     pub(super) fn fail_turn(&self, message: &str) {
-        if let Some(turn) = self.imp().turns.borrow().last() {
+        if let Some(turn) = self.turns.borrow().last() {
             turn.mark_ended(message, "scry-chat-error");
         }
     }
 
     pub(super) fn cancel_turn(&self) {
-        if let Some(turn) = self.imp().turns.borrow().last() {
+        if let Some(turn) = self.turns.borrow().last() {
             turn.mark_ended("Cancelled", "scry-chat-cancel");
         }
     }
 
     pub(super) fn append_reasoning(&self, text: &str) {
-        let mut turns = self.imp().turns.borrow_mut();
-        let turn = current_turn(&mut turns, &self.imp().turns_box);
+        let mut turns = self.turns.borrow_mut();
+        let turn = current_turn(&mut turns, &self.turns_box);
         turn.reasoning.push_str(text);
         turn.render_reasoning();
     }
@@ -174,36 +154,47 @@ impl ChatView {
         decisions: &[UserDecision],
         on_decide: OnDecideFn,
     ) {
-        let mut turns = self.imp().turns.borrow_mut();
-        let turn = current_turn(&mut turns, &self.imp().turns_box);
+        let mut turns = self.turns.borrow_mut();
+        let turn = current_turn(&mut turns, &self.turns_box);
         turn.add_tool_call(
             name,
             arguments,
             description,
             decisions,
             on_decide,
-            &self.imp().pending_decisions,
+            &self.pending_decisions,
         );
     }
 
     /// Move the permission-prompt highlight by `delta`. Returns false
     /// when no prompt is pending (the key should fall through).
     pub(super) fn navigate_decisions(&self, delta: i32) -> bool {
-        self.imp().pending_decisions.borrow_mut().navigate(delta)
+        self.pending_decisions.borrow_mut().navigate(delta)
     }
 
     pub(super) fn selected_decision(&self) -> Option<Button> {
-        self.imp().pending_decisions.borrow().selected_button()
+        self.pending_decisions.borrow().selected_button()
     }
 
     /// Confirm the highlighted permission decision via the same
     /// `clicked` path a mouse click takes. Returns false when no
     /// prompt is pending.
     pub(super) fn activate_selected_decision(&self) -> bool {
-        let Some(button) = self.imp().pending_decisions.borrow().selected_button() else {
+        let Some(button) = self.pending_decisions.borrow().selected_button() else {
             return false;
         };
         button.emit_clicked();
+        true
+    }
+
+    /// Copy the transcript's current text selection to the clipboard, returning
+    /// whether anything was copied. The transcript window has no keyboard, so
+    /// Ctrl+C never reaches its text widgets; the controller calls this directly.
+    pub(super) fn copy_selection(&self) -> bool {
+        let Some(text) = selected_text(self.turns_box.upcast_ref::<Widget>()) else {
+            return false;
+        };
+        self.turns_box.clipboard().set_text(&text);
         true
     }
 }
@@ -251,14 +242,13 @@ impl ChatTurn {
         }
     }
 
-    /// Idempotent: hide the pulse and tag the turn `.complete`.
+    /// Hide the pending row and tag the turn complete.
     fn mark_complete(&self) {
         self.pending.set_visible(false);
         self.container.add_css_class("complete");
     }
 
-    /// End the turn on an error/cancel: drop the spinner and replace
-    /// "Thinking…" with `text`, styled by `class`.
+    /// Replace the pending row with an error/cancel status.
     fn mark_ended(&self, text: &str, class: &str) {
         self.spinner.set_visible(false);
         self.status.set_text(text);
@@ -304,9 +294,8 @@ impl ChatTurn {
         on_decide: OnDecideFn,
         pending: &Rc<RefCell<PendingDecisions>>,
     ) {
-        // Drop the in-progress block handles (the widgets stay on
-        // screen) so later deltas open new sections below the tool
-        // call, preserving the reason → tool → reason flow.
+        // Drop the in-progress block handles, leaving their widgets on screen,
+        // so later deltas open new sections below the tool call.
         self.assistant_block = None;
         self.assistant.clear();
         self.reasoning_block = None;
@@ -388,13 +377,11 @@ impl TextBlock {
     }
 }
 
-/// Append a selectable, wrapping label for set-once content (user
-/// prompts, tool calls) — lighter than a `TextBlock`.
+/// Append a selectable, wrapping label for set-once content.
 ///
-/// `width_chars(1)` is load-bearing: a selectable + wrapping GtkLabel
-/// without a width hint collapses to zero height for multi-line content
-/// (documented GtkLabel sizing quirk). With `hexpand` + `halign(Fill)`
-/// the parent allocates full width and wrapping works inside it.
+/// GTK can collapse selectable wrapping labels without a width hint. With
+/// `width_chars(1)`, `hexpand`, and `halign(Fill)`, the parent allocates full
+/// width and wrapping works inside it.
 fn append_content_label(parent: &GtkBox, text: &str, variant: &str) {
     let content = Label::builder()
         .label(text)
@@ -411,10 +398,7 @@ fn append_content_label(parent: &GtkBox, text: &str, variant: &str) {
     parent.append(&content);
 }
 
-/// A code-style card: a faint rounded panel with a header (the
-/// `caption` on the left — a language or tool name — and a copy button
-/// on the right) over a monospace, selectable body. Shared by markdown
-/// code blocks and tool-call arguments so both carry the copy affordance.
+/// A code-style card with a caption, copy button, and selectable body.
 pub(super) fn code_card(caption: &str, body: &str) -> GtkBox {
     let card = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -482,4 +466,32 @@ fn current_turn<'a>(turns: &'a mut Vec<ChatTurn>, turns_box: &GtkBox) -> &'a mut
         turns.push(ChatTurn::new("", turns_box));
     }
     turns.last_mut().expect("turn is inserted when missing")
+}
+
+/// First selectable `Label` or `TextView` selection in a depth-first transcript
+/// walk. Skips the transient pending/status row; reasoning text remains copyable.
+fn selected_text(widget: &Widget) -> Option<String> {
+    if widget.has_css_class("scry-chat-pending") {
+        return None;
+    }
+    if let Some(label) = widget.downcast_ref::<Label>() {
+        if let Some((start, end)) = label.selection_bounds() {
+            let (start, end) = (start as usize, end as usize);
+            return Some(label.text().chars().skip(start).take(end - start).collect());
+        }
+    } else if let Some(view) = widget.downcast_ref::<TextView>() {
+        let buffer = view.buffer();
+        if let Some((start, end)) = buffer.selection_bounds() {
+            return Some(buffer.text(&start, &end, false).to_string());
+        }
+    }
+
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        if let Some(text) = selected_text(&node) {
+            return Some(text);
+        }
+        child = node.next_sibling();
+    }
+    None
 }

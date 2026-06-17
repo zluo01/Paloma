@@ -13,46 +13,25 @@
 }
 
 /* Item rows are `.flat` buttons (theme provides fill + hover). `.selected`
-   is keyboard selection driven by code (a CSS class, not GTK focus — the
+   is keyboard selection driven by code (a CSS class, not GTK focus; the
    entry keeps focus). */
-.scry-item,
-.scry-item-header {
+.scry-item {
     padding: 6px 8px;
     border-radius: 8px;
 }
 
-.scry-item.selected,
-.scry-item-header.selected {
+.scry-item.selected {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
-/* "Chat about it" pseudo-row: success accent marks the mode switch. */
-.scry-chat-action {
-    margin-top: 8px;
-    background: color-mix(in srgb, var(--success-bg-color) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--success-bg-color) 35%, transparent);
+/* Divider setting the "Chat about it" action apart from the launcher results. */
+.scry-results-separator {
+    margin: 8px 4px 4px;
 }
 
-.scry-chat-action:hover {
-    background: color-mix(in srgb, var(--success-bg-color) 20%, transparent);
-}
-
-.scry-chat-action.selected {
-    background: var(--success-bg-color);
-    border-color: transparent;
-}
-
-.scry-chat-action.selected .scry-item-icon,
-.scry-chat-action.selected .scry-item-title {
-    color: var(--success-fg-color);
-}
-
-.scry-chat-action .scry-item-icon,
-.scry-chat-action .scry-item-title {
-    color: var(--success-color);
-}
-
+/* Chat action keeps normal row styling — the divider carries the distinction;
+   only the title is a touch heavier. */
 .scry-chat-action .scry-item-title {
     font-weight: 600;
 }
@@ -65,25 +44,19 @@
     font-size: 14px;
 }
 
-/* Chevron on multi-action item headers; icon swap happens in code. */
-.scry-item-chevron {
-    color: alpha(currentColor, 0.5);
-    margin-left: 6px;
-}
-
-/* Expanded action list, indented under its parent item. */
-.scry-item-actions {
-    margin: 2px 0 4px 36px;
-}
-
-.scry-item-action {
-    padding: 4px 10px;
-    margin: 1px 0;
+/* `Ctrl K` hint keycap for multi-action rows; scoped so generic keycap styling
+   cannot leak into the Shortcuts page. */
+.scry-item .scry-keycap {
+    min-width: 14px;
+    padding: 1px 6px;
     border-radius: 6px;
-    font-size: 13px;
+    background-color: alpha(currentColor, 0.08);
+    border: 1px solid alpha(currentColor, 0.13);
+    font-size: 12px;
+    margin-left: 8px;
 }
 
-.scry-item-action.selected {
-    background: var(--accent-bg-color);
+.scry-item.selected .scry-keycap {
     color: var(--accent-fg-color);
+    border-color: alpha(currentColor, 0.4);
 }

@@ -1,14 +1,15 @@
-//! The bar's preferred-model picker: a cascading provider → model menu and a
-//! companion effort menu. Committing either marks the provider preferred and
-//! stores its (model, effort) through the registered callback.
+//! Preferred model and reasoning-effort picker for the overlay bar.
+//!
+//! The model menu selects a provider/model pair with that model's default
+//! effort. The effort menu then adjusts effort for the preferred model.
 
 use gtk4::{Align, MenuButton, Popover, PopoverMenu, gio, glib, prelude::*};
 use scry_core::{Connector, ProviderId};
 
 use crate::widgets::overlay::connectors::{is_preferred, is_running};
 
-/// Action group installed on the buttons and the detailed action name its menu
-/// items target.
+// Menu items target the group-qualified action name, while SimpleAction is
+// registered under the unqualified name.
 const GROUP: &str = "picker";
 const SELECT_ACTION: &str = "picker.select";
 
@@ -18,7 +19,7 @@ pub(in crate::widgets::overlay) struct ModelChoice {
     pub(in crate::widgets::overlay) effort: String,
 }
 
-/// The two bar controls plus the action wiring that drives them.
+/// Owns both dropdown buttons and their shared select action.
 #[derive(Clone)]
 pub(super) struct ModelPicker {
     pub(super) model_button: MenuButton,
@@ -32,8 +33,8 @@ impl ModelPicker {
         let effort_button = menu_button();
         effort_button.add_css_class("scry-effort-dropdown");
 
-        // One `(provider, model, effort)` action backs both menus, so the
-        // handler stays stateless — each item carries the whole choice.
+        // One action backs both menus, so every item carries the full selected
+        // provider/model/effort triple.
         let action = gio::SimpleAction::new(
             "select",
             Some(glib::VariantTy::new("(sss)").expect("valid variant type")),
@@ -69,8 +70,7 @@ impl ModelPicker {
         });
     }
 
-    /// Rebuild both menus and labels from `connectors`, showing only connected
-    /// providers whose runtime is healthy.
+    /// Rebuild menus from running providers and update the visible labels.
     pub(super) fn set_options(&self, connectors: &[Connector]) {
         let healthy: Vec<&Connector> = connectors.iter().filter(|c| is_running(c)).collect();
 
@@ -79,7 +79,7 @@ impl ModelPicker {
             return;
         }
 
-        // Cascading provider → model menu.
+        // Selecting a model also selects that model's default effort.
         let model_menu = gio::Menu::new();
         for c in &healthy {
             let conn = c.connection.as_ref().expect("filtered to Some");
@@ -98,7 +98,7 @@ impl ModelPicker {
             .set_popover(Some(&dropdown_popover(&model_menu)));
         self.model_button.set_sensitive(true);
 
-        // Labels and the effort menu reflect the preferred (healthy) provider.
+        // Effort choices apply to the currently preferred model.
         match healthy.iter().find(|c| is_preferred(c)) {
             Some(current) => {
                 let conn = current.connection.as_ref().expect("preferred is Some");
@@ -129,7 +129,7 @@ impl ModelPicker {
         }
     }
 
-    /// No usable providers: park both buttons in a disabled placeholder state.
+    /// No usable providers: leave disabled placeholders in the fixed bar layout.
     fn reset(&self) {
         self.model_button.set_popover(Popover::NONE);
         self.effort_button.set_popover(Popover::NONE);

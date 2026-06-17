@@ -1,15 +1,9 @@
-//! Overlay assembly and public API.
+//! Overlay assembly and internal API.
 //!
-//! Three layer-shell windows that move as one: the search bar (owns
-//! keyboard focus), the content window (results/chat) directly below
-//! it, and the sessions popup to its right. All are positioned from a
-//! single shared `position` — the bar's top-left corner — which starts
-//! centered and follows the user's drag afterwards.
-//!
-//! Widgets and behaviors live in the submodules: `bar` (search bar),
-//! `chat` (turn rendering), `keys` (keyboard dispatch), `results`
-//! (capability rows), `selection` (keyboard selection state),
-//! `sessions` (dev popup), `window` (monitor/centering math).
+//! Three layer-shell windows move as one: the focused search bar, the
+//! results/chat content window below it, and the sessions popup beside it. A
+//! single shared `position` stores the bar's top-left corner; the other windows
+//! derive their margins from it.
 
 use std::{
     cell::{Cell, RefCell},
@@ -24,6 +18,7 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::Application;
 use uuid::Uuid;
 
+mod action_panel;
 mod bar;
 mod chat;
 mod connectors;
@@ -34,40 +29,34 @@ mod selection;
 mod sessions;
 mod window;
 
+use action_panel::ActionPanel;
+use bar::Bar;
 use chat::ChatView;
 pub(crate) use controller::OverlayController;
 use results::ResultsView;
 use scry_core::{Action, Connector, HealthLevel, Item, PermissionState, UserDecision};
-use selection::{Activation, Selection, SelectionRef};
+use selection::{Selection, SelectionRef};
 use sessions::SessionsView;
 
 const SEARCH_BAR_HEIGHT_PX: i32 = 94;
 const OVERLAY_WIDTH_PX: i32 = 640;
 const OVERLAY_CONTENT_HEIGHT_PX: i32 = 420;
 const SESSIONS_WIDTH_PX: i32 = 260;
-/// Gap between the bar and its satellite windows.
 const PANEL_GAP_PX: i32 = 8;
 
-const CHEVRON_COLLAPSED: &str = "pan-end-symbolic";
-const CHEVRON_EXPANDED: &str = "pan-down-symbolic";
 const SELECTED_CLASS: &str = "selected";
 const CHAT_ACTION_LABEL: &str = "Chat about it";
 
-/// Shell styling: transparent windows and the shared `.scry-surface`
-/// card chrome.
 const CSS: &str = include_str!("style.css");
 
-/// CSS fragments contributed by the overlay and its submodules.
-/// Aggregated into the global stylesheet by `crate::style::load`.
+/// Overlay stylesheet fragments loaded into the global GTK provider.
 pub(crate) const CSS_PARTS: &[&str] = &[CSS, bar::CSS, results::CSS, chat::CSS, sessions::CSS];
 
-/// Runs a capability action: `(handler_id, action)`.
-type InvokeFn = Rc<dyn Fn(String, Action)>;
-/// Applies the resolved [`PermissionState`] back to the tool-call row
-/// that raised the prompt. Runs on the GTK main thread.
+/// Invokes a capability action by its static handler id.
+type InvokeFn = Rc<dyn Fn(&'static str, Action)>;
+/// Applies a resolved permission decision to the originating tool-call row.
 type DecisionOutcomeFn = Box<dyn FnOnce(PermissionState)>;
-/// Fired when the user picks a permission decision under a tool call;
-/// the handler resolves it and hands the outcome to the callback.
+/// Resolves a user-picked permission decision, then calls back on GTK.
 type OnDecideFn = Rc<dyn Fn(UserDecision, DecisionOutcomeFn)>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -76,27 +65,28 @@ enum Mode {
     Chat,
 }
 
-/// Handle to the overlay windows and views. Cheap to clone — every
-/// field is a widget handle or `Rc`-shared state.
+/// Cloneable handle to the overlay windows, views, and shared state.
 #[derive(Clone)]
 struct Overlay {
     bar_window: ApplicationWindow,
     content_window: ApplicationWindow,
-    bar: bar::Bar,
+    bar: Bar,
     scroller: ScrolledWindow,
     results: ResultsView,
     chat: ChatView,
     sessions: SessionsView,
+    sessions_window: ApplicationWindow,
     selection: SelectionRef,
+    /// Retained Ctrl+K panel handle. Visibility, not `Option::is_some`, is the
+    /// open-state source of truth because a dismissed popover can remain here
+    /// until the next panel replaces it.
+    last_action_panel: Rc<RefCell<Option<ActionPanel>>>,
     mode: Rc<Cell<Mode>>,
-    /// Chat auto-scroll: pinned to the bottom until the user scrolls away.
+    /// Chat auto-scroll stays pinned until the user scrolls away.
     stuck_to_bottom: Rc<Cell<bool>>,
-    /// The bar's top-left corner in monitor pixels; `None` until the
-    /// first show computes the centered default.
+    /// Bar top-left in monitor pixels; `None` until first show.
     position: Rc<Cell<Option<(i32, i32)>>>,
-    /// The monitor `position` is relative to. When the compositor maps
-    /// the bar on a different monitor (e.g. focus moved to another
-    /// screen), the position is recomputed for it.
+    /// Monitor that `position` is relative to.
     monitor: Rc<RefCell<Option<gtk4::gdk::Monitor>>>,
 }
 
@@ -105,7 +95,7 @@ struct Overlay {
 fn build(app: &Application) -> Overlay {
     let bar_window = layer_window(app, "scry-bar", OVERLAY_WIDTH_PX, KeyboardMode::Exclusive);
     bar_window.set_title(Some("Scry"));
-    let bar = bar::Bar::new(OVERLAY_WIDTH_PX);
+    let bar = Bar::new(OVERLAY_WIDTH_PX);
     bar_window.set_child(Some(&bar));
 
     let results = ResultsView::new();
@@ -115,8 +105,8 @@ fn build(app: &Application) -> Overlay {
         .orientation(Orientation::Vertical)
         .valign(Align::Start)
         .build();
-    content_box.append(&results);
-    content_box.append(&chat);
+    content_box.append(results.widget());
+    content_box.append(chat.widget());
 
     let scroller = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::Never)
@@ -138,12 +128,9 @@ fn build(app: &Application) -> Overlay {
     let content_window = layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
     content_window.set_child(Some(&scroller));
 
-    let sessions = SessionsView::new(layer_window(
-        app,
-        "scry-sessions",
-        SESSIONS_WIDTH_PX,
-        KeyboardMode::None,
-    ));
+    let sessions_window = layer_window(app, "scry-sessions", SESSIONS_WIDTH_PX, KeyboardMode::None);
+    let sessions = SessionsView::new();
+    sessions_window.set_child(Some(&sessions));
 
     let overlay = Overlay {
         bar_window,
@@ -153,7 +140,9 @@ fn build(app: &Application) -> Overlay {
         results,
         chat,
         sessions,
+        sessions_window,
         selection: Rc::new(RefCell::new(Selection::default())),
+        last_action_panel: Rc::new(RefCell::new(None)),
         mode: Rc::new(Cell::new(Mode::Local)),
         stuck_to_bottom: Rc::new(Cell::new(true)),
         position: Rc::new(Cell::new(None)),
@@ -217,14 +206,14 @@ impl Overlay {
 
     fn hide(&self) -> bool {
         self.bar.clear_input();
-        self.results.clear(&self.selection);
+        self.clear_results();
         let backgrounded = self.mode.get() == Mode::Chat;
         if backgrounded {
             self.mode.set(Mode::Local);
             self.chat.hide();
             self.chat.reset();
         }
-        self.sessions.close();
+        self.close_sessions();
         self.hide_content();
         self.bar_window.set_visible(false);
         backgrounded
@@ -246,10 +235,14 @@ impl Overlay {
         self.mode.get() == Mode::Chat
     }
 
-    /// Whether the input entry has a text selection — used to let Ctrl+C copy
-    /// instead of cancelling.
+    /// Whether the entry should receive GTK's native Ctrl+C copy.
     fn entry_has_selection(&self) -> bool {
         self.bar.has_selection()
+    }
+
+    /// Copy the chat transcript's text selection to the clipboard, if any.
+    fn copy_chat_selection(&self) -> bool {
+        self.chat.copy_selection()
     }
 
     fn connect_search_changed(&self, cb: impl Fn(String) + 'static) {
@@ -278,13 +271,10 @@ impl Overlay {
         self.bar.connect_model_selected(cb);
     }
 
-    /// Repaint the bar's status dots from aggregate controller health.
     fn set_health(&self, models: HealthLevel, plugins: HealthLevel) {
         self.bar.set_health(models, plugins);
     }
 
-    /// Repopulate the bar's model picker (cascading provider → model menu and
-    /// the effort menu) from the current connectors.
     fn set_model_options(&self, connectors: &[Connector]) {
         self.bar.set_model_options(connectors);
     }
@@ -292,7 +282,13 @@ impl Overlay {
     // --- local results -------------------------------------------------
 
     fn clear_results(&self) {
+        self.close_action_panel();
         self.results.clear(&self.selection);
+    }
+
+    /// Hide the results surface. Local mode only, so it never blanks chat
+    /// content sharing the same window.
+    fn hide_results(&self) {
         if self.mode.get() == Mode::Local {
             self.hide_content();
         }
@@ -300,58 +296,90 @@ impl Overlay {
 
     fn append_section(
         &self,
-        handler_id: &str,
+        handler_id: &'static str,
         handler_name: &str,
         items: Vec<Item>,
         on_invoke: InvokeFn,
     ) {
-        if items.is_empty() {
-            return;
+        // Action-less items are skipped, so a non-empty `items` can still render
+        // nothing; only reveal the surface when a row actually landed.
+        if self.results.append_section(
+            &self.selection,
+            handler_id,
+            handler_name,
+            items,
+            on_invoke,
+            &self.panel_closer(),
+        ) {
+            self.show_content();
         }
-        self.results
-            .append_section(&self.selection, handler_id, handler_name, items, on_invoke);
-        self.show_content();
     }
 
-    /// Append the "Chat about it" row under the current results.
     fn append_chat_action(&self, invoke: Rc<dyn Fn()>) {
         if self.mode.get() != Mode::Local {
             return;
         }
-        self.results.append_chat_action(&self.selection, invoke);
+        self.results
+            .append_chat_action(&self.selection, invoke, &self.panel_closer());
         self.show_content();
     }
 
     // --- sessions panel ------------------------------------------------
 
-    /// Replace the sessions panel content with one row per
-    /// `(id, provider, title)`. Called sparingly (start, session
-    /// create/cleanup) — not per broadcast event.
-    fn set_sessions(
-        &self,
-        sessions: &[(Uuid, String, String)],
-        on_selected: Rc<dyn Fn(Uuid)>,
-        on_delete: Rc<dyn Fn(Uuid)>,
-    ) {
-        self.sessions.set_sessions(on_selected, on_delete, sessions);
+    /// Replace the sessions panel content with one row per session.
+    fn set_sessions(&self, sessions: &[(Uuid, String, String)]) {
+        self.sessions
+            .set_sessions(sessions, self.is_sessions_open());
+    }
+
+    /// Remove one session row in place (no scroll reset / rebuild).
+    fn remove_session(&self, id: Uuid) {
+        self.sessions.remove_session(id);
+    }
+
+    fn set_on_session_activated(&self, f: impl Fn(Uuid) + 'static) {
+        self.sessions.set_on_session_activated(f);
+    }
+
+    fn set_on_session_deleted(&self, f: impl Fn(Uuid) + 'static) {
+        self.sessions.set_on_session_deleted(f);
     }
 
     fn set_active_session(&self, session_id: Option<Uuid>) {
         self.sessions.set_active(session_id);
     }
 
+    fn is_sessions_open(&self) -> bool {
+        self.sessions_window.is_visible()
+    }
+
+    fn open_sessions(&self) {
+        if self.sessions_window.is_visible() {
+            return;
+        }
+        self.sessions_window.present();
+        // No initial selection: the first arrow steps off the active session.
+        self.sessions.scroll_to_active();
+    }
+
+    fn close_sessions(&self) {
+        if !self.sessions_window.is_visible() {
+            return;
+        }
+        self.sessions_window.set_visible(false);
+        self.sessions.clear_selection();
+    }
+
     fn toggle_sessions(&self) {
-        if self.sessions.is_open() {
-            self.sessions.close();
+        if self.is_sessions_open() {
+            self.close_sessions();
         } else {
-            self.sessions.open();
+            self.open_sessions();
         }
     }
 
     // --- chat ----------------------------------------------------------
 
-    /// The chat view while it is the active surface. Broadcasts can arrive
-    /// while hidden or after a session switch, so callers no-op otherwise.
     fn active_chat(&self) -> Option<&ChatView> {
         (self.mode.get() == Mode::Chat).then_some(&self.chat)
     }
@@ -415,7 +443,7 @@ impl Overlay {
 
     fn enter_chat_mode(&self) {
         self.mode.set(Mode::Chat);
-        self.results.clear(&self.selection);
+        self.clear_results();
         self.chat.reset();
         self.chat.show();
         self.show_content();
@@ -434,20 +462,82 @@ impl Overlay {
     }
 
     fn activate_selection(&self) {
-        let activation = self.selection.borrow().activation();
-        match activation {
-            Some(Activation::Invoke(f)) => f(),
-            Some(Activation::Expand(row)) => {
-                self.selection.borrow_mut().toggle_row(row);
-                self.scroll_selection_into_view();
-            },
-            None => {},
+        let primary = self.selection.borrow().activate();
+        if let Some(primary) = primary {
+            primary();
+        }
+    }
+
+    // --- action panel (Ctrl+K) ------------------------------------------
+
+    /// Visibility is the source of truth: a panel dismissed by clicking one of
+    /// its own actions can briefly remain in the slot, closed, until reopened.
+    fn is_action_panel_open(&self) -> bool {
+        self.last_action_panel
+            .borrow()
+            .as_ref()
+            .is_some_and(ActionPanel::is_open)
+    }
+
+    /// Open the action panel for the selected row, if it has more than one
+    /// action. No-op otherwise.
+    fn open_action_panel(&self) {
+        if self.is_action_panel_open() {
+            return;
+        }
+        let Some((anchor, actions)) = self.selection.borrow().selected_actions() else {
+            return;
+        };
+        let bar = self.bar.clone();
+        let panel = ActionPanel::new(&anchor, actions, move || bar.focus_entry());
+        *self.last_action_panel.borrow_mut() = Some(panel);
+    }
+
+    fn close_action_panel(&self) {
+        if let Some(panel) = take_action_panel(&self.last_action_panel) {
+            panel.close();
+        }
+    }
+
+    /// A callback that closes the panel, handed to result rows so a pointer
+    /// click on another row dismisses an open panel (clicks bypass `keys`).
+    fn panel_closer(&self) -> Rc<dyn Fn()> {
+        let slot = self.last_action_panel.clone();
+        Rc::new(move || {
+            if let Some(panel) = take_action_panel(&slot) {
+                panel.close();
+            }
+        })
+    }
+
+    fn navigate_action_panel(&self, delta: i32) {
+        if let Some(panel) = self.last_action_panel.borrow().as_ref() {
+            panel.navigate(delta);
+        }
+    }
+
+    fn activate_action_panel(&self) {
+        if let Some(panel) = take_action_panel(&self.last_action_panel) {
+            panel.activate();
         }
     }
 
     fn scroll_selection_into_view(&self) {
-        if let Some(widget) = self.selection.borrow().selected_widget() {
-            scroll_into_view(&widget);
+        let selection = self.selection.borrow();
+        let Some(widget) = selection.selected_widget() else {
+            return;
+        };
+        // The first/last rows snap the card fully to the top/bottom so its
+        // padding (and the chat divider) isn't clipped; the rows sit below the
+        // card padding, so a minimal scroll-to would leave that padding cut off.
+        // Middle rows use the minimal scroll.
+        let adj = self.scroller.vadjustment();
+        match selection.selected_index() {
+            Some(0) => adj.set_value(0.0),
+            Some(i) if i + 1 == selection.len() => {
+                adj.set_value((adj.upper() - adj.page_size()).max(0.0));
+            },
+            _ => scroll_into_view(&widget),
         }
     }
 
@@ -478,15 +568,20 @@ impl Overlay {
 
     fn hide_content(&self) {
         self.content_window.set_visible(false);
-        // Mode is back to Local by the time content hides, so this
-        // reset never reaches the chat stick-tracking.
+        // Mode is back to Local before content hides, so this reset does not
+        // affect chat stickiness.
         self.scroller.vadjustment().set_value(0.0);
     }
 }
 
+/// Take the panel out before closing/activating so synchronous `closed` handlers
+/// cannot re-borrow the same `RefCell`.
+fn take_action_panel(slot: &RefCell<Option<ActionPanel>>) -> Option<ActionPanel> {
+    slot.borrow_mut().take()
+}
+
 /// Scroll `widget` into its enclosing viewport. Needed because the
-/// keyboard highlight is a CSS class, not GTK focus, so the viewport's
-/// scroll-to-focus machinery never triggers on its own.
+/// keyboard highlight is a CSS class, not GTK focus.
 fn scroll_into_view(widget: &impl IsA<gtk4::Widget>) {
     if let Some(viewport) = widget
         .ancestor(Viewport::static_type())

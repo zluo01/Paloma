@@ -1,12 +1,8 @@
 //! Keyboard navigation over pending permission prompts.
 //!
-//! Every tool call awaiting permission contributes one group of
-//! decision buttons; the groups form a single flat Up/Down sequence,
-//! so arrows walk one tool call's options and continue into the next
-//! pending tool call. Buttons are never GTK-focusable (the search
-//! entry owns focus), so the highlight is the shared `selected` CSS
-//! class, and Enter activates by emitting `clicked` — the same path
-//! mouse clicks take.
+//! Pending tool calls contribute button groups to one flat Up/Down sequence.
+//! Buttons are not GTK-focusable; selection is the shared `selected` CSS class,
+//! and Enter emits `clicked` so keyboard and pointer activation share a path.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -69,7 +65,7 @@ impl PendingDecisions {
 
     /// Move the highlight by `delta` through the flattened option
     /// list, clamped at the ends. Returns false when nothing is
-    /// pending — the caller should let the key fall through.
+    /// pending; the caller should let the key fall through.
     pub(super) fn navigate(&mut self, delta: i32) -> bool {
         let flat: Vec<(usize, usize)> = self
             .groups

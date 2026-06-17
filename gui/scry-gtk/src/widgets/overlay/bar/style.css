@@ -1,4 +1,4 @@
-/* Two-row search bar; the card chrome comes from .scry-surface. */
+/* .scry-surface owns the card chrome; this class only adds interior padding. */
 .scry-card {
     padding: 10px 14px;
 }
@@ -24,7 +24,6 @@
     padding-right: 0;
 }
 
-/* Built-in search / clear icons. */
 .scry-entry > image {
     color: alpha(currentColor, 0.5);
     margin: 0 6px;
@@ -40,15 +39,13 @@
     color: var(--accent-fg-color);
 }
 
-/* Lead margin centers the 8px status dot under the magnifier icon:
-   icon center = 6px margin + 9px half-icon = 15px; 15 - 4px half-dot. */
+/* Center the 8px status dot under the search icon. */
 .scry-bar-strip {
     margin-left: 11px;
 }
 
-/* Labelled health indicators: small glowing LED beads. Lit states get
-   a glossy top-left highlight (radial-gradient) over a saturated fill
-   and a colored outer glow (box-shadow) so the dot emits its color. */
+/* Lit dots share the same highlight/glow treatment; health classes only
+   change the theme color token. */
 .scry-status-dot {
     min-width: 8px;
     min-height: 8px;
@@ -60,7 +57,6 @@
     color: alpha(currentColor, 0.55);
 }
 
-/* Off: a dim, unlit bead — flat, no glow. */
 .scry-status-inactive {
     background: alpha(currentColor, 0.28);
 }
@@ -98,9 +94,16 @@
         0 0 3px 0 var(--error-bg-color);
 }
 
-/* Flat model selector, reference-style plain text + chevron. */
+/* Model selector styled as plain text plus chevron. The transparent base is at
+   APPLICATION priority, so hover and open states are restated here. */
 .scry-model-dropdown > button {
     background: transparent;
     border: none;
     box-shadow: none;
+    border-radius: 9999px;
+}
+
+.scry-model-dropdown > button:hover,
+.scry-model-dropdown > button:checked {
+    background-color: alpha(currentColor, 0.08);
 }

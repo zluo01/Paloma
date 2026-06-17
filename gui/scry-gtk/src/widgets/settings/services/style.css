@@ -9,8 +9,7 @@
     color: var(--error-color);
 }
 
-/* Connect modal: device-code cells — no OTP-style display in the stock
- * theme. */
+/* Device-code cells use custom styling because Adwaita has no OTP widget. */
 .scry-otp-cell {
     font-size: 20px;
     font-weight: 700;
@@ -22,7 +21,6 @@
     font-size: 20px;
 }
 
-/* Connect modal: success check mark. */
 .scry-connect-check {
     font-size: 36px;
     color: var(--success-color);

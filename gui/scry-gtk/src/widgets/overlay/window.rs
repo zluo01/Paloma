@@ -1,6 +1,8 @@
-//! Overlay window placement: where the three layer windows sit, how a
-//! drag moves them, which monitor they follow, and chat auto-scroll. The
-//! windows are anchored top-left and positioned via pixel margins.
+//! Layer-window placement and chat scroll behavior for the overlay.
+//!
+//! The bar, content, and sessions windows are anchored top-left and positioned
+//! with pixel margins. Dragging updates the shared bar position; monitor
+//! changes recenter the overlay on the output that actually receives the bar.
 
 use std::{cell::Cell, rc::Rc};
 
@@ -10,15 +12,13 @@ use gtk4_layer_shell::{Edge, LayerShell};
 use super::{Mode, OVERLAY_WIDTH_PX, Overlay, PANEL_GAP_PX, SEARCH_BAR_HEIGHT_PX};
 
 impl Overlay {
-    /// Reposition all three windows from the current bar position.
     pub(super) fn layout(&self) {
         if let Some((x, y)) = self.position.get() {
             self.layout_at(x, y);
         }
     }
 
-    /// Bar at `(x, y)`, content directly below, sessions to the right and
-    /// vertically centered on the bar.
+    /// Place content below the bar and center sessions beside it.
     pub(super) fn layout_at(&self, x: i32, y: i32) {
         set_position(&self.bar_window, x, y);
         set_position(
@@ -28,13 +28,13 @@ impl Overlay {
         );
         let sessions_y = (y + SEARCH_BAR_HEIGHT_PX / 2 - self.sessions.height() / 2).max(0);
         set_position(
-            self.sessions.window(),
+            &self.sessions_window,
             x + OVERLAY_WIDTH_PX + PANEL_GAP_PX,
             sessions_y,
         );
     }
 
-    /// Chat auto-scroll: stick to the bottom until the user scrolls up.
+    /// Keep chat pinned to the bottom until the user scrolls up.
     pub(super) fn install_scroll_stickiness(&self) {
         const STICK_EPSILON_PX: f64 = 2.0;
         let vadj = self.scroller.vadjustment();
@@ -72,16 +72,13 @@ impl Overlay {
         });
     }
 
-    /// In chat mode, pinned, and not already at the bottom.
     fn is_stuck_below_bottom(&self, adj: &gtk4::Adjustment) -> bool {
         self.mode.get() == Mode::Chat
             && self.stuck_to_bottom.get()
             && adj.value() < (adj.upper() - adj.page_size()).max(0.0)
     }
 
-    /// Follow the monitor the compositor maps the bar onto: a position from
-    /// another output is meaningless here, so recenter and pin the
-    /// satellites to it.
+    /// Recenter when the compositor maps the bar onto a different monitor.
     pub(super) fn install_monitor_watcher(&self) {
         let overlay = self.clone();
         self.bar_window.connect_realize(move |window| {
@@ -95,16 +92,18 @@ impl Overlay {
                 }
                 *overlay.monitor.borrow_mut() = Some(monitor.clone());
                 overlay.content_window.set_monitor(Some(monitor));
-                overlay.sessions.window().set_monitor(Some(monitor));
+                overlay.sessions_window.set_monitor(Some(monitor));
+                // Positions from another output are not meaningful, so recenter
+                // and resize the satellite panels for the new monitor.
                 let panel = (monitor.geometry().height() as f64 * GOLDEN_SECTION_FROM_TOP) as i32;
                 overlay.sessions.set_height(panel);
+                overlay.scroller.set_max_content_height(panel);
                 overlay.position.set(Some(centered_on(monitor)));
                 overlay.layout();
             });
         });
     }
 
-    /// Dragging the bar moves all three windows, anchored at drag start.
     pub(super) fn install_bar_drag(&self) {
         let drag = GestureDrag::new();
         let drag_start = Rc::new(Cell::new((0, 0)));
@@ -141,21 +140,22 @@ fn set_position(window: &ApplicationWindow, x: i32, y: i32) {
     window.set_margin(Edge::Top, y);
 }
 
-/// Provisional centered position for the first frame, before the
-/// compositor has placed the surface; guesses from the best monitor GDK
-/// can name (falling back to 1920×1080). [`centered_on`] finalizes it.
+/// Provisional centered position for the first frame.
+///
+/// The monitor watcher replaces this once the compositor reports the actual
+/// output. Until then, use the best monitor GDK can name, falling back to
+/// 1920x1080.
 pub(super) fn centered_position(window: &ApplicationWindow) -> (i32, i32) {
     let geometry =
         monitor_geometry(window).unwrap_or_else(|| gtk4::gdk::Rectangle::new(0, 0, 1920, 1080));
     centered_in(&geometry)
 }
 
-/// The bar centered on a known monitor.
 pub(super) fn centered_on(monitor: &gtk4::gdk::Monitor) -> (i32, i32) {
     centered_in(&monitor.geometry())
 }
 
-/// The bar's center sits at the golden section: 61.8% up from the bottom.
+/// Bar center: 38.2% down from the top, or 61.8% up from the bottom.
 const GOLDEN_SECTION_FROM_TOP: f64 = 1.0 - 0.618;
 
 fn centered_in(geometry: &gtk4::gdk::Rectangle) -> (i32, i32) {
@@ -168,9 +168,8 @@ fn centered_coords(width: i32, height: i32) -> (i32, i32) {
     (x, y)
 }
 
-/// The monitor backing the surface: explicit window monitor → surface
-/// monitor → largest connected monitor (the fallback matters on first
-/// show, before the compositor assigned one).
+/// Monitor backing the surface: explicit window monitor, then surface monitor,
+/// then largest connected monitor.
 fn monitor_geometry(window: &ApplicationWindow) -> Option<gtk4::gdk::Rectangle> {
     window
         .monitor()

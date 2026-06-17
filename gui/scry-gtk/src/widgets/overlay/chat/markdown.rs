@@ -2,9 +2,9 @@
 //!
 //! The accumulated source is parsed into a flat list of [`Block`]s;
 //! [`MarkdownView`] keeps one widget per block and, on each streaming
-//! update, rebuilds only from the first changed block — during
-//! append-streaming that is almost always just the last one, so
-//! completed blocks (and any text selection in them) stay untouched.
+//! update, rebuilds only from the first changed block. During append-streaming
+//! that is usually just the last block, so completed blocks and selections stay
+//! untouched.
 
 use std::borrow::Cow;
 
@@ -29,7 +29,7 @@ struct Rendered {
 
 #[derive(Clone, PartialEq, Debug)]
 enum Block {
-    /// Paragraphs, headings, lists, quotes — pango markup + css class.
+    /// Paragraphs, headings, lists, and quotes as Pango markup plus a CSS class.
     Text {
         markup: String,
         class: Option<&'static str>,
