@@ -36,6 +36,7 @@ impl AppEntry {
             actions: vec![Action {
                 label: "Open".to_string(),
                 params: self.exec.clone(),
+                primary: true,
             }],
         }
     }

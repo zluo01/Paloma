@@ -175,6 +175,7 @@ fn build_item(text: &str) -> Item {
             .map(|label| Action {
                 label: (*label).into(),
                 params: vec![text.to_owned()],
+                primary: *label == COPY_ACTION_LABEL,
             })
             .collect(),
     }

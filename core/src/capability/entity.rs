@@ -17,6 +17,8 @@ pub struct Action {
     pub label: String,
     /// action input params
     pub params: Vec<String>,
+    /// whether the action is the default action.
+    pub primary: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
