@@ -2,7 +2,6 @@ use serde_json::json;
 use sqlx::Row;
 
 use super::*;
-use crate::db::error::StorageError;
 
 async fn fresh_storage() -> Storage {
     let pool = SqlitePoolOptions::new()

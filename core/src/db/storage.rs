@@ -13,11 +13,8 @@ use uuid::Uuid;
 
 use super::{AuthKind, queries};
 use crate::{
-    db::{
-        entity::{
-            ConnectedProvider, EntryType, FileEntry, PreferModelConfig, RestoreEntry, Session,
-        },
-        error::{Result, StorageError},
+    db::entity::{
+        ConnectedProvider, EntryType, FileEntry, PreferModelConfig, RestoreEntry, Session,
     },
     entity::{Plugin, PluginArgs, PluginType, ProviderId, Transport},
 };
@@ -371,6 +368,23 @@ async fn initialize(pool: &Pool<Sqlite>) -> Result<()> {
     sqlx::query(queries::INIT_TABLE_QUERY).execute(pool).await?;
     Ok(())
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("database error: {0}")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("provider {0} not found")]
+    NotFound(String),
+
+    #[error("provider {0} already exists")]
+    Duplicate(String),
+}
+
+type Result<T> = std::result::Result<T, StorageError>;
 
 #[cfg(test)]
 #[path = "storage_tests.rs"]
