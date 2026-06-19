@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use dashmap::DashMap;
+use futures::future::join_all;
 use log::error;
 
 use crate::{
@@ -23,21 +24,36 @@ impl ProviderController {
     ) -> Result<Self, ProviderControllerError> {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderClient>> = DashMap::new();
 
-        for cred in storage.connected_providers().await? {
-            let auth = match cred.auth_kind {
-                AuthKind::ApiKey => Auth::ApiKey(cred.secret),
-                AuthKind::Oauth => Auth::OAuth {
-                    refresh_token: Some(cred.secret),
-                    expires_at: None,
-                },
-            };
-            let client: Arc<dyn ProviderClient> = match cred.provider_id {
-                ProviderId::Codex => {
-                    Arc::new(CodexRuntime::new(&auth, request.clone(), storage.clone()).await)
-                },
-                _ => todo!(),
-            };
-            handlers.insert(client.id(), client);
+        let clients = join_all(
+            storage
+                .connected_providers()
+                .await?
+                .into_iter()
+                .map(|cred| {
+                    let request = request.clone();
+                    let storage = storage.clone();
+                    async move {
+                        let auth = match cred.auth_kind {
+                            AuthKind::ApiKey => Auth::ApiKey(cred.secret),
+                            AuthKind::Oauth => Auth::OAuth {
+                                refresh_token: Some(cred.secret),
+                                expires_at: None,
+                            },
+                        };
+                        let client: Arc<dyn ProviderClient> = match cred.provider_id {
+                            ProviderId::Codex => {
+                                Arc::new(CodexRuntime::new(&auth, request, storage).await)
+                            },
+                            _ => todo!(),
+                        };
+                        (client.id(), client)
+                    }
+                }),
+        )
+        .await;
+
+        for (provider_id, client) in clients {
+            handlers.insert(provider_id, client);
         }
 
         Ok(Self {
