@@ -1,12 +1,17 @@
 use std::{sync::Arc, time::Duration};
 
+use futures::Stream;
+use tokio::sync::broadcast;
+use uuid::Uuid;
+
 use crate::{
     capability::ProcessManager,
     constants::DATABASE_PATH,
     controller::{
-        ConnectController, LocalQuery, LocalQueryInitError, PermissionWorkflowManager,
-        PluginConnectionController, ProviderController, ProviderControllerError, RemoteQuery,
-        SessionManager, SessionManagerError, ToolController, TurnManager,
+        ConnectController, ConnectError, LocalQuery, LocalQueryInitError,
+        PermissionWorkflowManager, PluginConnectionController, PluginConnectionError,
+        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
+        SessionManagerError, ToolController, TurnManager,
     },
     db::{Storage, StorageError},
     permission::PermissionController,
@@ -25,7 +30,7 @@ pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, RenderEvent,
-    SessionUpdate, TerminalState,
+    SessionListItem, SessionUpdate, TerminalState,
 };
 pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
@@ -34,14 +39,14 @@ pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
 
 pub struct AppContext {
-    pub connect: ConnectController,
-    pub local_query: LocalQuery,
-    pub remote_query: RemoteQuery,
-    pub plugin: PluginConnectionController,
+    connect: ConnectController,
+    local_query: LocalQuery,
+    remote_query: RemoteQuery,
+    plugin: PluginConnectionController,
 }
 
 impl AppContext {
-    pub async fn build() -> Result<Arc<Self>, AppError> {
+    pub async fn build() -> Result<Arc<Self>> {
         let db_path = DATABASE_PATH.clone();
         if let Some(parent) = db_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -61,7 +66,7 @@ impl AppContext {
 
     async fn init_llm(
         storage: Storage,
-    ) -> Result<(ConnectController, RemoteQuery, PluginConnectionController), AppError> {
+    ) -> Result<(ConnectController, RemoteQuery, PluginConnectionController)> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .read_timeout(Duration::from_secs(900))
@@ -124,8 +129,131 @@ impl AppContext {
         Ok((connect, remote_query, plugin))
     }
 
-    fn init_local() -> Result<LocalQuery, AppError> {
+    fn init_local() -> Result<LocalQuery> {
         Ok(LocalQuery::new()?)
+    }
+
+    pub fn query(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
+        self.local_query.query(input)
+    }
+
+    pub fn run_query_action(&self, id: &str, action: Action) -> Option<ActionOutcome> {
+        self.local_query.run(id, action)
+    }
+
+    pub fn listen_session_updates(&self) -> broadcast::Receiver<SessionUpdate> {
+        self.remote_query.subscribe()
+    }
+
+    pub async fn init_chat(
+        &self,
+        session_id: Option<Uuid>,
+        provider_id: ProviderId,
+        prompt: String,
+    ) -> Result<(Uuid, bool)> {
+        Ok(self
+            .remote_query
+            .init_chat(session_id, provider_id, prompt)
+            .await?)
+    }
+
+    pub async fn chat(
+        &self,
+        session_id: Uuid,
+        provider_id: ProviderId,
+        prompt: String,
+    ) -> Result<()> {
+        Ok(self
+            .remote_query
+            .chat(session_id, provider_id, prompt)
+            .await?)
+    }
+
+    pub async fn cleanup_error_session(&self, session_id: Uuid) {
+        self.remote_query.cleanup(session_id).await;
+    }
+
+    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {
+        Ok(self.remote_query.available_sessions().await?)
+    }
+
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
+        Ok(self.remote_query.restore_session(session_id).await?)
+    }
+
+    pub async fn remove_session(&self, session_id: Uuid) -> Result<()> {
+        Ok(self.remote_query.remove_session(session_id).await?)
+    }
+
+    pub async fn cancel_session(&self, session_id: Uuid) -> Result<()> {
+        Ok(self.remote_query.cancel(session_id).await?)
+    }
+
+    pub async fn decide_toolcall_permissions(
+        &self,
+        user_decision: UserDecision,
+    ) -> Result<PermissionState> {
+        Ok(self.remote_query.decide(user_decision).await?)
+    }
+
+    pub async fn init_connection(&self, provider_id: ProviderId) -> Result<Connection> {
+        Ok(self.connect.init(provider_id).await?)
+    }
+
+    pub async fn finalize_connection(
+        &self,
+        provider_id: ProviderId,
+        payload: Connection,
+    ) -> Result<()> {
+        Ok(self.connect.finalize(provider_id, payload).await?)
+    }
+
+    pub async fn disconnect_connector(&self, provider_id: ProviderId) -> Result<()> {
+        Ok(self.connect.disconnect(provider_id).await?)
+    }
+
+    pub async fn set_model_preference(
+        &self,
+        provider_id: ProviderId,
+        model: &str,
+        effort: &str,
+    ) -> Result<()> {
+        Ok(self
+            .connect
+            .set_preferred(provider_id, model, effort)
+            .await?)
+    }
+
+    pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
+        Ok(self.connect.available_connectors().await?)
+    }
+
+    pub async fn connectors_health_level(&self) -> HealthLevel {
+        self.connect.health_level().await
+    }
+
+    pub async fn plugins_health_level(&self) -> HealthLevel {
+        self.plugin.health_level().await
+    }
+
+    pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {
+        Ok(self.plugin.list_mcps().await?)
+    }
+
+    pub async fn add_mcp(&self, plugin: Plugin) -> Result<()> {
+        Ok(self.plugin.add_mcp(plugin).await?)
+    }
+
+    pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {
+        Ok(self.plugin.update_plugin(plugin_type, plugin).await?)
+    }
+
+    pub async fn remove_plugin(&self, plugin_type: PluginType, name: &str) -> Result<()> {
+        Ok(self.plugin.remove_plugin(plugin_type, name).await?)
+    }
+
+    pub async fn toggle_plugin(&self, name: &str, disabled: bool) -> Result<()> {
+        Ok(self.plugin.toggle_plugin(name, disabled).await?)
     }
 }
 
@@ -144,8 +272,19 @@ pub enum AppError {
     Provider(#[from] ProviderControllerError),
 
     #[error(transparent)]
+    RemoteQuery(#[from] RemoteQueryError),
+
+    #[error(transparent)]
+    Connect(#[from] ConnectError),
+
+    #[error(transparent)]
+    PluginConnection(#[from] PluginConnectionError),
+
+    #[error(transparent)]
     LocalQuery(#[from] LocalQueryInitError),
 
     #[error(transparent)]
     SessionManager(#[from] SessionManagerError),
 }
+
+type Result<T> = std::result::Result<T, AppError>;

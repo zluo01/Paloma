@@ -5,12 +5,14 @@ mod local;
 mod remote;
 
 pub use connector::{
-    ConnectController, Connector, ConnectorConnection, McpServer, PluginConnectionController,
+    ConnectController, ConnectError, Connector, ConnectorConnection, McpServer,
+    PluginConnectionController, PluginConnectionError,
 };
 pub use entity::{ChatRenderEvent, LocalRenderEvent, RenderEvent};
 pub use local::{LocalQuery, LocalQueryInitError};
 pub use remote::{
     PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
-    ProviderControllerError, RemoteQuery, SessionManager, SessionManagerError, SessionUpdate,
-    TerminalState, ToolController, ToolControllerError, TurnManager,
+    ProviderControllerError, RemoteQuery, RemoteQueryError, SessionListItem, SessionManager,
+    SessionManagerError, SessionUpdate, TerminalState, ToolController, ToolControllerError,
+    TurnManager,
 };

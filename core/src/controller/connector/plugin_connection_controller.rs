@@ -73,7 +73,7 @@ impl PluginConnectionController {
         Ok(())
     }
 
-    pub async fn remove_plugin(&self, name: &str, plugin_type: PluginType) -> Result<()> {
+    pub async fn remove_plugin(&self, plugin_type: PluginType, name: &str) -> Result<()> {
         match plugin_type {
             PluginType::Native => error!("Not yet implemented."),
             PluginType::Mcp => self.tool_controller.deregister_tool(name).await?,
