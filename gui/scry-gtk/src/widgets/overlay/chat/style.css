@@ -171,9 +171,38 @@
     font-size: 15px;
 }
 
+/* Headings skip .scry-chat-text (its font-size would override .title-N), so they
+   carry its non-font read-only/selectable chrome here: transparent caret, no
+   focus ring, and the accent selection highlight — matching paragraphs. */
+.scry-md-heading {
+    background: transparent;
+    caret-color: transparent;
+}
+
+.scry-md-heading:focus,
+.scry-md-heading:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.scry-md-heading > selection {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+/* List bullet / ordinal column (the content column wraps beside it). Pin the
+   size to the item text (.scry-md-text) so markers don't fall back to the theme
+   default and mismatch the adjacent content. */
+.scry-md-marker {
+    font-size: 15px;
+    color: alpha(currentColor, 0.55);
+}
+
+/* Blockquote: a container with a left rule and dimmed text (no italics). */
 .scry-md-quote {
-    color: alpha(currentColor, 0.7);
-    font-style: italic;
+    border-left: 3px solid alpha(currentColor, 0.25);
+    padding-left: 10px;
+    color: alpha(currentColor, 0.72);
 }
 
 /* Code card: caption + copy header over a monospace body. Shared by
@@ -201,4 +230,20 @@
 
 .scry-md-th {
     font-weight: 700;
+}
+
+/* Markdown table: a thin horizontal rule under each row (no vertical lines), a
+   stronger one under the header; cells get vertical padding so text clears the
+   rules. Horizontal spacing comes from the grid's column-spacing. */
+.scry-md-td {
+    padding: 4px 0;
+}
+
+.scry-md-table-rule {
+    min-height: 1px;
+    background: alpha(currentColor, 0.12);
+}
+
+.scry-md-table-rule-head {
+    background: alpha(currentColor, 0.3);
 }

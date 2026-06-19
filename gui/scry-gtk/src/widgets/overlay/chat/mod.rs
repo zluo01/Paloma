@@ -5,7 +5,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gtk4::{
-    Align, Box as GtkBox, Button, Label, Orientation, TextBuffer, TextView, Widget, WrapMode,
+    Align, Box as GtkBox, Button, Label, Orientation, TextBuffer, TextView, Widget, WrapMode, glib,
     pango, prelude::*,
 };
 use libadwaita::Spinner;
@@ -17,7 +17,7 @@ use scry_core::UserDecision;
 
 use self::{
     decisions::{PendingDecisions, decision_prompt},
-    markdown::MarkdownView,
+    markdown::{MarkdownView, ParsedMarkdown},
 };
 use super::OnDecideFn;
 use crate::widgets::clear_children;
@@ -55,14 +55,130 @@ struct ChatTurn {
     status: Label,
     reasoning: String,
     reasoning_block: Option<TextBlock>,
-    assistant: String,
     assistant_block: Option<AssistantBlock>,
 }
 
-/// Role section wrapping a [`MarkdownView`] for assistant output.
+/// At most this often does a streaming assistant section re-render markdown,
+/// bounding the per-delta full reparse; a segment end flushes immediately.
+const RENDER_THROTTLE: std::time::Duration = std::time::Duration::from_millis(33);
+
+/// Role section for assistant output. Its widgets stay on screen, but the live
+/// render handle is dropped when a tool call splits the turn.
 struct AssistantBlock {
     section: GtkBox,
+    handle: AssistantHandle,
+}
+
+/// Coalesced render state for one assistant section, behind an `Rc<RefCell>` so the
+/// throttle timer (a `Weak`) and the copy button outlive the transient handles used
+/// while streaming.
+struct RenderState {
     view: MarkdownView,
+    /// The segment's markdown source, shared with the section copy button.
+    source: Rc<RefCell<String>>,
+    dirty: bool,
+    pending: Option<glib::SourceId>,
+}
+
+impl Drop for RenderState {
+    fn drop(&mut self) {
+        // Cancel a still-armed timer so it can't fire into a freed section (e.g.
+        // after `ChatView::reset` drops the turns).
+        if let Some(id) = self.pending.take() {
+            id.remove();
+        }
+    }
+}
+
+/// Cheap-cloneable handle to a [`RenderState`]; exposes only delta append and
+/// flush. Timers, the dirty flag, and the source cell stay private.
+#[derive(Clone)]
+struct AssistantHandle(Rc<RefCell<RenderState>>);
+
+impl AssistantHandle {
+    /// Append streamed text (so copy is immediately current) and coalesce the
+    /// render: render now on the first delta of a burst, then at most once per
+    /// [`RENDER_THROTTLE`] until idle.
+    fn append_delta(&self, text: &str) {
+        let arm = {
+            let state = self.0.borrow();
+            state.source.borrow_mut().push_str(text);
+            state.pending.is_none()
+        };
+        if arm {
+            self.render_now();
+            self.arm();
+        } else {
+            self.0.borrow_mut().dirty = true;
+        }
+    }
+
+    /// Parse the latest source under a brief source borrow, drop it, then apply —
+    /// no source borrow is held across the GTK build (the `RenderState` borrow is,
+    /// but nothing re-enters it). Clears `dirty`.
+    fn render_now(&self) {
+        let mut state = self.0.borrow_mut();
+        let parse_start = log::log_enabled!(log::Level::Trace).then(std::time::Instant::now);
+        let (parsed, src_len) = {
+            let src = state.source.borrow();
+            (ParsedMarkdown::parse(&src), src.len())
+        };
+        // Stats are read before `apply_parsed` consumes `parsed`, and only under
+        // trace, so the normal path stays parse + prefix-diff apply.
+        let stats = parse_start.map(|t| {
+            (
+                t.elapsed().as_micros(),
+                parsed.top_level_blocks(),
+                parsed.node_count(),
+            )
+        });
+        let apply_start = parse_start.map(|_| std::time::Instant::now());
+        state.view.apply_parsed(parsed);
+        state.dirty = false;
+        if let (Some((parse_us, top, nodes)), Some(apply_start)) = (stats, apply_start) {
+            log::trace!(
+                "md render: src_len={src_len} top_level={top} nodes={nodes} \
+                 parse_us={parse_us} apply_us={}",
+                apply_start.elapsed().as_micros()
+            );
+        }
+    }
+
+    /// Schedule a single coalesced re-render after [`RENDER_THROTTLE`].
+    fn arm(&self) {
+        let weak = Rc::downgrade(&self.0);
+        let id = glib::timeout_add_local_once(RENDER_THROTTLE, move || {
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            let handle = AssistantHandle(state);
+            let dirty = {
+                let mut state = handle.0.borrow_mut();
+                state.pending = None;
+                state.dirty
+            };
+            if dirty {
+                handle.render_now();
+                handle.arm();
+            }
+        });
+        self.0.borrow_mut().pending = Some(id);
+    }
+
+    /// Render any pending content now and cancel the timer — for segment ends
+    /// (turn finished/failed/cancelled, or a tool call splitting the turn).
+    fn flush(&self) {
+        let (dirty, pending) = {
+            let mut state = self.0.borrow_mut();
+            (state.dirty, state.pending.take())
+        };
+        if dirty {
+            self.render_now();
+        }
+        if let Some(id) = pending {
+            id.remove();
+        }
+    }
 }
 
 impl ChatView {
@@ -103,17 +219,32 @@ impl ChatView {
         self.widget.set_visible(false);
     }
 
+    /// Render handle of the current turn's assistant section, if one exists. Cloned
+    /// under a brief borrow so the caller can flush/render outside it (never hold a
+    /// `turns` borrow across a GTK render).
+    fn last_assistant_handle(&self) -> Option<AssistantHandle> {
+        self.turns
+            .borrow()
+            .last()
+            .and_then(ChatTurn::assistant_handle_existing)
+    }
+
     pub(super) fn append_text(&self, text: &str) {
-        let mut turns = self.turns.borrow_mut();
-        let turn = current_turn(&mut turns, &self.turns_box);
-        turn.assistant.push_str(text);
-        turn.render_assistant();
+        let handle = {
+            let mut turns = self.turns.borrow_mut();
+            current_turn(&mut turns, &self.turns_box).assistant_handle()
+        };
+        // Append + render run outside the `turns` borrow.
+        handle.append_delta(text);
     }
 
     /// Push a new turn with `prompt` as its user bubble. This also completes
     /// the prior turn; history replay can deliver consecutive `UserPrompt`s
     /// without an intervening `Done`.
     pub(super) fn start_turn(&self, prompt: &str) {
+        if let Some(handle) = self.last_assistant_handle() {
+            handle.flush();
+        }
         let mut turns = self.turns.borrow_mut();
         if let Some(prev) = turns.last_mut() {
             prev.mark_complete();
@@ -122,18 +253,27 @@ impl ChatView {
     }
 
     pub(super) fn finish_turn(&self) {
-        if let Some(turn) = self.turns.borrow_mut().last_mut() {
+        if let Some(handle) = self.last_assistant_handle() {
+            handle.flush();
+        }
+        if let Some(turn) = self.turns.borrow().last() {
             turn.mark_complete();
         }
     }
 
     pub(super) fn fail_turn(&self, message: &str) {
+        if let Some(handle) = self.last_assistant_handle() {
+            handle.flush();
+        }
         if let Some(turn) = self.turns.borrow().last() {
             turn.mark_ended(message, "scry-chat-error");
         }
     }
 
     pub(super) fn cancel_turn(&self) {
+        if let Some(handle) = self.last_assistant_handle() {
+            handle.flush();
+        }
         if let Some(turn) = self.turns.borrow().last() {
             turn.mark_ended("Cancelled", "scry-chat-cancel");
         }
@@ -154,6 +294,11 @@ impl ChatView {
         decisions: &[UserDecision],
         on_decide: OnDecideFn,
     ) {
+        // Flush the in-progress assistant section before it is split off below the
+        // tool call (outside the `turns` borrow).
+        if let Some(handle) = self.last_assistant_handle() {
+            handle.flush();
+        }
         let mut turns = self.turns.borrow_mut();
         let turn = current_turn(&mut turns, &self.turns_box);
         turn.add_tool_call(
@@ -187,9 +332,12 @@ impl ChatView {
         true
     }
 
-    /// Copy the transcript's current text selection to the clipboard, returning
-    /// whether anything was copied. The transcript window has no keyboard, so
-    /// Ctrl+C never reaches its text widgets; the controller calls this directly.
+    /// Copy the **first** selected text widget's selection to the clipboard,
+    /// returning whether anything was copied. Selection copy is per-widget — the
+    /// markdown renderer is a widget tree, so a drag can't span blocks; the
+    /// assistant section's "Copy markdown" button is the reliable full-answer copy.
+    /// The transcript window has no keyboard, so Ctrl+C never reaches its text
+    /// widgets; the controller calls this directly.
     pub(super) fn copy_selection(&self) -> bool {
         let Some(text) = selected_text(self.turns_box.upcast_ref::<Widget>()) else {
             return false;
@@ -237,7 +385,6 @@ impl ChatTurn {
             status,
             reasoning: String::new(),
             reasoning_block: None,
-            assistant: String::new(),
             assistant_block: None,
         }
     }
@@ -275,14 +422,41 @@ impl ChatTurn {
         }
     }
 
-    fn render_assistant(&mut self) {
-        let block = self.assistant_block.get_or_insert_with(|| {
-            let section = append_section(&self.body, ASSISTANT_TITLE, ASSISTANT_CLASS);
+    /// Ensure the assistant section exists and return a clone of its render handle.
+    fn assistant_handle(&mut self) -> AssistantHandle {
+        if self.assistant_block.is_none() {
+            let source = Rc::new(RefCell::new(String::new()));
             let view = MarkdownView::new();
-            section.append(&view.widget);
-            AssistantBlock { section, view }
-        });
-        block.view.set_markdown(&self.assistant);
+            let view_widget = view.widget.clone();
+            let state = Rc::new(RefCell::new(RenderState {
+                view,
+                source: source.clone(),
+                dirty: false,
+                pending: None,
+            }));
+            let section = append_section_with_action(
+                &self.body,
+                ASSISTANT_TITLE,
+                ASSISTANT_CLASS,
+                &assistant_copy_button(source),
+            );
+            section.append(&view_widget);
+            self.assistant_block = Some(AssistantBlock {
+                section,
+                handle: AssistantHandle(state),
+            });
+        }
+        self.assistant_block
+            .as_ref()
+            .expect("assistant block created above")
+            .handle
+            .clone()
+    }
+
+    fn assistant_handle_existing(&self) -> Option<AssistantHandle> {
+        self.assistant_block
+            .as_ref()
+            .map(|block| block.handle.clone())
     }
 
     fn add_tool_call(
@@ -294,10 +468,10 @@ impl ChatTurn {
         on_decide: OnDecideFn,
         pending: &Rc<RefCell<PendingDecisions>>,
     ) {
-        // Drop the in-progress block handles, leaving their widgets on screen,
-        // so later deltas open new sections below the tool call.
+        // Drop the live render handle (the section's widgets and copy button stay
+        // on screen), so later deltas open a new assistant section below the tool
+        // call. The caller flushes the old section first.
         self.assistant_block = None;
-        self.assistant.clear();
         self.reasoning_block = None;
         self.reasoning.clear();
 
@@ -459,6 +633,44 @@ fn append_section(parent: &GtkBox, title: &str, variant: &str) -> GtkBox {
     role.add_css_class("scry-chat-role");
     section.append(&role);
     section
+}
+
+/// A role section whose header row carries `title` plus a trailing `action`
+/// widget (used for the assistant "Copy markdown" button). Only the assistant
+/// section needs this; other roles use [`append_section`].
+fn append_section_with_action(
+    parent: &GtkBox,
+    title: &str,
+    variant: &str,
+    action: &impl IsA<Widget>,
+) -> GtkBox {
+    let section = new_section(parent, variant);
+    let header = GtkBox::new(Orientation::Horizontal, 8);
+    let role = Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .hexpand(true)
+        .build();
+    role.add_css_class("scry-chat-role");
+    header.append(&role);
+    header.append(action);
+    section.append(&header);
+    section
+}
+
+/// Copy button for an assistant section: copies its accumulated markdown source.
+/// Holds a strong clone of `source` so it keeps working after the section's render
+/// handle is dropped (e.g. when a tool call splits the turn).
+fn assistant_copy_button(source: Rc<RefCell<String>>) -> Button {
+    let copy = Button::builder()
+        .icon_name("edit-copy-symbolic")
+        .tooltip_text("Copy markdown")
+        .css_classes(["flat", "scry-code-copy"])
+        .build();
+    copy.connect_clicked(move |button| {
+        button.clipboard().set_text(source.borrow().as_str());
+    });
+    copy
 }
 
 fn current_turn<'a>(turns: &'a mut Vec<ChatTurn>, turns_box: &GtkBox) -> &'a mut ChatTurn {
