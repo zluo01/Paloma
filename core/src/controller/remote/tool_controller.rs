@@ -4,6 +4,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use futures::future::join_all;
 use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -63,9 +64,15 @@ impl ToolController {
             error!("failed to load mcp plugins: {e}");
             Vec::new()
         });
-        for plugin in plugins {
+
+        let plugins = join_all(plugins.into_iter().map(|plugin| async move {
             let name = plugin.name.clone();
             let (tool, specs) = McpTool::new(&plugin).await;
+            (name, tool, specs)
+        }))
+        .await;
+
+        for (name, tool, specs) in plugins {
             for spec in specs {
                 tool_specs.insert(spec.schema.name.clone(), spec);
             }
