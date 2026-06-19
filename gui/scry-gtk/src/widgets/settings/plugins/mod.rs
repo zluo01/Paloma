@@ -111,7 +111,7 @@ impl PluginsPage {
         let app_context = self.app_context.clone();
         let weak = Rc::downgrade(self);
         runtime::spawn_with(
-            async move { app_context.plugin.list_mcps().await },
+            async move { app_context.list_mcps().await },
             move |result| match result {
                 Ok(list) => {
                     let Some(this) = weak.upgrade() else {
@@ -226,7 +226,7 @@ impl PluginsPage {
             let reverting = reverting.clone();
             let error_weak = Rc::downgrade(&this);
             runtime::spawn_with(
-                async move { app_context.plugin.toggle_plugin(&name, !state).await },
+                async move { app_context.toggle_plugin(&name, !state).await },
                 move |result| match result {
                     Ok(()) => sw.set_state(state),
                     Err(e) => {
@@ -262,12 +262,7 @@ impl PluginsPage {
             let name = name.clone();
             let done_weak = Rc::downgrade(&this);
             runtime::spawn_with(
-                async move {
-                    app_context
-                        .plugin
-                        .remove_plugin(&name, PluginType::Mcp)
-                        .await
-                },
+                async move { app_context.remove_plugin(PluginType::Mcp, &name).await },
                 move |result| {
                     let Some(this) = done_weak.upgrade() else {
                         return;
@@ -289,12 +284,9 @@ impl PluginsPage {
         runtime::spawn_with(
             async move {
                 if editing {
-                    app_context
-                        .plugin
-                        .update_plugin(PluginType::Mcp, config)
-                        .await
+                    app_context.update_plugin(PluginType::Mcp, config).await
                 } else {
-                    app_context.plugin.add_mcp(config).await
+                    app_context.add_mcp(config).await
                 }
             },
             move |result| match result {

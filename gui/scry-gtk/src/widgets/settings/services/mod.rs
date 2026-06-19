@@ -79,7 +79,7 @@ impl ServicesPage {
         let app = self.app.clone();
         let weak = Rc::downgrade(self);
         runtime::spawn_with(
-            async move { app.connect.available_connectors().await },
+            async move { app.available_connectors().await },
             move |result| match result {
                 Ok(connectors) => {
                     if let Some(this) = weak.upgrade() {
@@ -220,7 +220,7 @@ impl ServicesPage {
                 let id = provider.id;
                 let done_weak = Rc::downgrade(&this);
                 runtime::spawn_with(
-                    async move { app.connect.disconnect(id).await },
+                    async move { app.disconnect_connector(id).await },
                     move |result| match result {
                         Ok(()) => {
                             if let Some(this) = done_weak.upgrade() {
@@ -371,7 +371,7 @@ fn add_picker_rows(
 fn save_preferences(app: &Arc<AppContext>, id: ProviderId, model: String, effort: String) {
     let app = app.clone();
     runtime::spawn_with(
-        async move { app.connect.set_preferences(id, &model, &effort).await },
+        async move { app.set_model_preference(id, &model, &effort).await },
         |result| {
             if let Err(e) = result {
                 log::warn!("set_preferences failed: {e}");

@@ -174,7 +174,7 @@ impl OverlayController {
     }
 
     fn install_session_update_watcher(&self) {
-        let mut rx = self.inner.app.remote_query.subscribe();
+        let mut rx = self.inner.app.listen_session_updates();
         let controller = self.clone();
         let app = self.inner.app.clone();
 
@@ -184,7 +184,7 @@ impl OverlayController {
             let on_decide: OnDecideFn = Rc::new(move |decision: UserDecision, apply| {
                 let app = app.clone();
                 runtime::spawn_with(
-                    async move { app.remote_query.decide(decision).await },
+                    async move { app.decide_toolcall_permissions(decision).await },
                     move |result| match result {
                         Ok(state) => apply(state),
                         Err(err) => error!("decide: {err}"),
@@ -266,7 +266,7 @@ impl OverlayController {
         };
         let app = self.inner.app.clone();
         runtime::spawn_with(
-            async move { app.remote_query.cancel(session_id).await },
+            async move { app.cancel_session(session_id).await },
             |result| {
                 if let Err(err) = result {
                     error!("cancel chat: {err}");
@@ -298,8 +298,7 @@ impl OverlayController {
         glib::MainContext::default().spawn_local(async move {
             // The query runs on the runtime and streams render events back;
             // consume them here on the GTK main context.
-            let mut render_stream =
-                runtime::spawn(async move { app_for_query.local_query.query(&text) }).await;
+            let mut render_stream = runtime::spawn(async move { app_for_query.query(&text) }).await;
 
             let on_invoke: InvokeFn = {
                 let controller = controller.clone();
@@ -388,12 +387,8 @@ impl OverlayController {
             let init = {
                 let app = controller.inner.app.clone();
                 let prompt = prompt.clone();
-                runtime::spawn(async move {
-                    app.remote_query
-                        .init_chat(prior_session, provider, prompt)
-                        .await
-                })
-                .await
+                runtime::spawn(async move { app.init_chat(prior_session, provider, prompt).await })
+                    .await
             };
 
             let (session_id, is_new) = match init {
@@ -418,10 +413,7 @@ impl OverlayController {
             let chat_result = {
                 let app = controller.inner.app.clone();
                 let prompt = prompt.clone();
-                runtime::spawn(
-                    async move { app.remote_query.chat(session_id, provider, prompt).await },
-                )
-                .await
+                runtime::spawn(async move { app.chat(session_id, provider, prompt).await }).await
             };
 
             if let Err(err) = chat_result {
@@ -431,7 +423,7 @@ impl OverlayController {
                 if is_new {
                     let app = controller.inner.app.clone();
                     runtime::spawn(async move {
-                        app.remote_query.cleanup(session_id).await;
+                        app.cleanup_error_session(session_id).await;
                     })
                     .await;
                     controller.inner.chat.active_session.borrow_mut().take();
@@ -460,7 +452,7 @@ impl OverlayController {
         runtime::spawn_with(
             {
                 let app = self.inner.app.clone();
-                async move { app.remote_query.restore_session(id).await }
+                async move { app.restore_session(id).await }
             },
             move |result| match result {
                 Ok(TerminalState::Running) => {
@@ -522,7 +514,7 @@ impl OverlayController {
     }
 
     fn invoke_action(&self, handler_id: &'static str, action: Action) {
-        let Some(outcome) = self.inner.app.local_query.run(handler_id, action) else {
+        let Some(outcome) = self.inner.app.run_query_action(handler_id, action) else {
             return;
         };
         match outcome {
@@ -537,7 +529,7 @@ impl OverlayController {
         runtime::spawn_with(
             {
                 let app = self.inner.app.clone();
-                async move { app.remote_query.available_sessions().await }
+                async move { app.available_sessions().await }
             },
             move |result| match result {
                 Ok(sessions) => {
@@ -572,7 +564,7 @@ impl OverlayController {
         runtime::spawn_with(
             {
                 let app = self.inner.app.clone();
-                async move { app.remote_query.remove_session(id).await }
+                async move { app.remove_session(id).await }
             },
             move |result| match result {
                 Ok(()) => controller.inner.overlay.remove_session(id),
@@ -591,8 +583,8 @@ impl OverlayController {
             {
                 let app = self.inner.app.clone();
                 async move {
-                    let models = app.connect.health_level().await;
-                    let plugins = app.plugin.health_level().await;
+                    let models = app.connectors_health_level().await;
+                    let plugins = app.plugins_health_level().await;
                     (models, plugins)
                 }
             },
@@ -605,7 +597,7 @@ impl OverlayController {
         runtime::spawn_with(
             {
                 let app = self.inner.app.clone();
-                async move { app.connect.available_connectors().await }
+                async move { app.available_connectors().await }
             },
             move |result| match result {
                 Ok(connectors) => {
@@ -627,8 +619,7 @@ impl OverlayController {
             {
                 let app = self.inner.app.clone();
                 async move {
-                    app.connect
-                        .set_preferred(choice.provider, &choice.model, &choice.effort)
+                    app.set_model_preference(choice.provider, &choice.model, &choice.effort)
                         .await
                 }
             },

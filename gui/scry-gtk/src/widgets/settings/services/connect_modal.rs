@@ -163,7 +163,7 @@ impl ConnectDialog {
                 async move {
                     let init = runtime::spawn({
                         let app = app.clone();
-                        async move { app.connect.init(provider_id).await }
+                        async move { app.init_connection(provider_id).await }
                     })
                     .await;
 
@@ -180,7 +180,7 @@ impl ConnectDialog {
                                 transaction_payload,
                             };
                             let finalize = runtime::spawn(async move {
-                                app.connect.finalize(provider_id, payload).await
+                                app.finalize_connection(provider_id, payload).await
                             })
                             .await;
                             match finalize {

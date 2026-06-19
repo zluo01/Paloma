@@ -12,7 +12,7 @@ use std::{
 
 use gtk4::{gio, glib, prelude::*};
 use libadwaita::{Application, ApplicationWindow};
-use log::{error, info, warn};
+use log::{error, warn};
 use scry_core::AppContext;
 use tokio::sync::broadcast::{self, error::RecvError};
 
