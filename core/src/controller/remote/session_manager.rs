@@ -223,6 +223,7 @@ impl SessionManager {
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
         let errored = matches!(&payload, SessionEvent::Err(_));
+        let touch_session = matches!(&payload, SessionEvent::UserPrompt(_));
 
         let render_event = payload
             .to_render_event(
@@ -238,6 +239,12 @@ impl SessionManager {
             self.storage
                 .insert_history(&session_id.to_string(), t, &item)
                 .await?;
+        }
+        if touch_session && let Err(e) = self.storage.touch_session(&session_id.to_string()).await {
+            error!(
+                "fail to update session last update time for {}. {}",
+                &session_id, e
+            )
         }
 
         if let Some(event) = render_event {
