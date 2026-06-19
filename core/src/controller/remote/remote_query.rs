@@ -19,8 +19,6 @@ use crate::{
     permission::{PermissionState, UserDecision},
 };
 
-const MAX_TITLE_CHARS: usize = 56;
-
 pub struct RemoteQuery {
     session_manager_client: SessionManagerClient,
     turn_manager_client: TurnManagerClient,
@@ -52,9 +50,8 @@ impl RemoteQuery {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
-                let title = title_from_prompt(&prompt);
                 self.session_manager_client
-                    .create_session(id, provider_id, title)
+                    .create_session(id, provider_id, prompt)
                     .await?;
 
                 // inject environment_context
@@ -127,16 +124,6 @@ impl RemoteQuery {
 
     pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {
         Ok(self.session_manager_client.available_sessions().await?)
-    }
-}
-
-fn title_from_prompt(prompt: &str) -> String {
-    let s = prompt.lines().next().unwrap_or("").trim();
-    if s.chars().count() <= MAX_TITLE_CHARS {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(MAX_TITLE_CHARS).collect();
-        format!("{truncated}…")
     }
 }
 
