@@ -12,7 +12,8 @@ use uuid::Uuid;
 
 use crate::{
     capability::{
-        DynTool, McpTool, ProcessManagerClient, Shell, Tool, ToolResult, ToolSchema, ToolSpec,
+        DynTool, McpTool, ProcessManagerClient, ProcessManagerError, Shell, Tool, ToolResult,
+        ToolSchema, ToolSpec,
     },
     controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
@@ -30,6 +31,7 @@ pub struct ToolController {
     handlers: DashMap<String, Arc<dyn DynTool>>,
     tool_specs: RwLock<Arc<BTreeMap<String, ToolSpec>>>,
     storage: Storage,
+    process_manager_client: ProcessManagerClient,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
@@ -51,7 +53,7 @@ impl ToolController {
         let handlers: DashMap<String, Arc<dyn DynTool>> = DashMap::new();
         let mut tool_specs: BTreeMap<String, ToolSpec> = BTreeMap::new();
 
-        let shell: Arc<dyn DynTool> = Arc::new(Shell::new(process_manager_client));
+        let shell: Arc<dyn DynTool> = Arc::new(Shell::new(process_manager_client.clone()));
         for spec in shell.specs().await.unwrap() {
             tool_specs.insert(spec.schema.name.clone(), spec);
         }
@@ -83,6 +85,7 @@ impl ToolController {
             handlers,
             tool_specs: RwLock::new(Arc::new(tool_specs)),
             storage,
+            process_manager_client,
             permission_workflow_client,
         }
     }
@@ -287,12 +290,22 @@ impl ToolController {
             None => Err("permission request was cancelled; command was not executed".into()),
         }
     }
+
+    pub async fn cancel_session(&self, session_id: Uuid) -> Result<()> {
+        self.process_manager_client
+            .cancel_session(session_id)
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ToolControllerError {
     #[error(transparent)]
     Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    ProcessManager(#[from] ProcessManagerError),
 
     #[error("fail to initialize mcp plugin: {}", reason.as_deref().unwrap_or("unknown error"))]
     FailToInitialize { reason: Option<String> },

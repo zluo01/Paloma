@@ -118,7 +118,11 @@ pub struct ToolSchema {
 #[derive(Debug)]
 pub enum ToolResult {
     Text(String),
-    Binary { mime_type: String, data: Vec<u8> },
+    #[allow(dead_code)]
+    Binary {
+        mime_type: String,
+        data: Vec<u8>,
+    },
 }
 
 #[async_trait::async_trait]

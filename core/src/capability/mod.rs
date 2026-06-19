@@ -7,4 +7,6 @@ pub use entity::{
     ToolResult, ToolSchema, ToolSpec,
 };
 pub use native::{AppSearch, Clipboard};
-pub use tools::{McpTool, ProcessManager, ProcessManagerClient, Shell, ShellArgs};
+pub use tools::{
+    McpTool, ProcessManager, ProcessManagerClient, ProcessManagerError, Shell, ShellArgs,
+};

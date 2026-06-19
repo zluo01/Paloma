@@ -14,6 +14,7 @@ use crate::{
     constants::TURN_MANAGER_CHANNEL_CAPACITY,
     controller::{
         ProviderController, ProviderControllerError, SessionManagerError, ToolController,
+        ToolControllerError,
         helper::{Disposition, extract_args},
         remote::{
             PermissionWorkflowManagerClient, SessionEvent, session_manager::SessionManagerClient,
@@ -125,11 +126,10 @@ impl TurnManager {
                 self.tool_call(provider_id, session_id, tool_calls).await;
             },
             TurnStepEvent::Cancel { session_id, reply } => {
-                let _ = reply.send(Ok(self.abort_turn(session_id)));
+                let _ = reply.send(self.abort_turn(session_id).await);
             },
             TurnStepEvent::Drop { session_id, reply } => {
-                self.drop_turn(session_id);
-                let _ = reply.send(Ok(()));
+                let _ = reply.send(self.drop_turn(session_id).await);
             },
         }
         Ok(())
@@ -286,24 +286,30 @@ impl TurnManager {
         self.turn_map.insert(session_id, TurnState::Running(handle));
     }
 
-    fn abort_turn(&mut self, session_id: Uuid) -> bool {
-        let Some(mut state) = self.turn_map.get_mut(&session_id) else {
-            return false;
-        };
-        match &*state {
-            TurnState::Running(handle) => {
-                handle.abort();
-                *state = TurnState::Cancelled;
-                true
-            },
-            TurnState::Cancelled | TurnState::Done => false,
+    async fn abort_turn(&mut self, session_id: Uuid) -> Result<bool> {
+        {
+            let Some(mut state) = self.turn_map.get_mut(&session_id) else {
+                return Ok(false);
+            };
+            match &*state {
+                TurnState::Running(handle) => {
+                    handle.abort();
+                    *state = TurnState::Cancelled;
+                },
+                TurnState::Cancelled | TurnState::Done => return Ok(false),
+            }
         }
+
+        self.tool_controller.cancel_session(session_id).await?;
+        Ok(true)
     }
 
-    fn drop_turn(&mut self, session_id: Uuid) {
+    async fn drop_turn(&mut self, session_id: Uuid) -> Result<()> {
         if let Some((_, TurnState::Running(handle))) = self.turn_map.remove(&session_id) {
             handle.abort();
+            self.tool_controller.cancel_session(session_id).await?;
         }
+        Ok(())
     }
 }
 
@@ -523,6 +529,9 @@ pub enum TurnManagerError {
 
     #[error(transparent)]
     Provider(#[from] ProviderError),
+
+    #[error(transparent)]
+    ToolController(#[from] ToolControllerError),
 }
 
 type Result<T> = std::result::Result<T, TurnManagerError>;
