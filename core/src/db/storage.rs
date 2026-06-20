@@ -58,7 +58,7 @@ impl Storage {
             .await
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
-                    StorageError::Duplicate(provider_id.as_str().to_owned())
+                    StorageError::Duplicate(provider_id.to_string())
                 },
                 _ => e.into(),
             })?;
@@ -78,7 +78,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
+            return Err(StorageError::NotFound(provider_id.to_string()));
         }
         Ok(())
     }
@@ -96,7 +96,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
+            return Err(StorageError::NotFound(provider_id.to_string()));
         }
         Ok(())
     }
@@ -107,7 +107,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.as_str().to_owned()));
+            return Err(StorageError::NotFound(provider_id.to_string()));
         }
         Ok(())
     }
@@ -182,7 +182,7 @@ impl Storage {
             .bind(provider_id)
             .fetch_optional(&self.pool)
             .await?
-            .ok_or_else(|| StorageError::NotFound(provider_id.as_str().to_owned()))
+            .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
     }
 
     pub async fn insert_plugin(

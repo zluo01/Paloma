@@ -146,7 +146,7 @@ impl ConnectController {
         let mut statuses = self.provider_controller.available_providers().await;
 
         let mut ids: Vec<ProviderId> = self.handlers.iter().map(|entry| *entry.key()).collect();
-        ids.sort_by_key(|id| id.as_str());
+        ids.sort_by_key(|id| id.to_string());
 
         let mut connectors = Vec::with_capacity(ids.len());
         for id in ids {

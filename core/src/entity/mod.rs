@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -12,14 +12,15 @@ pub enum ProviderId {
     Anthropic,
 }
 
-impl ProviderId {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ProviderId::Codex => "codex",
-            ProviderId::ClaudeCode => "claude_code",
-            ProviderId::OpenAI => "open_ai",
-            ProviderId::Anthropic => "anthropic",
-        }
+impl fmt::Display for ProviderId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            ProviderId::Codex => "Codex",
+            ProviderId::ClaudeCode => "Claude Code",
+            ProviderId::OpenAI => "OpenAI",
+            ProviderId::Anthropic => "Anthropic",
+        };
+        f.write_str(name)
     }
 }
 
