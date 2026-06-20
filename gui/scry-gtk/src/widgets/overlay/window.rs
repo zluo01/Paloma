@@ -9,7 +9,8 @@ use std::{cell::Cell, rc::Rc};
 use gtk4::{ApplicationWindow, GestureDrag, prelude::*};
 use gtk4_layer_shell::{Edge, LayerShell};
 
-use super::{Mode, OVERLAY_WIDTH_PX, Overlay, PANEL_GAP_PX, SEARCH_BAR_HEIGHT_PX};
+use super::{OVERLAY_WIDTH_PX, Overlay, PANEL_GAP_PX, SEARCH_BAR_HEIGHT_PX};
+use crate::widgets::overlay::model::Mode;
 
 impl Overlay {
     pub(super) fn layout(&self) {
@@ -20,7 +21,7 @@ impl Overlay {
 
     /// Place content below the bar and center sessions beside it.
     pub(super) fn layout_at(&self, x: i32, y: i32) {
-        set_position(&self.bar_window, x, y);
+        set_position(&self.launcher_window, x, y);
         set_position(
             &self.content_window,
             x,
@@ -35,35 +36,43 @@ impl Overlay {
     }
 
     /// Keep chat pinned to the bottom until the user scrolls up.
-    pub(super) fn install_scroll_stickiness(&self) {
+    pub(super) fn install_scroll_stickiness(self: &Rc<Self>) {
         const STICK_EPSILON_PX: f64 = 2.0;
         let vadj = self.scroller.vadjustment();
 
-        let mode = self.mode.clone();
-        let stuck = self.stuck_to_bottom.clone();
+        let overlay = Rc::downgrade(self);
         let last_value = Rc::new(Cell::new(0.0_f64));
         vadj.connect_value_changed(move |adj| {
+            let Some(overlay) = overlay.upgrade() else {
+                return;
+            };
             let value = adj.value();
             let previous = last_value.replace(value);
-            if mode.get() != Mode::Chat {
+            if overlay.current_mode() != Mode::Chat {
                 return;
             }
             if value + adj.page_size() >= adj.upper() - STICK_EPSILON_PX {
-                stuck.set(true);
+                overlay.stuck_to_bottom.set(true);
             } else if value < previous {
-                stuck.set(false);
+                overlay.stuck_to_bottom.set(false);
             }
         });
 
         // Re-pin to the bottom once layout grows the content. The write is
         // deferred to an idle so it doesn't reenter the signal mid-allocation.
-        let overlay = self.clone();
+        let overlay = Rc::downgrade(self);
         vadj.connect_changed(move |adj| {
+            let Some(overlay) = overlay.upgrade() else {
+                return;
+            };
             if !overlay.is_stuck_below_bottom(adj) {
                 return;
             }
-            let overlay = overlay.clone();
+            let overlay = Rc::downgrade(&overlay);
             gtk4::glib::idle_add_local_once(move || {
+                let Some(overlay) = overlay.upgrade() else {
+                    return;
+                };
                 let vadj = overlay.scroller.vadjustment();
                 if overlay.is_stuck_below_bottom(&vadj) {
                     vadj.set_value((vadj.upper() - vadj.page_size()).max(0.0));
@@ -73,20 +82,26 @@ impl Overlay {
     }
 
     fn is_stuck_below_bottom(&self, adj: &gtk4::Adjustment) -> bool {
-        self.mode.get() == Mode::Chat
+        self.current_mode() == Mode::Chat
             && self.stuck_to_bottom.get()
             && adj.value() < (adj.upper() - adj.page_size()).max(0.0)
     }
 
     /// Recenter when the compositor maps the bar onto a different monitor.
-    pub(super) fn install_monitor_watcher(&self) {
-        let overlay = self.clone();
-        self.bar_window.connect_realize(move |window| {
+    pub(super) fn install_monitor_watcher(self: &Rc<Self>) {
+        let overlay = Rc::downgrade(self);
+        self.launcher_window.connect_realize(move |window| {
+            let Some(overlay) = overlay.upgrade() else {
+                return;
+            };
             let Some(surface) = window.surface() else {
                 return;
             };
-            let overlay = overlay.clone();
+            let overlay = Rc::downgrade(&overlay);
             surface.connect_enter_monitor(move |_, monitor| {
+                let Some(overlay) = overlay.upgrade() else {
+                    return;
+                };
                 if overlay.monitor.borrow().as_ref() == Some(monitor) {
                     return;
                 }
@@ -104,25 +119,31 @@ impl Overlay {
         });
     }
 
-    pub(super) fn install_bar_drag(&self) {
+    pub(super) fn install_launcher_drag(self: &Rc<Self>) {
         let drag = GestureDrag::new();
         let drag_start = Rc::new(Cell::new((0, 0)));
 
         {
-            let overlay = self.clone();
+            let overlay = Rc::downgrade(self);
             let drag_start = drag_start.clone();
             drag.connect_drag_begin(move |_, _, _| {
+                let Some(overlay) = overlay.upgrade() else {
+                    return;
+                };
                 let position = overlay
                     .position
                     .get()
-                    .unwrap_or_else(|| centered_position(&overlay.bar_window));
+                    .unwrap_or_else(|| centered_position(&overlay.launcher_window));
                 drag_start.set(position);
             });
         }
 
         {
-            let overlay = self.clone();
+            let overlay = Rc::downgrade(self);
             drag.connect_drag_update(move |_, dx, dy| {
+                let Some(overlay) = overlay.upgrade() else {
+                    return;
+                };
                 let (start_x, start_y) = drag_start.get();
                 let x = (start_x + dx.round() as i32).max(0);
                 let y = (start_y + dy.round() as i32).max(0);
@@ -131,7 +152,7 @@ impl Overlay {
             });
         }
 
-        self.bar.add_controller(drag);
+        self.launcher.widget().add_controller(drag);
     }
 }
 

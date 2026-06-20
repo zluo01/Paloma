@@ -13,7 +13,6 @@ pub(super) fn build() -> PreferencesPage {
     let page = PreferencesPage::new();
     for (group, title) in [
         (Group::Search, "Search"),
-        (Group::ActionPanel, "Action panel"),
         (Group::Chat, "Chat"),
         (Group::Sessions, "Sessions"),
     ] {

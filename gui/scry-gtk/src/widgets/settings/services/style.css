@@ -9,6 +9,10 @@
     color: var(--error-color);
 }
 
+.scry-unhealthy-icon {
+    color: var(--error-color);
+}
+
 /* Device-code cells use custom styling because Adwaita has no OTP widget. */
 .scry-otp-cell {
     font-size: 20px;

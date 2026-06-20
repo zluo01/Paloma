@@ -2,9 +2,9 @@ mod plugins;
 mod services;
 mod shortcuts;
 
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::sync::Arc;
 
-use gtk4::{Align, Image, Widget, glib, subclass::prelude::*};
+use gtk4::{Align, Image, glib, subclass::prelude::*};
 use libadwaita::{
     Application, ApplicationWindow, PreferencesGroup, Sidebar, SidebarItem, SidebarSection,
     prelude::*,
@@ -104,8 +104,8 @@ impl SettingsWindow {
 
         // Services and Plugins need retained controllers; Shortcuts is widget-only.
         let parent: ApplicationWindow = window.clone().upcast();
-        let services = services::build(state.clone(), parent.clone());
-        let plugins = plugins::build(state, parent);
+        let services = services::ServicesPage::new(state.clone(), &parent);
+        let plugins = plugins::PluginsPage::new(state, &parent);
         imp.stack.add_titled(
             services.widget(),
             Some(SERVICES_PAGE.id),
@@ -153,44 +153,21 @@ pub(crate) fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWind
     window.upcast()
 }
 
-/// An `AdwPreferencesGroup` whose rows are rebuilt on refresh.
-///
-/// The group tracks its rows because libadwaita does not provide remove-all.
-#[derive(Clone)]
-pub(super) struct Group {
-    pub(super) widget: PreferencesGroup,
-    rows: Rc<RefCell<Vec<Widget>>>,
+pub(super) fn clear_group(group: &PreferencesGroup) {
+    while let Some(row) = group.row(0) {
+        group.remove(&row);
+    }
 }
 
-impl Group {
-    pub(super) fn new(title: &str) -> Self {
-        Self {
-            widget: PreferencesGroup::builder().title(title).build(),
-            rows: Rc::new(RefCell::new(Vec::new())),
-        }
-    }
-
-    pub(super) fn clear(&self) {
-        for row in self.rows.borrow_mut().drain(..) {
-            self.widget.remove(&row);
-        }
-    }
-
-    pub(super) fn add(&self, row: impl IsA<Widget>) {
-        let row = row.upcast();
-        self.widget.add(&row);
-        self.rows.borrow_mut().push(row);
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.rows.borrow().is_empty()
-    }
+pub(super) fn group_is_empty(group: &PreferencesGroup) -> bool {
+    group.row(0).is_none()
 }
 
 pub(super) fn unhealthy_icon(error: Option<&str>) -> Image {
     Image::builder()
-        .icon_name("dialog-information-symbolic")
+        .icon_name("help-about-symbolic")
         .tooltip_text(error.unwrap_or("unknown error"))
+        .css_classes(["scry-unhealthy-icon"])
         .valign(Align::Center)
         .build()
 }

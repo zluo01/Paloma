@@ -19,21 +19,3 @@
     border: none;
     box-shadow: none;
 }
-
-/* Ctrl+K action panel: a popover of all the selected row's actions (the primary
-   included). It can't take keyboard focus here, so `.selected` is the keyboard
-   highlight driven from code (same convention as the result rows). */
-.scry-actions {
-    padding: 4px;
-    min-width: 200px;
-}
-
-.scry-action {
-    padding: 6px 10px;
-    border-radius: 6px;
-}
-
-.scry-action.selected {
-    background: var(--accent-bg-color);
-    color: var(--accent-fg-color);
-}

@@ -25,11 +25,6 @@
     color: var(--accent-fg-color);
 }
 
-/* Divider setting the "Chat about it" action apart from the launcher results. */
-.scry-results-separator {
-    margin: 8px 4px 4px;
-}
-
 /* Chat action keeps normal row styling — the divider carries the distinction;
    only the title is a touch heavier. */
 .scry-chat-action .scry-item-title {
@@ -59,4 +54,255 @@
 .scry-item.selected .scry-keycap {
     color: var(--accent-fg-color);
     border-color: alpha(currentColor, 0.4);
+}
+
+.scry-actions {
+    padding: 4px;
+}
+
+.scry-action {
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+.scry-action.selected {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+/* ================================ Remote ===================== */
+/* Chat panel; the card chrome comes from .scry-surface. */
+.scry-chat-card {
+    padding: 16px 20px;
+}
+
+/* Role sections: a colored left rule per role, using libadwaita's
+   standalone colors (contrast-safe in both light and dark). */
+.scry-chat-section {
+    border-left: 2px solid alpha(currentColor, 0.15);
+    padding-left: 10px;
+    margin-bottom: 12px;
+}
+
+.scry-chat-section:last-child {
+    margin-bottom: 0;
+}
+
+.scry-chat-section-user {
+    border-left-color: var(--accent-color);
+}
+
+.scry-chat-section-thinking {
+    border-left-color: var(--warning-color);
+}
+
+.scry-chat-section-assistant {
+    border-left-color: var(--success-color);
+}
+
+.scry-chat-section-tool {
+    border-left-color: var(--purple-3);
+}
+
+.scry-chat-role {
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: alpha(currentColor, 0.55);
+}
+
+.scry-chat-section-user .scry-chat-role {
+    color: var(--accent-color);
+}
+
+.scry-chat-section-thinking .scry-chat-role {
+    color: var(--warning-color);
+}
+
+.scry-chat-section-assistant .scry-chat-role {
+    color: var(--success-color);
+}
+
+.scry-chat-section-tool .scry-chat-role {
+    color: var(--purple-3);
+}
+
+/* Spinner + label at the bottom of the in-progress turn. */
+.scry-chat-pending {
+    font-size: 12px;
+    font-style: italic;
+    color: alpha(currentColor, 0.55);
+    margin: 4px 0 4px 12px;
+}
+
+/* Terminal states replacing "Thinking…" once the turn ends. */
+.scry-chat-pending.scry-chat-error,
+.scry-chat-pending.scry-chat-cancel {
+    font-style: normal;
+}
+
+.scry-chat-pending.scry-chat-error {
+    color: var(--error-color);
+}
+
+.scry-chat-pending.scry-chat-cancel {
+    color: var(--warning-color);
+}
+
+/* Chat text nodes are read-only but selectable: transparent fill, no caret,
+   no focus ring.
+   TextView node tree: textview.view > text > selection.
+   Label exposes its selection node directly: label > selection. */
+.scry-chat-text,
+.scry-chat-text > text {
+    background: transparent;
+    font-size: 15px;
+    caret-color: transparent;
+}
+
+.scry-chat-text:focus,
+.scry-chat-text:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.scry-chat-text > selection,
+.scry-chat-text > text > selection,
+.scry-chat-text > text:selected {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+.scry-chat-section-thinking.scry-chat-text,
+.scry-chat-section-thinking.scry-chat-text > text {
+    color: alpha(currentColor, 0.75);
+    font-style: italic;
+}
+
+/* Tool call summary line above the arguments code card. */
+.scry-chat-tool-description {
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+/* Pending permission prompt. `.selected` is a keyboard highlight because the
+   buttons never take real focus. */
+.scry-chat-tool-decisions {
+    margin-top: 10px;
+}
+
+.scry-chat-tool-permission {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--warning-color);
+}
+
+/* Compact, native-weight buttons; the theme's default min-height/size reads
+   oversized next to the chat text. */
+.scry-chat-decision {
+    min-height: 0;
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: normal;
+}
+
+/* Secondary actions are flat: Deny uses the theme's .destructive-action.
+   Only "Stop asking" needs custom color; libadwaita has no warning button. */
+.scry-chat-decision-warning {
+    color: var(--warning-color);
+}
+
+.scry-chat-decision.selected {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+}
+
+/* Resolved prompt: the buttons are swapped for an outcome label. */
+.scry-chat-tool-decision-outcome {
+    font-size: 12px;
+    font-style: italic;
+    color: alpha(currentColor, 0.6);
+}
+
+/* Markdown blocks (assistant output). Headings use libadwaita's .title-N
+   classes (applied in code). */
+.scry-md-text {
+    font-size: 15px;
+}
+
+/* Headings skip .scry-chat-text (its font-size would override .title-N), so they
+   carry its non-font read-only/selectable chrome here: transparent caret, no
+   focus ring, and the accent selection highlight — matching paragraphs. */
+.scry-md-heading {
+    background: transparent;
+    caret-color: transparent;
+}
+
+.scry-md-heading:focus,
+.scry-md-heading:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.scry-md-heading > selection {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+/* List bullet / ordinal column (the content column wraps beside it). Pin the
+   size to the item text (.scry-md-text) so markers don't fall back to the theme
+   default and mismatch the adjacent content. */
+.scry-md-marker {
+    font-size: 15px;
+    color: alpha(currentColor, 0.55);
+}
+
+/* Blockquote: a container with a left rule and dimmed text (no italics). */
+.scry-md-quote {
+    border-left: 3px solid alpha(currentColor, 0.25);
+    padding-left: 10px;
+    color: alpha(currentColor, 0.72);
+}
+
+/* Code card: caption + copy header over a monospace body. Shared by
+   markdown code blocks and tool-call arguments. */
+.scry-code {
+    background: alpha(currentColor, 0.07);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.scry-code-caption {
+    font-size: 11px;
+    color: alpha(currentColor, 0.55);
+}
+
+.scry-code-copy {
+    padding: 2px;
+    min-height: 0;
+    min-width: 0;
+}
+
+.scry-code-body {
+    font-size: 13px;
+}
+
+.scry-md-th {
+    font-weight: 700;
+}
+
+/* Markdown table: a thin horizontal rule under each row (no vertical lines), a
+   stronger one under the header; cells get vertical padding so text clears the
+   rules. Horizontal spacing comes from the grid's column-spacing. */
+.scry-md-td {
+    padding: 4px 0;
+}
+
+.scry-md-table-rule {
+    min-height: 1px;
+    background: alpha(currentColor, 0.12);
+}
+
+.scry-md-table-rule-head {
+    background: alpha(currentColor, 0.3);
 }

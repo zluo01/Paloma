@@ -39,11 +39,6 @@
     color: var(--accent-fg-color);
 }
 
-/* Center the 8px status dot under the search icon. */
-.scry-bar-strip {
-    margin-left: 11px;
-}
-
 /* Lit dots share the same highlight/glow treatment; health classes only
    change the theme color token. */
 .scry-status-dot {

@@ -1,42 +1,40 @@
-//! Overlay assembly and internal API.
-//!
-//! Three layer-shell windows move as one: the focused search bar, the
-//! results/chat content window below it, and the sessions popup beside it. A
-//! single shared `position` stores the bar's top-left corner; the other windows
-//! derive their margins from it.
-
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
+    sync::Arc,
 };
 
+use futures::{StreamExt, channel::mpsc};
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, EventControllerKey, Orientation, PolicyType,
-    PropagationPhase, ScrolledWindow, Viewport, prelude::*,
+    ApplicationWindow, Overflow, PolicyType, ScrolledWindow, Stack, StackTransitionType, Viewport,
+    gdk::Monitor, glib, prelude::*,
 };
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::Application;
+use log::{error, warn};
+use tokio::sync::{broadcast, broadcast::error::RecvError};
 use uuid::Uuid;
 
-mod action_panel;
-mod bar;
-mod chat;
-mod connectors;
-mod controller;
 mod keys;
+mod launcher;
+mod model;
 mod results;
-mod selection;
 mod sessions;
 mod window;
 
-use action_panel::ActionPanel;
-use bar::Bar;
-use chat::ChatView;
-pub(crate) use controller::OverlayController;
-use results::ResultsView;
-use scry_core::{Action, Connector, HealthLevel, Item, PermissionState, UserDecision};
-use selection::{Selection, SelectionRef};
+use scry_core::{
+    Action, ActionOutcome, AppContext, ChatRenderEvent, ProviderId, RenderEvent, SearchRenderEvent,
+};
 use sessions::SessionsView;
+
+use crate::{
+    runtime,
+    widgets::overlay::{
+        launcher::LauncherView,
+        model::{Command, Mode, Model, Msg},
+        results::{ChatView, SearchView},
+    },
+};
 
 const SEARCH_BAR_HEIGHT_PX: i32 = 94;
 const OVERLAY_WIDTH_PX: i32 = 640;
@@ -50,109 +48,536 @@ const CHAT_ACTION_LABEL: &str = "Chat about it";
 const CSS: &str = include_str!("style.css");
 
 /// Overlay stylesheet fragments loaded into the global GTK provider.
-pub(crate) const CSS_PARTS: &[&str] = &[CSS, bar::CSS, results::CSS, chat::CSS, sessions::CSS];
+pub(crate) const CSS_PARTS: &[&str] = &[CSS, launcher::CSS, results::CSS, sessions::CSS];
 
-/// Invokes a capability action by its static handler id.
-type InvokeFn = Rc<dyn Fn(&'static str, Action)>;
-/// Applies a resolved permission decision to the originating tool-call row.
-type DecisionOutcomeFn = Box<dyn FnOnce(PermissionState)>;
-/// Resolves a user-picked permission decision, then calls back on GTK.
-type OnDecideFn = Rc<dyn Fn(UserDecision, DecisionOutcomeFn)>;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Local,
-    Chat,
+pub(crate) fn new(
+    app: &Application,
+    app_context: Arc<AppContext>,
+    hotkey: broadcast::Sender<()>,
+) -> Rc<Overlay> {
+    Overlay::new(app, app_context, hotkey)
 }
 
-/// Cloneable handle to the overlay windows, views, and shared state.
-#[derive(Clone)]
-struct Overlay {
-    bar_window: ApplicationWindow,
+pub(crate) struct Overlay {
+    gapp: Application,
+    launcher_window: ApplicationWindow,
     content_window: ApplicationWindow,
-    bar: Bar,
+    sessions_window: ApplicationWindow,
     scroller: ScrolledWindow,
-    results: ResultsView,
+    content_stack: Stack,
+    launcher: LauncherView,
+    search: SearchView,
     chat: ChatView,
     sessions: SessionsView,
-    sessions_window: ApplicationWindow,
-    selection: SelectionRef,
-    /// Retained Ctrl+K panel handle. Visibility, not `Option::is_some`, is the
-    /// open-state source of truth because a dismissed popover can remain here
-    /// until the next panel replaces it.
-    last_action_panel: Rc<RefCell<Option<ActionPanel>>>,
-    mode: Rc<Cell<Mode>>,
+    app_context: Arc<AppContext>,
+    dispatcher: mpsc::UnboundedSender<Msg>,
+    model: RefCell<Model>,
     /// Chat auto-scroll stays pinned until the user scrolls away.
-    stuck_to_bottom: Rc<Cell<bool>>,
+    stuck_to_bottom: Cell<bool>,
     /// Bar top-left in monitor pixels; `None` until first show.
-    position: Rc<Cell<Option<(i32, i32)>>>,
+    position: Cell<Option<(i32, i32)>>,
     /// Monitor that `position` is relative to.
-    monitor: Rc<RefCell<Option<gtk4::gdk::Monitor>>>,
+    monitor: RefCell<Option<Monitor>>,
 }
 
-/// Build the overlay windows. Kept alive (hidden) for the life of the
-/// process so summoning is instant.
-fn build(app: &Application) -> Overlay {
-    let bar_window = layer_window(app, "scry-bar", OVERLAY_WIDTH_PX, KeyboardMode::Exclusive);
-    bar_window.set_title(Some("Scry"));
-    let bar = Bar::new(OVERLAY_WIDTH_PX);
-    bar_window.set_child(Some(&bar));
+impl Overlay {
+    fn new(
+        app: &Application,
+        app_context: Arc<AppContext>,
+        hotkey: broadcast::Sender<()>,
+    ) -> Rc<Self> {
+        let launcher_window = layer_window(
+            app,
+            "scry-launcher",
+            OVERLAY_WIDTH_PX,
+            KeyboardMode::Exclusive,
+        );
+        launcher_window.set_title(Some("Scry"));
 
-    let results = ResultsView::new();
-    let chat = ChatView::new(OVERLAY_WIDTH_PX);
+        let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
 
-    let content_box = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .valign(Align::Start)
-        .build();
-    content_box.append(results.widget());
-    content_box.append(chat.widget());
+        let launcher = LauncherView::new(OVERLAY_WIDTH_PX, app_context.clone(), dispatcher.clone());
+        launcher_window.set_child(Some(launcher.widget()));
 
-    let scroller = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::Never)
-        .vscrollbar_policy(PolicyType::Automatic)
-        // Hug the content height, capped so long output scrolls.
-        .propagate_natural_height(true)
-        .max_content_height(OVERLAY_CONTENT_HEIGHT_PX)
-        .width_request(OVERLAY_WIDTH_PX)
-        // Avoid competing with TextView drag selection in chat output.
-        .kinetic_scrolling(false)
-        .build();
-    // The scroller is the visible surface; clip the scrolled cards to
-    // its rounded corners so they stay rounded mid-scroll.
-    scroller.add_css_class("scry-surface");
-    scroller.add_css_class("scry-scroller");
-    scroller.set_overflow(gtk4::Overflow::Hidden);
-    scroller.set_child(Some(&content_box));
+        let content_stack = Stack::builder()
+            .transition_type(StackTransitionType::None)
+            .build();
 
-    let content_window = layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
-    content_window.set_child(Some(&scroller));
+        let search = SearchView::new(dispatcher.clone());
+        let chat = ChatView::new(OVERLAY_WIDTH_PX, app_context.clone());
 
-    let sessions_window = layer_window(app, "scry-sessions", SESSIONS_WIDTH_PX, KeyboardMode::None);
-    let sessions = SessionsView::new();
-    sessions_window.set_child(Some(&sessions));
+        content_stack.add_named(search.widget(), Some("search"));
+        content_stack.add_named(chat.widget(), Some("chat"));
 
-    let overlay = Overlay {
-        bar_window,
-        content_window,
-        bar,
-        scroller,
-        results,
-        chat,
-        sessions,
-        sessions_window,
-        selection: Rc::new(RefCell::new(Selection::default())),
-        last_action_panel: Rc::new(RefCell::new(None)),
-        mode: Rc::new(Cell::new(Mode::Local)),
-        stuck_to_bottom: Rc::new(Cell::new(true)),
-        position: Rc::new(Cell::new(None)),
-        monitor: Rc::new(RefCell::new(None)),
-    };
+        let scroller = ScrolledWindow::builder()
+            .hscrollbar_policy(PolicyType::Never)
+            .vscrollbar_policy(PolicyType::Automatic)
+            // Hug the content height, capped so long output scrolls.
+            .propagate_natural_height(true)
+            .max_content_height(OVERLAY_CONTENT_HEIGHT_PX)
+            .width_request(OVERLAY_WIDTH_PX)
+            // Avoid competing with TextView drag selection in chat output.
+            .kinetic_scrolling(false)
+            .overflow(Overflow::Hidden)
+            .css_classes(["scry-surface", "scry-scroller"])
+            .build();
+        scroller.set_child(Some(&content_stack));
 
-    overlay.install_scroll_stickiness();
-    overlay.install_bar_drag();
-    overlay.install_monitor_watcher();
-    overlay
+        let content_window =
+            layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
+        content_window.set_child(Some(&scroller));
+
+        let sessions_window =
+            layer_window(app, "scry-sessions", SESSIONS_WIDTH_PX, KeyboardMode::None);
+        let sessions = SessionsView::new(app_context.clone(), dispatcher.clone());
+        sessions_window.set_child(Some(sessions.widget()));
+
+        let overlay = Rc::new(Self {
+            gapp: app.clone(),
+            launcher_window,
+            content_window,
+            launcher,
+            scroller,
+            content_stack,
+            search,
+            chat,
+            sessions,
+            sessions_window,
+            app_context,
+            model: RefCell::new(Model::new()),
+            dispatcher: dispatcher.clone(),
+            stuck_to_bottom: Cell::new(true),
+            position: Cell::new(None),
+            monitor: RefCell::new(None),
+        });
+
+        overlay.install_scroll_stickiness();
+        overlay.install_launcher_drag();
+        overlay.install_monitor_watcher();
+        overlay.register_key_binding();
+
+        let event_overlay = Rc::downgrade(&overlay);
+        glib::spawn_future_local(async move {
+            while let Ok(msg) = receiver.recv().await {
+                let Some(overlay) = event_overlay.upgrade() else {
+                    break;
+                };
+                let commands = overlay.model.borrow_mut().update(msg);
+                for command in commands {
+                    overlay.run(command);
+                }
+            }
+        });
+
+        let mut rx = hotkey.subscribe();
+        let hotkey_dispatcher = dispatcher.clone();
+        glib::spawn_future_local(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(()) => {
+                        let _ = hotkey_dispatcher.unbounded_send(Msg::ToggleLauncherRequested);
+                    },
+                    Err(RecvError::Lagged(n)) => warn!("hotkey: lagged by {n} events"),
+                    Err(RecvError::Closed) => break,
+                }
+            }
+        });
+
+        overlay
+    }
+
+    fn run(self: &Rc<Self>, command: Command) {
+        match command {
+            Command::ToggleLauncher => self.toggle_launcher(),
+            Command::HideOverlay => self.hide(),
+            Command::OpenSettings => self.open_settings(),
+            Command::ToggleSessions { session_id } => self.toggle_sessions(session_id),
+            Command::RunSearchQuery { content, query_id } => self.search(content, query_id),
+            Command::RenderSearchQueryResult { event } => self.render_search_result(event),
+            Command::RenderChatAction => self.render_chat_button(),
+            Command::InvokeLocalQueryResultAction { handler_id, action } => {
+                self.run_action(handler_id, action);
+            },
+            Command::FocusSearchEntry => self.launcher.focus(),
+            Command::CloseSessions => self.close_sessions(),
+            Command::OpenSelectedSession => self.sessions.activate_selected(),
+            Command::DeleteSelectedSession => self.sessions.delete_selected(),
+            Command::RestoreSession {
+                turn_id,
+                session_id,
+                provider_id,
+            } => {
+                self.restore_session(turn_id, session_id, provider_id);
+            },
+            Command::ReportError { error } => {
+                error!("{error}");
+            },
+            Command::ClearSearchResults => self.search.clear(),
+            Command::HideContent => self.close_content(),
+            Command::SubmitChatPrompt => self.construct_chat_prompt(),
+            Command::InitChat {
+                turn_id,
+                prior_session,
+                provider_id,
+                prompt,
+            } => self.init_chat(turn_id, prior_session, provider_id, prompt),
+            Command::SendChat {
+                turn_id,
+                session_id,
+                provider_id,
+                prompt,
+                is_new,
+            } => self.send_chat(turn_id, session_id, provider_id, prompt, is_new),
+            Command::CleanupChatSession { session_id } => self.cleanup_stale_session(session_id),
+            Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
+            Command::RenderChatEvent { event, provider_id } => {
+                self.render_chat_event(event, provider_id)
+            },
+            Command::ShowChatView => self.show_chat_view(),
+            Command::ClearChatContent => self.clear_session(),
+            Command::ExitSearch => self.exist_search(),
+        }
+    }
+}
+
+/// display
+impl Overlay {
+    fn current_mode(&self) -> Mode {
+        self.model.borrow().mode
+    }
+
+    fn is_visible(&self) -> bool {
+        self.launcher_window.is_visible()
+    }
+
+    fn show_search_view(&self) {
+        self.content_stack.set_visible_child_name("search");
+        self.show_content();
+    }
+
+    fn show_chat_view(&self) {
+        self.content_stack.set_visible_child_name("chat");
+        self.show_content();
+    }
+
+    fn is_sessions_open(&self) -> bool {
+        self.sessions_window.is_visible()
+    }
+
+    fn toggle_launcher(&self) {
+        if self.is_visible() {
+            self.hide();
+        } else {
+            self.show();
+        }
+    }
+
+    fn show(&self) {
+        if !self.launcher_window.is_visible() {
+            match self.position.get() {
+                Some(_) => self.layout(),
+                None => {
+                    // Provisional guess for the first frame; the monitor
+                    // watcher finalizes once the compositor has placed
+                    // the surface on its real output.
+                    let (x, y) = window::centered_position(&self.launcher_window);
+                    self.layout_at(x, y);
+                },
+            }
+            self.launcher_window.present();
+        }
+        self.launcher.refresh();
+        self.launcher.focus();
+    }
+
+    fn hide(&self) {
+        self.launcher.clear();
+
+        self.close_sessions();
+        self.close_content();
+        self.launcher_window.set_visible(false);
+    }
+
+    fn open_settings(&self) {
+        self.gapp.activate_action("settings", None);
+    }
+
+    fn clear_session(&self) {
+        self.chat.clear()
+    }
+
+    fn show_content(&self) {
+        if !self.content_window.is_visible() {
+            self.content_window.present();
+        }
+    }
+
+    fn close_content(&self) {
+        self.search.clear();
+        self.clear_session();
+
+        self.content_stack.set_visible_child_name("search");
+        self.content_window.set_visible(false);
+        // Mode is back to Local before content hides, so this reset does not
+        // affect chat stickiness.
+        self.scroller.vadjustment().set_value(0.0);
+    }
+}
+
+/// Search related actions
+impl Overlay {
+    fn search(&self, content: String, query_id: u64) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            let mut has_result = false;
+            let mut render_stream = app_context.query(&content);
+            while let Some(event) = render_stream.next().await {
+                match event {
+                    RenderEvent::Search(event) => {
+                        let SearchRenderEvent::Append { response } = &event;
+                        has_result |= response.items.iter().any(|item| !item.actions.is_empty());
+                        let _ = dispatcher
+                            .unbounded_send(Msg::SearchQueryRenderEvent { event, query_id });
+                    },
+                    RenderEvent::Done => {
+                        let _ = dispatcher.unbounded_send(Msg::SearchQueryRenderFinished {
+                            query_id,
+                            has_result,
+                        });
+                    },
+                    RenderEvent::Error { message } => {
+                        error!("query render: {message}");
+                    },
+                    RenderEvent::Chat(_) | RenderEvent::Cancel => {
+                        error!("Unexpected event for search query call. This indicates a bug.")
+                    },
+                }
+            }
+        }));
+    }
+
+    fn render_search_result(&self, event: SearchRenderEvent) {
+        let SearchRenderEvent::Append { response } = event;
+        if self
+            .search
+            .append_section(response.id, &response.name, response.items)
+        {
+            self.show_search_view();
+        }
+    }
+
+    fn render_chat_button(&self) {
+        self.search.append_chat_action();
+        self.show_search_view();
+    }
+
+    fn run_action(&self, handler_id: &str, action: Action) {
+        let Some(outcome) = self.app_context.run_query_action(handler_id, action) else {
+            return;
+        };
+
+        match outcome {
+            ActionOutcome::Hide => self.hide(),
+            ActionOutcome::Stay => {},
+            ActionOutcome::Replace { .. } => {},
+        }
+    }
+
+    fn render_any(&self) -> bool {
+        self.search.render_any()
+    }
+
+    fn exist_search(&self) {
+        if self.render_any() {
+            self.close_content();
+            self.launcher.clear();
+        } else {
+            self.hide()
+        }
+    }
+}
+
+/// Chat related actions
+impl Overlay {
+    fn construct_chat_prompt(&self) {
+        if self.chat.is_running() {
+            return;
+        }
+        let prompt = self.launcher.query();
+        self.launcher.clear();
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            let result = app_context.prefer_model().await;
+            match result {
+                Ok(Some(provider_id)) => {
+                    let _ = dispatcher.unbounded_send(Msg::ChatPromptResolved {
+                        prompt,
+                        provider_id,
+                    });
+                },
+                Ok(None) => error!("no preferred provider configured"),
+                Err(error) => error!("failed to load preferred provider: {error}"),
+            }
+        }));
+    }
+
+    fn init_chat(
+        &self,
+        turn_id: u64,
+        prior_session: Option<Uuid>,
+        provider_id: ProviderId,
+        prompt: String,
+    ) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            let prompt_for_init = prompt.clone();
+            let result = app_context
+                .init_chat(prior_session, provider_id, prompt_for_init)
+                .await;
+            let _ = dispatcher.unbounded_send(Msg::ChatInitialized {
+                turn_id,
+                prompt,
+                result,
+                provider_id,
+            });
+        }));
+    }
+
+    fn send_chat(
+        &self,
+        turn_id: u64,
+        session_id: Uuid,
+        provider: ProviderId,
+        prompt: String,
+        is_new: bool,
+    ) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            let result = match app_context.chat(session_id, provider, prompt).await {
+                Ok(mut render_stream) => {
+                    while let Some(event) = render_stream.next().await {
+                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent {
+                            turn_id,
+                            event,
+                            provider_id: provider,
+                        });
+                    }
+                    Ok(())
+                },
+                Err(error) => Err(error),
+            };
+            let _ = dispatcher.unbounded_send(Msg::ChatSent {
+                turn_id,
+                session_id,
+                is_new,
+                result,
+            });
+        }));
+    }
+
+    fn cleanup_stale_session(&self, session_id: Uuid) {
+        let app_context = self.app_context.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            app_context.cleanup_error_session(session_id).await;
+        }));
+    }
+
+    fn cancel_chat_session(&self, session_id: Uuid) {
+        let app_context = self.app_context.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            if let Err(error) = app_context.cancel_session(session_id).await {
+                error!("Fail to cancel chat. {error}");
+            }
+        }));
+    }
+
+    fn render_chat_event(&self, event: RenderEvent, provider_id: ProviderId) {
+        match event {
+            RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }) => {
+                self.chat.append_user_prompt(&text);
+            },
+            RenderEvent::Chat(ChatRenderEvent::TextDelta { text }) => {
+                self.chat.append_text(&text, provider_id);
+            },
+            RenderEvent::Chat(ChatRenderEvent::ReasoningDelta { text }) => {
+                self.chat.append_reasoning(&text);
+            },
+            RenderEvent::Chat(ChatRenderEvent::ToolCall {
+                name,
+                arguments,
+                description,
+                decisions,
+            }) => {
+                self.chat
+                    .append_tool_call(&name, &arguments, description.as_deref(), &decisions);
+            },
+            RenderEvent::Done => {
+                self.chat.finish();
+            },
+            RenderEvent::Error { message } => {
+                warn!("chat render: {message}");
+                self.chat.fail(&message);
+            },
+            RenderEvent::Cancel => {
+                self.chat.cancel();
+            },
+            RenderEvent::Search(_) => {
+                error!("unexpected render event on session channel");
+            },
+        }
+    }
+}
+
+/// Session related actions
+impl Overlay {
+    fn open_sessions(&self, session_id: Option<Uuid>) {
+        if self.sessions_window.is_visible() {
+            return;
+        }
+        self.sessions.refresh(session_id);
+        self.sessions_window.present();
+    }
+
+    fn close_sessions(&self) {
+        if !self.sessions_window.is_visible() {
+            return;
+        }
+        self.sessions_window.set_visible(false);
+        self.sessions.clear_selection();
+    }
+
+    fn toggle_sessions(&self, session_id: Option<Uuid>) {
+        if self.sessions_window.is_visible() {
+            self.close_sessions();
+        } else {
+            self.open_sessions(session_id);
+        }
+    }
+
+    fn restore_session(&self, turn_id: u64, session_id: Uuid, provider_id: ProviderId) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            let result = match app_context.restore_session(session_id).await {
+                Ok(mut render_stream) => {
+                    while let Some(event) = render_stream.next().await {
+                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent {
+                            turn_id,
+                            event,
+                            provider_id,
+                        });
+                    }
+                    Ok(())
+                },
+                Err(error) => Err(error),
+            };
+            let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished { result });
+        }));
+    }
 }
 
 /// A transparent, undecorated layer-shell window anchored top-left;
@@ -168,8 +593,8 @@ fn layer_window(
         .default_width(width)
         .decorated(false)
         .resizable(false)
+        .css_classes(["scry-window"])
         .build();
-    window.add_css_class("scry-window");
 
     window.init_layer_shell();
     window.set_namespace(Some(namespace));
@@ -178,406 +603,6 @@ fn layer_window(
     window.set_anchor(Edge::Top, true);
     window.set_anchor(Edge::Left, true);
     window
-}
-
-impl Overlay {
-    fn is_visible(&self) -> bool {
-        self.bar_window.is_visible()
-    }
-
-    fn show(&self) -> bool {
-        let was_hidden = !self.bar_window.is_visible();
-        if was_hidden {
-            match self.position.get() {
-                Some(_) => self.layout(),
-                None => {
-                    // Provisional guess for the first frame; the monitor
-                    // watcher finalizes once the compositor has placed
-                    // the surface on its real output.
-                    let (x, y) = window::centered_position(&self.bar_window);
-                    self.layout_at(x, y);
-                },
-            }
-            self.bar_window.present();
-        }
-        self.bar.focus_entry();
-        was_hidden
-    }
-
-    fn hide(&self) -> bool {
-        self.bar.clear_input();
-        self.clear_results();
-        let backgrounded = self.mode.get() == Mode::Chat;
-        if backgrounded {
-            self.mode.set(Mode::Local);
-            self.chat.hide();
-            self.chat.reset();
-        }
-        self.close_sessions();
-        self.hide_content();
-        self.bar_window.set_visible(false);
-        backgrounded
-    }
-
-    fn set_input(&self, text: &str) {
-        self.bar.set_input(text);
-    }
-
-    fn clear_input(&self) {
-        self.bar.clear_input();
-    }
-
-    fn input_text(&self) -> String {
-        self.bar.input_text()
-    }
-
-    fn is_chat_mode(&self) -> bool {
-        self.mode.get() == Mode::Chat
-    }
-
-    /// Whether the entry should receive GTK's native Ctrl+C copy.
-    fn entry_has_selection(&self) -> bool {
-        self.bar.has_selection()
-    }
-
-    /// Copy the chat transcript's text selection to the clipboard, if any.
-    fn copy_chat_selection(&self) -> bool {
-        self.chat.copy_selection()
-    }
-
-    fn connect_search_changed(&self, cb: impl Fn(String) + 'static) {
-        self.bar.connect_search_changed(cb);
-    }
-
-    fn connect_key_pressed(
-        &self,
-        cb: impl Fn(gtk4::gdk::Key, gtk4::gdk::ModifierType) -> gtk4::glib::Propagation + 'static,
-    ) {
-        let controller = EventControllerKey::new();
-        controller.set_propagation_phase(PropagationPhase::Capture);
-        controller.connect_key_pressed(move |_, key, _, state| cb(key, state));
-        self.bar_window.add_controller(controller);
-    }
-
-    fn connect_settings_clicked(&self, cb: impl Fn() + 'static) {
-        self.bar.connect_settings_clicked(cb);
-    }
-
-    fn connect_sessions_clicked(&self, cb: impl Fn() + 'static) {
-        self.bar.connect_sessions_clicked(cb);
-    }
-
-    fn connect_model_selected(&self, cb: impl Fn(bar::ModelChoice) + 'static) {
-        self.bar.connect_model_selected(cb);
-    }
-
-    fn set_health(&self, models: HealthLevel, plugins: HealthLevel) {
-        self.bar.set_health(models, plugins);
-    }
-
-    fn set_model_options(&self, connectors: &[Connector]) {
-        self.bar.set_model_options(connectors);
-    }
-
-    // --- local results -------------------------------------------------
-
-    fn clear_results(&self) {
-        self.close_action_panel();
-        self.results.clear(&self.selection);
-    }
-
-    /// Hide the results surface. Local mode only, so it never blanks chat
-    /// content sharing the same window.
-    fn hide_results(&self) {
-        if self.mode.get() == Mode::Local {
-            self.hide_content();
-        }
-    }
-
-    fn append_section(
-        &self,
-        handler_id: &'static str,
-        handler_name: &str,
-        items: Vec<Item>,
-        on_invoke: InvokeFn,
-    ) {
-        // Action-less items are skipped, so a non-empty `items` can still render
-        // nothing; only reveal the surface when a row actually landed.
-        if self.results.append_section(
-            &self.selection,
-            handler_id,
-            handler_name,
-            items,
-            on_invoke,
-            &self.panel_closer(),
-        ) {
-            self.show_content();
-        }
-    }
-
-    fn append_chat_action(&self, invoke: Rc<dyn Fn()>) {
-        if self.mode.get() != Mode::Local {
-            return;
-        }
-        self.results
-            .append_chat_action(&self.selection, invoke, &self.panel_closer());
-        self.show_content();
-    }
-
-    // --- sessions panel ------------------------------------------------
-
-    /// Replace the sessions panel content with one row per session.
-    fn set_sessions(&self, sessions: &[(Uuid, String, String)]) {
-        self.sessions
-            .set_sessions(sessions, self.is_sessions_open());
-    }
-
-    /// Remove one session row in place (no scroll reset / rebuild).
-    fn remove_session(&self, id: Uuid) {
-        self.sessions.remove_session(id);
-    }
-
-    fn set_on_session_activated(&self, f: impl Fn(Uuid) + 'static) {
-        self.sessions.set_on_session_activated(f);
-    }
-
-    fn set_on_session_deleted(&self, f: impl Fn(Uuid) + 'static) {
-        self.sessions.set_on_session_deleted(f);
-    }
-
-    fn set_active_session(&self, session_id: Option<Uuid>) {
-        self.sessions.set_active(session_id);
-    }
-
-    fn is_sessions_open(&self) -> bool {
-        self.sessions_window.is_visible()
-    }
-
-    fn open_sessions(&self) {
-        if self.sessions_window.is_visible() {
-            return;
-        }
-        self.sessions_window.present();
-        // No initial selection: the first arrow steps off the active session.
-        self.sessions.scroll_to_active();
-    }
-
-    fn close_sessions(&self) {
-        if !self.sessions_window.is_visible() {
-            return;
-        }
-        self.sessions_window.set_visible(false);
-        self.sessions.clear_selection();
-    }
-
-    fn toggle_sessions(&self) {
-        if self.is_sessions_open() {
-            self.close_sessions();
-        } else {
-            self.open_sessions();
-        }
-    }
-
-    // --- chat ----------------------------------------------------------
-
-    fn active_chat(&self) -> Option<&ChatView> {
-        (self.mode.get() == Mode::Chat).then_some(&self.chat)
-    }
-
-    fn append_chat_text(&self, text: &str) {
-        if let Some(chat) = self.active_chat() {
-            chat.append_text(text);
-        }
-    }
-
-    fn append_chat_reasoning(&self, text: &str) {
-        if let Some(chat) = self.active_chat() {
-            chat.append_reasoning(text);
-        }
-    }
-
-    fn add_chat_tool_call(
-        &self,
-        name: &str,
-        arguments: &str,
-        description: Option<&str>,
-        decisions: &[UserDecision],
-        on_decide: OnDecideFn,
-    ) {
-        if let Some(chat) = self.active_chat() {
-            chat.add_tool_call(name, arguments, description, decisions, on_decide);
-        }
-    }
-
-    fn finish_chat_turn(&self) {
-        if let Some(chat) = self.active_chat() {
-            chat.finish_turn();
-        }
-    }
-
-    fn fail_chat_turn(&self, message: &str) {
-        if let Some(chat) = self.active_chat() {
-            chat.fail_turn(message);
-        }
-    }
-
-    fn cancel_chat_turn(&self) {
-        if let Some(chat) = self.active_chat() {
-            chat.cancel_turn();
-        }
-    }
-
-    fn start_chat_turn(&self, text: &str) {
-        if let Some(chat) = self.active_chat() {
-            chat.start_turn(text);
-        }
-    }
-
-    /// Enter chat mode on a blank surface so a restored session can be
-    /// repainted from its replayed events.
-    fn enter_chat_for_restore(&self) {
-        self.enter_chat_mode();
-    }
-
-    // --- internals (shared with `keys`) ---------------------------------
-
-    fn enter_chat_mode(&self) {
-        self.mode.set(Mode::Chat);
-        self.clear_results();
-        self.chat.reset();
-        self.chat.show();
-        self.show_content();
-        // Scroll reset first: the value drop reads as "scrolled up" to
-        // the stick tracker, so the stick flag is set afterwards.
-        self.scroller.vadjustment().set_value(0.0);
-        self.stuck_to_bottom.set(true);
-    }
-
-    fn exit_chat_mode(&self) {
-        self.mode.set(Mode::Local);
-        self.chat.hide();
-        self.chat.reset();
-        self.hide_content();
-        self.bar.clear_input();
-    }
-
-    fn activate_selection(&self) {
-        let primary = self.selection.borrow().activate();
-        if let Some(primary) = primary {
-            primary();
-        }
-    }
-
-    // --- action panel (Ctrl+K) ------------------------------------------
-
-    /// Visibility is the source of truth: a panel dismissed by clicking one of
-    /// its own actions can briefly remain in the slot, closed, until reopened.
-    fn is_action_panel_open(&self) -> bool {
-        self.last_action_panel
-            .borrow()
-            .as_ref()
-            .is_some_and(ActionPanel::is_open)
-    }
-
-    /// Open the action panel for the selected row, if it has more than one
-    /// action. No-op otherwise.
-    fn open_action_panel(&self) {
-        if self.is_action_panel_open() {
-            return;
-        }
-        let Some((anchor, actions)) = self.selection.borrow().selected_actions() else {
-            return;
-        };
-        let bar = self.bar.clone();
-        let panel = ActionPanel::new(&anchor, actions, move || bar.focus_entry());
-        *self.last_action_panel.borrow_mut() = Some(panel);
-    }
-
-    fn close_action_panel(&self) {
-        if let Some(panel) = take_action_panel(&self.last_action_panel) {
-            panel.close();
-        }
-    }
-
-    /// A callback that closes the panel, handed to result rows so a pointer
-    /// click on another row dismisses an open panel (clicks bypass `keys`).
-    fn panel_closer(&self) -> Rc<dyn Fn()> {
-        let slot = self.last_action_panel.clone();
-        Rc::new(move || {
-            if let Some(panel) = take_action_panel(&slot) {
-                panel.close();
-            }
-        })
-    }
-
-    fn navigate_action_panel(&self, delta: i32) {
-        if let Some(panel) = self.last_action_panel.borrow().as_ref() {
-            panel.navigate(delta);
-        }
-    }
-
-    fn activate_action_panel(&self) {
-        if let Some(panel) = take_action_panel(&self.last_action_panel) {
-            panel.activate();
-        }
-    }
-
-    fn scroll_selection_into_view(&self) {
-        let selection = self.selection.borrow();
-        let Some(widget) = selection.selected_widget() else {
-            return;
-        };
-        // The first/last rows snap the card fully to the top/bottom so its
-        // padding (and the chat divider) isn't clipped; the rows sit below the
-        // card padding, so a minimal scroll-to would leave that padding cut off.
-        // Middle rows use the minimal scroll.
-        let adj = self.scroller.vadjustment();
-        match selection.selected_index() {
-            Some(0) => adj.set_value(0.0),
-            Some(i) if i + 1 == selection.len() => {
-                adj.set_value((adj.upper() - adj.page_size()).max(0.0));
-            },
-            _ => scroll_into_view(&widget),
-        }
-    }
-
-    /// Arrow keys while chatting walk the pending permission prompts
-    /// (all tool calls' options form one sequence). Returns whether a
-    /// prompt consumed the key.
-    fn navigate_decisions(&self, delta: i32) -> bool {
-        if !self.chat.navigate_decisions(delta) {
-            return false;
-        }
-        if let Some(button) = self.chat.selected_decision() {
-            scroll_into_view(&button);
-        }
-        true
-    }
-
-    fn activate_selected_decision(&self) -> bool {
-        self.chat.activate_selected_decision()
-    }
-
-    // --- content window --------------------------------------------------
-
-    fn show_content(&self) {
-        if !self.content_window.is_visible() {
-            self.content_window.present();
-        }
-    }
-
-    fn hide_content(&self) {
-        self.content_window.set_visible(false);
-        // Mode is back to Local before content hides, so this reset does not
-        // affect chat stickiness.
-        self.scroller.vadjustment().set_value(0.0);
-    }
-}
-
-/// Take the panel out before closing/activating so synchronous `closed` handlers
-/// cannot re-borrow the same `RefCell`.
-fn take_action_panel(slot: &RefCell<Option<ActionPanel>>) -> Option<ActionPanel> {
-    slot.borrow_mut().take()
 }
 
 /// Scroll `widget` into its enclosing viewport. Needed because the

@@ -11,6 +11,8 @@ pub(in crate::widgets) type Accel = (Key, ModifierType);
 pub(in crate::widgets) enum Match {
     /// Match on the keyval alone; modifiers are ignored.
     KeyOnly,
+    /// Match on the keyval and exact modifiers.
+    Exact,
     /// Match the keyval and require the accel's modifiers to be present.
     Contains,
 }
@@ -25,7 +27,6 @@ pub(in crate::widgets) struct Chord {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(in crate::widgets) enum Group {
     Search,
-    ActionPanel,
     Chat,
     Sessions,
 }
@@ -35,10 +36,9 @@ pub(in crate::widgets) enum Group {
 /// matched globally, before the mode split).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(in crate::widgets) enum Context {
-    Panel,
     Sessions,
     Global,
-    Local,
+    Search,
     Chat,
 }
 
@@ -46,13 +46,10 @@ pub(in crate::widgets) enum Context {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(in crate::widgets) enum BindingId {
     SearchMove,
-    SearchOpen,
+    SearchSubmit,
     SearchShowActions,
     OpenSessions,
     SearchClose,
-    PanelMove,
-    PanelRun,
-    PanelClose,
     ChatSend,
     ChatInterrupt,
     ChatMovePrompt,
@@ -82,6 +79,13 @@ const fn key(k: Key) -> Chord {
     }
 }
 
+const fn plain(k: Key) -> Chord {
+    Chord {
+        accel: (k, ModifierType::empty()),
+        policy: Match::Exact,
+    }
+}
+
 const fn ctrl(k: Key) -> Chord {
     Chord {
         accel: (k, ModifierType::CONTROL_MASK),
@@ -101,26 +105,26 @@ const ALL: &[Binding] = &[
     Binding {
         id: BindingId::SearchMove,
         group: Group::Search,
-        context: Context::Local,
+        context: Context::Search,
         label: "Move selection",
         shown: &[key(Key::Up), key(Key::Down)],
         hidden: &[],
     },
     Binding {
-        id: BindingId::SearchOpen,
+        id: BindingId::SearchSubmit,
         group: Group::Search,
-        context: Context::Local,
-        label: "Open result or start chat",
-        shown: &[key(Key::Return)],
-        hidden: &[key(Key::KP_Enter)],
+        context: Context::Search,
+        label: "Submit",
+        shown: &[plain(Key::Return)],
+        hidden: &[plain(Key::KP_Enter)],
     },
     Binding {
         id: BindingId::SearchShowActions,
         group: Group::Search,
-        context: Context::Local,
+        context: Context::Search,
         label: "Show actions",
-        shown: &[ctrl(Key::k)],
-        hidden: &[],
+        shown: &[ctrl(Key::Return)],
+        hidden: &[ctrl(Key::KP_Enter)],
     },
     Binding {
         id: BindingId::OpenSessions,
@@ -133,32 +137,8 @@ const ALL: &[Binding] = &[
     Binding {
         id: BindingId::SearchClose,
         group: Group::Search,
-        context: Context::Local,
+        context: Context::Search,
         label: "Close overlay",
-        shown: &[key(Key::Escape)],
-        hidden: &[],
-    },
-    Binding {
-        id: BindingId::PanelMove,
-        group: Group::ActionPanel,
-        context: Context::Panel,
-        label: "Move between actions",
-        shown: &[key(Key::Up), key(Key::Down)],
-        hidden: &[],
-    },
-    Binding {
-        id: BindingId::PanelRun,
-        group: Group::ActionPanel,
-        context: Context::Panel,
-        label: "Run action",
-        shown: &[key(Key::Return)],
-        hidden: &[key(Key::KP_Enter)],
-    },
-    Binding {
-        id: BindingId::PanelClose,
-        group: Group::ActionPanel,
-        context: Context::Panel,
-        label: "Close",
         shown: &[key(Key::Escape)],
         hidden: &[],
     },
@@ -167,8 +147,8 @@ const ALL: &[Binding] = &[
         group: Group::Chat,
         context: Context::Chat,
         label: "Send message",
-        shown: &[key(Key::Return)],
-        hidden: &[key(Key::KP_Enter)],
+        shown: &[plain(Key::Return)],
+        hidden: &[plain(Key::KP_Enter)],
     },
     Binding {
         id: BindingId::ChatInterrupt,
@@ -232,6 +212,7 @@ fn chord_matches(c: Chord, k: Key, mods: ModifierType) -> bool {
     c.accel.0 == k
         && match c.policy {
             Match::KeyOnly => true,
+            Match::Exact => mods == c.accel.1,
             Match::Contains => mods.contains(c.accel.1),
         }
 }
@@ -308,6 +289,7 @@ mod tests {
             for c in b.shown.iter().chain(b.hidden) {
                 let mods = match c.policy {
                     Match::KeyOnly => ModifierType::empty(),
+                    Match::Exact => c.accel.1,
                     Match::Contains => c.accel.1,
                 };
                 assert_eq!(
@@ -320,42 +302,70 @@ mod tests {
         }
     }
 
+    fn chords_overlap(a: Chord, b: Chord) -> bool {
+        if a.accel.0 != b.accel.0 {
+            return false;
+        }
+
+        match (a.policy, b.policy) {
+            (Match::KeyOnly, _) | (_, Match::KeyOnly) => true,
+            (Match::Exact, Match::Exact) => a.accel.1 == b.accel.1,
+            (Match::Exact, Match::Contains) => a.accel.1.contains(b.accel.1),
+            (Match::Contains, Match::Exact) => b.accel.1.contains(a.accel.1),
+            (Match::Contains, Match::Contains) => true,
+        }
+    }
+
     #[test]
-    fn no_two_bindings_share_a_keyval_within_a_context() {
-        // Under KeyOnly/Contains semantics two chords on the same keyval can
-        // always be triggered by one event (press the union of their modifiers),
-        // so a shared keyval within a context is an ambiguous overlap.
+    fn no_two_bindings_overlap_within_a_context() {
         for ctx in [
-            Context::Panel,
             Context::Sessions,
             Context::Global,
-            Context::Local,
+            Context::Search,
             Context::Chat,
         ] {
-            let mut seen: Vec<(Key, BindingId)> = Vec::new();
-            for b in ALL.iter().filter(|b| b.context == ctx) {
-                for c in b.shown.iter().chain(b.hidden) {
-                    if let Some((_, other)) = seen.iter().find(|(k, _)| *k == c.accel.0) {
-                        panic!("{:?} and {:?} share a key in the same context", other, b.id);
+            let bindings: Vec<_> = ALL.iter().filter(|b| b.context == ctx).collect();
+            for (i, a) in bindings.iter().enumerate() {
+                for b in bindings.iter().skip(i + 1) {
+                    for ac in a.shown.iter().chain(a.hidden) {
+                        for bc in b.shown.iter().chain(b.hidden) {
+                            assert!(
+                                !chords_overlap(*ac, *bc),
+                                "{:?} and {:?} have overlapping chords in the same context",
+                                a.id,
+                                b.id
+                            );
+                        }
                     }
-                    seen.push((c.accel.0, b.id));
                 }
             }
         }
     }
 
     #[test]
-    fn keyonly_binding_matches_with_extra_modifier() {
+    fn key_only_binding_matches_with_extra_modifier() {
         assert_eq!(
-            match_binding(Context::Local, Key::Up, ModifierType::CONTROL_MASK),
+            match_binding(Context::Search, Key::Up, ModifierType::CONTROL_MASK),
             Some(BindingId::SearchMove)
+        );
+    }
+
+    #[test]
+    fn submit_rejects_extra_modifier() {
+        assert_eq!(
+            match_binding(Context::Search, Key::Return, ModifierType::SHIFT_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Chat, Key::Return, ModifierType::SHIFT_MASK),
+            None
         );
     }
 
     #[test]
     fn contains_binding_needs_its_modifier() {
         assert_eq!(
-            match_binding(Context::Local, Key::k, ModifierType::empty()),
+            match_binding(Context::Search, Key::k, ModifierType::empty()),
             None
         );
     }
@@ -363,7 +373,7 @@ mod tests {
     #[test]
     fn unbound_key_resolves_to_none() {
         assert_eq!(
-            match_binding(Context::Local, Key::F1, ModifierType::empty()),
+            match_binding(Context::Search, Key::F1, ModifierType::empty()),
             None
         );
     }
@@ -371,8 +381,8 @@ mod tests {
     #[test]
     fn kp_enter_is_a_hidden_alias_of_open() {
         assert_eq!(
-            match_binding(Context::Local, Key::KP_Enter, ModifierType::empty()),
-            Some(BindingId::SearchOpen)
+            match_binding(Context::Search, Key::KP_Enter, ModifierType::empty()),
+            Some(BindingId::SearchSubmit)
         );
     }
 
@@ -389,14 +399,6 @@ mod tests {
         assert_eq!(
             match_binding(Context::Sessions, Key::Left, ModifierType::SHIFT_MASK),
             Some(BindingId::SessionClose)
-        );
-    }
-
-    #[test]
-    fn unbound_key_in_panel_resolves_to_none() {
-        assert_eq!(
-            match_binding(Context::Panel, Key::F1, ModifierType::empty()),
-            None
         );
     }
 

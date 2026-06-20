@@ -127,21 +127,15 @@ pub(super) fn open(
     parent: &impl IsA<gtk4::Widget>,
     app: Arc<AppContext>,
     provider_id: ProviderId,
-    provider_name: &str,
     on_connected: Rc<dyn Fn()>,
 ) {
-    ConnectDialog::new(app, provider_id, provider_name, on_connected).present(Some(parent));
+    ConnectDialog::new(app, provider_id, on_connected).present(Some(parent));
 }
 
 impl ConnectDialog {
-    fn new(
-        app: Arc<AppContext>,
-        provider_id: ProviderId,
-        provider_name: &str,
-        on_connected: Rc<dyn Fn()>,
-    ) -> Self {
+    fn new(app: Arc<AppContext>, provider_id: ProviderId, on_connected: Rc<dyn Fn()>) -> Self {
         let dialog: Self = glib::Object::new();
-        dialog.set_title(&format!("Connect — {provider_name}"));
+        dialog.set_title(&format!("Connect — {provider_id}"));
         let imp = dialog.imp();
         let _ = imp.app.set(app);
         let _ = imp.provider_id.set(provider_id);
