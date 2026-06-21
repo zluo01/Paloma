@@ -24,6 +24,20 @@ impl fmt::Display for ProviderId {
     }
 }
 
+impl std::str::FromStr for ProviderId {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Codex" => Ok(ProviderId::Codex),
+            "Claude Code" => Ok(ProviderId::ClaudeCode),
+            "OpenAI" => Ok(ProviderId::OpenAI),
+            "Anthropic" => Ok(ProviderId::Anthropic),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum PluginType {
