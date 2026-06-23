@@ -8,10 +8,10 @@ use crate::{
     capability::ProcessManager,
     constants::DATABASE_PATH,
     controller::{
-        ConnectController, ConnectError, LocalQuery, LocalQueryInitError,
-        PermissionWorkflowManager, PluginConnectionController, PluginConnectionError,
-        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
-        SessionManagerError, ToolController, TurnManager,
+        ConnectController, ConnectError, PermissionWorkflowManager, PluginConnectionController,
+        PluginConnectionError, ProviderController, ProviderControllerError, RemoteQuery,
+        RemoteQueryError, SearchQuery, SearchQueryInitError, SessionManager, SessionManagerError,
+        ToolController, TurnManager,
     },
     db::{Storage, StorageError},
     permission::PermissionController,
@@ -29,7 +29,7 @@ mod utils;
 pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, LocalRenderEvent, McpServer, RenderEvent,
+    ChatRenderEvent, Connector, ConnectorConnection, McpServer, RenderEvent, SearchRenderEvent,
     SessionListItem, SessionUpdate, TerminalState,
 };
 pub use entity::{
@@ -40,7 +40,7 @@ pub use provider::Connection;
 
 pub struct AppContext {
     connect: ConnectController,
-    local_query: LocalQuery,
+    search_query: SearchQuery,
     remote_query: RemoteQuery,
     plugin: PluginConnectionController,
 }
@@ -54,11 +54,11 @@ impl AppContext {
         let storage = Storage::new(&db_path).await?;
 
         let (connect, remote_query, plugin) = Self::init_llm(storage).await?;
-        let local_query = Self::init_local()?;
+        let search_query = Self::init_search()?;
 
         Ok(Arc::new(Self {
             connect,
-            local_query,
+            search_query,
             remote_query,
             plugin,
         }))
@@ -129,16 +129,16 @@ impl AppContext {
         Ok((connect, remote_query, plugin))
     }
 
-    fn init_local() -> Result<LocalQuery> {
-        Ok(LocalQuery::new()?)
+    fn init_search() -> Result<SearchQuery> {
+        Ok(SearchQuery::new()?)
     }
 
     pub fn query(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
-        self.local_query.query(input)
+        self.search_query.query(input)
     }
 
     pub fn run_query_action(&self, id: &str, action: Action) -> Option<ActionOutcome> {
-        self.local_query.run(id, action)
+        self.search_query.run(id, action)
     }
 
     pub fn listen_session_updates(&self) -> broadcast::Receiver<SessionUpdate> {
@@ -285,7 +285,7 @@ pub enum AppError {
     PluginConnection(#[from] PluginConnectionError),
 
     #[error(transparent)]
-    LocalQuery(#[from] LocalQueryInitError),
+    SearchQuery(#[from] SearchQueryInitError),
 
     #[error(transparent)]
     SessionManager(#[from] SessionManagerError),

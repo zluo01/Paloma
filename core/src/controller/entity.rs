@@ -2,7 +2,7 @@ use crate::{capability::Item, permission::UserDecision};
 
 #[derive(Clone, Debug)]
 pub enum RenderEvent {
-    Local(LocalRenderEvent),
+    Search(SearchRenderEvent),
     Chat(ChatRenderEvent),
     Cancel,
     Done,
@@ -10,7 +10,7 @@ pub enum RenderEvent {
 }
 
 #[derive(Clone, Debug)]
-pub enum LocalRenderEvent {
+pub enum SearchRenderEvent {
     Append { response: QueryResponse },
 }
 

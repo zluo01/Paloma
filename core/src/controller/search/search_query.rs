@@ -9,19 +9,19 @@ use tokio::{sync::mpsc, task::JoinSet};
 use crate::{
     capability::{Action, ActionOutcome, AppSearch, Clipboard, QueryHandler},
     constants::RENDER_CHANNEL_CAPACITY,
-    controller::{LocalRenderEvent, RenderEvent, entity::QueryResponse},
+    controller::{RenderEvent, SearchRenderEvent, entity::QueryResponse},
 };
 
-pub struct LocalQuery {
+pub struct SearchQuery {
     handlers: DashMap<&'static str, Arc<dyn QueryHandler>>,
 }
 
-impl LocalQuery {
-    pub fn new() -> Result<Self, LocalQueryInitError> {
+impl SearchQuery {
+    pub fn new() -> Result<Self, SearchQueryInitError> {
         let handlers: DashMap<&'static str, Arc<dyn QueryHandler>> = DashMap::new();
 
         let app_search: Arc<dyn QueryHandler> =
-            Arc::new(AppSearch::new().map_err(|source| LocalQueryInitError {
+            Arc::new(AppSearch::new().map_err(|source| SearchQueryInitError {
                 handler: "app_search",
                 source: source.to_string(),
             })?);
@@ -61,7 +61,7 @@ impl LocalQuery {
 
             while let Some(joined) = set.join_next().await {
                 let event = match joined {
-                    Ok(response) => RenderEvent::Local(LocalRenderEvent::Append { response }),
+                    Ok(response) => RenderEvent::Search(SearchRenderEvent::Append { response }),
                     Err(err) => RenderEvent::Error {
                         message: err.to_string(),
                     },
@@ -86,12 +86,12 @@ impl LocalQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct LocalQueryInitError {
+pub struct SearchQueryInitError {
     handler: &'static str,
     source: String,
 }
 
-impl std::fmt::Display for LocalQueryInitError {
+impl std::fmt::Display for SearchQueryInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -101,4 +101,4 @@ impl std::fmt::Display for LocalQueryInitError {
     }
 }
 
-impl std::error::Error for LocalQueryInitError {}
+impl std::error::Error for SearchQueryInitError {}
