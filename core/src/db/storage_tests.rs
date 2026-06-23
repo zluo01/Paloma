@@ -409,6 +409,42 @@ async fn set_preferred_moves_preference() {
 }
 
 #[tokio::test]
+async fn preferred_provider_returns_current_preferred() {
+    let storage = fresh_storage().await;
+    storage
+        .insert_provider(
+            &ProviderId::Codex,
+            &AuthKind::Oauth,
+            "tok",
+            "gpt-5",
+            "medium",
+        )
+        .await
+        .unwrap();
+    storage
+        .insert_provider(
+            &ProviderId::OpenAI,
+            &AuthKind::ApiKey,
+            "sk",
+            "gpt-5-mini",
+            "high",
+        )
+        .await
+        .unwrap();
+
+    storage
+        .set_preferred(&ProviderId::OpenAI)
+        .await
+        .expect("set preferred");
+
+    let provider_id = storage
+        .preferred_provider_id()
+        .await
+        .expect("preferred provider");
+    assert_eq!(provider_id, Some(ProviderId::OpenAI));
+}
+
+#[tokio::test]
 async fn delete_preferred_provider_promotes_survivor() {
     let storage = fresh_storage().await;
     storage

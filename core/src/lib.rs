@@ -224,6 +224,10 @@ impl AppContext {
             .await?)
     }
 
+    pub async fn prefer_model(&self) -> Result<Option<ProviderId>> {
+        Ok(self.connect.prefer_provider().await?)
+    }
+
     pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
         Ok(self.connect.available_connectors().await?)
     }

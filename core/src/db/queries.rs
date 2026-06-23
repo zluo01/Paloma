@@ -12,6 +12,8 @@ pub const DELETE_PROVIDER_QUERY: &str = include_str!("queries/providers/delete_p
 pub const CONNECTED_PROVIDERS_QUERY: &str =
     include_str!("queries/providers/connected_providers.sql");
 
+pub const PREFERRED_PROVIDER_QUERY: &str = include_str!("queries/providers/preferred_provider.sql");
+
 pub const CREATE_NEW_SESSION_QUERY: &str = include_str!("queries/sessions/create_new_session.sql");
 
 pub const TOUCH_SESSION_QUERY: &str = include_str!("queries/sessions/touch_session.sql");

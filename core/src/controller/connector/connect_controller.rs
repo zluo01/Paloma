@@ -134,6 +134,10 @@ impl ConnectController {
         Ok(())
     }
 
+    pub async fn prefer_provider(&self) -> Result<Option<ProviderId>> {
+        Ok(self.storage.preferred_provider_id().await?)
+    }
+
     pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
         let connected: HashMap<ProviderId, ConnectedProvider> = self
             .storage

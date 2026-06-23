@@ -177,6 +177,13 @@ impl Storage {
         Ok(providers)
     }
 
+    pub async fn preferred_provider_id(&self) -> Result<Option<ProviderId>> {
+        sqlx::query_scalar(queries::PREFERRED_PROVIDER_QUERY)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn prefer_model_config(&self, provider_id: &ProviderId) -> Result<PreferModelConfig> {
         sqlx::query_as::<_, PreferModelConfig>(queries::PREFER_MODEL_CONFIG_QUERY)
             .bind(provider_id)
