@@ -12,7 +12,6 @@ pub use entity::{ChatRenderEvent, RenderEvent, SearchRenderEvent};
 pub use remote::{
     PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
     ProviderControllerError, RemoteQuery, RemoteQueryError, SessionListItem, SessionManager,
-    SessionManagerError, SessionUpdate, TerminalState, ToolController, ToolControllerError,
-    TurnManager,
+    SessionManagerError, ToolController, ToolControllerError, TurnManager,
 };
 pub use search::{SearchQuery, SearchQueryInitError};

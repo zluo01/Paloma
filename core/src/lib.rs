@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::Stream;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
@@ -27,10 +26,9 @@ mod provider;
 mod utils;
 
 pub use capability::{Action, ActionOutcome, IconRef, Item};
-pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, RenderEvent, SearchRenderEvent,
-    SessionListItem, SessionUpdate, TerminalState,
+    SessionListItem,
 };
 pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
@@ -139,10 +137,6 @@ impl AppContext {
 
     pub fn run_query_action(&self, id: &str, action: Action) -> Option<ActionOutcome> {
         self.search_query.run(id, action)
-    }
-
-    pub fn listen_session_updates(&self) -> broadcast::Receiver<SessionUpdate> {
-        self.remote_query.subscribe()
     }
 
     pub async fn init_chat(

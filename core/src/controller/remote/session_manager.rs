@@ -5,11 +5,11 @@ use std::{
 
 use log::error;
 use serde_json::Value;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
-    constants::{SESSION_BROADCAST_CHANNEL_CAPACITY, SESSION_MANAGER_CHANNEL_CAPACITY},
+    constants::SESSION_MANAGER_CHANNEL_CAPACITY,
     controller::{
         ChatRenderEvent, PermissionWorkflowError, RenderEvent, ToolController,
         helper::{Disposition, extract_args},
@@ -18,13 +18,8 @@ use crate::{
     db::{EntryType, Session as StorageSession, Storage, StorageError},
     entity::ProviderId,
     provider::ChatEvent,
+    utils::Gated,
 };
-
-#[derive(Clone, Debug)]
-pub struct SessionUpdate {
-    pub session_id: Uuid,
-    pub event: RenderEvent,
-}
 
 #[derive(Clone, Debug)]
 pub struct SessionListItem {
@@ -64,6 +59,11 @@ enum SessionStreamingEvent {
     AvailableSessions {
         reply: oneshot::Sender<Result<Vec<SessionListItem>>>,
     },
+    Subscribe {
+        session_id: Uuid,
+        hold: bool,
+        reply: oneshot::Sender<Result<mpsc::UnboundedReceiver<RenderEvent>>>,
+    },
 }
 
 #[derive(Debug)]
@@ -74,7 +74,7 @@ pub enum SessionEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TerminalState {
+enum TerminalState {
     Running,
     Done,
     Error,
@@ -85,12 +85,12 @@ struct Session {
     /// only store delta, clear on DONE, ERROR or CANCEL
     delta: Vec<SessionEvent>,
     terminal: TerminalState,
+    subscriber: Gated<mpsc::UnboundedSender<RenderEvent>>,
 }
 
 pub struct SessionManager {
     sessions: HashMap<Uuid, Session>,
     event_rx: mpsc::Receiver<SessionStreamingEvent>,
-    updates_tx: broadcast::Sender<SessionUpdate>,
     storage: Storage,
     tool_controller: Arc<ToolController>,
     permission_workflow_client: PermissionWorkflowManagerClient,
@@ -99,7 +99,6 @@ pub struct SessionManager {
 #[derive(Clone)]
 pub struct SessionManagerClient {
     event_tx: mpsc::Sender<SessionStreamingEvent>,
-    updates_tx: broadcast::Sender<SessionUpdate>,
 }
 
 impl SessionManager {
@@ -111,20 +110,15 @@ impl SessionManager {
         let sessions: HashMap<Uuid, Session> = restore_sessions(&storage).await?;
 
         let (tx, rx) = mpsc::channel(SESSION_MANAGER_CHANNEL_CAPACITY);
-        let (updates_tx, _) = broadcast::channel(SESSION_BROADCAST_CHANNEL_CAPACITY);
 
         let manager = Self {
             sessions,
             event_rx: rx,
-            updates_tx: updates_tx.clone(),
             storage,
             tool_controller,
             permission_workflow_client,
         };
-        let client = SessionManagerClient {
-            event_tx: tx,
-            updates_tx,
-        };
+        let client = SessionManagerClient { event_tx: tx };
 
         Ok((manager, client))
     }
@@ -158,6 +152,7 @@ impl SessionManager {
                             vacant.insert(Session {
                                 delta: Vec::new(),
                                 terminal: TerminalState::Done,
+                                subscriber: Gated::empty(),
                             });
                             Ok(())
                         },
@@ -197,6 +192,13 @@ impl SessionManager {
             },
             SessionStreamingEvent::CancelEvent { session_id, reply } => {
                 let _ = reply.send(self.cancel_event(session_id).await);
+            },
+            SessionStreamingEvent::Subscribe {
+                session_id,
+                hold,
+                reply,
+            } => {
+                let _ = reply.send(self.subscribe(session_id, hold));
             },
         }
         Ok(())
@@ -248,7 +250,16 @@ impl SessionManager {
         }
 
         if let Some(event) = render_event {
-            let _ = self.updates_tx.send(SessionUpdate { session_id, event });
+            let terminal = matches!(session.terminal, TerminalState::Done | TerminalState::Error);
+            let delivered = if let Some(subscriber) = session.subscriber.get() {
+                let _ = subscriber.send(event);
+                true
+            } else {
+                false
+            };
+            if terminal && delivered {
+                session.subscriber = Gated::empty();
+            }
         }
 
         // a failed turn left partial items; roll the session back to its last
@@ -278,10 +289,9 @@ impl SessionManager {
         if session.terminal == TerminalState::Running {
             session.terminal = TerminalState::Cancel;
             session.delta.clear();
-            let _ = self.updates_tx.send(SessionUpdate {
-                session_id,
-                event: RenderEvent::Cancel,
-            });
+            if let Some(subscriber) = session.subscriber.take() {
+                let _ = subscriber.send(RenderEvent::Cancel);
+            }
             self.rollback_session(session_id).await?;
         }
         Ok(())
@@ -307,12 +317,13 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn restore_session(&self, session_id: Uuid) -> Result<()> {
+    async fn restore_session(&mut self, session_id: Uuid) -> Result<()> {
         let session = self
             .sessions
-            .get(&session_id)
+            .get_mut(&session_id)
             .ok_or(SessionManagerError::UnknownSession(session_id))?;
 
+        session.subscriber.release();
         for entry in self
             .storage
             .restore_history(&session_id.to_string())
@@ -401,10 +412,9 @@ impl SessionManager {
                 },
             };
 
-            let _ = self.updates_tx.send(SessionUpdate {
-                session_id,
-                event: render,
-            });
+            if let Some(subscriber) = session.subscriber.get() {
+                let _ = subscriber.send(render);
+            }
         }
 
         match session.terminal {
@@ -419,19 +429,16 @@ impl SessionManager {
                             session_id,
                         )
                         .await
+                        && let Some(subscriber) = session.subscriber.get()
                     {
-                        let _ = self.updates_tx.send(SessionUpdate {
-                            session_id,
-                            event: render,
-                        });
+                        let _ = subscriber.send(render);
                     }
                 }
             },
             TerminalState::Done | TerminalState::Error | TerminalState::Cancel => {
-                let _ = self.updates_tx.send(SessionUpdate {
-                    session_id,
-                    event: RenderEvent::Done,
-                });
+                if let Some(subscriber) = session.subscriber.take() {
+                    let _ = subscriber.send(RenderEvent::Done);
+                }
             },
         }
 
@@ -456,6 +463,23 @@ impl SessionManager {
             })
             .collect();
         Ok(messages)
+    }
+
+    fn subscribe(
+        &mut self,
+        session_id: Uuid,
+        hold: bool,
+    ) -> Result<mpsc::UnboundedReceiver<RenderEvent>> {
+        if let Some(session) = self.sessions.get_mut(&session_id) {
+            let (sender, receiver) = mpsc::unbounded_channel::<RenderEvent>();
+            session.subscriber = if hold {
+                Gated::held(sender)
+            } else {
+                Gated::ready(sender)
+            };
+            return Ok(receiver);
+        }
+        Err(SessionManagerError::UnknownSession(session_id))
     }
 }
 
@@ -654,6 +678,25 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
+    pub async fn subscribe(
+        &self,
+        session_id: Uuid,
+        hold: bool,
+    ) -> Result<mpsc::UnboundedReceiver<RenderEvent>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(SessionStreamingEvent::Subscribe {
+                session_id,
+                hold,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
+    }
+
     pub async fn remove_session(&self, session_id: Uuid) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
@@ -691,11 +734,6 @@ impl SessionManagerClient {
         reply_rx
             .await
             .map_err(|_| SessionManagerError::ChannelClosed)?
-    }
-
-    /// For UI process to subscribe for rendering update
-    pub fn subscribe(&self) -> broadcast::Receiver<SessionUpdate> {
-        self.updates_tx.subscribe()
     }
 }
 
@@ -744,6 +782,7 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
             Session {
                 delta: vec![],
                 terminal: TerminalState::Done,
+                subscriber: Gated::empty(),
             },
         );
     }
