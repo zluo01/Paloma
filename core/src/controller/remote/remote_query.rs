@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use log::error;
-use tokio::sync::broadcast;
+use futures::{Stream, stream};
+use log::{debug, error};
+use tokio::sync::{broadcast, broadcast::error::RecvError, mpsc};
 use uuid::Uuid;
 
 use crate::{
-    constants::ENVIRONMENT_CONTEXT,
+    RenderEvent,
+    constants::{ENVIRONMENT_CONTEXT, RENDER_CHANNEL_CAPACITY},
     controller::{
         PermissionWorkflowError, ProviderController, ProviderControllerError, SessionManagerError,
-        SessionUpdate, TerminalState,
+        SessionUpdate,
         remote::{
             PermissionWorkflowManagerClient, SessionEvent,
             session_manager::{SessionListItem, SessionManagerClient},
@@ -73,11 +75,22 @@ impl RemoteQuery {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<()> {
-        Ok(self
+    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
+        let rx = self.subscribe();
+        let (render_tx, mut render_rx) = mpsc::channel(RENDER_CHANNEL_CAPACITY);
+
+        let handle = tokio::spawn(forward_session_updates(rx, render_tx, session_id, "chat"));
+
+        if let Err(error) = self
             .turn_manager_client
             .start_chat(session_id, provider_id, prompt)
-            .await?)
+            .await
+        {
+            handle.abort();
+            return Err(error.into());
+        }
+
+        Ok(stream::poll_fn(move |cx| render_rx.poll_recv(cx)))
     }
 
     pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
@@ -95,11 +108,27 @@ impl RemoteQuery {
         }
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
-        Ok(self
+    pub async fn restore_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
+        let rx = self.subscribe();
+        let (render_tx, mut render_rx) = mpsc::channel(RENDER_CHANNEL_CAPACITY);
+
+        let handle = tokio::spawn(forward_session_updates(
+            rx, render_tx, session_id, "restore",
+        ));
+
+        if let Err(error) = self
             .session_manager_client
             .restore_session(session_id)
-            .await?)
+            .await
+        {
+            handle.abort();
+            return Err(error.into());
+        }
+
+        Ok(stream::poll_fn(move |cx| render_rx.poll_recv(cx)))
     }
 
     pub async fn remove_session(&self, session_id: Uuid) -> Result<()> {
@@ -124,6 +153,40 @@ impl RemoteQuery {
 
     pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {
         Ok(self.session_manager_client.available_sessions().await?)
+    }
+}
+
+async fn forward_session_updates(
+    mut rx: broadcast::Receiver<SessionUpdate>,
+    render_tx: mpsc::Sender<RenderEvent>,
+    session_id: Uuid,
+    label: &'static str,
+) {
+    loop {
+        match rx.recv().await {
+            Ok(SessionUpdate {
+                session_id: id,
+                event,
+            }) if id == session_id => {
+                let done = matches!(
+                    event,
+                    RenderEvent::Done | RenderEvent::Error { .. } | RenderEvent::Cancel
+                );
+                if render_tx.send(event).await.is_err() {
+                    debug!("{label} stream receiver dropped for session {session_id}");
+                    break;
+                }
+                if done {
+                    break;
+                }
+            },
+            Ok(_) => {},
+            Err(RecvError::Lagged(n)) => {
+                error!("{label} stream lagged by {n} events for session {session_id}");
+                break;
+            },
+            Err(RecvError::Closed) => break,
+        }
     }
 }
 

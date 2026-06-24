@@ -43,7 +43,7 @@ enum SessionStreamingEvent {
     },
     RestoreSession {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<TerminalState>>,
+        reply: oneshot::Sender<Result<()>>,
     },
     RemoveSession {
         session_id: Uuid,
@@ -307,7 +307,7 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
+    async fn restore_session(&self, session_id: Uuid) -> Result<()> {
         let session = self
             .sessions
             .get(&session_id)
@@ -407,25 +407,35 @@ impl SessionManager {
             });
         }
 
-        // Replay in-flight streaming deltas not yet finalized into history, so a
-        // re-subscribing UI catches up on the current turn's partial output.
-        for event in &session.delta {
-            if let Some(render) = event
-                .to_render_event(
-                    &self.permission_workflow_client,
-                    self.tool_controller.clone(),
-                    session_id,
-                )
-                .await
-            {
+        match session.terminal {
+            TerminalState::Running => {
+                // Replay in-flight streaming deltas not yet finalized into history, so a
+                // re-subscribing UI catches up on the current turn's partial output.
+                for event in &session.delta {
+                    if let Some(render) = event
+                        .to_render_event(
+                            &self.permission_workflow_client,
+                            self.tool_controller.clone(),
+                            session_id,
+                        )
+                        .await
+                    {
+                        let _ = self.updates_tx.send(SessionUpdate {
+                            session_id,
+                            event: render,
+                        });
+                    }
+                }
+            },
+            TerminalState::Done | TerminalState::Error | TerminalState::Cancel => {
                 let _ = self.updates_tx.send(SessionUpdate {
                     session_id,
-                    event: render,
+                    event: RenderEvent::Done,
                 });
-            }
+            },
         }
 
-        Ok(session.terminal)
+        Ok(())
     }
 
     async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>> {
@@ -630,7 +640,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::RestoreSession {

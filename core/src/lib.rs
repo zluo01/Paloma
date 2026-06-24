@@ -162,7 +162,7 @@ impl AppContext {
         session_id: Uuid,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<()> {
+    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
         Ok(self
             .remote_query
             .chat(session_id, provider_id, prompt)
@@ -177,7 +177,10 @@ impl AppContext {
         Ok(self.remote_query.available_sessions().await?)
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) -> Result<TerminalState> {
+    pub async fn restore_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
         Ok(self.remote_query.restore_session(session_id).await?)
     }
 
