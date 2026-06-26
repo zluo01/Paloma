@@ -734,11 +734,91 @@ fn parse_stream_error(data: &str) -> ProviderError {
     let msg = serde_json::from_str::<Value>(data)
         .ok()
         .and_then(|v| {
-            v.get("error")
-                .and_then(|e| e.get("message"))
-                .and_then(|m| m.as_str())
+            v.pointer("/response/error/message")
+                .and_then(Value::as_str)
                 .map(str::to_string)
+                .or_else(|| {
+                    v.pointer("/response/incomplete_details/reason")
+                        .and_then(Value::as_str)
+                        .map(|reason| format!("response incomplete: {reason}"))
+                })
+                .or_else(|| v.get("message").and_then(Value::as_str).map(str::to_string))
         })
         .unwrap_or_else(|| format!("response failed: {data}"));
     ProviderError::Other(msg)
+}
+
+#[cfg(test)]
+mod parse_stream_error_tests {
+    use super::*;
+
+    fn message(data: &str) -> String {
+        let ProviderError::Other(msg) = parse_stream_error(data) else {
+            panic!("expected ProviderError::Other");
+        };
+        msg
+    }
+
+    #[test]
+    fn response_failed_extracts_nested_error_message() {
+        let data = r#"{
+          "type": "response.failed",
+          "response": {
+            "id": "resp_123",
+            "object": "response",
+            "created_at": 1740855869,
+            "status": "failed",
+            "completed_at": null,
+            "error": {
+              "code": "server_error",
+              "message": "The model failed to generate a response."
+            },
+            "incomplete_details": null,
+            "model": "gpt-4o-mini-2024-07-18",
+            "output": [],
+            "metadata": {}
+          }
+        }"#;
+        assert_eq!(message(data), "The model failed to generate a response.");
+    }
+
+    #[test]
+    fn response_incomplete_extracts_reason() {
+        let data = r#"{
+          "type": "response.incomplete",
+          "response": {
+            "id": "resp_123",
+            "object": "response",
+            "created_at": 1740855869,
+            "status": "incomplete",
+            "completed_at": null,
+            "error": null,
+            "incomplete_details": {
+              "reason": "max_tokens"
+            },
+            "model": "gpt-4o-mini-2024-07-18",
+            "output": [],
+            "metadata": {}
+          },
+          "sequence_number": 1
+        }"#;
+        assert_eq!(message(data), "response incomplete: max_tokens");
+    }
+
+    #[test]
+    fn error_event_extracts_top_level_message() {
+        let data = r#"{
+          "type": "error",
+          "code": "ERR_SOMETHING",
+          "message": "Something went wrong",
+          "param": null,
+          "sequence_number": 1
+        }"#;
+        assert_eq!(message(data), "Something went wrong");
+    }
+
+    #[test]
+    fn unparseable_payload_falls_back_to_raw_dump() {
+        assert_eq!(message("not json"), "response failed: not json");
+    }
 }
