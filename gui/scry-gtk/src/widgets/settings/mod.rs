@@ -4,7 +4,7 @@ mod plugins;
 mod services;
 mod shortcuts;
 
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use gtk4::{Stack, StackTransitionType, glib};
 use libadwaita::{
@@ -47,6 +47,7 @@ impl Page {
 
 pub(crate) struct SettingsWindow {
     window: ApplicationWindow,
+    services: Rc<ServicesPage>,
 }
 
 impl SettingsWindow {
@@ -117,13 +118,14 @@ impl SettingsWindow {
             content_page.set_title(first.title());
         }
 
+        let service_page = services.clone();
         let content_page_cb = content_page.clone();
         sidebar.connect_selected_notify(move |sidebar| {
             if let Some(page) = Page::ALL.get(sidebar.selected() as usize) {
                 stack.set_visible_child_name(page.title());
                 content_page_cb.set_title(page.title());
                 match page {
-                    Page::Services => services.refresh(),
+                    Page::Services => service_page.refresh(),
                     Page::Plugins => plugins.refresh(),
                     Page::Permissions => permissions.refresh(),
                     _ => {},
@@ -145,10 +147,11 @@ impl SettingsWindow {
             glib::Propagation::Stop
         });
 
-        Self { window }
+        Self { window, services }
     }
 
     pub(crate) fn present(&self) {
+        self.services.refresh();
         self.window.present();
     }
 }
