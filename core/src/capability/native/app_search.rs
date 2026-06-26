@@ -99,7 +99,7 @@ impl QueryHandler for AppSearch {
             .spawn();
 
         match result {
-            Ok(_child) => info!("app_search: launched {program}"),
+            Ok(_child) => debug!("app_search: launched {program}"),
             Err(err) => error!("app_search: failed to launch {program}: {err}"),
         }
 
