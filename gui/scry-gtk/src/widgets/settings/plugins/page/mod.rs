@@ -4,25 +4,25 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, glib, prelude::*};
 use libadwaita::{
-    ActionRow, AlertDialog, ApplicationWindow, ButtonRow, ExpanderRow, PreferencesGroup,
-    PreferencesPage, prelude::*,
+    ActionRow, ApplicationWindow, ButtonRow, ExpanderRow, PreferencesGroup, PreferencesPage,
+    prelude::*,
 };
 use scry_core::{AppContext, HealthStatus, McpServer, Plugin, PluginArgs, PluginType};
 
 use self::model::{Command, Msg, State};
 use crate::{
+    helper::Clear,
     runtime,
     widgets::settings::{
-        clear_group,
+        helper::{show_error_dialog, unhealthy_icon},
         plugins::{
             modal,
             modal::{SaveFinished, SavePlugin},
         },
-        unhealthy_icon,
     },
 };
 
-pub(in crate::widgets::settings) struct PluginsPage {
+pub(crate) struct PluginsPage {
     view: PreferencesPage,
     mcp_view: PreferencesGroup,
     add_mcp: ButtonRow,
@@ -32,10 +32,7 @@ pub(in crate::widgets::settings) struct PluginsPage {
 }
 
 impl PluginsPage {
-    pub(in crate::widgets::settings) fn new(
-        app_context: Arc<AppContext>,
-        window: &ApplicationWindow,
-    ) -> Rc<Self> {
+    pub(crate) fn new(app_context: Arc<AppContext>, window: &ApplicationWindow) -> Rc<Self> {
         let view = PreferencesPage::new();
 
         // Native plugin support is not wired yet; the disabled add row also
@@ -79,8 +76,21 @@ impl PluginsPage {
         this
     }
 
-    pub(in crate::widgets::settings) fn widget(&self) -> &PreferencesPage {
+    pub(crate) fn widget(&self) -> &PreferencesPage {
         &self.view
+    }
+
+    pub(crate) fn refresh(self: &Rc<Self>) {
+        let app_context = self.app_context.clone();
+        let weak = Rc::downgrade(self);
+        runtime::spawn_with(
+            async move { app_context.list_mcps().await },
+            move |result| {
+                if let Some(this) = weak.upgrade() {
+                    this.dispatch(Msg::McpServersLoaded(result));
+                }
+            },
+        );
     }
 
     fn dispatch(self: &Rc<Self>, msg: Msg) {
@@ -93,31 +103,18 @@ impl PluginsPage {
     fn run(self: &Rc<Self>, command: Command) {
         match command {
             Command::RenderMcpServers => self.render_mcp_servers(),
-            Command::LoadMcpServers => self.load_mcp_servers(),
+            Command::LoadMcpServers => self.refresh(),
             Command::SaveMcpToggle(name, enabled) => self.save_mcp_toggle(name, enabled),
             Command::RemoveMcp(name) => self.remove_mcp(name),
             Command::OpenAddMcpDialog => self.open_add_mcp_dialog(),
             Command::OpenEditMcpDialog(config) => self.open_edit_mcp_dialog(config),
             Command::ShowErrorDialog(message) => {
                 if let Some(window) = self.window.upgrade() {
-                    show_error_dialog(&window, &message);
+                    show_error_dialog(&window, "Plugin Operation Failed", &message);
                 }
             },
             Command::LogWarning(message) => log::warn!("{message}"),
         }
-    }
-
-    fn load_mcp_servers(self: &Rc<Self>) {
-        let app_context = self.app_context.clone();
-        let weak = Rc::downgrade(self);
-        runtime::spawn_with(
-            async move { app_context.list_mcps().await },
-            move |result| {
-                if let Some(this) = weak.upgrade() {
-                    this.dispatch(Msg::McpServersLoaded(result));
-                }
-            },
-        );
     }
 
     fn save_mcp_toggle(self: &Rc<Self>, name: String, enabled: bool) {
@@ -197,7 +194,7 @@ impl PluginsPage {
     }
 
     fn render_mcp_servers(self: &Rc<Self>) {
-        clear_group(&self.mcp_view);
+        self.mcp_view.clear();
         let state = self.state.borrow();
         for server in &state.servers {
             self.mcp_view.add(&self.mcp_row(server));
@@ -319,14 +316,4 @@ fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {
         props.push(("Environment", env.join("\n")));
     }
     props
-}
-
-fn show_error_dialog(window: &ApplicationWindow, message: &str) {
-    let dialog = AlertDialog::builder()
-        .heading("Plugin Operation Failed")
-        .body(message)
-        .close_response("close")
-        .build();
-    dialog.add_response("close", "Close");
-    dialog.present(Some(window));
 }

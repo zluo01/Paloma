@@ -6,7 +6,7 @@ use std::{
 };
 
 use gtk4::{gio, glib, prelude::*};
-use libadwaita::{Application, ApplicationWindow};
+use libadwaita::Application;
 use log::{error, warn};
 use scry_core::AppContext;
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -15,7 +15,7 @@ use crate::{
     runtime::tokio_runtime,
     services::{Shortcut, TrayEvent, run_tray},
     style,
-    widgets::{overlay, settings},
+    widgets::{overlay, settings::SettingsWindow},
 };
 
 const APP_ID: &str = "dev.scry.Scry";
@@ -111,26 +111,16 @@ fn install_overlay_action(
 
 /// Install the `settings` action, reusing an open settings window if present.
 fn install_settings_action(gapp: &Application, app_context: Arc<AppContext>) {
-    let settings_window: Rc<RefCell<Option<ApplicationWindow>>> = Rc::new(RefCell::new(None));
+    let slot: Rc<RefCell<Option<SettingsWindow>>> = Rc::new(RefCell::new(None));
 
     let action = gio::SimpleAction::new("settings", None);
     action.connect_activate(glib::clone!(
         #[strong]
         gapp,
         move |_, _| {
-            let mut slot = settings_window.borrow_mut();
-            if let Some(existing) = slot.as_ref() {
-                existing.present();
-                return;
-            }
-
-            let win = settings::open(&gapp, app_context.clone());
-            let slot_for_close = settings_window.clone();
-            win.connect_close_request(move |_| {
-                slot_for_close.borrow_mut().take();
-                glib::Propagation::Proceed
-            });
-            *slot = Some(win);
+            slot.borrow_mut()
+                .get_or_insert_with(|| SettingsWindow::new(&gapp, app_context.clone()))
+                .present();
         }
     ));
     gapp.add_action(&action);

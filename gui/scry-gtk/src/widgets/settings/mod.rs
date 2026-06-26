@@ -1,173 +1,154 @@
+mod helper;
+mod permissions;
 mod plugins;
 mod services;
 mod shortcuts;
 
 use std::sync::Arc;
 
-use gtk4::{Align, Image, glib, subclass::prelude::*};
+use gtk4::{Stack, StackTransitionType, glib};
 use libadwaita::{
-    Application, ApplicationWindow, PreferencesGroup, Sidebar, SidebarItem, SidebarSection,
-    prelude::*,
+    Application, ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, Sidebar,
+    SidebarItem, SidebarSection, ToolbarView, prelude::*,
 };
 use scry_core::AppContext;
 
+use crate::widgets::settings::{
+    permissions::PermissionsPage, plugins::PluginsPage, services::ServicesPage,
+};
+
 pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
 
-mod imp {
-    use std::{cell::OnceCell, rc::Rc};
-
-    use gtk4::{CompositeTemplate, Stack, glib};
-    use libadwaita::{NavigationPage, ToolbarView, subclass::prelude::*};
-
-    use super::{plugins::PluginsPage, services::ServicesPage};
-
-    #[derive(CompositeTemplate, Default)]
-    #[template(file = "window.ui")]
-    pub struct SettingsWindow {
-        /// Hosts the dynamic AdwSidebar.
-        #[template_child]
-        pub sidebar_host: TemplateChild<ToolbarView>,
-        #[template_child]
-        pub stack: TemplateChild<Stack>,
-        #[template_child]
-        pub content_page: TemplateChild<NavigationPage>,
-        /// Plain page controllers retained for callbacks and state.
-        pub(super) services: OnceCell<Rc<ServicesPage>>,
-        pub(super) plugins: OnceCell<Rc<PluginsPage>>,
-    }
-
-    #[glib::object_subclass]
-    impl ObjectSubclass for SettingsWindow {
-        const NAME: &'static str = "ScrySettingsWindow";
-        type Type = super::SettingsWindow;
-        type ParentType = libadwaita::ApplicationWindow;
-
-        fn class_init(klass: &mut Self::Class) {
-            klass.bind_template();
-        }
-
-        fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
-            obj.init_template();
-        }
-    }
-
-    impl ObjectImpl for SettingsWindow {}
-    impl WidgetImpl for SettingsWindow {}
-    impl WindowImpl for SettingsWindow {}
-    impl ApplicationWindowImpl for SettingsWindow {}
-    impl AdwApplicationWindowImpl for SettingsWindow {}
-}
-
-glib::wrapper! {
-    pub struct SettingsWindow(ObjectSubclass<imp::SettingsWindow>)
-        @extends libadwaita::ApplicationWindow, gtk4::ApplicationWindow, gtk4::Window, gtk4::Widget,
-        @implements gtk4::gio::ActionGroup, gtk4::gio::ActionMap, gtk4::Accessible,
-            gtk4::Buildable, gtk4::ConstraintTarget, gtk4::Native, gtk4::Root,
-            gtk4::ShortcutManager;
-}
-
-/// One settings page: stable stack id plus visible title.
 #[derive(Clone, Copy)]
-struct PageSpec {
-    id: &'static str,
-    title: &'static str,
+enum Page {
+    Services,
+    Plugins,
+    Permissions,
+    Shortcuts,
 }
 
-// Sidebar order.
-const SERVICES_PAGE: PageSpec = PageSpec {
-    id: "services",
-    title: "Services",
-};
-const PLUGINS_PAGE: PageSpec = PageSpec {
-    id: "plugins",
-    title: "Plugins",
-};
-const SHORTCUTS_PAGE: PageSpec = PageSpec {
-    id: "shortcuts",
-    title: "Shortcuts",
-};
-const PAGES: &[PageSpec] = &[SERVICES_PAGE, PLUGINS_PAGE, SHORTCUTS_PAGE];
+impl Page {
+    const ALL: &[Self] = &[
+        Self::Services,
+        Self::Plugins,
+        Self::Permissions,
+        Self::Shortcuts,
+    ];
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Services => "Services",
+            Self::Plugins => "Plugins",
+            Self::Permissions => "Permissions",
+            Self::Shortcuts => "Shortcuts",
+        }
+    }
+}
+
+pub(crate) struct SettingsWindow {
+    window: ApplicationWindow,
+}
 
 impl SettingsWindow {
-    fn new(app: &Application, state: Arc<AppContext>) -> Self {
-        let window: Self = glib::Object::builder().property("application", app).build();
-        let imp = window.imp();
+    pub(crate) fn new(app: &Application, app_context: Arc<AppContext>) -> Self {
+        let window = ApplicationWindow::builder()
+            .application(app)
+            .title("Settings")
+            .default_width(820)
+            .default_height(560)
+            .build();
 
-        // AdwSidebar sections/items are dynamic, so build them in code.
+        // sidebar
+        let sidebar_host = ToolbarView::new();
+        sidebar_host.add_top_bar(&HeaderBar::builder().show_title(false).build());
+        let sidebar_page = NavigationPage::builder()
+            .title("Settings")
+            .child(&sidebar_host)
+            .build();
+
         let section = SidebarSection::new();
-        for page in PAGES {
-            section.append(SidebarItem::new(page.title));
+        for page in Page::ALL {
+            section.append(SidebarItem::new(page.title()));
         }
         let sidebar = Sidebar::new();
         sidebar.append(section);
-        imp.sidebar_host.set_content(Some(&sidebar));
+        sidebar_host.set_content(Some(&sidebar));
 
-        // Services and Plugins need retained controllers; Shortcuts is widget-only.
+        let stack = Stack::builder()
+            .transition_type(StackTransitionType::Crossfade)
+            .transition_duration(150)
+            .build();
+        let content_toolbar = ToolbarView::new();
+        content_toolbar.add_top_bar(&HeaderBar::new());
+        content_toolbar.set_content(Some(&stack));
+        let content_page = NavigationPage::builder()
+            .title(Page::ALL[0].title())
+            .child(&content_toolbar)
+            .build();
+
         let parent: ApplicationWindow = window.clone().upcast();
-        let services = services::ServicesPage::new(state.clone(), &parent);
-        let plugins = plugins::PluginsPage::new(state, &parent);
-        imp.stack.add_titled(
+        let services = ServicesPage::new(app_context.clone(), &parent);
+        let plugins = PluginsPage::new(app_context.clone(), &parent);
+        let permissions = PermissionsPage::new(app_context, &parent);
+        stack.add_titled(
             services.widget(),
-            Some(SERVICES_PAGE.id),
-            SERVICES_PAGE.title,
+            Some(Page::Services.title()),
+            Page::Services.title(),
         );
-        imp.stack
-            .add_titled(plugins.widget(), Some(PLUGINS_PAGE.id), PLUGINS_PAGE.title);
-        imp.stack.add_titled(
+        stack.add_titled(
+            plugins.widget(),
+            Some(Page::Plugins.title()),
+            Page::Plugins.title(),
+        );
+        stack.add_titled(
+            permissions.widget(),
+            Some(Page::Permissions.title()),
+            Page::Permissions.title(),
+        );
+        stack.add_titled(
             &shortcuts::build(),
-            Some(SHORTCUTS_PAGE.id),
-            SHORTCUTS_PAGE.title,
+            Some(Page::Shortcuts.title()),
+            Page::Shortcuts.title(),
         );
-        // The stack owns widgets; these cells own the plain Rust controllers.
-        imp.services
-            .set(services)
-            .unwrap_or_else(|_| panic!("services page set once in SettingsWindow::new"));
-        imp.plugins
-            .set(plugins)
-            .unwrap_or_else(|_| panic!("plugins page set once in SettingsWindow::new"));
 
-        // Select the first page before connecting the notify handler.
-        if let Some(first) = PAGES.first() {
+        if let Some(first) = Page::ALL.first() {
             sidebar.set_selected(0);
-            imp.stack.set_visible_child_name(first.id);
-            imp.content_page.set_title(first.title);
+            stack.set_visible_child_name(first.title());
+            content_page.set_title(first.title());
         }
 
-        let stack = imp.stack.get();
-        let content_page = imp.content_page.get();
+        let content_page_cb = content_page.clone();
         sidebar.connect_selected_notify(move |sidebar| {
-            if let Some(page) = PAGES.get(sidebar.selected() as usize) {
-                stack.set_visible_child_name(page.id);
-                content_page.set_title(page.title);
+            if let Some(page) = Page::ALL.get(sidebar.selected() as usize) {
+                stack.set_visible_child_name(page.title());
+                content_page_cb.set_title(page.title());
+                match page {
+                    Page::Services => services.refresh(),
+                    Page::Plugins => plugins.refresh(),
+                    Page::Permissions => permissions.refresh(),
+                    _ => {},
+                }
             }
         });
 
-        window
+        let split_view = NavigationSplitView::builder()
+            .max_sidebar_width(200.0)
+            .sidebar(&sidebar_page)
+            .content(&content_page)
+            .build();
+
+        window.set_content(Some(&split_view));
+
+        let win = window.clone();
+        window.connect_close_request(move |_| {
+            win.set_visible(false);
+            glib::Propagation::Stop
+        });
+
+        Self { window }
     }
-}
 
-/// Build and present the settings window.
-pub(crate) fn open(app: &Application, state: Arc<AppContext>) -> ApplicationWindow {
-    let window = SettingsWindow::new(app, state);
-    window.present();
-    window.upcast()
-}
-
-pub(super) fn clear_group(group: &PreferencesGroup) {
-    while let Some(row) = group.row(0) {
-        group.remove(&row);
+    pub(crate) fn present(&self) {
+        self.window.present();
     }
-}
-
-pub(super) fn group_is_empty(group: &PreferencesGroup) -> bool {
-    group.row(0).is_none()
-}
-
-pub(super) fn unhealthy_icon(error: Option<&str>) -> Image {
-    Image::builder()
-        .icon_name("help-about-symbolic")
-        .tooltip_text(error.unwrap_or("unknown error"))
-        .css_classes(["scry-unhealthy-icon"])
-        .valign(Align::Center)
-        .build()
 }

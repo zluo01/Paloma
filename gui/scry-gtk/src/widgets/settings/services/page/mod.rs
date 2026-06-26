@@ -19,8 +19,9 @@ use scry_core::{AppContext, ConnectorConnection, HealthStatus, ProviderId};
 use self::model::{Command, Model, Msg};
 use super::modal;
 use crate::{
+    helper::Clear,
     runtime,
-    widgets::settings::{clear_group, group_is_empty, unhealthy_icon},
+    widgets::settings::helper::{group_is_empty, placeholder, unhealthy_icon},
 };
 
 struct Provider {
@@ -62,28 +63,7 @@ impl ServicesPage {
         &self.view
     }
 
-    fn dispatch(self: &Rc<Self>, msg: Msg) {
-        let commands = self.model.borrow_mut().update(msg);
-        for command in commands {
-            self.run(command);
-        }
-    }
-
-    fn run(self: &Rc<Self>, command: Command) {
-        match command {
-            Command::Render => self.render(),
-            Command::FetchConnectors => self.fetch_connectors(),
-            Command::ShowConnectDialog(id) => self.show_connect_dialog(id),
-            Command::ShowDisconnectConfirmation(id) => self.show_disconnect_confirmation(id),
-            Command::DisconnectProvider(id) => self.disconnect_provider(id),
-            Command::PersistPreference { id, model, effort } => {
-                self.persist_preference(id, model, effort)
-            },
-            Command::Warn(message) => log::warn!("{message}"),
-        }
-    }
-
-    fn fetch_connectors(self: &Rc<Self>) {
+    pub(crate) fn refresh(self: &Rc<Self>) {
         let app = self.app.clone();
         let weak = Rc::downgrade(self);
         runtime::spawn_with(
@@ -94,6 +74,27 @@ impl ServicesPage {
                 }
             },
         );
+    }
+
+    fn dispatch(self: &Rc<Self>, msg: Msg) {
+        let commands = self.model.borrow_mut().update(msg);
+        for command in commands {
+            self.run(command);
+        }
+    }
+
+    fn run(self: &Rc<Self>, command: Command) {
+        match command {
+            Command::Render => self.render(),
+            Command::FetchConnectors => self.refresh(),
+            Command::ShowConnectDialog(id) => self.show_connect_dialog(id),
+            Command::ShowDisconnectConfirmation(id) => self.show_disconnect_confirmation(id),
+            Command::DisconnectProvider(id) => self.disconnect_provider(id),
+            Command::PersistPreference { id, model, effort } => {
+                self.persist_preference(id, model, effort)
+            },
+            Command::Warn(message) => log::warn!("{message}"),
+        }
     }
 
     fn disconnect_provider(self: &Rc<Self>, id: ProviderId) {
@@ -158,8 +159,8 @@ impl ServicesPage {
     }
 
     fn render(self: &Rc<Self>) {
-        clear_group(&self.connected_group);
-        clear_group(&self.available_group);
+        self.connected_group.clear();
+        self.available_group.clear();
 
         let state = self.model.borrow();
         for provider in PROVIDERS {
@@ -380,13 +381,6 @@ fn build_view() -> (PreferencesPage, PreferencesGroup, PreferencesGroup) {
     view.add(&connected);
     view.add(&available);
     (view, connected, available)
-}
-
-fn placeholder(text: &str) -> ActionRow {
-    ActionRow::builder()
-        .title(text)
-        .css_classes(["dim-label"])
-        .build()
 }
 
 fn logo(provider: &Provider) -> Image {
