@@ -117,7 +117,7 @@ async fn insert_provider_duplicate_returns_duplicate_error() {
         .expect_err("second insert must fail");
 
     assert!(
-        matches!(err, StorageError::Duplicate(ref id) if id == "codex"),
+        matches!(err, StorageError::Duplicate(ref id) if id == &ProviderId::Codex.to_string()),
         "expected Duplicate(\"codex\"), got {err:?}",
     );
 }
@@ -158,7 +158,7 @@ async fn update_provider_nonexistent_returns_not_found() {
         .expect_err("must fail");
 
     assert!(
-        matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+        matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Codex.to_string()),
         "expected NotFound(\"codex\"), got {err:?}",
     );
 }
@@ -205,7 +205,7 @@ async fn update_preferences_nonexistent_returns_not_found() {
         .expect_err("must fail");
 
     assert!(
-        matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+        matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Codex.to_string()),
         "expected NotFound(\"codex\"), got {err:?}",
     );
 }
@@ -242,7 +242,7 @@ async fn delete_provider_nonexistent_returns_not_found() {
         .expect_err("must fail");
 
     assert!(
-        matches!(err, StorageError::NotFound(ref id) if id == "codex"),
+        matches!(err, StorageError::NotFound(ref id) if id ==&ProviderId::Codex.to_string()),
         "expected NotFound(\"codex\"), got {err:?}",
     );
 }
@@ -277,7 +277,7 @@ async fn delete_provider_nonexistent_keeps_current_preferred() {
         .expect_err("must fail");
 
     assert!(
-        matches!(err, StorageError::NotFound(ref id) if id == "anthropic"),
+        matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Anthropic.to_string()),
         "expected NotFound(\"anthropic\"), got {err:?}",
     );
     assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
