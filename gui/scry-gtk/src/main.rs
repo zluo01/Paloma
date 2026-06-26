@@ -1,6 +1,5 @@
-//! GTK4/Linux frontend binary.
-
 mod app;
+mod helper;
 mod runtime;
 mod services;
 mod style;
