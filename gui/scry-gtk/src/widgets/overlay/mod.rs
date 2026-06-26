@@ -6,7 +6,7 @@ use std::{
 
 use futures::{StreamExt, channel::mpsc};
 use gtk4::{
-    ApplicationWindow, Overflow, PolicyType, ScrolledWindow, Stack, StackTransitionType, Viewport,
+    ApplicationWindow, Overflow, PolicyType, ScrolledWindow, Stack, StackTransitionType,
     gdk::Monitor, glib, prelude::*,
 };
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -603,15 +603,4 @@ fn layer_window(
     window.set_anchor(Edge::Top, true);
     window.set_anchor(Edge::Left, true);
     window
-}
-
-/// Scroll `widget` into its enclosing viewport. Needed because the
-/// keyboard highlight is a CSS class, not GTK focus.
-fn scroll_into_view(widget: &impl IsA<gtk4::Widget>) {
-    if let Some(viewport) = widget
-        .ancestor(Viewport::static_type())
-        .and_downcast::<Viewport>()
-    {
-        viewport.scroll_to(widget, None);
-    }
 }

@@ -4,12 +4,6 @@ use gtk4::{
 };
 use libadwaita::{PreferencesGroup, PreferencesPage, prelude::*};
 
-pub(crate) fn clear_children(parent: &gtk4::Box) {
-    while let Some(child) = parent.first_child() {
-        parent.remove(&child);
-    }
-}
-
 pub(crate) fn scroll_into_view(widget: &impl IsA<gtk4::Widget>) {
     if let Some(viewport) = widget
         .ancestor(Viewport::static_type())

@@ -3,6 +3,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, TextView, Widget, prelude::*};
 use scry_core::{AppContext, ProviderId, UserDecision};
 
+use crate::helper::Clear;
+
 mod helper;
 mod markdown;
 mod parser;
@@ -10,17 +12,14 @@ mod sections;
 mod status;
 
 use self::sections::{AssistantSection, ReasoningSection, UserPromptSection};
-use crate::widgets::{
-    clear_children,
-    overlay::{
-        SELECTED_CLASS,
-        results::{
-            chat::{
-                sections::{Section, ToolCallSection},
-                status::StatusView,
-            },
-            step_index,
+use crate::widgets::overlay::{
+    SELECTED_CLASS,
+    results::{
+        chat::{
+            sections::{Section, ToolCallSection},
+            status::StatusView,
         },
+        step_index,
     },
 };
 
@@ -64,7 +63,7 @@ impl ChatView {
 
     pub(crate) fn clear(&self) {
         self.pending_decisions.borrow_mut().clear();
-        clear_children(&self.turns);
+        self.turns.clear();
         self.status.finish();
         *self.prev_section.borrow_mut() = None;
     }

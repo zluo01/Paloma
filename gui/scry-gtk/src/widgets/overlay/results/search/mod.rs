@@ -9,13 +9,12 @@ use gtk4::{
 };
 use scry_core::{Action, IconRef, Item};
 
-use crate::widgets::{
-    clear_children,
-    overlay::{
+use crate::{
+    helper::{Clear, scroll_into_view},
+    widgets::overlay::{
         CHAT_ACTION_LABEL, OVERLAY_WIDTH_PX, SELECTED_CLASS,
         model::Msg,
         results::{search::action_panel::ActionPanel, step_index},
-        scroll_into_view,
     },
 };
 
@@ -64,7 +63,7 @@ impl SearchView {
         }
 
         self.widget.set_visible(false);
-        clear_children(&self.widget);
+        self.widget.clear();
     }
 
     pub(crate) fn append_section(

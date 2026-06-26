@@ -8,11 +8,9 @@ use log::error;
 use scry_core::{AppContext, PermissionState, UserDecision};
 
 use crate::{
+    helper::Clear,
     runtime,
-    widgets::{
-        clear_children,
-        overlay::results::chat::helper::{append_content_label, code_card, new_section},
-    },
+    widgets::overlay::results::chat::helper::{append_content_label, code_card, new_section},
 };
 
 const TOOL_CLASS: &str = "scry-chat-section-tool";
@@ -146,7 +144,7 @@ fn decision_button(
 }
 
 fn resolve_decision(actions: &GtkBox, state: &PermissionState) {
-    clear_children(actions);
+    actions.clear();
     let outcome = Label::builder()
         .label(decision_outcome(state))
         .xalign(0.0)
