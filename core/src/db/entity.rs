@@ -33,6 +33,13 @@ pub struct PreferModelConfig {
     pub effort: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct Permission {
+    pub prefix: String,
+    pub with_glob: bool,
+    pub updated_at: i64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum EntryType {

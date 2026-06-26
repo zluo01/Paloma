@@ -14,7 +14,8 @@ use uuid::Uuid;
 use super::{AuthKind, queries};
 use crate::{
     db::entity::{
-        ConnectedProvider, EntryType, FileEntry, PreferModelConfig, RestoreEntry, Session,
+        ConnectedProvider, EntryType, FileEntry, Permission, PreferModelConfig, RestoreEntry,
+        Session,
     },
     entity::{Plugin, PluginArgs, PluginType, ProviderId, Transport},
 };
@@ -293,6 +294,24 @@ impl Storage {
             .bind(with_glob)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    pub async fn get_permissions(&self) -> Result<Vec<Permission>> {
+        let permissions = sqlx::query_as::<_, Permission>(queries::GET_PERMISSIONS_QUERY)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(permissions)
+    }
+
+    pub async fn delete_permission(&self, prefix: &str) -> Result<()> {
+        let result = sqlx::query(queries::DELETE_PERMISSION_QUERY)
+            .bind(prefix)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(prefix.to_string()));
+        }
         Ok(())
     }
 

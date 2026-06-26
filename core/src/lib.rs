@@ -30,6 +30,7 @@ pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, RenderEvent, SearchRenderEvent,
     SessionListItem,
 };
+pub use db::Permission;
 pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
 };
@@ -37,6 +38,7 @@ pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
 
 pub struct AppContext {
+    storage: Storage,
     connect: ConnectController,
     search_query: SearchQuery,
     remote_query: RemoteQuery,
@@ -51,10 +53,11 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (connect, remote_query, plugin) = Self::init_llm(storage).await?;
+        let (connect, remote_query, plugin) = Self::init_llm(storage.clone()).await?;
         let search_query = Self::init_search()?;
 
         Ok(Arc::new(Self {
+            storage,
             connect,
             search_query,
             remote_query,
@@ -191,6 +194,14 @@ impl AppContext {
         user_decision: UserDecision,
     ) -> Result<PermissionState> {
         Ok(self.remote_query.decide(user_decision).await?)
+    }
+
+    pub async fn get_permissions(&self) -> Result<Vec<Permission>> {
+        Ok(self.storage.get_permissions().await?)
+    }
+
+    pub async fn delete_permission(&self, prefix: &str) -> Result<()> {
+        Ok(self.storage.delete_permission(prefix).await?)
     }
 
     pub async fn init_connection(&self, provider_id: ProviderId) -> Result<Connection> {

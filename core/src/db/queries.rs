@@ -31,6 +31,10 @@ pub const MATCH_PERMISSION_QUERY: &str = include_str!("queries/permissions/match
 
 pub const INSERT_PERMISSION_QUERY: &str = include_str!("queries/permissions/insert_permission.sql");
 
+pub const GET_PERMISSIONS_QUERY: &str = include_str!("queries/permissions/get_permissions.sql");
+
+pub const DELETE_PERMISSION_QUERY: &str = include_str!("queries/permissions/delete_permission.sql");
+
 pub const INSERT_HISTORY: &str = include_str!("queries/history/insert_history.sql");
 
 pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");

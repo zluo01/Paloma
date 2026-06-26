@@ -864,6 +864,55 @@ async fn add_permission_refreshes_updated_at_on_conflict() {
     assert!(updated_at > 1000, "expected refresh, got {updated_at}");
 }
 
+#[tokio::test]
+async fn get_permissions_returns_newest_first() {
+    let storage = fresh_storage().await;
+    storage.add_permission("git status", false).await.unwrap();
+    storage.add_permission("cargo build", true).await.unwrap();
+
+    sqlx::query("UPDATE permissions SET updated_at = ? WHERE prefix = ?")
+        .bind(1000)
+        .bind("git status")
+        .execute(storage.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE permissions SET updated_at = ? WHERE prefix = ?")
+        .bind(2000)
+        .bind("cargo build")
+        .execute(storage.pool())
+        .await
+        .unwrap();
+
+    let permissions = storage.get_permissions().await.unwrap();
+
+    assert_eq!(permissions.len(), 2);
+    assert_eq!(permissions[0].prefix, "cargo build");
+    assert!(permissions[0].with_glob);
+    assert_eq!(permissions[0].updated_at, 2000);
+    assert_eq!(permissions[1].prefix, "git status");
+    assert!(!permissions[1].with_glob);
+    assert_eq!(permissions[1].updated_at, 1000);
+}
+
+#[tokio::test]
+async fn delete_permission_removes_the_permission() {
+    let storage = fresh_storage().await;
+    storage.add_permission("cargo build", true).await.unwrap();
+
+    storage.delete_permission("cargo build").await.unwrap();
+
+    assert!(storage.get_permissions().await.unwrap().is_empty());
+    assert!(!storage.is_command_allowed("cargo build").await.unwrap());
+}
+
+#[tokio::test]
+async fn delete_permission_reports_missing_prefix() {
+    let storage = fresh_storage().await;
+    let err = storage.delete_permission("cargo build").await.unwrap_err();
+
+    assert!(matches!(err, StorageError::NotFound(ref id) if id == "cargo build"));
+}
+
 // ---- recover ----
 
 async fn seed_provider(storage: &Storage) {
