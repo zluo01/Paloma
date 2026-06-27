@@ -24,6 +24,7 @@ struct SessionPermission {
 }
 
 struct PermissionRequest {
+    session_id: Uuid,
     decision: PermissionDecision,
     tracker: CompletableFuture<PermissionState>,
     command: Vec<String>,
@@ -67,6 +68,10 @@ enum PermissionWorkflowEvent {
         reply: oneshot::Sender<Result<PermissionState>>,
     },
     RemovePermission {
+        session_id: Uuid,
+        reply: oneshot::Sender<()>,
+    },
+    ClearPendingPermission {
         session_id: Uuid,
         reply: oneshot::Sender<()>,
     },
@@ -154,6 +159,13 @@ impl PermissionWorkflowManager {
             },
             PermissionWorkflowEvent::RemovePermission { session_id, reply } => {
                 self.session_permission.remove(&session_id);
+                self.permission_tracker
+                    .retain(|_, r| r.session_id != session_id);
+                let _ = reply.send(());
+            },
+            PermissionWorkflowEvent::ClearPendingPermission { session_id, reply } => {
+                self.permission_tracker
+                    .retain(|_, r| r.session_id != session_id);
                 let _ = reply.send(());
             },
         };
@@ -177,6 +189,7 @@ impl PermissionWorkflowManager {
                     self.permission_tracker.insert(
                         call_id,
                         PermissionRequest {
+                            session_id,
                             decision: PermissionDecision::new(
                                 CommandType::Composite,
                                 vec![], // should not be used.
@@ -202,6 +215,7 @@ impl PermissionWorkflowManager {
                     self.permission_tracker.insert(
                         call_id,
                         PermissionRequest {
+                            session_id,
                             decision,
                             tracker,
                             command,
@@ -218,6 +232,7 @@ impl PermissionWorkflowManager {
                 self.permission_tracker.insert(
                     call_id,
                     PermissionRequest {
+                        session_id,
                         decision: PermissionDecision::new(
                             CommandType::Composite,
                             vec![], // should not be used.
@@ -522,6 +537,20 @@ impl PermissionWorkflowManagerClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(PermissionWorkflowEvent::RemovePermission {
+                session_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| PermissionWorkflowError::ChannelClosed)
+    }
+
+    pub async fn clear_pending_permission(&self, session_id: Uuid) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.event_tx
+            .send(PermissionWorkflowEvent::ClearPendingPermission {
                 session_id,
                 reply: reply_tx,
             })

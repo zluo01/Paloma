@@ -313,6 +313,10 @@ impl SessionManager {
             self.permission_workflow_client
                 .remove_permission(session_id)
                 .await?;
+        } else {
+            self.permission_workflow_client
+                .clear_pending_permission(session_id)
+                .await?
         }
         Ok(())
     }
