@@ -196,10 +196,10 @@ impl TurnManager {
         session_id: Uuid,
         tool_calls: Vec<ToolCallPayload>,
     ) {
-        // Continue unless the turn was canceled.
-        if matches!(
+        // Continue only if the turn is not `Canceled`, `Done`, or a missing entry (session dropped/deleted)
+        if !matches!(
             self.turn_map.get(&session_id).as_deref(),
-            Some(TurnState::Cancelled)
+            Some(TurnState::Running(_))
         ) {
             return;
         }
@@ -341,8 +341,8 @@ async fn run_step(
     )
     .await;
 
-    mark_step_done(turn_map, session_id);
-
+    // continue to run if there is tool calls and no error happens
+    // otherwise, we should mark it as done
     if !errored && !tool_calls.is_empty() {
         let _ = event_tx
             .send(TurnStepEvent::ToolCall {
@@ -351,6 +351,8 @@ async fn run_step(
                 tool_calls,
             })
             .await;
+    } else {
+        mark_step_done(turn_map, session_id);
     }
 }
 
