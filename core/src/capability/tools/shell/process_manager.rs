@@ -88,6 +88,10 @@ impl ProcessManager {
         request: ProcessExecRequest,
         reply: oneshot::Sender<Result<ToolResult>>,
     ) {
+        if request.command.is_empty() {
+            let _ = reply.send(Err(ProcessManagerError::Spawn("empty command".into())));
+            return;
+        };
         let mut cmd = Command::new(&request.command[0]);
         cmd.args(&request.command[1..])
             .current_dir(&request.cwd)
