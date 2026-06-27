@@ -11,6 +11,7 @@ use libadwaita::{
     Application, ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, Sidebar,
     SidebarItem, SidebarSection, ToolbarView, prelude::*,
 };
+use log::error;
 use scry_core::AppContext;
 
 use crate::widgets::settings::{
@@ -19,7 +20,7 @@ use crate::widgets::settings::{
 
 pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Page {
     Services,
     Plugins,
@@ -47,7 +48,10 @@ impl Page {
 
 pub(crate) struct SettingsWindow {
     window: ApplicationWindow,
+    sidebar: Sidebar,
     services: Rc<ServicesPage>,
+    plugins: Rc<PluginsPage>,
+    permissions: Rc<PermissionsPage>,
 }
 
 impl SettingsWindow {
@@ -118,18 +122,15 @@ impl SettingsWindow {
             content_page.set_title(first.title());
         }
 
-        let service_page = services.clone();
+        let services_cb = services.clone();
+        let plugins_cb = plugins.clone();
+        let permissions_cb = permissions.clone();
         let content_page_cb = content_page.clone();
         sidebar.connect_selected_notify(move |sidebar| {
             if let Some(page) = Page::ALL.get(sidebar.selected() as usize) {
                 stack.set_visible_child_name(page.title());
                 content_page_cb.set_title(page.title());
-                match page {
-                    Page::Services => service_page.refresh(),
-                    Page::Plugins => plugins.refresh(),
-                    Page::Permissions => permissions.refresh(),
-                    _ => {},
-                }
+                refresh_page(Some(page), &services_cb, &plugins_cb, &permissions_cb);
             }
         });
 
@@ -147,11 +148,37 @@ impl SettingsWindow {
             glib::Propagation::Stop
         });
 
-        Self { window, services }
+        Self {
+            window,
+            sidebar,
+            services,
+            plugins,
+            permissions,
+        }
     }
 
     pub(crate) fn present(&self) {
-        self.services.refresh();
+        refresh_page(
+            Page::ALL.get(self.sidebar.selected() as usize),
+            &self.services,
+            &self.plugins,
+            &self.permissions,
+        );
         self.window.present();
+    }
+}
+
+fn refresh_page(
+    page: Option<&Page>,
+    services: &Rc<ServicesPage>,
+    plugins: &Rc<PluginsPage>,
+    permissions: &Rc<PermissionsPage>,
+) {
+    match page {
+        Some(Page::Services) => services.refresh(),
+        Some(Page::Plugins) => plugins.refresh(),
+        Some(Page::Permissions) => permissions.refresh(),
+        Some(Page::Shortcuts) => {},
+        None => error!("unknown page to refresh {:?}, this indicates a bug.", page),
     }
 }
