@@ -8,8 +8,7 @@ use crate::permission::{ArgvDecision, PermissionError, Result, constants::SHELLS
 static ALWAYS_ALLOWED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         "cat", "cd", "cut", "echo", "expr", "false", "grep", "head", "id", "ls", "nl", "paste",
-        "pwd", "rev", "seq", "stat", "tail", "tr", "true", "uname", "uniq", "wc", "which",
-        "whoami",
+        "pwd", "rev", "seq", "stat", "tail", "tr", "true", "uname", "wc", "which", "whoami",
     ])
 });
 
@@ -89,6 +88,14 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
             }
         },
 
+        Some("uniq") => {
+            if uniq_has_output_operand(command) {
+                Ok(ArgvDecision::Unknown)
+            } else {
+                Ok(ArgvDecision::Allow)
+            }
+        },
+
         Some("find") => {
             // Options that can execute arbitrary commands or deletes matching files
             const DANGEROUS_FIND_OPTIONS: &[&str] =
@@ -154,6 +161,33 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
         _ => Ok(ArgvDecision::Unknown),
     }
+}
+
+fn uniq_has_output_operand(command: &[String]) -> bool {
+    const VALUE_OPTS: &[&str] = &[
+        "-f",
+        "-s",
+        "-w",
+        "--skip-fields",
+        "--skip-chars",
+        "--check-chars",
+    ];
+    let mut operands = 0usize;
+    let mut args = command.iter().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            operands += args.count();
+            break;
+        }
+        if arg.len() > 1 && arg.starts_with('-') {
+            if VALUE_OPTS.contains(&arg.as_str()) {
+                args.next();
+            }
+            continue;
+        }
+        operands += 1;
+    }
+    operands >= 2
 }
 
 fn has_recursive_short_flag(argv: &[String]) -> bool {
@@ -275,6 +309,40 @@ mod tests {
             assert!(is_allow(&[cmd]), "expected {cmd} to be Allow");
         }
         assert!(is_allow(&["ls", "-la", "src"]));
+    }
+
+    #[test]
+    fn uniq_stdout_forms_are_allowed() {
+        assert!(is_allow(&["uniq"]));
+        assert!(is_allow(&["uniq", "input.txt"]));
+        assert!(is_allow(&["uniq", "-c", "input.txt"]));
+        assert!(is_allow(&["uniq", "-f", "2", "input.txt"]));
+        assert!(is_allow(&["uniq", "--skip-fields", "2", "input.txt"]));
+        assert!(is_allow(&["uniq", "--skip-fields", "2", "-c", "input.txt"]));
+        assert!(is_allow(&[
+            "uniq",
+            "--skip-fields",
+            "2",
+            "--count",
+            "input.txt"
+        ]));
+        assert!(is_allow(&["uniq", "-i", "-"]));
+    }
+
+    #[test]
+    fn uniq_with_output_operand_requires_consent() {
+        assert!(is_unknown(&["uniq", "input.txt", "output.txt"]));
+        assert!(is_unknown(&["uniq", "-i", "input.txt", "output.txt"]));
+        assert!(is_unknown(&["uniq", "-f", "2", "input.txt", "output.txt"]));
+        assert!(is_unknown(&["uniq", "--", "input.txt", "output.txt"]));
+    }
+
+    #[test]
+    fn uniq_obsolete_forms_match_gnu_coreutils() {
+        assert!(is_allow(&["uniq", "-5", "input.txt"]));
+        assert!(is_unknown(&["uniq", "-5", "input.txt", "output.txt"]));
+        assert!(is_allow(&["uniq", "+5"]));
+        assert!(is_unknown(&["uniq", "+5", "input.txt"]));
     }
 
     #[test]
