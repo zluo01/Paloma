@@ -1,9 +1,10 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, TextView, Widget, prelude::*};
-use scry_core::{AppContext, ProviderId, UserDecision};
+use log::error;
+use scry_core::{AppContext, PermissionState, ProviderId, UserDecision};
 
-use crate::helper::Clear;
+use crate::{helper::Clear, runtime};
 
 mod helper;
 mod markdown;
@@ -16,7 +17,7 @@ use crate::widgets::overlay::{
     SELECTED_CLASS,
     results::{
         chat::{
-            sections::{Section, ToolCallSection},
+            sections::{Section, ToolCallDecision, ToolCallSection},
             status::StatusView,
         },
         step_index,
@@ -27,8 +28,7 @@ pub struct ChatView {
     widget: GtkBox,
     turns: GtkBox,
     status: StatusView,
-    app_context: Arc<AppContext>,
-    pending_decisions: Rc<RefCell<PendingDecisions>>,
+    pending_decisions: PendingDecisions,
     prev_section: RefCell<Option<Section>>,
 }
 
@@ -51,8 +51,7 @@ impl ChatView {
             widget,
             turns,
             status,
-            app_context,
-            pending_decisions: Rc::new(RefCell::new(PendingDecisions::new())),
+            pending_decisions: PendingDecisions::new(app_context),
             prev_section: RefCell::new(None),
         }
     }
@@ -62,7 +61,7 @@ impl ChatView {
     }
 
     pub(crate) fn clear(&self) {
-        self.pending_decisions.borrow_mut().clear();
+        self.pending_decisions.clear(PermissionState::Allow);
         self.turns.clear();
         self.status.finish();
         *self.prev_section.borrow_mut() = None;
@@ -92,28 +91,17 @@ impl ChatView {
         if let Some(prev) = self.prev_section.borrow().as_ref() {
             prev.complete();
         }
-        let group = self.pending_decisions.borrow().group_count();
-        let on_finish: Rc<dyn Fn()> = {
-            let pending = Rc::downgrade(&self.pending_decisions);
-            Rc::new(move || {
-                if let Some(pending) = pending.upgrade() {
-                    pending.borrow_mut().finish_group(group);
-                }
-            })
+        let (toolcall_section, decisions) =
+            ToolCallSection::new(name, arguments, description, decisions);
+        self.turns.append(toolcall_section.widgets());
+
+        let on_finish: Rc<dyn Fn(PermissionState)> = {
+            let toolcall_section = toolcall_section.clone();
+            Rc::new(move |state| toolcall_section.on_finish(&state))
         };
-        let tool_call = ToolCallSection::new(
-            name,
-            arguments,
-            description,
-            decisions,
-            self.app_context.clone(),
-            on_finish,
-        );
-        let (view, buttons) = tool_call.widgets();
-        self.turns.append(view);
+
         self.pending_decisions
-            .borrow_mut()
-            .append_decisions(buttons);
+            .append_decisions(&decisions, on_finish);
         *self.prev_section.borrow_mut() = Some(Section::ToolCall(()));
     }
 
@@ -148,26 +136,28 @@ impl ChatView {
     }
 
     pub(crate) fn finish(&self) {
-        self.complete_turn();
+        if self.complete_turn(PermissionState::Allow) {
+            error!("unexpected toolcall cleanup in happy path. This indicates a bug.")
+        }
         self.status.finish();
     }
 
     pub(crate) fn fail(&self, message: &str) {
-        self.complete_turn();
+        self.complete_turn(PermissionState::Error);
         self.status.fail(message);
     }
 
     pub(crate) fn cancel(&self) {
-        self.complete_turn();
+        self.complete_turn(PermissionState::Deny);
         self.status.cancel();
     }
 
     pub(crate) fn navigate(&self, delta: i32) -> bool {
-        self.pending_decisions.borrow_mut().navigate(delta)
+        self.pending_decisions.navigate(delta)
     }
 
     pub(crate) fn activate(&self) -> bool {
-        self.pending_decisions.borrow_mut().activate()
+        self.pending_decisions.activate()
     }
 
     pub(crate) fn copy_selection(&self) -> bool {
@@ -178,12 +168,12 @@ impl ChatView {
         true
     }
 
-    fn complete_turn(&self) {
+    fn complete_turn(&self, permission_state: PermissionState) -> bool {
         if let Some(prev) = self.prev_section.borrow().as_ref() {
             prev.complete();
         }
         *self.prev_section.borrow_mut() = None;
-        self.pending_decisions.borrow_mut().clear();
+        self.pending_decisions.clear(permission_state)
     }
 }
 
@@ -217,42 +207,128 @@ fn selected_text(root: &Widget) -> Option<String> {
 
 struct Group {
     buttons: Vec<Button>,
+    finish: Rc<dyn Fn(PermissionState)>,
     finished: bool,
 }
 
-struct PendingDecisions {
+struct PendingDecisionsState {
     groups: Vec<Group>,
     active: usize,
     current: Option<usize>,
+    app_context: Arc<AppContext>,
+}
+
+struct PendingDecisions {
+    state: Rc<RefCell<PendingDecisionsState>>,
 }
 
 impl PendingDecisions {
-    fn new() -> Self {
+    fn new(app_context: Arc<AppContext>) -> Self {
         Self {
-            groups: vec![],
-            active: 0,
-            current: None,
+            state: Rc::new(RefCell::new(PendingDecisionsState {
+                groups: vec![],
+                active: 0,
+                current: None,
+                app_context,
+            })),
         }
     }
 
-    fn append_decisions(&mut self, decisions: &[Button]) {
+    fn append_decisions(
+        &self,
+        decisions: &[ToolCallDecision],
+        finish: Rc<dyn Fn(PermissionState)>,
+    ) {
         if decisions.is_empty() {
             return;
         }
-        self.active += decisions.len();
-        self.groups.push(Group {
-            buttons: decisions.to_vec(),
-            finished: false,
-        });
-        if self.current.is_none() {
-            self.select((self.active > 0).then_some(0));
+
+        let state = Rc::downgrade(&self.state);
+        let (group, app_context) = {
+            let mut state = self.state.borrow_mut();
+            let group = state.groups.len();
+            let app_context = state.app_context.clone();
+
+            state.active += decisions.len();
+            state.groups.push(Group {
+                buttons: decisions.iter().map(|d| d.action.clone()).collect(),
+                finished: false,
+                finish: finish.clone(),
+            });
+            if state.current.is_none() {
+                let has_active = state.active > 0;
+                state.select(has_active.then_some(0));
+            }
+
+            (group, app_context)
+        };
+
+        for toolcall_decision in decisions {
+            let app_context = app_context.clone();
+            let decision = toolcall_decision.decision.clone();
+            let on_finish = finish.clone();
+            let state = state.clone();
+            toolcall_decision.action.connect_clicked(move |_| {
+                let app_context = app_context.clone();
+                let decision = decision.clone();
+                let on_finish = on_finish.clone();
+                let state = state.clone();
+                runtime::spawn_with(
+                    async move { app_context.decide_toolcall_permissions(decision).await },
+                    move |result| {
+                        let permission_state = result.unwrap_or_else(|error| {
+                            error!("decide: {error}");
+                            PermissionState::Error
+                        });
+                        on_finish(permission_state);
+                        if let Some(state) = state.upgrade() {
+                            state.borrow_mut().finish_group(group);
+                        }
+                    },
+                );
+            });
         }
     }
 
-    fn clear(&mut self) {
+    fn clear(&self, permission_state: PermissionState) -> bool {
+        self.state.borrow_mut().clear(permission_state)
+    }
+
+    fn navigate(&self, delta: i32) -> bool {
+        self.state.borrow_mut().navigate(delta)
+    }
+
+    fn activate(&self) -> bool {
+        let button = {
+            let state = self.state.borrow();
+            let Some(index) = state.current else {
+                return false;
+            };
+            let Some((group, button)) = state.locate(index) else {
+                return false;
+            };
+            state.groups[group].buttons[button].clone()
+        };
+
+        button.emit_clicked();
+        true
+    }
+}
+
+impl PendingDecisionsState {
+    fn clear(&mut self, permission_state: PermissionState) -> bool {
         self.select(None);
+        let mut clear = false;
+        for group in &self.groups {
+            if !group.finished {
+                (group.finish)(permission_state.clone());
+                clear = true;
+            }
+        }
         self.groups.clear();
         self.active = 0;
+        self.current = None;
+        clear
     }
 
     fn navigate(&mut self, delta: i32) -> bool {
@@ -264,28 +340,14 @@ impl PendingDecisions {
         true
     }
 
-    fn activate(&mut self) -> bool {
-        let Some(index) = self.current else {
-            return false;
-        };
-        let Some((group, button)) = self.locate(index) else {
-            return false;
-        };
-        self.groups[group].buttons[button].emit_clicked();
-        true
-    }
-
-    fn group_count(&self) -> usize {
-        self.groups.len()
-    }
-
     fn finish_group(&mut self, group: usize) {
         let Some(candidate) = self.groups.get(group) else {
-            return; // turn was cleared before the deferred callback ran
+            return;
         };
         if candidate.finished {
             return;
         }
+
         self.groups[group].finished = true;
         self.active -= self.groups[group].buttons.len();
         self.select((self.active > 0).then_some(0));

@@ -1,23 +1,24 @@
-use std::{rc::Rc, sync::Arc};
-
 use gtk4::{
     Box as GtkBox, Button, Label, Orientation, Separator,
-    prelude::{BoxExt, ButtonExt, WidgetExt},
+    prelude::{BoxExt, WidgetExt},
 };
-use log::error;
-use scry_core::{AppContext, PermissionState, UserDecision};
+use scry_core::{PermissionState, UserDecision};
 
 use crate::{
     helper::Clear,
-    runtime,
     widgets::overlay::results::chat::helper::{append_content_label, code_card, new_section},
 };
 
 const TOOL_CLASS: &str = "scry-chat-section-tool";
 
+pub(crate) struct ToolCallDecision {
+    pub action: Button,
+    pub decision: UserDecision,
+}
+
+#[derive(Clone)]
 pub(crate) struct ToolCallSection {
     view: GtkBox,
-    decisions: Vec<Button>,
 }
 
 impl ToolCallSection {
@@ -26,9 +27,7 @@ impl ToolCallSection {
         arguments: &str,
         description: Option<&str>,
         decisions: &[UserDecision],
-        app_context: Arc<AppContext>,
-        on_finish: Rc<dyn Fn()>,
-    ) -> Self {
+    ) -> (Self, Vec<ToolCallDecision>) {
         let view = new_section(None, TOOL_CLASS);
         if let Some(description) = description.filter(|d| !d.is_empty()) {
             append_content_label(&view, description, "scry-chat-tool-description");
@@ -36,26 +35,26 @@ impl ToolCallSection {
         view.append(&code_card(name, arguments));
 
         let decisions = if !decisions.is_empty() {
-            let (decision_group, decisions) =
-                decision_button_group(decisions, app_context, on_finish);
+            let (decision_group, decisions) = decision_button_group(decisions);
             view.append(&decision_group);
             decisions
         } else {
             vec![]
         };
 
-        Self { view, decisions }
+        (Self { view }, decisions)
     }
 
-    pub(crate) fn widgets(&self) -> (&GtkBox, &[Button]) {
-        (&self.view, &self.decisions)
+    pub(crate) fn widgets(&self) -> &GtkBox {
+        &self.view
+    }
+
+    pub(crate) fn on_finish(&self, permission_state: &PermissionState) {
+        resolve_decision(&self.view, permission_state)
     }
 }
-fn decision_button_group(
-    user_decisions: &[UserDecision],
-    app_context: Arc<AppContext>,
-    on_finish: Rc<dyn Fn()>,
-) -> (GtkBox, Vec<Button>) {
+
+fn decision_button_group(user_decisions: &[UserDecision]) -> (GtkBox, Vec<ToolCallDecision>) {
     let actions = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(6)
@@ -73,30 +72,25 @@ fn decision_button_group(
     let (allow, terminal): (Vec<&UserDecision>, Vec<&UserDecision>) =
         user_decisions.iter().partition(|d| !is_terminal(d));
 
-    let mut buttons = Vec::with_capacity(user_decisions.len());
+    let mut tool_call_decisions: Vec<ToolCallDecision> = Vec::with_capacity(user_decisions.len());
     for decision in allow {
-        let button = decision_button(decision, &actions, app_context.clone(), on_finish.clone());
-        actions.append(&button);
-        buttons.push(button);
+        let decision = decision_button(decision);
+        actions.append(&decision.action);
+        tool_call_decisions.push(decision);
     }
-    if !buttons.is_empty() && !terminal.is_empty() {
+    if !tool_call_decisions.is_empty() && !terminal.is_empty() {
         actions.append(&Separator::new(Orientation::Horizontal));
     }
     for decision in terminal {
-        let button = decision_button(decision, &actions, app_context.clone(), on_finish.clone());
-        actions.append(&button);
-        buttons.push(button);
+        let decision = decision_button(decision);
+        actions.append(&decision.action);
+        tool_call_decisions.push(decision);
     }
 
-    (actions, buttons)
+    (actions, tool_call_decisions)
 }
 
-fn decision_button(
-    user_decision: &UserDecision,
-    parent: &GtkBox,
-    app_context: Arc<AppContext>,
-    on_finish: Rc<dyn Fn()>,
-) -> Button {
+fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
     let button = Button::builder()
         .label(decision_label(user_decision))
         .can_focus(false)
@@ -120,27 +114,10 @@ fn decision_button(
         },
     }
 
-    let decision = user_decision.clone();
-    let app_context = app_context.clone();
-    let actions_for_click = parent.clone();
-    button.connect_clicked(move |_| {
-        let actions = actions_for_click.clone();
-        let app_context = app_context.clone();
-        let decision = decision.clone();
-        let on_finish = on_finish.clone();
-        runtime::spawn_with(
-            async move { app_context.decide_toolcall_permissions(decision).await },
-            move |result| {
-                let state = result.unwrap_or_else(|error| {
-                    error!("decide: {error}");
-                    PermissionState::Error
-                });
-                on_finish();
-                resolve_decision(&actions, &state);
-            },
-        );
-    });
-    button
+    ToolCallDecision {
+        action: button,
+        decision: user_decision.clone(),
+    }
 }
 
 fn resolve_decision(actions: &GtkBox, state: &PermissionState) {
