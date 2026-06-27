@@ -134,7 +134,10 @@ fn build_block(block: &Block) -> Widget {
         Block::OrderedList { start, items } => build_list(Some(*start), items),
         Block::BulletList(items) | Block::TaskList(items) => build_list(None, items),
         Block::Code { language, code } => build_code(language, code),
-        Block::Table { alignments, rows } => build_table(alignments, rows),
+        Block::Table {
+            alignments,
+            children,
+        } => build_table(alignments, children),
         Block::Rule => Separator::new(Orientation::Horizontal).upcast(),
         // Inline nodes only appear inside paragraphs/headings; render any stray
         // one as its own markup line rather than dropping it.
@@ -284,25 +287,34 @@ fn build_code(language: &str, code: &str) -> Widget {
     super::helper::code_card(caption, code).upcast()
 }
 
-fn build_table(alignments: &[Alignment], rows: &[Vec<String>]) -> Widget {
+/// `rows` are the table's children — one `TableHead` followed by `TableRow`s,
+/// each holding `TableCell`s whose inline content renders as Pango markup.
+fn build_table(alignments: &[Alignment], rows: &[Block]) -> Widget {
     let grid = Grid::builder().row_spacing(0).column_spacing(16).build();
-    let columns = rows.iter().map(Vec::len).max().unwrap_or(0).max(1) as i32;
+    let columns = rows
+        .iter()
+        .map(|row| row.children().len())
+        .max()
+        .unwrap_or(0)
+        .max(1) as i32;
 
     let mut grid_row = 0;
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (column, cell) in row.iter().enumerate() {
+    for row in rows {
+        let is_header = matches!(row, Block::TableHead(_));
+        for (column, cell) in row.children().iter().enumerate() {
             let xalign = match alignments.get(column) {
                 Some(Alignment::Center) => 0.5,
                 Some(Alignment::Right) => 1.0,
                 _ => 0.0,
             };
             let label = Label::builder()
-                .label(cell)
+                .use_markup(true)
+                .label(&inline_markup(cell.children()))
                 .xalign(xalign)
                 .wrap(true)
                 .wrap_mode(pango::WrapMode::WordChar)
                 .selectable(true)
-                .css_classes(if row_idx == 0 {
+                .css_classes(if is_header {
                     &["scry-md-th", "scry-md-td", "scry-chat-text"][..]
                 } else {
                     &["scry-md-td", "scry-chat-text"][..]
@@ -317,7 +329,7 @@ fn build_table(alignments: &[Alignment], rows: &[Vec<String>]) -> Widget {
         // column gaps.
         let rule = GtkBox::new(Orientation::Horizontal, 0);
         rule.add_css_class("scry-md-table-rule");
-        if row_idx == 0 {
+        if is_header {
             rule.add_css_class("scry-md-table-rule-head");
         }
         grid.attach(&rule, 0, grid_row, columns, 1);

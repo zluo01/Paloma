@@ -27,9 +27,6 @@ impl ParsedMarkdown {
         while let Some(block) = stack.pop() {
             count += 1;
             stack.extend(block.children());
-            if let Block::Table { rows, .. } = block {
-                count += rows.iter().map(Vec::len).sum::<usize>();
-            }
         }
         count
     }
@@ -37,17 +34,10 @@ impl ParsedMarkdown {
 
 // --- parsing ------------------------------------------------------------
 
-/// Builds the block tree directly on a stack: `Start` pushes a node, `End` pops
-/// it and appends it to the new top, atomic events append a leaf. The only
-/// non-uniform bits are the two text-leaves — code blocks and tables — whose
-/// content is raw text, so it accumulates into the open node rather than as
-/// child blocks.
 #[derive(Default)]
 struct Builder {
     out: Vec<Block>,
     stack: Vec<Block>,
-    cell: String,
-    row: Vec<String>,
 }
 
 impl Builder {
@@ -117,10 +107,6 @@ impl Builder {
         self.target().push(item);
     }
 
-    fn in_table(&self) -> bool {
-        matches!(self.stack.last(), Some(Block::Table { .. }))
-    }
-
     /// Turn the open item into a task item, keeping any children it already has.
     fn set_task(&mut self, checked: bool) {
         if let Some(top @ Block::Item(_)) = self.stack.last_mut()
@@ -136,12 +122,9 @@ impl Builder {
             MdEvent::End(tag) => self.end(tag),
             MdEvent::Text(text) => match self.stack.last_mut() {
                 Some(Block::Code { code, .. }) => code.push_str(&text),
-                Some(Block::Table { .. }) => self.cell.push_str(&text),
                 _ => self.push_text(&text),
             },
-            MdEvent::Code(text) if self.in_table() => self.cell.push_str(&text),
             MdEvent::Code(text) => self.leaf(Block::InlineCode(text.to_string())),
-            MdEvent::SoftBreak | MdEvent::HardBreak if self.in_table() => self.cell.push(' '),
             MdEvent::SoftBreak => self.leaf(Block::SoftBreak),
             MdEvent::HardBreak => self.leaf(Block::HardBreak),
             MdEvent::Rule => self.leaf(Block::Rule),
@@ -185,11 +168,11 @@ impl Builder {
             }),
             Tag::Table(alignments) => self.push(Block::Table {
                 alignments,
-                rows: Vec::new(),
+                children: Vec::new(),
             }),
-            // Table head/row clear the scratch row; a cell clears the scratch cell.
-            Tag::TableHead | Tag::TableRow => self.row.clear(),
-            Tag::TableCell => self.cell.clear(),
+            Tag::TableHead => self.push(Block::TableHead(Vec::new())),
+            Tag::TableRow => self.push(Block::TableRow(Vec::new())),
+            Tag::TableCell => self.push(Block::TableCell(Vec::new())),
             _ => {},
         }
     }
@@ -204,21 +187,12 @@ impl Builder {
             | TagEnd::Emphasis
             | TagEnd::Strikethrough
             | TagEnd::Link
-            | TagEnd::Table => self.pop(),
+            | TagEnd::Table
+            | TagEnd::TableHead
+            | TagEnd::TableRow
+            | TagEnd::TableCell => self.pop(),
             TagEnd::Item => self.close_item(),
             TagEnd::List(_) => self.pop_list(),
-            TagEnd::TableCell => {
-                let cell = std::mem::take(&mut self.cell);
-                self.row.push(cell.trim().to_string());
-            },
-            // A head's cells arrive without a TableRow wrapper, so the head end
-            // closes the header row just like a row end closes a body row.
-            TagEnd::TableHead | TagEnd::TableRow => {
-                let row = std::mem::take(&mut self.row);
-                if let Some(Block::Table { rows, .. }) = self.stack.last_mut() {
-                    rows.push(row);
-                }
-            },
             _ => {},
         }
     }
@@ -419,6 +393,65 @@ mod tests {
         );
     }
 
+    /// Concatenated text of a table cell's inline content.
+    fn cell_text(cell: &Block) -> String {
+        fn walk(block: &Block, out: &mut String) {
+            match block {
+                Block::Text(t) | Block::InlineCode(t) => out.push_str(t),
+                _ => block.children().iter().for_each(|c| walk(c, out)),
+            }
+        }
+        let mut out = String::new();
+        cell.children().iter().for_each(|c| walk(c, &mut out));
+        out
+    }
+
+    #[test]
+    fn table_cell_with_inline_markup_does_not_panic() {
+        // Regression: pulldown emits Start/End(Strong|Emphasis|Strikethrough|Link)
+        // inside a table cell. Cells are real containers now, so this parses
+        // (no panic) and the text is preserved.
+        for src in [
+            "| **a** | b |\n| --- | --- |\n| 1 | 2 |",         // bold
+            "| *a* | b |\n| --- | --- |\n| 1 | 2 |",           // italic
+            "| ~~a~~ | b |\n| --- | --- |\n| 1 | 2 |",         // strikethrough
+            "| [a](http://x) | b |\n| --- | --- |\n| 1 | 2 |", // link
+        ] {
+            let blocks = parse_blocks(src);
+            let rows = blocks[0].children();
+            assert!(matches!(rows[0], Block::TableHead(_)), "head for {src:?}");
+            assert!(matches!(rows[1], Block::TableRow(_)), "body for {src:?}");
+            let head = rows[0].children();
+            assert_eq!(cell_text(&head[0]), "a", "header cell for {src:?}");
+            assert_eq!(cell_text(&head[1]), "b", "header cell for {src:?}");
+            let body = rows[1].children();
+            assert_eq!(cell_text(&body[0]), "1", "body cell for {src:?}");
+            assert_eq!(cell_text(&body[1]), "2", "body cell for {src:?}");
+        }
+    }
+
+    #[test]
+    fn table_cell_preserves_inline_structure() {
+        let blocks = parse_blocks("| **a** | b |\n| --- | --- |\n| 1 | 2 |");
+        // The bold header cell keeps a Strong node — not flattened to plain text.
+        let Block::TableCell(inline) = &blocks[0].children()[0].children()[0] else {
+            panic!("expected a table cell, got {:?}", blocks[0]);
+        };
+        assert_eq!(inline, &vec![Block::Strong(vec![text("a")])]);
+    }
+
+    #[test]
+    fn table_captures_column_alignments() {
+        let blocks = parse_blocks("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |");
+        let Block::Table { alignments, .. } = &blocks[0] else {
+            panic!("expected a table, got {:?}", blocks[0]);
+        };
+        assert_eq!(
+            alignments,
+            &vec![Alignment::Left, Alignment::Center, Alignment::Right]
+        );
+    }
+
     #[test]
     fn leaves_non_table_fence_alone() {
         let src = "```markdown\n# Title\nbody\n```";
@@ -495,9 +528,15 @@ mod tests {
             blocks,
             vec![Block::Table {
                 alignments: vec![Alignment::None, Alignment::None],
-                rows: vec![
-                    vec!["A".to_string(), "B".to_string()],
-                    vec!["1".to_string(), "2".to_string()],
+                children: vec![
+                    Block::TableHead(vec![
+                        Block::TableCell(vec![text("A")]),
+                        Block::TableCell(vec![text("B")]),
+                    ]),
+                    Block::TableRow(vec![
+                        Block::TableCell(vec![text("1")]),
+                        Block::TableCell(vec![text("2")]),
+                    ]),
                 ],
             }]
         );

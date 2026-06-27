@@ -33,8 +33,11 @@ pub(crate) enum Block {
     },
     Table {
         alignments: Vec<Alignment>,
-        rows: Vec<Vec<String>>,
+        children: Vec<Block>,
     },
+    TableHead(Vec<Block>),
+    TableRow(Vec<Block>),
+    TableCell(Vec<Block>),
     Rule,
     // --- inline ---
     Text(String),
@@ -60,11 +63,15 @@ impl Block {
             | Block::Paragraph(c)
             | Block::Strong(c)
             | Block::Emphasis(c)
-            | Block::Strikethrough(c) => Some(c),
+            | Block::Strikethrough(c)
+            | Block::TableHead(c)
+            | Block::TableRow(c)
+            | Block::TableCell(c) => Some(c),
             Block::OrderedList { items, .. } => Some(items),
             Block::TaskItem { children, .. }
             | Block::Heading { children, .. }
-            | Block::Link { children, .. } => Some(children),
+            | Block::Link { children, .. }
+            | Block::Table { children, .. } => Some(children),
             _ => None,
         }
     }
@@ -78,11 +85,15 @@ impl Block {
             | Block::Paragraph(c)
             | Block::Strong(c)
             | Block::Emphasis(c)
-            | Block::Strikethrough(c) => c,
+            | Block::Strikethrough(c)
+            | Block::TableHead(c)
+            | Block::TableRow(c)
+            | Block::TableCell(c) => c,
             Block::OrderedList { items, .. } => items,
             Block::TaskItem { children, .. }
             | Block::Heading { children, .. }
-            | Block::Link { children, .. } => children,
+            | Block::Link { children, .. }
+            | Block::Table { children, .. } => children,
             _ => &[],
         }
     }
