@@ -198,7 +198,7 @@ impl Storage {
         name: &str,
         plugin_type: PluginType,
         transport: Transport,
-        timeout: i64,
+        timeout: u32,
         env: &HashMap<String, String>,
         args: &PluginArgs,
     ) -> Result<()> {
@@ -224,7 +224,7 @@ impl Storage {
         &self,
         name: &str,
         transport: Transport,
-        timeout: i64,
+        timeout: u32,
         env: &HashMap<String, String>,
         args: &PluginArgs,
     ) -> Result<()> {

@@ -1169,3 +1169,21 @@ async fn delete_empty_session_keeps_session_with_completed_message() {
     assert!(!removed);
     assert_eq!(history_len(&storage, id).await, 2);
 }
+
+#[tokio::test]
+async fn insert_plugin_rejects_non_positive_timeout() {
+    let storage = fresh_storage().await;
+    let env = HashMap::new();
+    let args = PluginArgs::Local {
+        command: "echo".to_string(),
+        args: vec![],
+    };
+    storage
+        .insert_plugin("ok", PluginType::Mcp, Transport::Local, 300, &env, &args)
+        .await
+        .expect("positive timeout should insert");
+    let zero = storage
+        .insert_plugin("zero", PluginType::Mcp, Transport::Local, 0, &env, &args)
+        .await;
+    assert!(matches!(zero, Err(StorageError::Sqlx(_))), "zero: {zero:?}");
+}

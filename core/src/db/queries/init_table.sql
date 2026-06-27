@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS plugins
     name        TEXT PRIMARY KEY NOT NULL,
     plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('native', 'mcp')),
     transport   TEXT             NOT NULL CHECK (transport IN ('local', 'http')),
-    timeout     INTEGER          NOT NULL DEFAULT 300,
+    timeout     INTEGER          NOT NULL DEFAULT 300 CHECK (timeout > 0),
     disabled    INTEGER          NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
     env         TEXT             NOT NULL DEFAULT '{}',
     args        TEXT             NOT NULL,

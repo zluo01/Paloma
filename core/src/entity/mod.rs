@@ -62,7 +62,7 @@ pub enum PluginArgs {
 pub struct Plugin {
     pub name: String,
     pub transport: Transport,
-    pub timeout: i64,
+    pub timeout: u32,
     pub disabled: bool,
     #[sqlx(json)]
     pub env: HashMap<String, String>,

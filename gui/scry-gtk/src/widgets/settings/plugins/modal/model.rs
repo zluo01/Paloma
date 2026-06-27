@@ -18,7 +18,7 @@ pub(super) struct Model {
     pub args: String,
     pub url: String,
     pub requires_auth: bool,
-    pub timeout: i64,
+    pub timeout: u32,
     pub env: String,
     /// Preserved from the edited plugin; the form doesn't expose it.
     pub disabled: bool,
@@ -201,7 +201,7 @@ pub(super) enum Msg {
     ArgsChanged(String),
     UrlChanged(String),
     EnvChanged(String),
-    SubmitClicked { timeout: i64, requires_auth: bool },
+    SubmitClicked { timeout: u32, requires_auth: bool },
     ValidationDebounceElapsed,
     PluginSaveFinished(Result<(), String>),
     CancelClicked,

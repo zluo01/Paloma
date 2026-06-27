@@ -36,7 +36,7 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct McpTool {
     name: String,
     description: String,
-    timeout: i64,
+    timeout: u32,
     client: Option<RunningService<RoleClient, ()>>,
     status: AtomicU8,
     error: Option<String>,

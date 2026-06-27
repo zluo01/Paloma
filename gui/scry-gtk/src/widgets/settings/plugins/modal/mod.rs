@@ -138,7 +138,7 @@ impl PluginDialog {
             move |_| {
                 let imp = dialog.imp();
                 dialog.dispatch(Msg::SubmitClicked {
-                    timeout: imp.timeout.value() as i64,
+                    timeout: imp.timeout.value() as u32,
                     requires_auth: imp.requires_auth.is_active(),
                 });
             }
