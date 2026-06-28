@@ -4,7 +4,6 @@ use std::{
     time::Duration,
 };
 
-use serde_json::Value;
 use sqlx::{
     Pool, Sqlite,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -14,10 +13,10 @@ use uuid::Uuid;
 use super::{AuthKind, queries};
 use crate::{
     db::entity::{
-        ConnectedProvider, EntryType, FileEntry, Permission, PreferModelConfig, RestoreEntry,
-        Session,
+        ConnectedProvider, HistoryEntry, Permission, PreferModelConfig, RestoreEntry, Session,
     },
     entity::{Plugin, PluginArgs, PluginType, ProviderId, Transport},
+    provider::ConversationItem,
 };
 
 #[derive(Clone)]
@@ -318,20 +317,21 @@ impl Storage {
     pub async fn insert_history(
         &self,
         session_id: &str,
-        payload_type: EntryType,
-        payload: &Value,
+        provider_id: &ProviderId,
+        payload: &ConversationItem,
     ) -> Result<()> {
         sqlx::query(queries::INSERT_HISTORY)
             .bind(session_id)
-            .bind(payload_type)
+            .bind(provider_id)
+            .bind(payload.payload_type())
             .bind(serde_json::to_string(payload)?)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn get_history(&self, session_id: &str) -> Result<Vec<FileEntry>> {
-        let entries = sqlx::query_as::<_, FileEntry>(queries::GET_HISTORY)
+    pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>> {
+        let entries = sqlx::query_as::<_, HistoryEntry>(queries::GET_HISTORY)
             .bind(session_id)
             .fetch_all(&self.pool)
             .await?;
@@ -349,8 +349,8 @@ impl Storage {
     }
 
     /// Prune partially-written turns left by a crash or cold start: for every
-    /// session whose newest history item isn't a completed assistant message,
-    /// drop everything back to (and including) the last user prompt.
+    /// session whose newest history item isn't an assistant message, drop
+    /// everything back to (and including) the last user prompt.
     pub async fn recover_history(&self) -> Result<()> {
         sqlx::query(queries::RECOVER).execute(&self.pool).await?;
         Ok(())
@@ -366,8 +366,8 @@ impl Storage {
         Ok(())
     }
 
-    /// Delete a session (cascading its history) when it holds no completed
-    /// assistant message. Returns whether a session was removed.
+    /// Delete a session (cascading its history) only when it has no history.
+    /// Returns whether a session was removed.
     pub async fn delete_empty_session(&self, session_id: &str) -> Result<bool> {
         let result = sqlx::query(queries::DELETE_EMPTY_SESSION)
             .bind(session_id)

@@ -5,10 +5,8 @@ WHERE session_id IN (SELECT last.session_id
                      WHERE last.id = (SELECT MAX(h.id)
                                       FROM history h
                                       WHERE h.session_id = last.session_id)
-                       AND (COALESCE(last.payload ->> '$.type', '') <> 'message'
-                         OR COALESCE(last.payload ->> '$.status', '') <> 'completed'))
+                       AND last.payload_type <> 'message')
   AND id >= (SELECT MAX(prompt.id)
              FROM history prompt
              WHERE prompt.session_id = history.session_id
-               AND prompt.payload ->> '$.type' = 'message'
-               AND prompt.payload ->> '$.role' = 'user');
+               AND prompt.payload_type = 'user_prompt');

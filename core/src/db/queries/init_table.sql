@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS history
         REFERENCES sessions (session_id)
             ON DELETE CASCADE,
     timestamp    INTEGER NOT NULL DEFAULT (unixepoch()),
+    provider_id  TEXT    NOT NULL,
     payload_type TEXT    NOT NULL,
     payload      TEXT    NOT NULL
 );

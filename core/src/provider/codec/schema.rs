@@ -44,6 +44,19 @@ pub enum ConversationItem {
     },
 }
 
+impl ConversationItem {
+    pub fn payload_type(&self) -> &'static str {
+        match self {
+            ConversationItem::UserPrompt { .. } => "user_prompt",
+            ConversationItem::Message { .. } => "message",
+            ConversationItem::Reasoning { .. } => "reasoning",
+            ConversationItem::ToolCall { .. } => "tool_call",
+            ConversationItem::ToolResult { .. } => "tool_result",
+            ConversationItem::HostedTool { .. } => "hosted_tool",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MessageContentItem {
     pub content: String,

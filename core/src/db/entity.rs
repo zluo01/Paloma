@@ -1,7 +1,6 @@
-use serde_json::Value;
 use sqlx::FromRow;
 
-use crate::entity::ProviderId;
+use crate::{entity::ProviderId, provider::ConversationItem};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
@@ -40,22 +39,17 @@ pub struct Permission {
     pub updated_at: i64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum EntryType {
-    ResponseItem,
-    EventMsg,
-}
-
 #[derive(Debug, FromRow)]
-pub struct FileEntry {
-    pub payload_type: EntryType,
-    pub payload: Value,
+pub struct HistoryEntry {
+    pub provider_id: ProviderId,
+    #[sqlx(json)]
+    pub payload: ConversationItem,
 }
 
 #[derive(Debug, FromRow)]
 pub struct RestoreEntry {
-    pub payload_type: EntryType,
-    pub payload: Value,
+    pub provider_id: ProviderId,
+    #[sqlx(json)]
+    pub payload: ConversationItem,
     pub finished: bool,
 }
