@@ -6,6 +6,7 @@ use crate::{
     capability::ToolSchema,
     db::StorageError,
     entity::{HealthStatus, ProviderId},
+    provider::codec::ConversationItem,
 };
 
 pub type Result<T> = std::result::Result<T, ProviderError>;
@@ -53,7 +54,7 @@ pub enum Connection {
     /// User pastes a token/key from a settings page.
     /// Raw API keys (Anthropic API, OpenAI API directly).
     ManualInput {
-        prompt: String, // "Enter your OpenAI API key"
+        api_key: String,
         instructions_url: Option<String>,
     },
     None,
@@ -83,8 +84,7 @@ pub struct ChatRequest {
 pub enum ChatEvent {
     TextDelta { text: String },
     ReasoningSummaryDelta { text: String },
-    OutputItem { item: Value },
-    ToolCallItem { item: Value },
+    OutputItem { item: ConversationItem },
     Done,
 }
 
