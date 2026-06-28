@@ -319,7 +319,12 @@ impl ProviderClient for CodexRuntime {
                         //                          200 itself as the start signal).
                         // `response.in_progress` — heartbeat-ish progress ping.
                         // `response.queued`      — waiting in the request queue.
-                        "response.created" | "response.in_progress" | "response.queued" => continue,
+                        // `response.metadata`    — backend metadata snapshot; no
+                        //                          renderable or replay item.
+                        "response.created"
+                        | "response.in_progress"
+                        | "response.queued"
+                        | "response.metadata" => continue,
                         // ── Output-item skeleton + content-part lifecycle ──────
                         // `output_item.added`        — empty shell of a new item;
                         //                              the filled-in version arrives
