@@ -23,7 +23,7 @@ use crate::{
     },
     db::{Storage, StorageError},
     entity::ProviderId,
-    provider::{ChatEvent, ChatRequest, ChatStream, ProviderError},
+    provider::{ChatEvent, ChatRequest, ChatStream, ConversationItem, ProviderError},
 };
 
 pub struct TurnManager {
@@ -220,27 +220,24 @@ impl TurnManager {
                 async move {
                     (
                         call.call_id.clone(),
+                        call.name.clone(),
                         tool_controller.exec(session_id, call).await,
                     )
                 }
             }))
             .await;
 
-            let client = match provider_controller.client(provider_id) {
-                Ok(client) => client,
-                Err(err) => {
-                    error!("turn {session_id}: provider client: {err}");
-                    mark_step_done(&turn_map, session_id);
-                    return;
-                },
-            };
-
-            for (call_id, output) in outputs {
-                let item = client.construct_function_call_output(call_id, output);
+            for (call_id, name, output) in outputs {
                 if let Err(err) = session_client
                     .add_event(
                         session_id,
-                        SessionEvent::Chat(ChatEvent::OutputItem { item }),
+                        SessionEvent::Chat(ChatEvent::OutputItem {
+                            item: ConversationItem::ToolResult {
+                                call_id,
+                                name,
+                                output,
+                            },
+                        }),
                     )
                     .await
                 {
@@ -399,15 +396,20 @@ async fn exhaust_events(
     while let Some(event) = stream.next().await {
         let session_event = match event {
             Ok(chat_event) => {
-                if let ChatEvent::ToolCallItem { item } = &chat_event {
-                    match serde_json::from_value::<ToolCallPayload>(item.clone()) {
-                        Ok(call) => {
-                            match tool_controller.retrieve_toolspec(&call.name) {
+                if let ChatEvent::OutputItem { item } = &chat_event {
+                    match item {
+                        ConversationItem::ToolCall {
+                            call_id,
+                            name,
+                            arguments,
+                            provider_meta: _,
+                        } => {
+                            match tool_controller.retrieve_toolspec(name) {
                                 // it should be ok to only log error here since later on, when actual tool call happens
                                 // it will still fail with missing call_id, session_id or missing tool name.
                                 // Then we can populate the error back to the LLM.
                                 Some(toolspec) => {
-                                    let command = match extract_args(toolspec, &call.arguments) {
+                                    let command = match extract_args(toolspec, arguments) {
                                         Disposition::Gated(command, _) => Some(command),
                                         Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
                                         Disposition::Passthrough => None,
@@ -417,7 +419,7 @@ async fn exhaust_events(
                                         && let Err(err) = permission_workflow_manager_client
                                             .init_permission_workflow(
                                                 session_id,
-                                                call.call_id.clone(),
+                                                call_id.clone(),
                                                 command,
                                             )
                                             .await
@@ -426,12 +428,18 @@ async fn exhaust_events(
                                             "session {session_id}: failed to init permission workflow: {err}"
                                         );
                                     }
-                                    tool_calls.push(call);
                                 },
-                                None => error!("fail to find function call name {}", &call.name),
+                                None => {
+                                    error!("fail to find function call name {}", name)
+                                },
                             }
+                            tool_calls.push(ToolCallPayload {
+                                call_id: call_id.to_string(),
+                                name: name.to_string(),
+                                arguments: arguments.to_string(),
+                            });
                         },
-                        Err(err) => error!("session {session_id}: malformed tool call: {err}"),
+                        _ => {},
                     }
                 }
                 SessionEvent::Chat(chat_event)

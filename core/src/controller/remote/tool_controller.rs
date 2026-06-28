@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use log::error;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
@@ -40,8 +40,6 @@ pub struct ToolCallPayload {
     pub call_id: String,
     pub name: String,
     pub arguments: String,
-    #[serde(flatten)]
-    pub rest: Map<String, Value>, // everything else: id, type, status, …
 }
 
 impl ToolController {
