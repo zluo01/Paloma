@@ -38,7 +38,7 @@ const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 ///   <https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs#L35-L38>
 /// Current published version (the source of truth — bump to match):
 ///   <https://www.npmjs.com/package/@openai/codex>
-const CLIENT_VERSION: &str = "0.139.0";
+const CLIENT_VERSION: &str = "0.142.0";
 
 const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -48,8 +48,8 @@ const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(1).as_secs();
 pub struct CodexRuntime {
     request: reqwest::Client,
     storage: Storage,
-    refresh_token: RwLock<Auth>,
-    tokens: RwLock<AccessToken>,
+    token_state: RwLock<TokenState>,
+    refresh_lock: Mutex<()>,
     status: AtomicU8,
     error: RwLock<Option<String>>,
     models: Mutex<Option<AvailableModels>>,
@@ -85,8 +85,8 @@ impl CodexRuntime {
             Ok((access_token, auth)) => match fetch_models(&request, &access_token).await {
                 Ok(models) => Self {
                     request,
-                    refresh_token: RwLock::new(auth),
-                    tokens: RwLock::new(access_token),
+                    token_state: RwLock::new(TokenState { auth, access_token }),
+                    refresh_lock: Mutex::new(()),
                     storage,
                     status: AtomicU8::new(HealthStatus::Running as u8),
                     error: RwLock::new(None),
@@ -108,14 +108,17 @@ impl CodexRuntime {
     fn unhealthy(request: reqwest::Client, storage: Storage, error_msg: String) -> Self {
         Self {
             request,
-            refresh_token: RwLock::new(Auth::OAuth {
-                refresh_token: None,
-                expires_at: None,
+            token_state: RwLock::new(TokenState {
+                auth: Auth::OAuth {
+                    refresh_token: None,
+                    expires_at: None,
+                },
+                access_token: AccessToken {
+                    access_token: String::new(),
+                    chatgpt_account_id: String::new(),
+                },
             }),
-            tokens: RwLock::new(AccessToken {
-                access_token: String::new(),
-                chatgpt_account_id: String::new(),
-            }),
+            refresh_lock: Mutex::new(()),
             storage,
             status: AtomicU8::new(HealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
@@ -133,7 +136,30 @@ impl CodexRuntime {
     /// refresh access token if the current token is close to expired or already expired,
     /// otherwise return the current access token
     async fn refresh(&self) -> Result<AccessToken> {
-        let valid_until = match *self.refresh_token.read().unwrap() {
+        if let Some(token) = self.cached_access_token() {
+            return Ok(token);
+        }
+
+        let _guard = self.refresh_lock.lock().await;
+
+        if let Some(token) = self.cached_access_token() {
+            return Ok(token);
+        }
+
+        // Expired (or about to): rotate the token and cache the new pair.
+        let current_auth = self.token_state.read().unwrap().auth.clone();
+        let (new_tokens, auth) =
+            fetch_access_token(&self.request, &current_auth, &self.storage).await?;
+        *self.token_state.write().unwrap() = TokenState {
+            auth,
+            access_token: new_tokens.clone(),
+        };
+        Ok(new_tokens)
+    }
+
+    fn cached_access_token(&self) -> Option<AccessToken> {
+        let state = self.token_state.read().unwrap();
+        let valid_until = match state.auth {
             Auth::OAuth {
                 expires_at: Some(expires_at),
                 ..
@@ -145,19 +171,10 @@ impl CodexRuntime {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-
-        // Still valid: hand back the cached token untouched.
         if now <= valid_until {
-            return Ok(self.tokens.read().unwrap().clone());
+            return Some(state.access_token.clone());
         }
-
-        // Expired (or about to): rotate the token and cache the new pair.
-        let current_refresh_token = self.refresh_token.read().unwrap().clone();
-        let (new_tokens, auth) =
-            fetch_access_token(&self.request, &current_refresh_token, &self.storage).await?;
-        *self.refresh_token.write().unwrap() = auth;
-        *self.tokens.write().unwrap() = new_tokens.clone();
-        Ok(new_tokens)
+        None
     }
 }
 
@@ -597,9 +614,16 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-/// Tokens derived from a refresh-token exchange. Held together under one lock
-/// so a refresh rotates `access_token` (and re-derives `chatgpt_account_id`)
-/// atomically.
+/// OAuth and access-token data derived from a refresh-token exchange. Held
+/// together so refresh-token rotation and access-token replacement are atomic
+/// from readers' perspective.
+#[derive(Clone)]
+struct TokenState {
+    auth: Auth,
+    access_token: AccessToken,
+}
+
+/// Access token data needed for Codex backend requests.
 #[derive(Clone)]
 struct AccessToken {
     access_token: String,
