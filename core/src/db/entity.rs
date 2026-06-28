@@ -23,6 +23,7 @@ pub struct ConnectedProvider {
 pub struct Session {
     pub session_id: String,
     pub title: String,
+    pub last_update: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]

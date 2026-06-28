@@ -25,6 +25,7 @@ use crate::{
 pub struct SessionListItem {
     pub session_id: Uuid,
     pub title: String,
+    pub last_update: i64,
 }
 
 #[derive(Debug)]
@@ -764,6 +765,7 @@ fn to_session_list_item(session: StorageSession) -> Option<SessionListItem> {
     Some(SessionListItem {
         session_id,
         title: session.title,
+        last_update: session.last_update,
     })
 }
 

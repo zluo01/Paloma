@@ -600,16 +600,8 @@ mod sessions {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, session_id.to_string());
         assert_eq!(sessions[0].title, "my first chat");
-
-        // `last_update` isn't returned by `all_sessions`; read it directly to
-        // confirm the insert populated it.
-        let row = sqlx::query("SELECT last_update FROM sessions WHERE session_id = ?")
-            .bind(session_id.to_string())
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
-        let last_update = row.get::<i64, _>("last_update");
-        assert!(last_update > 0);
+        // `last_update` defaults to `unixepoch()` on insert.
+        assert!(sessions[0].last_update > 0);
     }
 
     #[tokio::test]
@@ -643,14 +635,21 @@ mod sessions {
                 .unwrap();
         }
 
-        let titles: Vec<String> = storage
+        let ordered: Vec<(String, i64)> = storage
             .all_sessions()
             .await
             .expect("all sessions")
             .into_iter()
-            .map(|s| s.title)
+            .map(|s| (s.title, s.last_update))
             .collect();
-        assert_eq!(titles, vec!["newest", "middle", "oldest"]);
+        assert_eq!(
+            ordered,
+            vec![
+                ("newest".to_string(), 300),
+                ("middle".to_string(), 200),
+                ("oldest".to_string(), 100),
+            ]
+        );
     }
 
     #[tokio::test]
