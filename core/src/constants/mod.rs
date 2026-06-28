@@ -1,6 +1,4 @@
-use std::{path::PathBuf, sync::LazyLock};
-
-use crate::utils::Element;
+use std::{collections::BTreeMap, path::PathBuf, sync::LazyLock};
 
 const APP_DIR: &str = "scry";
 
@@ -22,7 +20,8 @@ pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 /// cleaned by the process — relies on the system tmp lifecycle.
 pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp/scry"));
 
-pub static ENVIRONMENT_CONTEXT: LazyLock<String> = LazyLock::new(build_environment_context);
+pub static ENVIRONMENT_CONTEXT: LazyLock<BTreeMap<&'static str, String>> =
+    LazyLock::new(build_environment_context);
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));
 
@@ -39,17 +38,17 @@ static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(build_home_dir);
 /// it *where* it is running (os, arch, shell, home).
 pub const INSTRUCTION: &str = include_str!("instruction.md");
 
-fn build_environment_context() -> String {
+fn build_environment_context() -> BTreeMap<&'static str, String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
     let home = std::env::var("HOME").unwrap_or_else(|_| "unknown".into());
 
-    Element::new("environment_context")
-        .child(Element::new("os").plain_text(std::env::consts::OS))
-        .child(Element::new("os_family").plain_text(std::env::consts::FAMILY))
-        .child(Element::new("arch").plain_text(std::env::consts::ARCH))
-        .child(Element::new("home").plain_text(home))
-        .child(Element::new("shell").plain_text(shell))
-        .to_string()
+    BTreeMap::from([
+        ("os", std::env::consts::OS.to_string()),
+        ("os_family", std::env::consts::FAMILY.to_string()),
+        ("arch", std::env::consts::ARCH.to_string()),
+        ("home", home),
+        ("shell", shell),
+    ])
 }
 
 fn build_home_dir() -> PathBuf {
