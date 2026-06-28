@@ -599,7 +599,7 @@ mod sessions {
         let sessions = storage.all_sessions().await.expect("all sessions");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, session_id.to_string());
-        assert_eq!(sessions[0].provider_id, "codex");
+        assert_eq!(sessions[0].provider_id, ProviderId::Codex);
         assert_eq!(sessions[0].title, "my first chat");
 
         // `last_update` isn't returned by `all_sessions`; read it directly to
@@ -941,20 +941,6 @@ mod history {
                 .map(|entry| entry.finished)
                 .collect::<Vec<_>>(),
             vec![false, false, false, true, false, false]
-        );
-        assert_eq!(
-            restored
-                .iter()
-                .map(|entry| entry.provider_id)
-                .collect::<Vec<_>>(),
-            vec![
-                ProviderId::Codex,
-                ProviderId::OpenAI,
-                ProviderId::Codex,
-                ProviderId::OpenAI,
-                ProviderId::Codex,
-                ProviderId::OpenAI,
-            ]
         );
     }
 

@@ -13,11 +13,11 @@ use crate::{
     controller::{
         ChatRenderEvent, PermissionWorkflowError, RenderEvent, ToolController,
         helper::{Disposition, extract_args},
-        remote::{PermissionWorkflowManagerClient, tool_controller::ToolCallPayload},
+        remote::PermissionWorkflowManagerClient,
     },
-    db::{EntryType, Session as StorageSession, Storage, StorageError},
+    db::{HistoryEntry, Session as StorageSession, Storage, StorageError},
     entity::ProviderId,
-    provider::ChatEvent,
+    provider::{ChatEvent, ConversationItem},
     utils::Gated,
 };
 
@@ -46,6 +46,7 @@ enum SessionStreamingEvent {
     },
     AddEvent {
         session_id: Uuid,
+        provider_id: ProviderId,
         payload: SessionEvent,
     },
     CancelEvent {
@@ -54,7 +55,7 @@ enum SessionStreamingEvent {
     },
     ConstructMessages {
         session_id: Uuid,
-        reply: oneshot::Sender<Result<Vec<Value>>>,
+        reply: oneshot::Sender<Result<Vec<HistoryEntry>>>,
     },
     AvailableSessions {
         reply: oneshot::Sender<Result<Vec<SessionListItem>>>,
@@ -68,7 +69,7 @@ enum SessionStreamingEvent {
 
 #[derive(Debug)]
 pub enum SessionEvent {
-    UserPrompt(Value),
+    UserPrompt(String),
     Chat(ChatEvent),
     Err(String),
 }
@@ -167,9 +168,10 @@ impl SessionManager {
             },
             SessionStreamingEvent::AddEvent {
                 session_id,
+                provider_id,
                 payload,
             } => {
-                if let Err(err) = self.add_event(session_id, payload).await {
+                if let Err(err) = self.add_event(session_id, provider_id, payload).await {
                     error!("session {session_id} add_event failed: {err}");
                 }
             },
@@ -204,7 +206,12 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn add_event(&mut self, session_id: Uuid, payload: SessionEvent) -> Result<()> {
+    async fn add_event(
+        &mut self,
+        session_id: Uuid,
+        provider_id: ProviderId,
+        payload: SessionEvent,
+    ) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&session_id) else {
             return Err(SessionManagerError::UnknownSession(session_id));
         };
@@ -217,11 +224,10 @@ impl SessionManager {
         }
 
         let entry = match &payload {
-            SessionEvent::UserPrompt(item)
-            | SessionEvent::Chat(ChatEvent::OutputItem { item })
-            | SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
-                Some((EntryType::ResponseItem, item.clone()))
-            },
+            SessionEvent::UserPrompt(prompt) => Some(ConversationItem::UserPrompt {
+                prompt: prompt.clone(),
+            }),
+            SessionEvent::Chat(ChatEvent::OutputItem { item }) => Some(item.clone()),
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
         let errored = matches!(&payload, SessionEvent::Err(_));
@@ -237,9 +243,9 @@ impl SessionManager {
         session.update(payload);
 
         // save only output item or tool call output item to db history
-        if let Some((t, item)) = entry {
+        if let Some(item) = entry {
             self.storage
-                .insert_history(&session_id.to_string(), t, &item)
+                .insert_history(&session_id.to_string(), &provider_id, &item)
                 .await?;
         }
         if touch_session && let Err(e) = self.storage.touch_session(&session_id.to_string()).await {
@@ -333,70 +339,9 @@ impl SessionManager {
             .restore_history(&session_id.to_string())
             .await?
         {
-            let (event, finished) = match entry.payload_type {
-                EntryType::ResponseItem => (response_item_to_event(entry.payload), entry.finished),
-                EntryType::EventMsg => continue,
-            };
-
-            let render = match &event {
-                SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
-                    match item.get("type").and_then(|t| t.as_str()) {
-                        Some("message") => {
-                            let parts: Vec<String> = item
-                                .get("content")
-                                .and_then(|c| c.as_array())
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|c| {
-                                            let kind = c.get("type").and_then(|t| t.as_str())?;
-                                            match kind {
-                                                "output_text" => c
-                                                    .get("text")
-                                                    .and_then(|x| x.as_str())
-                                                    .map(String::from),
-                                                "refusal" => c
-                                                    .get("refusal")
-                                                    .and_then(|x| x.as_str())
-                                                    .map(String::from),
-                                                _ => None,
-                                            }
-                                        })
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            if parts.is_empty() {
-                                error!(
-                                    "OutputItem (type=message) yielded no text from value: {item}"
-                                );
-                                continue;
-                            }
-                            RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                                text: parts.join("\n"),
-                            })
-                        },
-                        Some("web_search_call") => match web_search_render(item) {
-                            Some(r) => r,
-                            None => continue,
-                        },
-                        _ => continue,
-                    }
-                },
-                SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
-                    match tool_call_render(
-                        &self.permission_workflow_client,
-                        self.tool_controller.clone(),
-                        session_id,
-                        item,
-                        finished,
-                    )
-                    .await
-                    {
-                        Some(r) => r,
-                        None => continue,
-                    }
-                },
-                SessionEvent::UserPrompt(_) => {
-                    match event
+            let render = match entry.payload {
+                ConversationItem::UserPrompt { prompt } => {
+                    match SessionEvent::UserPrompt(prompt)
                         .to_render_event(
                             &self.permission_workflow_client,
                             self.tool_controller.clone(),
@@ -408,12 +353,52 @@ impl SessionManager {
                         None => continue,
                     }
                 },
-                other => {
-                    error!(
-                        "unexpected event in restored history for session {session_id}: {other:?}"
-                    );
-                    continue;
+                ConversationItem::Message {
+                    message,
+                    provider_meta: _,
+                } => {
+                    let parts: Vec<String> = message.iter().map(|c| c.content.clone()).collect();
+                    if parts.is_empty() {
+                        error!(
+                            "OutputItem (type=message) yielded no text from value: {:?}",
+                            message
+                        );
+                        continue;
+                    }
+                    RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                        text: parts.join("\n"),
+                    })
                 },
+                ConversationItem::ToolCall {
+                    call_id,
+                    name,
+                    arguments,
+                    provider_meta: _,
+                } => {
+                    match tool_call_render(
+                        &self.permission_workflow_client,
+                        self.tool_controller.clone(),
+                        session_id,
+                        &call_id,
+                        &name,
+                        &arguments,
+                        entry.finished,
+                    )
+                    .await
+                    {
+                        Some(r) => r,
+                        None => continue,
+                    }
+                },
+                ConversationItem::HostedTool {
+                    function_type,
+                    content,
+                    provider_meta: _,
+                } => match hosted_tool_render(&function_type, content.as_deref().unwrap_or("")) {
+                    None => continue,
+                    Some(r) => r,
+                },
+                _ => continue,
             };
 
             if let Some(subscriber) = session.subscriber.get() {
@@ -449,23 +434,8 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>> {
-        let messages = self
-            .storage
-            .get_history(&session_id.to_string())
-            .await?
-            .into_iter()
-            .filter_map(|entry| match entry.payload_type {
-                EntryType::ResponseItem => Some(response_item_to_event(entry.payload)),
-                EntryType::EventMsg => None,
-            })
-            .filter_map(|event| match event {
-                SessionEvent::UserPrompt(item)
-                | SessionEvent::Chat(ChatEvent::OutputItem { item })
-                | SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => Some(item.clone()),
-                SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
-            })
-            .collect();
+    async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<HistoryEntry>> {
+        let messages = self.storage.get_history(&session_id.to_string()).await?;
         Ok(messages)
     }
 
@@ -509,53 +479,47 @@ impl SessionEvent {
             SessionEvent::Err(message) => Some(RenderEvent::Error {
                 message: message.clone(),
             }),
-            SessionEvent::UserPrompt(item) => {
-                let text = item
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
-                            .collect::<Vec<_>>()
-                            .join("")
-                    })
-                    .unwrap_or_default();
-                // should not render environment context in the UI
-                if text.trim_start().starts_with("<environment_context>") {
-                    return None;
-                }
-                if text.is_empty() {
-                    error!("UserPrompt yielded no text from value: {item}");
-                }
-                Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }))
+            SessionEvent::UserPrompt(prompt) => {
+                Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt {
+                    text: prompt.clone(),
+                }))
             },
-            SessionEvent::Chat(ChatEvent::ToolCallItem { item }) => {
-                // Live tool calls are always still pending when first rendered.
-                tool_call_render(
-                    permission_workflow_manager_client,
-                    tool_controller,
-                    session_id,
-                    item,
-                    false,
-                )
-                .await
-            },
-            SessionEvent::Chat(ChatEvent::OutputItem { item }) => {
-                match item.get("type").and_then(|t| t.as_str()) {
-                    Some("web_search_call") => web_search_render(item),
-                    _ => None,
-                }
+            SessionEvent::Chat(ChatEvent::OutputItem { item }) => match item {
+                ConversationItem::ToolCall {
+                    call_id,
+                    name,
+                    arguments,
+                    provider_meta: _,
+                } => {
+                    tool_call_render(
+                        permission_workflow_manager_client,
+                        tool_controller,
+                        session_id,
+                        call_id,
+                        name,
+                        arguments,
+                        false,
+                    )
+                    .await
+                },
+                ConversationItem::HostedTool {
+                    function_type,
+                    content,
+                    provider_meta: _,
+                } => hosted_tool_render(function_type, content.as_deref().unwrap_or("")),
+                _ => None,
             },
         }
     }
 }
 
-/// TODO Currently only match for the web search call format from openAI, need to adapt other case later
-fn web_search_render(item: &Value) -> Option<RenderEvent> {
-    let action = item.get("action").cloned().unwrap_or(Value::Null);
-    let arguments = serde_json::to_string_pretty(&action).unwrap_or_else(|_| action.to_string());
+fn hosted_tool_render(function_type: &str, content: &str) -> Option<RenderEvent> {
+    let arguments = serde_json::from_str::<Value>(content)
+        .ok()
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+        .unwrap_or_else(|| content.to_string());
     Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-        name: "web_search".to_string(),
+        name: function_type.to_string(),
         arguments,
         description: None,
         decisions: vec![],
@@ -566,60 +530,50 @@ async fn tool_call_render(
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     tool_controller: Arc<ToolController>,
     session_id: Uuid,
-    item: &Value,
+    call_id: &str,
+    name: &str,
+    arguments: &str,
     finished: bool,
 ) -> Option<RenderEvent> {
-    // handle tool call permission rendering
-    match serde_json::from_value::<ToolCallPayload>(item.clone()) {
-        Ok(call) => {
-            // unknown tool name (no toolspec) renders plainly, like any non-gated tool
-            let disposition = tool_controller
-                .retrieve_toolspec(&call.name)
-                .map(|spec| extract_args(spec, &call.arguments))
-                .unwrap_or(Disposition::Passthrough);
+    let disposition = tool_controller
+        .retrieve_toolspec(name)
+        .map(|spec| extract_args(spec, arguments))
+        .unwrap_or(Disposition::Passthrough);
 
-            let (arguments, description, decisions) = match disposition {
-                Disposition::Gated(command, description) => {
-                    let decisions = if finished {
-                        vec![]
-                    } else {
-                        match permission_workflow_manager_client
-                            .check_decision(session_id, call.call_id)
-                            .await
-                        {
-                            Ok(d) => d,
-                            Err(err) => {
-                                error!(
-                                    "session {session_id}: failed to check permission decision: {err}"
-                                );
-                                return None;
-                            },
-                        }
-                    };
-                    (command.join(" "), description, decisions)
-                },
-                Disposition::Passthrough => {
-                    let args = serde_json::from_str::<Value>(&call.arguments)
-                        .ok()
-                        .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                        .unwrap_or(call.arguments);
-                    (args, None, vec![])
-                },
-                Disposition::Skip => return None,
+    let (arguments, description, decisions) = match disposition {
+        Disposition::Gated(command, description) => {
+            let decisions = if finished {
+                vec![]
+            } else {
+                match permission_workflow_manager_client
+                    .check_decision(session_id, call_id.to_string())
+                    .await
+                {
+                    Ok(d) => d,
+                    Err(err) => {
+                        error!("session {session_id}: failed to check permission decision: {err}");
+                        return None;
+                    },
+                }
             };
+            (command.join(" "), description, decisions)
+        },
+        Disposition::Passthrough => {
+            let args = serde_json::from_str::<Value>(arguments)
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or(arguments.to_string());
+            (args, None, vec![])
+        },
+        Disposition::Skip => return None,
+    };
 
-            Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-                name: call.name,
-                arguments,
-                description,
-                decisions,
-            }))
-        },
-        Err(err) => {
-            error!("session {session_id}: malformed tool call: {err}");
-            None
-        },
-    }
+    Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
+        name: name.to_string(),
+        arguments,
+        description,
+        decisions,
+    }))
 }
 
 impl SessionManagerClient {
@@ -644,10 +598,16 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn add_event(&self, session_id: Uuid, payload: SessionEvent) -> Result<()> {
+    pub async fn add_event(
+        &self,
+        session_id: Uuid,
+        provider_id: ProviderId,
+        payload: SessionEvent,
+    ) -> Result<()> {
         self.event_tx
             .send(SessionStreamingEvent::AddEvent {
                 session_id,
+                provider_id,
                 payload,
             })
             .await
@@ -715,7 +675,7 @@ impl SessionManagerClient {
             .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
-    pub async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<Value>> {
+    pub async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<HistoryEntry>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::ConstructMessages {
@@ -744,7 +704,7 @@ impl SessionManagerClient {
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Chat(ChatEvent::OutputItem { .. } | ChatEvent::ToolCallItem { .. }) => {},
+            SessionEvent::Chat(ChatEvent::OutputItem { .. }) => {},
             SessionEvent::Chat(ChatEvent::Done) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Done
@@ -808,28 +768,11 @@ fn to_session_list_item(session: StorageSession) -> Option<SessionListItem> {
             return None;
         },
     };
-    let provider_id = match session.provider_id.as_str() {
-        "codex" => ProviderId::Codex,
-        other => {
-            error!("skip session {session_id} with unknown provider_id {other:?}");
-            return None;
-        },
-    };
     Some(SessionListItem {
         session_id,
-        provider_id,
+        provider_id: session.provider_id,
         title: session.title,
     })
-}
-
-fn response_item_to_event(payload: Value) -> SessionEvent {
-    if payload.get("role").and_then(|r| r.as_str()) == Some("user") {
-        SessionEvent::UserPrompt(payload)
-    } else if payload.get("type").and_then(|t| t.as_str()) == Some("function_call") {
-        SessionEvent::Chat(ChatEvent::ToolCallItem { item: payload })
-    } else {
-        SessionEvent::Chat(ChatEvent::OutputItem { item: payload })
-    }
 }
 
 #[derive(Debug, thiserror::Error)]

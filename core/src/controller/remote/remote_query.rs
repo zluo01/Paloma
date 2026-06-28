@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
 use futures::{Stream, stream};
 use log::error;
 use uuid::Uuid;
 
 use crate::{
     RenderEvent,
-    constants::ENVIRONMENT_CONTEXT,
     controller::{
-        PermissionWorkflowError, ProviderController, ProviderControllerError, SessionManagerError,
+        PermissionWorkflowError, ProviderControllerError, SessionManagerError,
         remote::{
-            PermissionWorkflowManagerClient, SessionEvent,
+            PermissionWorkflowManagerClient,
             session_manager::{SessionListItem, SessionManagerClient},
             turn_manager::{TurnManagerClient, TurnManagerError},
         },
@@ -23,7 +20,6 @@ pub struct RemoteQuery {
     session_manager_client: SessionManagerClient,
     turn_manager_client: TurnManagerClient,
     permission_workflow_client: PermissionWorkflowManagerClient,
-    provider_controller: Arc<ProviderController>,
 }
 
 impl RemoteQuery {
@@ -31,13 +27,11 @@ impl RemoteQuery {
         session_manager_client: SessionManagerClient,
         turn_manager_client: TurnManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
-        provider_controller: Arc<ProviderController>,
     ) -> Self {
         Self {
             session_manager_client,
             turn_manager_client,
             permission_workflow_client,
-            provider_controller,
         }
     }
 

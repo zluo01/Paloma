@@ -124,7 +124,6 @@ impl AppContext {
             session_manager_client,
             turn_manager_client,
             permission_workflow_client,
-            Arc::clone(&provider_controller),
         );
 
         Ok((connect, remote_query, plugin))

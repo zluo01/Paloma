@@ -7,14 +7,48 @@ use std::collections::BTreeMap;
 
 pub use codex::CodexCodec;
 #[allow(unused_imports)]
-pub use schema::{ConversationItem, MessageContentItem, ProviderMeta};
+pub use schema::{ConversationItem, EncodeMode, MessageContentItem, ProviderMeta};
 use serde_json::Value;
 
 use super::Result;
-use crate::provider::codec::schema::{EncodeMode, SummaryItem};
+use crate::provider::codec::schema::SummaryItem;
 
 pub trait ProviderEncoder: Send + Sync {
-    fn encode_env_context(&self, envs: BTreeMap<&'static str, String>) -> String;
+    fn encode_conversation_item(
+        &self,
+        item: &ConversationItem,
+        encode_mode: EncodeMode,
+    ) -> Option<Value> {
+        match item {
+            ConversationItem::UserPrompt { prompt } => Some(self.encode_user_prompt(prompt)),
+            ConversationItem::Message {
+                message,
+                provider_meta,
+            } => Some(self.encode_message(message, provider_meta, encode_mode)),
+            ConversationItem::ToolCall {
+                call_id,
+                name,
+                arguments,
+                provider_meta,
+            } => Some(self.encode_tool_call(call_id, name, arguments, provider_meta, encode_mode)),
+            ConversationItem::ToolResult {
+                call_id,
+                name,
+                output,
+            } => Some(self.encode_tool_call_result(call_id, name, output)),
+            ConversationItem::Reasoning {
+                reasoning,
+                provider_meta,
+            } => self.encode_reasoning(reasoning, provider_meta, encode_mode),
+            ConversationItem::HostedTool {
+                function_type,
+                content,
+                provider_meta,
+            } => self.encode_hosted_tool(function_type, content, provider_meta, encode_mode),
+        }
+    }
+
+    fn encode_env_context(&self, envs: &BTreeMap<&'static str, String>) -> Value;
 
     fn encode_user_prompt(&self, prompt: &str) -> Value;
 
@@ -27,7 +61,7 @@ pub trait ProviderEncoder: Send + Sync {
 
     fn encode_reasoning(
         &self,
-        content: &Vec<SummaryItem>,
+        content: &[SummaryItem],
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value>;

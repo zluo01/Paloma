@@ -9,17 +9,18 @@ use std::{
 use base64::Engine;
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{StreamExt, stream};
-use log::error;
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::{
-    constants::INSTRUCTION,
+    constants::{ENVIRONMENT_CONTEXT, INSTRUCTION},
     db::{AuthKind, Storage},
     entity::{HealthStatus, ProviderId},
     provider::{
         Auth, ChatEvent, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
+        codec::{CodexCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
     },
 };
 
@@ -259,24 +260,24 @@ impl ProviderClient for CodexRuntime {
                     Ok(frame) => match frame.event.as_str() {
                         // ── Text streaming (renderable) ────────────────────────
                         "response.output_text.delta" => {
-                            return match serde_json::from_str::<TextDeltaPayload>(&frame.data) {
-                                Ok(p) => Some((
-                                    Ok(ChatEvent::TextDelta { text: p.delta }),
+                            return match CodexCodec.decode_output_text_delta(&frame.data) {
+                                Ok(text) => Some((
+                                    Ok(ChatEvent::TextDelta { text }),
                                     Some((sse, reasoning_summary_delta_seen)),
                                 )),
-                                Err(e) => Some((Err(ProviderError::from(e)), None)),
+                                Err(e) => Some((Err(e), None)),
                             };
                         },
                         "response.reasoning_summary_text.delta" => {
-                            return match serde_json::from_str::<TextDeltaPayload>(&frame.data) {
-                                Ok(p) => {
+                            return match CodexCodec.decode_reasoning_delta(&frame.data) {
+                                Ok(text) => {
                                     reasoning_summary_delta_seen = true;
                                     Some((
-                                        Ok(ChatEvent::ReasoningSummaryDelta { text: p.delta }),
+                                        Ok(ChatEvent::ReasoningSummaryDelta { text }),
                                         Some((sse, reasoning_summary_delta_seen)),
                                     ))
                                 },
-                                Err(e) => Some((Err(ProviderError::from(e)), None)),
+                                Err(e) => Some((Err(e), None)),
                             };
                         },
                         "response.reasoning_summary_part.added" => {
@@ -292,28 +293,21 @@ impl ProviderClient for CodexRuntime {
                             if reasoning_summary_delta_seen {
                                 continue;
                             }
-                            return match serde_json::from_str::<TextDonePayload>(&frame.data) {
-                                Ok(p) => Some((
-                                    Ok(ChatEvent::ReasoningSummaryDelta { text: p.text }),
+                            return match CodexCodec.decode_reasoning_delta(&frame.data) {
+                                Ok(text) => Some((
+                                    Ok(ChatEvent::ReasoningSummaryDelta { text }),
                                     Some((sse, true)),
                                 )),
-                                Err(e) => Some((Err(ProviderError::from(e)), None)),
+                                Err(e) => Some((Err(e), None)),
                             };
                         },
                         "response.output_item.done" => {
-                            return match serde_json::from_str::<OutputItemDonePayload>(&frame.data)
-                            {
-                                Ok(p) => {
-                                    let event = if p.item.get("type").and_then(|t| t.as_str())
-                                        == Some("function_call")
-                                    {
-                                        ChatEvent::ToolCallItem { item: p.item }
-                                    } else {
-                                        ChatEvent::OutputItem { item: p.item }
-                                    };
-                                    Some((Ok(event), Some((sse, reasoning_summary_delta_seen))))
-                                },
-                                Err(e) => Some((Err(ProviderError::from(e)), None)),
+                            return match CodexCodec.decode_output_item(&frame.data) {
+                                Ok(item) => Some((
+                                    Ok(ChatEvent::OutputItem { item }),
+                                    Some((sse, reasoning_summary_delta_seen)),
+                                )),
+                                Err(e) => Some((Err(e), None)),
                             };
                         },
                         "response.completed" => return Some((Ok(ChatEvent::Done), None)),
@@ -425,7 +419,7 @@ impl ProviderClient for CodexRuntime {
                         // when one shows up), then keep polling — the turn
                         // still resolves on `response.completed`.
                         event => {
-                            log::debug!(
+                            warn!(
                                 "codex SSE: unknown event type {event:?}; skipping. \
                                  If this is a new official event, add it to the match \
                                  (see https://developers.openai.com/api/reference/resources/responses/streaming-events)."
@@ -478,24 +472,6 @@ impl ProviderClient for CodexRuntime {
 
     fn error(&self) -> Option<String> {
         self.error.read().unwrap().clone()
-    }
-
-    fn construct_user_prompt(&self, prompt: String) -> Value {
-        serde_json::json!({
-            "type": "message",
-            "role": "user",
-            "content": [
-                { "type": "input_text", "text": prompt }
-            ]
-        })
-    }
-
-    fn construct_function_call_output(&self, call_id: String, output: String) -> Value {
-        serde_json::json!({
-            "type": "function_call_output",
-            "call_id": call_id,
-            "output": output,
-        })
     }
 }
 
@@ -688,24 +664,6 @@ struct RawReasoningEffortPreset {
     effort: String,
 }
 
-/// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.reasoning_summary_text.delta
-/// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.output_text.delta
-#[derive(Debug, Deserialize)]
-struct TextDeltaPayload {
-    delta: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct TextDonePayload {
-    text: String,
-}
-
-/// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.output_item.done
-#[derive(Debug, Deserialize)]
-struct OutputItemDonePayload {
-    item: Value,
-}
-
 fn build_request_body(request: &ChatRequest) -> Value {
     // Wrap each provider-agnostic ToolSchema in the OpenAI Responses API
     // function-tool envelope. `strict: false` matches Codex CLI's behaviour
@@ -739,10 +697,20 @@ fn build_request_body(request: &ChatRequest) -> Value {
         "external_web_access": true,
     }));
 
+    let mut messages: Vec<Value> = vec![CodexCodec.encode_env_context(&ENVIRONMENT_CONTEXT)];
+    messages.extend(request.messages.iter().filter_map(|e| {
+        let mode = if ProviderId::Codex == e.provider_id {
+            EncodeMode::SameProviderReplay
+        } else {
+            EncodeMode::CrossProvider
+        };
+        CodexCodec.encode_conversation_item(&e.payload, mode)
+    }));
+
     serde_json::json!({
         "model": request.model,
         "instructions": INSTRUCTION,
-        "input": request.messages,
+        "input": messages,
         "stream": true,
         "store": false,
         "tools": tools,

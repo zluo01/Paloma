@@ -18,13 +18,15 @@ use crate::{
 pub struct CodexCodec;
 
 impl ProviderEncoder for CodexCodec {
-    fn encode_env_context(&self, envs: BTreeMap<&'static str, String>) -> String {
-        envs.into_iter()
+    fn encode_env_context(&self, envs: &BTreeMap<&'static str, String>) -> Value {
+        let env_instruction = envs
+            .iter()
             .fold(
                 Element::new("environment_context"),
                 |element, (key, value)| element.child(Element::new(key).plain_text(value)),
             )
-            .to_string()
+            .to_string();
+        self.encode_user_prompt(&env_instruction)
     }
 
     fn encode_user_prompt(&self, prompt: &str) -> Value {
@@ -83,7 +85,7 @@ impl ProviderEncoder for CodexCodec {
 
     fn encode_reasoning(
         &self,
-        content: &Vec<SummaryItem>,
+        content: &[SummaryItem],
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
@@ -332,7 +334,7 @@ mod encoder_tests {
 
     #[test]
     fn encodes_env_context() {
-        let item = CodexCodec.encode_env_context(BTreeMap::from([
+        let item = CodexCodec.encode_env_context(&BTreeMap::from([
             ("os", "linux".to_string()),
             ("os_family", "unix".to_string()),
             ("arch", "x86_64".to_string()),
@@ -342,7 +344,16 @@ mod encoder_tests {
 
         assert_eq!(
             item,
-            "<environment_context>\n<arch>x86_64</arch>\n<home>/home/example</home>\n<os>linux</os>\n<os_family>unix</os_family>\n<shell>/bin/bash</shell>\n</environment_context>"
+            serde_json::json!({
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "<environment_context>\n<arch>x86_64</arch>\n<home>/home/example</home>\n<os>linux</os>\n<os_family>unix</os_family>\n<shell>/bin/bash</shell>\n</environment_context>"
+                    }
+                ]
+            })
         );
     }
 
@@ -478,7 +489,7 @@ mod encoder_tests {
     #[test]
     fn encodes_same_provider_reasoning() {
         let item = CodexCodec.encode_reasoning(
-            &vec![SummaryItem {
+            &[SummaryItem {
                 content: "example summary".to_string(),
                 provider_meta: [(
                     "type".to_string(),
@@ -518,7 +529,7 @@ mod encoder_tests {
     #[test]
     fn encodes_cross_provider_reasoning() {
         let item = CodexCodec.encode_reasoning(
-            &vec![SummaryItem {
+            &[SummaryItem {
                 content: "example summary".to_string(),
                 provider_meta: [(
                     "type".to_string(),

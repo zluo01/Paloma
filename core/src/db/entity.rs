@@ -22,7 +22,7 @@ pub struct ConnectedProvider {
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Session {
     pub session_id: String,
-    pub provider_id: String,
+    pub provider_id: ProviderId,
     pub title: String,
 }
 
@@ -39,7 +39,7 @@ pub struct Permission {
     pub updated_at: i64,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct HistoryEntry {
     pub provider_id: ProviderId,
     #[sqlx(json)]
@@ -48,7 +48,6 @@ pub struct HistoryEntry {
 
 #[derive(Debug, FromRow)]
 pub struct RestoreEntry {
-    pub provider_id: ProviderId,
     #[sqlx(json)]
     pub payload: ConversationItem,
     pub finished: bool,

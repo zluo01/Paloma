@@ -1,5 +1,4 @@
-SELECT h.provider_id,
-       h.payload,
+SELECT h.payload,
        EXISTS (SELECT 1
                FROM history o
                WHERE o.session_id = h.session_id

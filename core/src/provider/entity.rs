@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::{
     capability::ToolSchema,
-    db::StorageError,
+    db::{HistoryEntry, StorageError},
     entity::{HealthStatus, ProviderId},
     provider::codec::ConversationItem,
 };
@@ -23,10 +23,6 @@ pub trait ProviderClient: Send + Sync {
     fn health_statue(&self) -> HealthStatus;
 
     fn error(&self) -> Option<String>;
-
-    fn construct_user_prompt(&self, prompt: String) -> Value;
-
-    fn construct_function_call_output(&self, call_id: String, output: String) -> Value;
 }
 
 #[async_trait::async_trait]
@@ -71,11 +67,11 @@ pub enum Auth {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ChatRequest {
     pub model: String,
     pub effort: String,
-    pub messages: Vec<Value>,
+    pub messages: Vec<HistoryEntry>,
     pub tools: Vec<ToolSchema>,
 }
 

@@ -231,6 +231,7 @@ impl TurnManager {
                 if let Err(err) = session_client
                     .add_event(
                         session_id,
+                        provider_id,
                         SessionEvent::Chat(ChatEvent::OutputItem {
                             item: ConversationItem::ToolResult {
                                 call_id,
@@ -260,7 +261,7 @@ impl TurnManager {
                 Err(err) => {
                     error!("turn {session_id}: chat request failed: {err}");
                     let _ = session_client
-                        .add_event(session_id, SessionEvent::Err(err.to_string()))
+                        .add_event(session_id, provider_id, SessionEvent::Err(err.to_string()))
                         .await;
                     mark_step_done(&turn_map, session_id);
                     return;
@@ -335,6 +336,7 @@ async fn run_step(
         tool_controller,
         permission_workflow_manager_client,
         session_id,
+        provider_id,
     )
     .await;
 
@@ -366,9 +368,8 @@ async fn open_stream(
     let config = storage.prefer_model_config(&provider_id).await?;
 
     if let Some(prompt) = prompt {
-        let user_prompt = client.construct_user_prompt(prompt);
         session_client
-            .add_event(session_id, SessionEvent::UserPrompt(user_prompt))
+            .add_event(session_id, provider_id, SessionEvent::UserPrompt(prompt))
             .await?;
     }
 
@@ -390,57 +391,53 @@ async fn exhaust_events(
     tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     session_id: Uuid,
+    provider_id: ProviderId,
 ) -> (Vec<ToolCallPayload>, bool) {
     let mut tool_calls: Vec<ToolCallPayload> = Vec::new();
     let mut errored = false;
     while let Some(event) = stream.next().await {
         let session_event = match event {
             Ok(chat_event) => {
-                if let ChatEvent::OutputItem { item } = &chat_event {
-                    match item {
+                if let ChatEvent::OutputItem {
+                    item:
                         ConversationItem::ToolCall {
                             call_id,
                             name,
                             arguments,
                             provider_meta: _,
-                        } => {
-                            match tool_controller.retrieve_toolspec(name) {
-                                // it should be ok to only log error here since later on, when actual tool call happens
-                                // it will still fail with missing call_id, session_id or missing tool name.
-                                // Then we can populate the error back to the LLM.
-                                Some(toolspec) => {
-                                    let command = match extract_args(toolspec, arguments) {
-                                        Disposition::Gated(command, _) => Some(command),
-                                        Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
-                                        Disposition::Passthrough => None,
-                                    };
-
-                                    if let Some(command) = command
-                                        && let Err(err) = permission_workflow_manager_client
-                                            .init_permission_workflow(
-                                                session_id,
-                                                call_id.clone(),
-                                                command,
-                                            )
-                                            .await
-                                    {
-                                        error!(
-                                            "session {session_id}: failed to init permission workflow: {err}"
-                                        );
-                                    }
-                                },
-                                None => {
-                                    error!("fail to find function call name {}", name)
-                                },
-                            }
-                            tool_calls.push(ToolCallPayload {
-                                call_id: call_id.to_string(),
-                                name: name.to_string(),
-                                arguments: arguments.to_string(),
-                            });
                         },
-                        _ => {},
+                } = &chat_event
+                {
+                    match tool_controller.retrieve_toolspec(name) {
+                        // it should be ok to only log error here since later on, when actual tool call happens
+                        // it will still fail with missing call_id, session_id or missing tool name.
+                        // Then we can populate the error back to the LLM.
+                        Some(toolspec) => {
+                            let command = match extract_args(toolspec, arguments) {
+                                Disposition::Gated(command, _) => Some(command),
+                                Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
+                                Disposition::Passthrough => None,
+                            };
+
+                            if let Some(command) = command
+                                && let Err(err) = permission_workflow_manager_client
+                                    .init_permission_workflow(session_id, call_id.clone(), command)
+                                    .await
+                            {
+                                error!(
+                                    "session {session_id}: failed to init permission workflow: {err}"
+                                );
+                            }
+                        },
+                        None => {
+                            error!("fail to find function call name {}", name)
+                        },
                     }
+                    tool_calls.push(ToolCallPayload {
+                        call_id: call_id.to_string(),
+                        name: name.to_string(),
+                        arguments: arguments.to_string(),
+                    });
                 }
                 SessionEvent::Chat(chat_event)
             },
@@ -461,7 +458,11 @@ async fn exhaust_events(
             _ => (false, true),
         };
 
-        if forward && let Err(err) = session_client.add_event(session_id, session_event).await {
+        if forward
+            && let Err(err) = session_client
+                .add_event(session_id, provider_id, session_event)
+                .await
+        {
             error!("failed to insert event for session {session_id}: {err}");
         }
 
