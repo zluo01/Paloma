@@ -11,7 +11,7 @@ use scry_core::{AppContext, SessionListItem};
 use uuid::Uuid;
 
 use super::{OVERLAY_CONTENT_HEIGHT_PX, SESSIONS_WIDTH_PX};
-use crate::{runtime, widgets::overlay::model::Msg};
+use crate::{helper::Clear, runtime, widgets::overlay::model::Msg};
 
 pub(super) const CSS: &str = include_str!("style.css");
 
@@ -51,7 +51,12 @@ impl SessionsView {
             .css_classes(["scry-sessions-list"])
             .build();
 
-        let empty = Label::new(Some("No sessions yet"));
+        let empty = Label::builder()
+            .label("No sessions yet")
+            .halign(Align::Center)
+            .valign(Align::Center)
+            .css_classes(["scry-sessions-empty"])
+            .build();
         empty.add_css_class("scry-sessions-empty");
         list.set_placeholder(Some(&empty));
 
@@ -189,12 +194,6 @@ impl SessionsView {
     }
 }
 
-fn clear_list(list: &ListBox) {
-    while let Some(child) = list.first_child() {
-        list.remove(&child);
-    }
-}
-
 fn set_sessions(
     list: &ListBox,
     session_rows: &Rc<RefCell<Vec<SessionRow>>>,
@@ -203,7 +202,7 @@ fn set_sessions(
     sessions: Vec<SessionListItem>,
     current_session_id: Option<Uuid>,
 ) {
-    clear_list(list);
+    list.clear();
     session_rows.borrow_mut().clear();
 
     let mut current_row = None;

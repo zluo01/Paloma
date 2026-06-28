@@ -58,3 +58,14 @@ impl Clear for PreferencesPage {
         self.remove(child);
     }
 }
+
+impl Clear for gtk4::ListBox {
+    type Child = gtk4::ListBoxRow;
+
+    fn first(&self) -> Option<gtk4::ListBoxRow> {
+        self.row_at_index(0)
+    }
+    fn remove_child(&self, child: &gtk4::ListBoxRow) {
+        self.remove(child);
+    }
+}

@@ -309,7 +309,7 @@ fn build_table(alignments: &[Alignment], rows: &[Block]) -> Widget {
             };
             let label = Label::builder()
                 .use_markup(true)
-                .label(&inline_markup(cell.children()))
+                .label(inline_markup(cell.children()))
                 .xalign(xalign)
                 .wrap(true)
                 .wrap_mode(pango::WrapMode::WordChar)
