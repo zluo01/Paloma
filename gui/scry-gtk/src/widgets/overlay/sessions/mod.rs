@@ -22,6 +22,7 @@ struct SessionRow {
 
 pub(super) struct SessionsView {
     view: GtkBox,
+    header: Label,
     list: ListBox,
     sessions: Rc<RefCell<Vec<SessionRow>>>,
     app_context: Arc<AppContext>,
@@ -73,6 +74,7 @@ impl SessionsView {
 
         let session_view = Self {
             view,
+            header,
             list,
             sessions: Rc::new(RefCell::new(vec![])),
             app_context,
@@ -97,6 +99,7 @@ impl SessionsView {
     pub(super) fn refresh(&self, session_id: Option<Uuid>) {
         let app_context = self.app_context.clone();
         let list = self.list.clone();
+        let header = self.header.clone();
         let session_rows = self.sessions.clone();
         let dispatcher = self.dispatcher.clone();
         runtime::spawn_with(
@@ -108,6 +111,7 @@ impl SessionsView {
                 Ok(sessions) => {
                     set_sessions(
                         &list,
+                        &header,
                         &session_rows,
                         app_context,
                         dispatcher,
@@ -148,6 +152,7 @@ impl SessionsView {
 
         remove_session(
             &self.list,
+            &self.header,
             &self.sessions,
             &action_row,
             session_id,
@@ -196,6 +201,7 @@ impl SessionsView {
 
 fn set_sessions(
     list: &ListBox,
+    header: &Label,
     session_rows: &Rc<RefCell<Vec<SessionRow>>>,
     app_context: Arc<AppContext>,
     dispatcher: mpsc::UnboundedSender<Msg>,
@@ -238,12 +244,14 @@ fn set_sessions(
             .build();
 
         let list_for_delete = list.clone();
+        let header_for_delete = header.clone();
         let session_rows_for_delete = session_rows.clone();
         let action_row = row.clone();
         let app_context = app_context.clone();
         delete.connect_clicked(move |_| {
             remove_session(
                 &list_for_delete,
+                &header_for_delete,
                 &session_rows_for_delete,
                 &action_row,
                 session_id,
@@ -259,6 +267,8 @@ fn set_sessions(
         });
     }
 
+    set_header(header, session_rows.borrow().len());
+
     if let Some(row) = current_row {
         center_when_allocated(&row);
         list.select_row(Some(&row))
@@ -267,12 +277,14 @@ fn set_sessions(
 
 fn remove_session(
     list: &ListBox,
+    header: &Label,
     session_rows: &Rc<RefCell<Vec<SessionRow>>>,
     action_row: &ActionRow,
     session_id: Uuid,
     app_context: Arc<AppContext>,
 ) {
     let list = list.clone();
+    let header = header.clone();
     let session_rows = session_rows.clone();
     let action_row = action_row.clone();
 
@@ -284,10 +296,20 @@ fn remove_session(
                 session_rows
                     .borrow_mut()
                     .retain(|session| session.session_id != session_id);
+                set_header(&header, session_rows.borrow().len());
             },
             Err(err) => error!("failed to remove session: {err}"),
         },
     );
+}
+
+/// Header text: plain "Sessions" when empty, "Sessions (n)" otherwise.
+fn set_header(header: &Label, count: usize) {
+    if count == 0 {
+        header.set_label("Sessions");
+    } else {
+        header.set_label(&format!("Sessions ({count})"));
+    }
 }
 
 fn center_when_allocated(row: &ActionRow) {
