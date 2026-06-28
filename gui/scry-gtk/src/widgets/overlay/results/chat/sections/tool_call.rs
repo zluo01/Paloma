@@ -19,6 +19,7 @@ pub(crate) struct ToolCallDecision {
 #[derive(Clone)]
 pub(crate) struct ToolCallSection {
     view: GtkBox,
+    decision_group: Option<GtkBox>,
 }
 
 impl ToolCallSection {
@@ -34,15 +35,21 @@ impl ToolCallSection {
         }
         view.append(&code_card(name, arguments));
 
-        let decisions = if !decisions.is_empty() {
-            let (decision_group, decisions) = decision_button_group(decisions);
+        let (decision_group, parsed) = if !decisions.is_empty() {
+            let (decision_group, parsed) = decision_button_group(decisions);
             view.append(&decision_group);
-            decisions
+            (Some(decision_group), parsed)
         } else {
-            vec![]
+            (None, vec![])
         };
 
-        (Self { view }, decisions)
+        (
+            Self {
+                view,
+                decision_group,
+            },
+            parsed,
+        )
     }
 
     pub(crate) fn widgets(&self) -> &GtkBox {
@@ -50,7 +57,9 @@ impl ToolCallSection {
     }
 
     pub(crate) fn on_finish(&self, permission_state: &PermissionState) {
-        resolve_decision(&self.view, permission_state)
+        if let Some(actions) = &self.decision_group {
+            resolve_decision(actions, permission_state);
+        }
     }
 }
 
