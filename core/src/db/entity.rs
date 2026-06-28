@@ -22,7 +22,6 @@ pub struct ConnectedProvider {
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Session {
     pub session_id: String,
-    pub provider_id: ProviderId,
     pub title: String,
 }
 

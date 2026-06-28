@@ -592,14 +592,13 @@ mod sessions {
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000001");
         storage
-            .create_new_session(session_id, &ProviderId::Codex, "my first chat")
+            .create_new_session(session_id, "my first chat")
             .await
             .expect("create session");
 
         let sessions = storage.all_sessions().await.expect("all sessions");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, session_id.to_string());
-        assert_eq!(sessions[0].provider_id, ProviderId::Codex);
         assert_eq!(sessions[0].title, "my first chat");
 
         // `last_update` isn't returned by `all_sessions`; read it directly to
@@ -631,10 +630,7 @@ mod sessions {
         let newest = uuid("019e1234-5678-7000-8000-00000000000b");
         let middle = uuid("019e1234-5678-7000-8000-00000000000c");
         for (id, title) in [(oldest, "oldest"), (newest, "newest"), (middle, "middle")] {
-            storage
-                .create_new_session(id, &ProviderId::Codex, title)
-                .await
-                .unwrap();
+            storage.create_new_session(id, title).await.unwrap();
         }
 
         // Force distinct last_update values regardless of insertion clock.
@@ -672,10 +668,7 @@ mod sessions {
             .unwrap();
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000003");
-        storage
-            .create_new_session(session_id, &ProviderId::Codex, "t")
-            .await
-            .unwrap();
+        storage.create_new_session(session_id, "t").await.unwrap();
 
         // Backdate so the bump is observable regardless of clock resolution.
         sqlx::query("UPDATE sessions SET last_update = 1000 WHERE session_id = ?")
@@ -729,7 +722,7 @@ mod sessions {
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000004");
         storage
-            .create_new_session(session_id, &ProviderId::Codex, "with history")
+            .create_new_session(session_id, "with history")
             .await
             .unwrap();
 
@@ -786,7 +779,7 @@ mod history {
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000005");
         storage
-            .create_new_session(session_id, &ProviderId::Codex, "round trip")
+            .create_new_session(session_id, "round trip")
             .await
             .unwrap();
 
@@ -821,7 +814,7 @@ mod history {
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000006");
         storage
-            .create_new_session(session_id, &ProviderId::Codex, "mixed providers")
+            .create_new_session(session_id, "mixed providers")
             .await
             .unwrap();
 
@@ -898,7 +891,7 @@ mod history {
         let hosted_tool = hosted_tool();
         let message = assistant_message();
         storage
-            .create_new_session(session_id, &ProviderId::Codex, "restore")
+            .create_new_session(session_id, "restore")
             .await
             .unwrap();
         for (provider_id, item) in [
@@ -1026,10 +1019,7 @@ mod history {
     }
 
     async fn seed_session(storage: &Storage, id: Uuid, items: &[ConversationItem]) {
-        storage
-            .create_new_session(id, &ProviderId::Codex, "s")
-            .await
-            .unwrap();
+        storage.create_new_session(id, "s").await.unwrap();
         for item in items {
             storage
                 .insert_history(&id.to_string(), &ProviderId::Codex, item)

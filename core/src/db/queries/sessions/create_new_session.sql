@@ -1,2 +1,2 @@
-INSERT INTO sessions (session_id, provider_id, title)
-VALUES (?, ?, ?);
+INSERT INTO sessions (session_id, title)
+VALUES (?, ?);

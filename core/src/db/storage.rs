@@ -120,15 +120,9 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn create_new_session(
-        &self,
-        session_id: Uuid,
-        provider_id: &ProviderId,
-        title: &str,
-    ) -> Result<()> {
+    pub async fn create_new_session(&self, session_id: Uuid, title: &str) -> Result<()> {
         sqlx::query(queries::CREATE_NEW_SESSION_QUERY)
             .bind(session_id.to_string())
-            .bind(provider_id)
             .bind(title)
             .execute(&self.pool)
             .await

@@ -47,9 +47,6 @@ END;
 CREATE TABLE IF NOT EXISTS sessions
 (
     session_id  TEXT PRIMARY KEY NOT NULL,
-    provider_id TEXT
-                                 REFERENCES provider_credentials (provider_id)
-                                     ON DELETE SET NULL,
     title       TEXT             NOT NULL DEFAULT '',
     last_update INTEGER          NOT NULL DEFAULT (unixepoch())
 );
