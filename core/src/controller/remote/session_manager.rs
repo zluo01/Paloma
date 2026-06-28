@@ -24,7 +24,6 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct SessionListItem {
     pub session_id: Uuid,
-    pub provider_id: ProviderId,
     pub title: String,
 }
 
@@ -32,7 +31,6 @@ pub struct SessionListItem {
 enum SessionStreamingEvent {
     CreateSession {
         session_id: Uuid,
-        provider_id: ProviderId,
         title: String,
         reply: oneshot::Sender<Result<()>>,
     },
@@ -136,13 +134,12 @@ impl SessionManager {
         match event {
             SessionStreamingEvent::CreateSession {
                 session_id,
-                provider_id,
                 title,
                 reply,
             } => {
                 let result = self
                     .storage
-                    .create_new_session(session_id, &provider_id, &title)
+                    .create_new_session(session_id, &title)
                     .await
                     .map_err(SessionManagerError::from)
                     .and_then(|()| match self.sessions.entry(session_id) {
@@ -367,6 +364,7 @@ impl SessionManager {
                     }
                     RenderEvent::Chat(ChatRenderEvent::TextDelta {
                         text: parts.join("\n"),
+                        provider_id: entry.provider_id,
                     })
                 },
                 ConversationItem::ToolCall {
@@ -465,9 +463,10 @@ impl SessionEvent {
         session_id: Uuid,
     ) -> Option<RenderEvent> {
         match self {
-            SessionEvent::Chat(ChatEvent::TextDelta { text }) => {
+            SessionEvent::Chat(ChatEvent::TextDelta { provider_id, text }) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::TextDelta {
                     text: text.clone(),
+                    provider_id: *provider_id,
                 }))
             },
             SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { text }) => {
@@ -577,17 +576,11 @@ async fn tool_call_render(
 }
 
 impl SessionManagerClient {
-    pub async fn create_session(
-        &self,
-        session_id: Uuid,
-        provider_id: ProviderId,
-        title: String,
-    ) -> Result<()> {
+    pub async fn create_session(&self, session_id: Uuid, title: String) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::CreateSession {
                 session_id,
-                provider_id,
                 title,
                 reply: reply_tx,
             })
@@ -770,7 +763,6 @@ fn to_session_list_item(session: StorageSession) -> Option<SessionListItem> {
     };
     Some(SessionListItem {
         session_id,
-        provider_id: session.provider_id,
         title: session.title,
     })
 }

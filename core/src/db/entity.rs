@@ -47,6 +47,7 @@ pub struct HistoryEntry {
 
 #[derive(Debug, FromRow)]
 pub struct RestoreEntry {
+    pub provider_id: ProviderId,
     #[sqlx(json)]
     pub payload: ConversationItem,
     pub finished: bool,

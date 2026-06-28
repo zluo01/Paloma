@@ -262,7 +262,10 @@ impl ProviderClient for CodexRuntime {
                         "response.output_text.delta" => {
                             return match CodexCodec.decode_output_text_delta(&frame.data) {
                                 Ok(text) => Some((
-                                    Ok(ChatEvent::TextDelta { text }),
+                                    Ok(ChatEvent::TextDelta {
+                                        provider_id: ProviderId::Codex,
+                                        text,
+                                    }),
                                     Some((sse, reasoning_summary_delta_seen)),
                                 )),
                                 Err(e) => Some((Err(e), None)),

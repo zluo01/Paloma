@@ -75,16 +75,22 @@ pub struct ChatRequest {
     pub tools: Vec<ToolSchema>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug)]
 pub enum ChatEvent {
-    TextDelta { text: String },
-    ReasoningSummaryDelta { text: String },
-    OutputItem { item: ConversationItem },
+    TextDelta {
+        provider_id: ProviderId,
+        text: String,
+    },
+    ReasoningSummaryDelta {
+        text: String,
+    },
+    OutputItem {
+        item: ConversationItem,
+    },
     Done,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Model {
     pub id: String,
     pub name: String,

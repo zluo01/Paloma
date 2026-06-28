@@ -38,14 +38,13 @@ impl RemoteQuery {
     pub async fn init_chat(
         &self,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
         prompt: String,
     ) -> Result<(Uuid, bool)> {
         match session_id {
             None => {
                 let id = Uuid::now_v7();
                 self.session_manager_client
-                    .create_session(id, provider_id, prompt)
+                    .create_session(id, prompt)
                     .await?;
                 Ok((id, true))
             },

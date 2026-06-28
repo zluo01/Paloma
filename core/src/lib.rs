@@ -144,13 +144,9 @@ impl AppContext {
     pub async fn init_chat(
         &self,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
         prompt: String,
     ) -> Result<(Uuid, bool)> {
-        Ok(self
-            .remote_query
-            .init_chat(session_id, provider_id, prompt)
-            .await?)
+        Ok(self.remote_query.init_chat(session_id, prompt).await?)
     }
 
     pub async fn chat(

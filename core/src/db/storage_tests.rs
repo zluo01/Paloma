@@ -935,6 +935,20 @@ mod history {
                 .collect::<Vec<_>>(),
             vec![false, false, false, true, false, false]
         );
+        assert_eq!(
+            restored
+                .iter()
+                .map(|entry| entry.provider_id)
+                .collect::<Vec<_>>(),
+            vec![
+                ProviderId::Codex,
+                ProviderId::OpenAI,
+                ProviderId::Codex,
+                ProviderId::OpenAI,
+                ProviderId::Codex,
+                ProviderId::OpenAI,
+            ]
+        );
     }
 
     // ---- history ----
