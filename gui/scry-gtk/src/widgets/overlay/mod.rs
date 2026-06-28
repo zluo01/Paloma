@@ -205,9 +205,8 @@ impl Overlay {
             Command::RestoreSession {
                 turn_id,
                 session_id,
-                provider_id,
             } => {
-                self.restore_session(turn_id, session_id, provider_id);
+                self.restore_session(turn_id, session_id);
             },
             Command::ReportError { error } => {
                 error!("{error}");
@@ -230,9 +229,7 @@ impl Overlay {
             } => self.send_chat(turn_id, session_id, provider_id, prompt, is_new),
             Command::CleanupChatSession { session_id } => self.cleanup_stale_session(session_id),
             Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
-            Command::RenderChatEvent { event, provider_id } => {
-                self.render_chat_event(event, provider_id)
-            },
+            Command::RenderChatEvent { event } => self.render_chat_event(event),
             Command::ShowChatView => self.show_chat_view(),
             Command::ClearChatContent => self.clear_session(),
             Command::ExitSearch => self.exist_search(),
@@ -434,9 +431,7 @@ impl Overlay {
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let prompt_for_init = prompt.clone();
-            let result = app_context
-                .init_chat(prior_session, provider_id, prompt_for_init)
-                .await;
+            let result = app_context.init_chat(prior_session, prompt_for_init).await;
             let _ = dispatcher.unbounded_send(Msg::ChatInitialized {
                 turn_id,
                 prompt,
@@ -460,11 +455,7 @@ impl Overlay {
             let result = match app_context.chat(session_id, provider, prompt).await {
                 Ok(mut render_stream) => {
                     while let Some(event) = render_stream.next().await {
-                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent {
-                            turn_id,
-                            event,
-                            provider_id: provider,
-                        });
+                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
                     }
                     Ok(())
                 },
@@ -495,12 +486,12 @@ impl Overlay {
         }));
     }
 
-    fn render_chat_event(&self, event: RenderEvent, provider_id: ProviderId) {
+    fn render_chat_event(&self, event: RenderEvent) {
         match event {
             RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }) => {
                 self.chat.append_user_prompt(&text);
             },
-            RenderEvent::Chat(ChatRenderEvent::TextDelta { text }) => {
+            RenderEvent::Chat(ChatRenderEvent::TextDelta { text, provider_id }) => {
                 self.chat.append_text(&text, provider_id);
             },
             RenderEvent::Chat(ChatRenderEvent::ReasoningDelta { text }) => {
@@ -558,18 +549,14 @@ impl Overlay {
         }
     }
 
-    fn restore_session(&self, turn_id: u64, session_id: Uuid, provider_id: ProviderId) {
+    fn restore_session(&self, turn_id: u64, session_id: Uuid) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let result = match app_context.restore_session(session_id).await {
                 Ok(mut render_stream) => {
                     while let Some(event) = render_stream.next().await {
-                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent {
-                            turn_id,
-                            event,
-                            provider_id,
-                        });
+                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
                     }
                     Ok(())
                 },

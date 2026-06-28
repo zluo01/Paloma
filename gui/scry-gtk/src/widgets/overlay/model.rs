@@ -54,7 +54,6 @@ pub(super) enum Msg {
     ChatRenderEvent {
         turn_id: u64,
         event: RenderEvent,
-        provider_id: ProviderId,
     },
     ChatInterruptRequested,
     ChatExitRequested,
@@ -64,7 +63,6 @@ pub(super) enum Msg {
     SessionOpenRequested,
     SessionRestoreRequested {
         session_id: Uuid,
-        provider_id: ProviderId,
     },
     SessionRestoreFinished {
         result: Result<(), AppError>,
@@ -113,7 +111,6 @@ pub(super) enum Command {
     },
     RenderChatEvent {
         event: RenderEvent,
-        provider_id: ProviderId,
     },
     CancelChatSession {
         session_id: Uuid,
@@ -126,7 +123,6 @@ pub(super) enum Command {
     RestoreSession {
         turn_id: u64,
         session_id: Uuid,
-        provider_id: ProviderId,
     },
     ReportError {
         error: AppError,
@@ -304,15 +300,11 @@ impl Model {
                     },
                 }
             },
-            Msg::ChatRenderEvent {
-                turn_id,
-                event,
-                provider_id,
-            } => {
+            Msg::ChatRenderEvent { turn_id, event } => {
                 if turn_id != self.turn_id {
                     return vec![];
                 }
-                vec![Command::RenderChatEvent { event, provider_id }]
+                vec![Command::RenderChatEvent { event }]
             },
             Msg::ChatInterruptRequested => {
                 let Some(session_id) = self.current_session else {
@@ -328,10 +320,7 @@ impl Model {
             Msg::SessionWindowCloseRequested => vec![Command::CloseSessions],
             Msg::SessionOpenRequested => vec![Command::OpenSelectedSession],
             Msg::SessionDeleteRequested => vec![Command::DeleteSelectedSession],
-            Msg::SessionRestoreRequested {
-                session_id,
-                provider_id,
-            } => {
+            Msg::SessionRestoreRequested { session_id } => {
                 let turn_id = self.begin_turn();
                 self.mode = Mode::Chat;
                 self.current_session = Some(session_id);
@@ -341,7 +330,6 @@ impl Model {
                     Command::RestoreSession {
                         turn_id,
                         session_id,
-                        provider_id,
                     },
                 ]
             },
@@ -413,7 +401,6 @@ mod tests {
         let commands = model.update(Msg::ChatRenderEvent {
             turn_id,
             event: RenderEvent::Done,
-            provider_id: ProviderId::Codex,
         });
         assert!(commands.is_empty());
     }

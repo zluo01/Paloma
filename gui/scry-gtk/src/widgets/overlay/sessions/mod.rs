@@ -1,4 +1,9 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use futures::channel::mpsc;
 use gtk4::{
@@ -215,7 +220,7 @@ fn set_sessions(
     for session in sessions {
         let row = ActionRow::builder()
             .title(&session.title)
-            .subtitle(session.provider_id.to_string())
+            .subtitle(relative_time(session.last_update))
             .title_lines(1)
             .subtitle_lines(1)
             .activatable(true)
@@ -223,17 +228,13 @@ fn set_sessions(
             .build();
 
         let session_id = session.session_id;
-        let provider_id = session.provider_id;
         if current_session_id == Some(session_id) {
             current_row = Some(row.clone());
             row.set_sensitive(false);
         }
         let action_dispatcher = dispatcher.clone();
         row.connect_activated(move |_| {
-            let _ = action_dispatcher.unbounded_send(Msg::SessionRestoreRequested {
-                session_id,
-                provider_id,
-            });
+            let _ = action_dispatcher.unbounded_send(Msg::SessionRestoreRequested { session_id });
         });
 
         let delete = Button::builder()
@@ -309,6 +310,34 @@ fn set_header(header: &Label, count: usize) {
         header.set_label("Sessions");
     } else {
         header.set_label(&format!("Sessions ({count})"));
+    }
+}
+
+fn relative_time(epoch_secs: i64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs().min(i64::MAX as u64) as i64)
+        .unwrap_or(0);
+
+    relative_time_at(now, epoch_secs)
+}
+
+fn relative_time_at(now: i64, epoch_secs: i64) -> String {
+    const MIN: i64 = 60;
+    const HOUR: i64 = 60 * MIN;
+    const DAY: i64 = 24 * HOUR;
+    const MONTH: i64 = 30 * DAY;
+    const YEAR: i64 = 365 * DAY;
+
+    let delta = now.saturating_sub(epoch_secs).max(0);
+
+    match delta {
+        0..MIN => "just now".to_string(),
+        MIN..HOUR => format!("{}m ago", delta / MIN),
+        HOUR..DAY => format!("{}h ago", delta / HOUR),
+        DAY..MONTH => format!("{}d ago", delta / DAY),
+        MONTH..YEAR => format!("{}mo ago", delta / MONTH),
+        _ => format!("{}y ago", delta / YEAR),
     }
 }
 
@@ -402,7 +431,7 @@ fn next_enabled_index(
 
 #[cfg(test)]
 mod tests {
-    use super::next_enabled_index;
+    use super::{next_enabled_index, relative_time_at};
 
     fn none(_: usize) -> bool {
         false
@@ -431,5 +460,42 @@ mod tests {
     #[test]
     fn from_unselected_picks_first_enabled() {
         assert_eq!(next_enabled_index(2, None, 1, |i| i == 0), Some(1));
+    }
+
+    #[test]
+    fn relative_time_handles_recent_and_future_timestamps() {
+        assert_eq!(relative_time_at(1_000, 1_000), "just now");
+        assert_eq!(relative_time_at(1_000, 941), "just now");
+        assert_eq!(relative_time_at(1_000, 1_001), "just now");
+    }
+
+    #[test]
+    fn relative_time_formats_minutes_hours_and_days() {
+        const MIN: i64 = 60;
+        const HOUR: i64 = 60 * MIN;
+        const DAY: i64 = 24 * HOUR;
+
+        let now = 1_000_000;
+
+        assert_eq!(relative_time_at(now, now - MIN), "1m ago");
+        assert_eq!(relative_time_at(now, now - 59 * MIN), "59m ago");
+        assert_eq!(relative_time_at(now, now - HOUR), "1h ago");
+        assert_eq!(relative_time_at(now, now - 23 * HOUR), "23h ago");
+        assert_eq!(relative_time_at(now, now - DAY), "1d ago");
+        assert_eq!(relative_time_at(now, now - 29 * DAY), "29d ago");
+    }
+
+    #[test]
+    fn relative_time_formats_months_and_years() {
+        const DAY: i64 = 24 * 60 * 60;
+        const MONTH: i64 = 30 * DAY;
+        const YEAR: i64 = 365 * DAY;
+
+        let now = 100_000_000;
+
+        assert_eq!(relative_time_at(now, now - MONTH), "1mo ago");
+        assert_eq!(relative_time_at(now, now - 11 * MONTH), "11mo ago");
+        assert_eq!(relative_time_at(now, now - YEAR), "1y ago");
+        assert_eq!(relative_time_at(now, now - 2 * YEAR), "2y ago");
     }
 }
