@@ -53,14 +53,6 @@ impl RemoteQuery {
                 self.session_manager_client
                     .create_session(id, provider_id, prompt)
                     .await?;
-
-                // inject environment_context
-                let client = self.provider_controller.client(provider_id)?;
-                let env_prompt = client.construct_user_prompt(ENVIRONMENT_CONTEXT.clone());
-                self.session_manager_client
-                    .add_event(id, SessionEvent::UserPrompt(env_prompt))
-                    .await?;
-
                 Ok((id, true))
             },
             Some(id) => Ok((id, false)),
