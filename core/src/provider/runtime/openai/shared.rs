@@ -1,18 +1,29 @@
-use std::time::Duration;
+use std::{sync::LazyLock, time::Duration};
 
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{StreamExt, stream};
 use log::warn;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     constants::{ENVIRONMENT_CONTEXT, INSTRUCTION},
     entity::ProviderId,
     provider::{
-        ChatEvent, ChatRequest, ChatStream, ProviderError,
+        ChatEvent, ChatRequest, ChatStream, Model, ProviderError,
         codec::{CodexCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
     },
 };
+
+/// How long a fetched model catalogue is served from cache before a refetch.
+pub(super) const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(1).as_secs();
+
+/// https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json
+pub(super) static OPENAI_MODEL_CATALOG: LazyLock<Vec<Model>> = LazyLock::new(|| {
+    let response = serde_json::from_str(include_str!("models.json"))
+        .expect("bundled OpenAI model catalog should parse");
+    models_from_response(response)
+});
 
 const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -241,6 +252,57 @@ fn parse_stream_error(data: &str) -> ProviderError {
         })
         .unwrap_or_else(|| format!("response failed: {data}"));
     ProviderError::Other(msg)
+}
+
+pub(super) fn models_from_response(response: ModelsResponse) -> Vec<Model> {
+    let mut models: Vec<RawModel> = response
+        .models
+        .into_iter()
+        .filter(|m| m.supported_in_api && m.visibility == "list")
+        .collect();
+    // Higher priority first; tie-break alphabetically on slug.
+    models.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| a.slug.cmp(&b.slug))
+    });
+
+    models
+        .into_iter()
+        .map(|m| Model {
+            id: m.slug,
+            name: m.display_name,
+            default_reasoning_effort: m.default_reasoning_level.unwrap_or("medium".to_string()),
+            supported_reasoning_efforts: m
+                .supported_reasoning_levels
+                .into_iter()
+                .map(|p| p.effort)
+                .collect(),
+        })
+        .collect()
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ModelsResponse {
+    models: Vec<RawModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawModel {
+    slug: String,
+    display_name: String,
+    visibility: String,
+    supported_in_api: bool,
+    priority: i32,
+    #[serde(default)]
+    default_reasoning_level: Option<String>,
+    #[serde(default)]
+    supported_reasoning_levels: Vec<RawReasoningEffortPreset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReasoningEffortPreset {
+    effort: String,
 }
 
 #[cfg(test)]

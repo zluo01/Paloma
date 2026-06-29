@@ -1,3 +1,3 @@
 mod openai;
 
-pub use openai::CodexRuntime;
+pub use openai::{CodexRuntime, OpenAIRuntime};

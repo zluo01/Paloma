@@ -11,7 +11,10 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use super::shared::{build_request_body, response_event_stream};
+use super::shared::{
+    MODELS_CACHE_TTL_SECS, ModelsResponse, build_request_body, models_from_response,
+    response_event_stream,
+};
 use crate::{
     db::{AuthKind, Storage},
     entity::{HealthStatus, ProviderId},
@@ -34,9 +37,6 @@ const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 /// Current published version (the source of truth — bump to match):
 ///   <https://www.npmjs.com/package/@openai/codex>
 const CLIENT_VERSION: &str = "0.142.0";
-
-/// How long a fetched model catalogue is served from cache before a refetch.
-const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(1).as_secs();
 
 pub struct CodexRuntime {
     request: reqwest::Client,
@@ -313,31 +313,7 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
         .json()
         .await?;
 
-    let mut models: Vec<RawModel> = response
-        .models
-        .into_iter()
-        .filter(|m| m.supported_in_api && m.visibility == "list")
-        .collect();
-    // Higher priority first; tie-break alphabetically on slug.
-    models.sort_by(|a, b| {
-        b.priority
-            .cmp(&a.priority)
-            .then_with(|| a.slug.cmp(&b.slug))
-    });
-
-    let available_models = models
-        .into_iter()
-        .map(|m| Model {
-            id: m.slug,
-            name: m.display_name,
-            default_reasoning_effort: m.default_reasoning_level.unwrap_or("medium".to_string()),
-            supported_reasoning_efforts: m
-                .supported_reasoning_levels
-                .into_iter()
-                .map(|p| p.effort)
-                .collect(),
-        })
-        .collect();
+    let available_models = models_from_response(response);
     Ok(AvailableModels {
         models: available_models,
         expires_at: unix_now() + MODELS_CACHE_TTL_SECS,
@@ -406,27 +382,4 @@ struct RefreshResponse {
     refresh_token: String,
     access_token: String,
     id_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelsResponse {
-    models: Vec<RawModel>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawModel {
-    slug: String,
-    display_name: String,
-    visibility: String,
-    supported_in_api: bool,
-    priority: i32,
-    #[serde(default)]
-    default_reasoning_level: Option<String>,
-    #[serde(default)]
-    supported_reasoning_levels: Vec<RawReasoningEffortPreset>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawReasoningEffortPreset {
-    effort: String,
 }
