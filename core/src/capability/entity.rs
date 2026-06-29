@@ -34,7 +34,7 @@ pub enum IconRef {
     Embedded { format: ImageFormat, data: Vec<u8> },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImageFormat {
     Png,
     Jpeg,

@@ -38,7 +38,7 @@ impl std::str::FromStr for ProviderId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum PluginType {
     Native,
@@ -88,7 +88,7 @@ impl HealthStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HealthLevel {
     Inactive,
     Healthy,

@@ -2,7 +2,7 @@ use sqlx::FromRow;
 
 use crate::{entity::ProviderId, provider::ConversationItem};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum AuthKind {
     ApiKey,
