@@ -29,10 +29,16 @@ struct Provider {
     logo: &'static [u8],
 }
 
-const PROVIDERS: &[Provider] = &[Provider {
-    id: ProviderId::Codex,
-    logo: include_bytes!("assets/openai.svg"),
-}];
+const PROVIDERS: &[Provider] = &[
+    Provider {
+        id: ProviderId::Codex,
+        logo: include_bytes!("assets/openai.svg"),
+    },
+    Provider {
+        id: ProviderId::OpenAI,
+        logo: include_bytes!("assets/openai.svg"),
+    },
+];
 
 pub(crate) struct ServicesPage {
     view: PreferencesPage,

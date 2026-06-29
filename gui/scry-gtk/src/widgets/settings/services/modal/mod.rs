@@ -1,8 +1,9 @@
 //! Provider connection dialog.
 //!
-//! The dialog owns the GTK stack for loading, device-code challenge, success,
-//! and error states. It starts the backend connect flow, aborts it on close,
-//! and reports success right before the success state auto-closes.
+//! The dialog owns the GTK stack for loading, device-code challenge, manual
+//! key entry, success, and error states. It starts the backend connect flow,
+//! aborts it on close, and reports success right before the success state
+//! auto-closes.
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
@@ -27,7 +28,7 @@ mod imp {
         Box as GtkBox, Button, CompositeTemplate, Label, Stack, glib, prelude::*,
         subclass::prelude::*,
     };
-    use libadwaita::{prelude::*, subclass::prelude::*};
+    use libadwaita::{PasswordEntryRow, prelude::*, subclass::prelude::*};
     use scry_core::{AppContext, ProviderId};
 
     #[derive(CompositeTemplate, Default)]
@@ -46,12 +47,21 @@ mod imp {
         pub error_message: TemplateChild<Label>,
         #[template_child]
         pub error_close: TemplateChild<Button>,
+        /// Manual-key (API-key) flow widgets.
+        #[template_child]
+        pub key_entry: TemplateChild<PasswordEntryRow>,
+        #[template_child]
+        pub connect: TemplateChild<Button>,
+        #[template_child]
+        pub instructions: TemplateChild<Button>,
 
         pub app: OnceCell<Arc<AppContext>>,
         pub provider_id: OnceCell<ProviderId>,
         pub on_connected: RefCell<Option<Rc<dyn Fn()>>>,
         /// Verification URL reused by the "Open in browser" button.
         pub uri: RefCell<String>,
+        /// Instructions URL for the manual-key flow, opened by the link button.
+        pub instructions_url: RefCell<Option<String>>,
         /// Running backend flow, aborted when the dialog closes.
         pub flow: RefCell<Option<glib::JoinHandle<()>>>,
         /// Success auto-close timeout, cancelled on manual close.
@@ -88,6 +98,32 @@ mod imp {
                 obj,
                 move |_| {
                     obj.close();
+                }
+            ));
+
+            // Manual-key flow: enable Connect only with a non-empty key, submit
+            // on click, and open the provider's key page from the link.
+            self.connect.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.submit_manual_key()
+            ));
+            self.key_entry.connect_changed(glib::clone!(
+                #[weak]
+                obj,
+                move |entry| {
+                    obj.imp()
+                        .connect
+                        .set_sensitive(!entry.text().trim().is_empty());
+                }
+            ));
+            self.instructions.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| {
+                    if let Some(url) = obj.imp().instructions_url.borrow().as_ref() {
+                        super::launch_url(url);
+                    }
                 }
             ));
 
@@ -150,51 +186,54 @@ impl ConnectDialog {
         let app = imp.app.get().expect("app set in new").clone();
         let provider_id = *imp.provider_id.get().expect("provider set in new");
 
-        let handle =
-            glib::MainContext::default().spawn_local(glib::clone!(
-                #[weak(rename_to = dialog)]
-                self,
-                async move {
-                    let init = runtime::spawn({
-                        let app = app.clone();
-                        async move { app.init_connection(provider_id).await }
-                    })
-                    .await;
+        let handle = glib::MainContext::default().spawn_local(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            async move {
+                let init = runtime::spawn({
+                    let app = app.clone();
+                    async move { app.init_connection(provider_id).await }
+                })
+                .await;
 
-                    match init {
-                        Ok(Connection::DeviceCode {
+                match init {
+                    Ok(Connection::DeviceCode {
+                        verification_uri,
+                        user_code,
+                        transaction_payload,
+                    }) => {
+                        dialog.show_challenge(verification_uri, &user_code);
+                        let payload = Connection::DeviceCode {
                             verification_uri,
                             user_code,
                             transaction_payload,
-                        }) => {
-                            dialog.show_challenge(verification_uri, &user_code);
-                            let payload = Connection::DeviceCode {
-                                verification_uri,
-                                user_code,
-                                transaction_payload,
-                            };
-                            let finalize = runtime::spawn(async move {
-                                app.finalize_connection(provider_id, payload).await
-                            })
-                            .await;
-                            match finalize {
-                                Ok(_) => dialog.finish_success(),
-                                Err(e) => dialog.show_error(&e.to_string()),
-                            }
-                        },
-                        // Core supports these variants, but this dialog only
-                        // implements device-code flows.
-                        Ok(Connection::BrowserRedirect { .. }) => dialog
-                            .show_error("Browser sign-in for this provider isn't supported yet."),
-                        Ok(Connection::ManualInput { .. }) => dialog
-                            .show_error("Pasting a key for this provider isn't supported yet."),
-                        Ok(Connection::None) => {
-                            dialog.show_error("This provider doesn't require a connection.")
-                        },
-                        Err(e) => dialog.show_error(&e.to_string()),
-                    }
+                        };
+                        let finalize = runtime::spawn(async move {
+                            app.finalize_connection(provider_id, payload).await
+                        })
+                        .await;
+                        match finalize {
+                            Ok(_) => dialog.finish_success(),
+                            Err(e) => dialog.show_error(&e.to_string()),
+                        }
+                    },
+                    // Core supports these variants, but this dialog only
+                    // implements device-code flows.
+                    Ok(Connection::BrowserRedirect { .. }) => {
+                        dialog.show_error("Browser sign-in for this provider isn't supported yet.")
+                    },
+                    // Manual-key flow waits for the user to paste a key and
+                    // press Connect; the Connect handler finalizes.
+                    Ok(Connection::ManualInput {
+                        instructions_url, ..
+                    }) => dialog.show_manual_input(instructions_url),
+                    Ok(Connection::None) => {
+                        dialog.show_error("This provider doesn't require a connection.")
+                    },
+                    Err(e) => dialog.show_error(&e.to_string()),
                 }
-            ));
+            }
+        ));
         imp.flow.replace(Some(handle));
     }
 
@@ -220,6 +259,49 @@ impl ConnectDialog {
         imp.uri_label.set_label(verification_uri);
         launch_url(verification_uri);
         imp.stack.set_visible_child_name("challenge");
+    }
+
+    fn show_manual_input(&self, instructions_url: Option<String>) {
+        let imp = self.imp();
+        imp.instructions.set_visible(instructions_url.is_some());
+        imp.instructions_url.replace(instructions_url);
+        imp.connect
+            .set_sensitive(!imp.key_entry.text().trim().is_empty());
+        imp.stack.set_visible_child_name("manual");
+        imp.key_entry.grab_focus();
+    }
+
+    fn submit_manual_key(&self) {
+        let imp = self.imp();
+        let api_key = imp.key_entry.text().trim().to_string();
+        if api_key.is_empty() {
+            return;
+        }
+        let app = imp.app.get().expect("app set in new").clone();
+        let provider_id = *imp.provider_id.get().expect("provider set in new");
+        let instructions_url = imp.instructions_url.borrow().clone();
+
+        imp.stack.set_visible_child_name("loading");
+        let handle = glib::MainContext::default().spawn_local(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            async move {
+                let payload = Connection::ManualInput {
+                    api_key,
+                    instructions_url,
+                };
+                let finalize =
+                    runtime::spawn(
+                        async move { app.finalize_connection(provider_id, payload).await },
+                    )
+                    .await;
+                match finalize {
+                    Ok(_) => dialog.finish_success(),
+                    Err(e) => dialog.show_error(&e.to_string()),
+                }
+            }
+        ));
+        imp.flow.replace(Some(handle));
     }
 
     fn finish_success(&self) {
