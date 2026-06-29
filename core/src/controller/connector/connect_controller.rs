@@ -7,7 +7,9 @@ use crate::{
     controller::{ProviderController, remote::ProviderStatis},
     db::{AuthKind, ConnectedProvider, Storage, StorageError},
     entity::{HealthLevel, HealthStatus, ProviderId},
-    provider::{Auth, CodexConnector, Connection, ProviderAuthenticator, ProviderError},
+    provider::{
+        Auth, CodexConnector, Connection, OpenAIConnector, ProviderAuthenticator, ProviderError,
+    },
 };
 
 pub struct ConnectController {
@@ -26,6 +28,9 @@ impl ConnectController {
 
         let codex: Arc<dyn ProviderAuthenticator> = Arc::new(CodexConnector::new(http));
         handlers.insert(codex.id(), codex);
+
+        let openai: Arc<dyn ProviderAuthenticator> = Arc::new(OpenAIConnector::new());
+        handlers.insert(openai.id(), openai);
 
         Self {
             handlers,

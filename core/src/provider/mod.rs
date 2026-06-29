@@ -4,7 +4,7 @@ mod entity;
 mod runtime;
 
 pub use codec::ConversationItem;
-pub use connector::CodexConnector;
+pub use connector::{CodexConnector, OpenAIConnector};
 pub use entity::{
     Auth, ChatEvent, ChatRequest, ChatStream, Connection, Model, ProviderAuthenticator,
     ProviderClient, ProviderError, Result,
