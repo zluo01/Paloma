@@ -6,7 +6,6 @@ use std::{
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::error;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -35,7 +34,7 @@ pub struct ToolController {
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ToolCallPayload {
     pub call_id: String,
     pub name: String,

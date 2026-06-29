@@ -3,7 +3,6 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::{Stream, stream};
 use log::error;
-use serde::Serialize;
 use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
@@ -85,7 +84,7 @@ impl SearchQuery {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchQueryInitError {
     handler: &'static str,
     source: String,

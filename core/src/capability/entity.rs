@@ -1,17 +1,16 @@
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::entity::HealthStatus;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Item {
     pub title: String,
     pub icon: Option<IconRef>,
     pub actions: Vec<Action>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Action {
     /// action name for both UI display and as action enum
     pub label: String,
@@ -21,24 +20,21 @@ pub struct Action {
     pub primary: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ActionOutcome {
     Hide,
     Stay,
     Replace { input: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IconRef {
     Name(String),
     Path(String),
     Embedded { format: ImageFormat, data: Vec<u8> },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageFormat {
     Png,
     Jpeg,
@@ -60,16 +56,13 @@ pub trait QueryHandler: Capability {
     fn run(&self, action: Action) -> ActionOutcome;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapabilityMeta {
     pub name: String,
     pub version: String,
     pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<IconRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
 }
 
@@ -108,7 +101,7 @@ pub struct ToolSpec {
     pub schema: ToolSchema,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ToolSchema {
     pub name: String,
     pub description: String,
