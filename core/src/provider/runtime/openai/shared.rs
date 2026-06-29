@@ -236,6 +236,7 @@ pub(super) fn response_event_stream(
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.failed
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.incomplete
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#error
+/// https://developers.openai.com/api/reference/resources/realtime/server-events#error
 fn parse_stream_error(data: &str) -> ProviderError {
     let msg = serde_json::from_str::<Value>(data)
         .ok()
@@ -247,6 +248,11 @@ fn parse_stream_error(data: &str) -> ProviderError {
                     v.pointer("/response/incomplete_details/reason")
                         .and_then(Value::as_str)
                         .map(|reason| format!("response incomplete: {reason}"))
+                })
+                .or_else(|| {
+                    v.pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
                 })
                 .or_else(|| v.get("message").and_then(Value::as_str).map(str::to_string))
         })
@@ -372,6 +378,24 @@ mod parse_stream_error_tests {
           "sequence_number": 1
         }"#;
         assert_eq!(message(data), "Something went wrong");
+    }
+
+    #[test]
+    fn error_event_extracts_nested_error_message() {
+        let data = r#"{
+          "type": "error",
+          "error": {
+            "type": "insufficient_quota",
+            "code": "insufficient_quota",
+            "message": "You exceeded your current quota, please check your plan and billing details.",
+            "param": null
+          },
+          "sequence_number": 2
+        }"#;
+        assert_eq!(
+            message(data),
+            "You exceeded your current quota, please check your plan and billing details."
+        );
     }
 
     #[test]
