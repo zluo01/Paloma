@@ -8,7 +8,8 @@ use crate::{
     db::{AuthKind, ConnectedProvider, Storage, StorageError},
     entity::{HealthLevel, HealthStatus, ProviderId},
     provider::{
-        Auth, CodexConnector, Connection, OpenAIConnector, ProviderAuthenticator, ProviderError,
+        AnthropicConnector, Auth, ClaudeCodeConnector, CodexConnector, Connection, OpenAIConnector,
+        ProviderAuthenticator, ProviderError,
     },
 };
 
@@ -26,11 +27,17 @@ impl ConnectController {
     ) -> Self {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderAuthenticator>> = DashMap::new();
 
-        let codex: Arc<dyn ProviderAuthenticator> = Arc::new(CodexConnector::new(http));
+        let codex: Arc<dyn ProviderAuthenticator> = Arc::new(CodexConnector::new(http.clone()));
         handlers.insert(codex.id(), codex);
 
         let openai: Arc<dyn ProviderAuthenticator> = Arc::new(OpenAIConnector::new());
         handlers.insert(openai.id(), openai);
+
+        let claude_code: Arc<dyn ProviderAuthenticator> = Arc::new(ClaudeCodeConnector::new(http));
+        handlers.insert(claude_code.id(), claude_code);
+
+        let anthropic: Arc<dyn ProviderAuthenticator> = Arc::new(AnthropicConnector::new());
+        handlers.insert(anthropic.id(), anthropic);
 
         Self {
             handlers,

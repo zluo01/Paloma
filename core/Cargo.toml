@@ -21,6 +21,7 @@ futures = { workspace = true }
 log = { workspace = true }
 notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
+oauth2 = "5.0.0"
 regex = "1.12.4"
 reqwest = { version = "0.13.3", default-features = false, features = [
     "json",
