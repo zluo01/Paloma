@@ -12,13 +12,15 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use super::shared::{
-    MODELS_CACHE_TTL_SECS, ModelsResponse, build_request_body, models_from_response,
-    response_event_stream,
+    ModelsResponse, build_request_body, models_from_response, response_event_stream,
 };
 use crate::{
     db::{AuthKind, Storage},
     entity::{HealthStatus, ProviderId},
-    provider::{Auth, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result},
+    provider::{
+        Auth, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
+        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, unix_now},
+    },
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -318,19 +320,6 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
         models: available_models,
         expires_at: unix_now() + MODELS_CACHE_TTL_SECS,
     })
-}
-
-struct AvailableModels {
-    models: Vec<Model>,
-    expires_at: u64,
-}
-
-/// unix epoch in seconds.
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 /// OAuth and access-token data derived from a refresh-token exchange. Held

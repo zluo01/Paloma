@@ -1,12 +1,11 @@
-#![allow(dead_code)]
-
+mod claude;
 mod codex;
 mod schema;
 
 use std::collections::BTreeMap;
 
+pub use claude::ClaudeCodec;
 pub use codex::CodexCodec;
-#[allow(unused_imports)]
 pub use schema::{ConversationItem, EncodeMode, MessageContentItem, ProviderMeta};
 use serde_json::Value;
 
@@ -87,11 +86,11 @@ pub trait ProviderEncoder: Send + Sync {
 }
 
 pub trait ProviderDecoder: Send + Sync {
-    fn decode_output_text_delta(&self, data: &str) -> Result<String>;
+    fn decode_output_text_delta(&self, data: Value) -> Result<String>;
 
-    fn decode_reasoning_delta(&self, data: &str) -> Result<String>;
+    fn decode_reasoning_delta(&self, data: Value) -> Result<String>;
 
-    fn decode_output_item(&self, data: &str) -> Result<ConversationItem>;
+    fn decode_output_item(&self, data: Value) -> Result<ConversationItem>;
 }
 
 fn provider_meta(item: &Value, normalized_fields: &[&str]) -> ProviderMeta {

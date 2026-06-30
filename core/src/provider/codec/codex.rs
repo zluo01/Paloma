@@ -181,10 +181,8 @@ impl ProviderEncoder for CodexCodec {
 
 impl ProviderDecoder for CodexCodec {
     /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.output_text.delta
-    fn decode_output_text_delta(&self, data: &str) -> Result<String> {
-        let payload: Value = serde_json::from_str(data)?;
-        payload
-            .get("delta")
+    fn decode_output_text_delta(&self, data: Value) -> Result<String> {
+        data.get("delta")
             .and_then(Value::as_str)
             .map(String::from)
             .ok_or_else(|| ProviderError::Other("missing output text delta field".into()))
@@ -192,11 +190,9 @@ impl ProviderDecoder for CodexCodec {
 
     /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.reasoning_summary_text.delta
     /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.reasoning_summary_text.done
-    fn decode_reasoning_delta(&self, data: &str) -> Result<String> {
-        let payload: Value = serde_json::from_str(data)?;
-        payload
-            .get("delta")
-            .or_else(|| payload.get("text"))
+    fn decode_reasoning_delta(&self, data: Value) -> Result<String> {
+        data.get("delta")
+            .or_else(|| data.get("text"))
             .and_then(Value::as_str)
             .map(String::from)
             .ok_or_else(|| ProviderError::Other("missing reasoning delta or text field".into()))
@@ -204,10 +200,8 @@ impl ProviderDecoder for CodexCodec {
 
     /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.output_item.done
     /// https://developers.openai.com/api/reference/resources/responses#(resource)%20responses%20%3E%20(model)%20response_output_item%20%3E%20(schema)
-    fn decode_output_item(&self, data: &str) -> Result<ConversationItem> {
-        let payload: Value = serde_json::from_str(data)?;
-
-        let item = payload
+    fn decode_output_item(&self, data: Value) -> Result<ConversationItem> {
+        let item = data
             .get("item")
             .ok_or_else(|| ProviderError::Other("missing output item".into()))?;
         let response_type = item
@@ -662,6 +656,10 @@ mod encoder_tests {
 mod decoder_tests {
     use super::*;
 
+    fn json(data: &str) -> Value {
+        serde_json::from_str(data).unwrap()
+    }
+
     #[test]
     fn decodes_output_text_delta() {
         let payload = r#"{
@@ -673,7 +671,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let delta = CodexCodec.decode_output_text_delta(payload).unwrap();
+        let delta = CodexCodec.decode_output_text_delta(json(payload)).unwrap();
 
         assert_eq!(delta, "example output");
     }
@@ -690,7 +688,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let delta = CodexCodec.decode_reasoning_delta(payload).unwrap();
+        let delta = CodexCodec.decode_reasoning_delta(json(payload)).unwrap();
 
         assert_eq!(delta, expected);
     }
@@ -707,7 +705,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let delta = CodexCodec.decode_reasoning_delta(payload).unwrap();
+        let delta = CodexCodec.decode_reasoning_delta(json(payload)).unwrap();
 
         assert_eq!(delta, expected);
     }
@@ -833,7 +831,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let item = CodexCodec.decode_output_item(payload).unwrap();
+        let item = CodexCodec.decode_output_item(json(payload)).unwrap();
 
         assert_eq!(
             item,
@@ -867,7 +865,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let item = CodexCodec.decode_output_item(payload).unwrap();
+        let item = CodexCodec.decode_output_item(json(payload)).unwrap();
 
         let ConversationItem::HostedTool {
             function_type,
@@ -912,7 +910,7 @@ mod decoder_tests {
           "sequence_number": 1
         }"#;
 
-        let item = CodexCodec.decode_output_item(payload).unwrap();
+        let item = CodexCodec.decode_output_item(json(payload)).unwrap();
 
         assert_eq!(
             item,

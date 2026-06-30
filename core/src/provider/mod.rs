@@ -9,4 +9,4 @@ pub use entity::{
     Auth, ChatEvent, ChatRequest, ChatStream, Connection, Model, ProviderAuthenticator,
     ProviderClient, ProviderError, Result,
 };
-pub use runtime::{CodexRuntime, OpenAIRuntime};
+pub use runtime::{AnthropicRuntime, CodexRuntime, OpenAIRuntime};

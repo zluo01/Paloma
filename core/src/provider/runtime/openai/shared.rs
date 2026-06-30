@@ -1,4 +1,4 @@
-use std::{sync::LazyLock, time::Duration};
+use std::sync::LazyLock;
 
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{StreamExt, stream};
@@ -12,11 +12,9 @@ use crate::{
     provider::{
         ChatEvent, ChatRequest, ChatStream, Model, ProviderError,
         codec::{CodexCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
+        runtime::SSE_IDLE_TIMEOUT,
     },
 };
-
-/// How long a fetched model catalogue is served from cache before a refetch.
-pub(super) const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(1).as_secs();
 
 /// https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json
 pub(super) static OPENAI_MODEL_CATALOG: LazyLock<Vec<Model>> = LazyLock::new(|| {
@@ -24,8 +22,6 @@ pub(super) static OPENAI_MODEL_CATALOG: LazyLock<Vec<Model>> = LazyLock::new(|| 
         .expect("bundled OpenAI model catalog should parse");
     models_from_response(response)
 });
-
-const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(super) fn build_request_body(request: &ChatRequest, provider_id: ProviderId) -> Value {
     // Wrap each provider-agnostic ToolSchema in the OpenAI Responses API
@@ -120,7 +116,10 @@ pub(super) fn response_event_stream(
                 },
                 Ok(frame) => match frame.event.as_str() {
                     "response.output_text.delta" => {
-                        return match CodexCodec.decode_output_text_delta(&frame.data) {
+                        return match serde_json::from_str(&frame.data)
+                            .map_err(ProviderError::from)
+                            .and_then(|payload| CodexCodec.decode_output_text_delta(payload))
+                        {
                             Ok(text) => Some((
                                 Ok(ChatEvent::TextDelta { provider_id, text }),
                                 Some((sse, reasoning_summary_delta_seen)),
@@ -129,7 +128,10 @@ pub(super) fn response_event_stream(
                         };
                     },
                     "response.reasoning_summary_text.delta" => {
-                        return match CodexCodec.decode_reasoning_delta(&frame.data) {
+                        return match serde_json::from_str(&frame.data)
+                            .map_err(ProviderError::from)
+                            .and_then(|payload| CodexCodec.decode_reasoning_delta(payload))
+                        {
                             Ok(text) => {
                                 reasoning_summary_delta_seen = true;
                                 Some((
@@ -153,7 +155,10 @@ pub(super) fn response_event_stream(
                         if reasoning_summary_delta_seen {
                             continue;
                         }
-                        return match CodexCodec.decode_reasoning_delta(&frame.data) {
+                        return match serde_json::from_str(&frame.data)
+                            .map_err(ProviderError::from)
+                            .and_then(|payload| CodexCodec.decode_reasoning_delta(payload))
+                        {
                             Ok(text) => Some((
                                 Ok(ChatEvent::ReasoningSummaryDelta { text }),
                                 Some((sse, true)),
@@ -162,7 +167,10 @@ pub(super) fn response_event_stream(
                         };
                     },
                     "response.output_item.done" => {
-                        return match CodexCodec.decode_output_item(&frame.data) {
+                        return match serde_json::from_str(&frame.data)
+                            .map_err(ProviderError::from)
+                            .and_then(|payload| CodexCodec.decode_output_item(payload))
+                        {
                             Ok(item) => Some((
                                 Ok(ChatEvent::OutputItem { item }),
                                 Some((sse, reasoning_summary_delta_seen)),
