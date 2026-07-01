@@ -101,6 +101,33 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn set_preferred_provider_config(
+        &self,
+        provider_id: &ProviderId,
+        model: &str,
+        effort: &str,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        let result = sqlx::query(queries::UPDATE_PROVIDER_PREFERENCES_QUERY)
+            .bind(model)
+            .bind(effort)
+            .bind(provider_id)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(provider_id.to_string()));
+        }
+
+        sqlx::query(queries::SET_PREFERRED_QUERY)
+            .bind(provider_id)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn delete_provider(&self, provider_id: &ProviderId) -> Result<()> {
         let result = sqlx::query(queries::DELETE_PROVIDER_QUERY)
             .bind(provider_id)
@@ -109,14 +136,6 @@ impl Storage {
         if result.rows_affected() == 0 {
             return Err(StorageError::NotFound(provider_id.to_string()));
         }
-        Ok(())
-    }
-
-    pub async fn set_preferred(&self, provider_id: &ProviderId) -> Result<()> {
-        sqlx::query(queries::SET_PREFERRED_QUERY)
-            .bind(provider_id)
-            .execute(&self.pool)
-            .await?;
         Ok(())
     }
 

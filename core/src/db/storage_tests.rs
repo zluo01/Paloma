@@ -331,7 +331,7 @@ mod providers {
     }
 
     /// The providers currently flagged preferred — at most one under the
-    /// insert / `set_preferred` invariant.
+    /// insert / `set_preferred_provider_config` invariant.
     async fn preferred_ids(storage: &Storage) -> Vec<ProviderId> {
         storage
             .connected_providers()
@@ -389,7 +389,7 @@ mod providers {
     }
 
     #[tokio::test]
-    async fn set_preferred_moves_preference() {
+    async fn set_preferred_provider_config_updates_config_and_preference() {
         let storage = fresh_storage().await;
         storage
             .insert_provider(
@@ -406,19 +406,59 @@ mod providers {
                 &ProviderId::OpenAI,
                 &AuthKind::ApiKey,
                 "sk",
+                "gpt-5-mini",
+                "low",
+            )
+            .await
+            .unwrap();
+
+        storage
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high")
+            .await
+            .expect("set preferred");
+
+        // Exactly one preferred, and it switched to the target.
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+
+        let config = storage
+            .prefer_model_config(&ProviderId::OpenAI)
+            .await
+            .expect("openai config");
+        assert_eq!(config.model, "gpt-5.1");
+        assert_eq!(config.effort, "high");
+    }
+
+    #[tokio::test]
+    async fn set_preferred_provider_config_nonexistent_keeps_current_preferred() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
                 "gpt-5",
                 "medium",
             )
             .await
             .unwrap();
 
-        storage
-            .set_preferred(&ProviderId::OpenAI)
+        let err = storage
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high")
             .await
-            .expect("set preferred");
+            .expect_err("must fail");
 
-        // Exactly one preferred, and it switched to the target.
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+        assert!(
+            matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::OpenAI.to_string()),
+            "expected NotFound(\"openai\"), got {err:?}",
+        );
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+
+        let config = storage
+            .prefer_model_config(&ProviderId::Codex)
+            .await
+            .expect("codex config");
+        assert_eq!(config.model, "gpt-5");
+        assert_eq!(config.effort, "medium");
     }
 
     #[tokio::test]
@@ -446,7 +486,7 @@ mod providers {
             .unwrap();
 
         storage
-            .set_preferred(&ProviderId::OpenAI)
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high")
             .await
             .expect("set preferred");
 

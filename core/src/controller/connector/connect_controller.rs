@@ -122,27 +122,15 @@ impl ConnectController {
         Ok(())
     }
 
-    pub async fn set_preferences(
-        &self,
-        provider_id: ProviderId,
-        model: &str,
-        effort: &str,
-    ) -> Result<()> {
-        self.storage
-            .update_preferences(&provider_id, model, effort)
-            .await?;
-        Ok(())
-    }
-
-    /// update preferred model with prefer model and effort
     pub async fn set_preferred(
         &self,
         provider_id: ProviderId,
         model: &str,
         effort: &str,
     ) -> Result<()> {
-        self.set_preferences(provider_id, model, effort).await?;
-        self.storage.set_preferred(&provider_id).await?;
+        self.storage
+            .set_preferred_provider_config(&provider_id, model, effort)
+            .await?;
         Ok(())
     }
 
