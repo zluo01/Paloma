@@ -3,7 +3,7 @@ use std::{
         RwLock,
         atomic::{AtomicU8, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use base64::Engine;
@@ -163,10 +163,7 @@ impl CodexRuntime {
             } => expires_at.saturating_sub(Duration::from_mins(5).as_secs()),
             _ => 0,
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = unix_now();
         if now <= valid_until {
             return Some(state.access_token.clone());
         }
