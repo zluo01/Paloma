@@ -77,16 +77,14 @@ impl SessionsView {
         view.append(&header);
         view.append(&scroller);
 
-        let session_view = Self {
+        Self {
             view,
             header,
             list,
             sessions: Rc::new(RefCell::new(vec![])),
             app_context,
             dispatcher,
-        };
-        session_view.refresh(None);
-        session_view
+        }
     }
 
     pub(super) fn widget(&self) -> &GtkBox {
