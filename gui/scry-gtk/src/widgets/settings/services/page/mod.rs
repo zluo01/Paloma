@@ -31,6 +31,14 @@ struct Provider {
 
 const PROVIDERS: &[Provider] = &[
     Provider {
+        id: ProviderId::Anthropic,
+        logo: include_bytes!("assets/claude.svg"),
+    },
+    Provider {
+        id: ProviderId::ClaudeCode,
+        logo: include_bytes!("assets/claude.svg"),
+    },
+    Provider {
         id: ProviderId::Codex,
         logo: include_bytes!("assets/openai.svg"),
     },
@@ -53,16 +61,14 @@ impl ServicesPage {
     pub(crate) fn new(app: Arc<AppContext>, window: &ApplicationWindow) -> Rc<Self> {
         let (view, connected_group, available_group) = build_view();
 
-        let this = Rc::new(Self {
+        Rc::new(Self {
             view,
             connected_group,
             available_group,
             app,
             window: window.downgrade(),
             model: RefCell::new(Model::default()),
-        });
-        this.dispatch(Msg::RefreshRequested);
-        this
+        })
     }
 
     pub(crate) fn widget(&self) -> &PreferencesPage {

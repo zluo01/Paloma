@@ -6,7 +6,6 @@ pub(super) struct Model {
 }
 
 pub(super) enum Msg {
-    RefreshRequested,
     ConnectorsFetched(Result<Vec<Connector>, AppError>),
     ConnectClicked(ProviderId),
     ConnectionSucceeded,
@@ -39,13 +38,12 @@ pub(super) enum Command {
 impl Model {
     /// Services page workflow:
     ///
-    /// - Page creation / overlay refresh: `RefreshRequested -> FetchConnectors -> ConnectorsFetched -> Render`.
+    /// - Page refresh: `ConnectorsFetched -> Render`.
     /// - Connect button: `ConnectClicked -> ShowConnectDialog -> ConnectionSucceeded -> FetchConnectors -> ConnectorsFetched -> Render`.
     /// - Disconnect button: `DisconnectClicked -> ShowDisconnectConfirmation -> DisconnectConfirmed -> DisconnectProvider -> DisconnectFinished -> FetchConnectors -> ConnectorsFetched -> Render`.
     /// - Model picker or effort picker: `PreferenceChanged -> PersistPreference -> PreferenceSaveFinished`.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
-            Msg::RefreshRequested => vec![Command::FetchConnectors],
             Msg::ConnectorsFetched(result) => match result {
                 Ok(connectors) => {
                     self.connectors = connectors;
@@ -88,15 +86,6 @@ mod tests {
             id,
             connection: None,
         }
-    }
-
-    #[test]
-    fn refresh_requests_connector_fetch() {
-        let mut model = Model::default();
-        assert_eq!(
-            model.update(Msg::RefreshRequested),
-            vec![Command::FetchConnectors]
-        );
     }
 
     #[test]

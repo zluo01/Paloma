@@ -28,7 +28,7 @@ mod imp {
         Box as GtkBox, Button, CompositeTemplate, Label, Stack, glib, prelude::*,
         subclass::prelude::*,
     };
-    use libadwaita::{PasswordEntryRow, prelude::*, subclass::prelude::*};
+    use libadwaita::{EntryRow, PasswordEntryRow, prelude::*, subclass::prelude::*};
     use scry_core::{AppContext, ProviderId};
 
     #[derive(CompositeTemplate, Default)]
@@ -54,6 +54,13 @@ mod imp {
         pub connect: TemplateChild<Button>,
         #[template_child]
         pub instructions: TemplateChild<Button>,
+        /// Browser OAuth flow widgets.
+        #[template_child]
+        pub browser_entry: TemplateChild<EntryRow>,
+        #[template_child]
+        pub browser_connect: TemplateChild<Button>,
+        #[template_child]
+        pub browser_open: TemplateChild<Button>,
 
         pub app: OnceCell<Arc<AppContext>>,
         pub provider_id: OnceCell<ProviderId>,
@@ -124,6 +131,25 @@ mod imp {
                     if let Some(url) = obj.imp().instructions_url.borrow().as_ref() {
                         super::launch_url(url);
                     }
+                }
+            ));
+            self.browser_open.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| super::launch_url(obj.imp().uri.borrow().as_str())
+            ));
+            self.browser_connect.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.submit_browser_redirect()
+            ));
+            self.browser_entry.connect_changed(glib::clone!(
+                #[weak]
+                obj,
+                move |entry| {
+                    obj.imp()
+                        .browser_connect
+                        .set_sensitive(!entry.text().trim().is_empty());
                 }
             ));
 
@@ -217,10 +243,8 @@ impl ConnectDialog {
                             Err(e) => dialog.show_error(&e.to_string()),
                         }
                     },
-                    // Core supports these variants, but this dialog only
-                    // implements device-code flows.
-                    Ok(Connection::BrowserRedirect { .. }) => {
-                        dialog.show_error("Browser sign-in for this provider isn't supported yet.")
+                    Ok(Connection::BrowserRedirect { authorization_url }) => {
+                        dialog.show_browser_redirect(authorization_url)
                     },
                     // Manual-key flow waits for the user to paste a key and
                     // press Connect; the Connect handler finalizes.
@@ -271,6 +295,16 @@ impl ConnectDialog {
         imp.key_entry.grab_focus();
     }
 
+    fn show_browser_redirect(&self, authorization_url: String) {
+        let imp = self.imp();
+        imp.uri.replace(authorization_url.clone());
+        imp.browser_entry.set_text("");
+        imp.browser_connect.set_sensitive(false);
+        launch_url(&authorization_url);
+        imp.stack.set_visible_child_name("browser");
+        imp.browser_entry.grab_focus();
+    }
+
     fn submit_manual_key(&self) {
         let imp = self.imp();
         let api_key = imp.key_entry.text().trim().to_string();
@@ -290,6 +324,35 @@ impl ConnectDialog {
                     api_key,
                     instructions_url,
                 };
+                let finalize =
+                    runtime::spawn(
+                        async move { app.finalize_connection(provider_id, payload).await },
+                    )
+                    .await;
+                match finalize {
+                    Ok(_) => dialog.finish_success(),
+                    Err(e) => dialog.show_error(&e.to_string()),
+                }
+            }
+        ));
+        imp.flow.replace(Some(handle));
+    }
+
+    fn submit_browser_redirect(&self) {
+        let imp = self.imp();
+        let authorization_url = imp.browser_entry.text().trim().to_string();
+        if authorization_url.is_empty() {
+            return;
+        }
+        let app = imp.app.get().expect("app set in new").clone();
+        let provider_id = *imp.provider_id.get().expect("provider set in new");
+
+        imp.stack.set_visible_child_name("loading");
+        let handle = glib::MainContext::default().spawn_local(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            async move {
+                let payload = Connection::BrowserRedirect { authorization_url };
                 let finalize =
                     runtime::spawn(
                         async move { app.finalize_connection(provider_id, payload).await },
