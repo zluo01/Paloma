@@ -39,17 +39,9 @@ pub(super) enum Msg {
         prompt: String,
         provider_id: ProviderId,
     },
-    ChatInitialized {
-        turn_id: u64,
-        provider_id: ProviderId,
-        prompt: String,
-        result: Result<(Uuid, bool), AppError>,
-    },
     ChatSent {
         turn_id: u64,
-        session_id: Uuid,
-        is_new: bool,
-        result: Result<(), AppError>,
+        session_id: Option<Uuid>,
     },
     ChatRenderEvent {
         turn_id: u64,
@@ -93,21 +85,11 @@ pub(super) enum Command {
     },
     ExitSearch,
     SubmitChatPrompt,
-    InitChat {
-        turn_id: u64,
-        prior_session: Option<Uuid>,
-        provider_id: ProviderId,
-        prompt: String,
-    },
     SendChat {
         turn_id: u64,
-        session_id: Uuid,
+        session_id: Option<Uuid>,
         provider_id: ProviderId,
         prompt: String,
-        is_new: bool,
-    },
-    CleanupChatSession {
-        session_id: Uuid,
     },
     RenderChatEvent {
         event: RenderEvent,
@@ -168,8 +150,8 @@ impl Model {
     /// - Activate a result: `LocalQueryResultActionRequested -> InvokeLocalQueryResultAction + HideOverlay`.
     /// - Close action panel: `ActionPanelClosed -> FocusSearchEntry`.
     /// - Exit search: `SearchExitRequest -> ExitSearch`.
-    /// - Submit a prompt `ChatPromptSubmitted` `-> SubmitChatPrompt -> ChatPromptResolved -> InitChat -> ChatInitialized -> ShowChatView + SendChat -> ChatRenderEvent -> RenderChatEvent` (per delta, until `RenderEvent::Done`) `-> ChatSent`. `ChatInitialized(Err)` / `ChatSent(Err) -> ReportError` (a new session also `CleanupChatSession`).
-    /// - Interrupt the turn: `ChatInterruptRequested -> CancelChatSession`; the running `SendChat` stream then delivers `RenderEvent::Cancel` as `ChatRenderEvent -> RenderChatEvent` and ends with `ChatSent`.
+    /// - Submit a prompt `ChatPromptSubmitted` `-> SubmitChatPrompt -> ChatPromptResolved -> ShowChatView + SendChat -> ChatSent` (session id accepted) `-> ChatRenderEvent -> RenderChatEvent` (per delta, until `RenderEvent::Done`/`Cancel`/`Error`).
+    /// - Interrupt the turn: `ChatInterruptRequested -> CancelChatSession`; the running `SendChat` stream then delivers `RenderEvent::Cancel` as `ChatRenderEvent -> RenderChatEvent`.
     /// - Exit chat: `ChatExitRequested -> HideContent`.
     /// - Open a session: `SessionOpenRequested -> OpenSelectedSession -> SessionRestoreRequested -> ClearChatContent + ShowChatView + RestoreSession -> ChatRenderEvent -> RenderChatEvent` (replay) `-> SessionRestoreFinished -> CloseSessions`. `SessionRestoreFinished(Err) -> ReportError`.
     /// - Delete a session: `SessionDeleteRequested -> DeleteSelectedSession`.
@@ -245,60 +227,26 @@ impl Model {
                     return vec![];
                 }
                 let turn_id = self.begin_turn();
-                vec![Command::InitChat {
-                    turn_id,
-                    prior_session: self.current_session,
-                    provider_id,
-                    prompt,
-                }]
-            },
-            Msg::ChatInitialized {
-                turn_id,
-                provider_id,
-                prompt,
-                result,
-            } => {
-                if turn_id != self.turn_id {
-                    return vec![];
-                }
-                match result {
-                    Ok((session_id, is_new)) => {
-                        self.mode = Mode::Chat;
-                        self.current_session = Some(session_id);
-                        vec![
-                            Command::ShowChatView,
-                            Command::SendChat {
-                                turn_id,
-                                session_id,
-                                provider_id,
-                                prompt,
-                                is_new,
-                            },
-                        ]
+                self.mode = Mode::Chat;
+
+                vec![
+                    Command::ShowChatView,
+                    Command::SendChat {
+                        turn_id,
+                        session_id: self.current_session,
+                        provider_id,
+                        prompt,
                     },
-                    Err(error) => vec![Command::ReportError { error }],
-                }
+                ]
             },
             Msg::ChatSent {
                 turn_id,
                 session_id,
-                is_new,
-                result,
             } => {
-                if turn_id != self.turn_id {
-                    return vec![];
+                if turn_id == self.turn_id {
+                    self.current_session = session_id;
                 }
-                match result {
-                    Ok(()) => vec![],
-                    Err(error) => {
-                        let mut commands = vec![Command::ReportError { error }];
-                        if is_new {
-                            self.current_session = None;
-                            commands.push(Command::CleanupChatSession { session_id });
-                        }
-                        commands
-                    },
-                }
+                vec![]
             },
             Msg::ChatRenderEvent { turn_id, event } => {
                 if turn_id != self.turn_id {
@@ -371,8 +319,8 @@ mod tests {
             prompt: "hello".into(),
             provider_id: ProviderId::Codex,
         });
-        let [Command::InitChat { turn_id, .. }] = commands.as_slice() else {
-            panic!("expected a chat turn to initialize");
+        let [Command::ShowChatView, Command::SendChat { turn_id, .. }] = commands.as_slice() else {
+            panic!("expected chat view to show and chat to start");
         };
         *turn_id
     }
@@ -392,6 +340,48 @@ mod tests {
     }
 
     #[test]
+    fn prompt_resolution_enters_chat_and_sends_prompt() {
+        let mut model = Model::new();
+
+        let commands = model.update(Msg::ChatPromptResolved {
+            prompt: "  hello  ".into(),
+            provider_id: ProviderId::Codex,
+        });
+
+        assert!(matches!(model.mode, Mode::Chat));
+        let [
+            Command::ShowChatView,
+            Command::SendChat {
+                session_id,
+                provider_id,
+                prompt,
+                ..
+            },
+        ] = commands.as_slice()
+        else {
+            panic!("expected chat view to show before sending chat");
+        };
+        assert_eq!(*session_id, None);
+        assert_eq!(*provider_id, ProviderId::Codex);
+        assert_eq!(prompt, "hello");
+    }
+
+    #[test]
+    fn chat_sent_updates_current_session_for_active_turn() {
+        let mut model = Model::new();
+        let turn_id = running_turn_id(&mut model);
+        let session_id = Uuid::now_v7();
+
+        let commands = model.update(Msg::ChatSent {
+            turn_id,
+            session_id: Some(session_id),
+        });
+
+        assert!(commands.is_empty());
+        assert_eq!(model.current_session, Some(session_id));
+    }
+
+    #[test]
     fn reset_invalidates_in_flight_chat_events() {
         let mut model = Model::new();
         let turn_id = running_turn_id(&mut model);
@@ -403,5 +393,21 @@ mod tests {
             event: RenderEvent::Done,
         });
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn stale_chat_sent_does_not_replace_current_session() {
+        let mut model = Model::new();
+        let turn_id = running_turn_id(&mut model);
+        let stale_session = Uuid::now_v7();
+
+        model.update(Msg::ChatExitRequested);
+        let commands = model.update(Msg::ChatSent {
+            turn_id,
+            session_id: Some(stale_session),
+        });
+
+        assert!(commands.is_empty());
+        assert_eq!(model.current_session, None);
     }
 }

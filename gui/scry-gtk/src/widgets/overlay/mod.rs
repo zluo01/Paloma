@@ -214,20 +214,12 @@ impl Overlay {
             Command::ClearSearchResults => self.search.clear(),
             Command::HideContent => self.close_content(),
             Command::SubmitChatPrompt => self.construct_chat_prompt(),
-            Command::InitChat {
-                turn_id,
-                prior_session,
-                provider_id,
-                prompt,
-            } => self.init_chat(turn_id, prior_session, provider_id, prompt),
             Command::SendChat {
                 turn_id,
                 session_id,
                 provider_id,
                 prompt,
-                is_new,
-            } => self.send_chat(turn_id, session_id, provider_id, prompt, is_new),
-            Command::CleanupChatSession { session_id } => self.cleanup_stale_session(session_id),
+            } => self.send_chat(turn_id, session_id, provider_id, prompt),
             Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
             Command::RenderChatEvent { event } => self.render_chat_event(event),
             Command::ShowChatView => self.show_chat_view(),
@@ -420,60 +412,25 @@ impl Overlay {
         }));
     }
 
-    fn init_chat(
-        &self,
-        turn_id: u64,
-        prior_session: Option<Uuid>,
-        provider_id: ProviderId,
-        prompt: String,
-    ) {
-        let app_context = self.app_context.clone();
-        let dispatcher = self.dispatcher.clone();
-        drop(runtime::tokio_runtime().spawn(async move {
-            let prompt_for_init = prompt.clone();
-            let result = app_context.init_chat(prior_session, prompt_for_init).await;
-            let _ = dispatcher.unbounded_send(Msg::ChatInitialized {
-                turn_id,
-                prompt,
-                result,
-                provider_id,
-            });
-        }));
-    }
-
     fn send_chat(
         &self,
         turn_id: u64,
-        session_id: Uuid,
+        session_id: Option<Uuid>,
         provider: ProviderId,
         prompt: String,
-        is_new: bool,
     ) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
-            let result = match app_context.chat(session_id, provider, prompt).await {
-                Ok(mut render_stream) => {
-                    while let Some(event) = render_stream.next().await {
-                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
-                    }
-                    Ok(())
-                },
-                Err(error) => Err(error),
-            };
+            let mut chat_render_stream = app_context.chat(session_id, provider, prompt).await;
+            let session_id = chat_render_stream.session_id;
             let _ = dispatcher.unbounded_send(Msg::ChatSent {
                 turn_id,
                 session_id,
-                is_new,
-                result,
             });
-        }));
-    }
-
-    fn cleanup_stale_session(&self, session_id: Uuid) {
-        let app_context = self.app_context.clone();
-        drop(runtime::tokio_runtime().spawn(async move {
-            app_context.cleanup_error_session(session_id).await;
+            while let Some(event) = chat_render_stream.stream.next().await {
+                let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
+            }
         }));
     }
 
@@ -509,10 +466,7 @@ impl Overlay {
             RenderEvent::Done => {
                 self.chat.finish();
             },
-            RenderEvent::Error { message } => {
-                warn!("chat render: {message}");
-                self.chat.fail(&message);
-            },
+            RenderEvent::Error { message } => self.chat.fail(&message),
             RenderEvent::Cancel => {
                 self.chat.cancel();
             },
