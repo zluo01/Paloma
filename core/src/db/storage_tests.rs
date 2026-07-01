@@ -653,7 +653,7 @@ mod sessions {
     }
 
     #[tokio::test]
-    async fn touch_session_bumps_last_update() {
+    async fn inserting_user_prompt_history_touches_session() {
         let storage = fresh_storage().await;
         storage
             .insert_provider(
@@ -677,9 +677,15 @@ mod sessions {
             .unwrap();
 
         storage
-            .touch_session(&session_id.to_string())
+            .insert_history(
+                &session_id.to_string(),
+                &ProviderId::Codex,
+                &ConversationItem::UserPrompt {
+                    prompt: "hello".into(),
+                },
+            )
             .await
-            .expect("touch");
+            .expect("insert history");
 
         // `last_update` isn't returned by `all_sessions`; read it directly.
         let row = sqlx::query("SELECT last_update FROM sessions WHERE session_id = ?")
@@ -692,17 +698,46 @@ mod sessions {
     }
 
     #[tokio::test]
-    async fn touch_session_nonexistent_returns_not_found() {
+    async fn inserting_non_prompt_history_preserves_session_timestamp() {
         let storage = fresh_storage().await;
-        let err = storage
-            .touch_session("019e1234-5678-7000-8000-0000000000fe")
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
             .await
-            .expect_err("must fail");
+            .unwrap();
 
-        assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == "019e1234-5678-7000-8000-0000000000fe"),
-            "expected NotFound, got {err:?}",
-        );
+        let session_id = uuid("019e1234-5678-7000-8000-0000000000fe");
+        storage.create_new_session(session_id, "t").await.unwrap();
+
+        sqlx::query("UPDATE sessions SET last_update = 1000 WHERE session_id = ?")
+            .bind(session_id.to_string())
+            .execute(storage.pool())
+            .await
+            .unwrap();
+
+        storage
+            .insert_history(
+                &session_id.to_string(),
+                &ProviderId::Codex,
+                &ConversationItem::Message {
+                    message: vec![],
+                    provider_meta: Default::default(),
+                },
+            )
+            .await
+            .expect("insert history");
+
+        let row = sqlx::query("SELECT last_update FROM sessions WHERE session_id = ?")
+            .bind(session_id.to_string())
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.get::<i64, _>("last_update"), 1000);
     }
 
     #[tokio::test]

@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS history
 
 CREATE INDEX IF NOT EXISTS idx_history_session ON history (session_id);
 
+CREATE TRIGGER IF NOT EXISTS sessions_touch_on_user_prompt
+    AFTER INSERT
+    ON history
+    WHEN NEW.payload_type = 'user_prompt'
+BEGIN
+    UPDATE sessions
+    SET last_update = NEW.timestamp
+    WHERE session_id = NEW.session_id;
+END;
+
 CREATE TABLE IF NOT EXISTS plugins
 (
     name        TEXT PRIMARY KEY NOT NULL,

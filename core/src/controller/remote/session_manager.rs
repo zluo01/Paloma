@@ -242,7 +242,6 @@ impl SessionManager {
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
         let errored = matches!(&payload, SessionEvent::Err(_));
-        let touch_session = matches!(&payload, SessionEvent::UserPrompt(_));
 
         // Persist history items before publishing them to subscribers.
         if let Some(item) = entry {
@@ -259,13 +258,6 @@ impl SessionManager {
             )
             .await;
         session.update(payload);
-
-        if touch_session && let Err(e) = self.storage.touch_session(&session_id.to_string()).await {
-            error!(
-                "fail to update session last update time for {}. {}",
-                &session_id, e
-            )
-        }
 
         if let Some(event) = render_event {
             let terminal = matches!(session.terminal, TerminalState::Done | TerminalState::Error);

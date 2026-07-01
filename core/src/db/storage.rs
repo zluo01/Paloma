@@ -135,17 +135,6 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn touch_session(&self, session_id: &str) -> Result<()> {
-        let result = sqlx::query(queries::TOUCH_SESSION_QUERY)
-            .bind(session_id)
-            .execute(&self.pool)
-            .await?;
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(session_id.to_string()));
-        }
-        Ok(())
-    }
-
     pub async fn all_sessions(&self) -> Result<Vec<Session>> {
         let sessions = sqlx::query_as::<_, Session>(queries::GET_ALL_SESSIONS_QUERY)
             .fetch_all(&self.pool)
