@@ -518,16 +518,23 @@ impl Overlay {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
-            let result = match app_context.restore_session(session_id).await {
+            match app_context.restore_session(session_id).await {
                 Ok(mut render_stream) => {
+                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished {
+                        turn_id,
+                        result: Ok(()),
+                    });
                     while let Some(event) = render_stream.next().await {
                         let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
                     }
-                    Ok(())
                 },
-                Err(error) => Err(error),
+                Err(error) => {
+                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished {
+                        turn_id,
+                        result: Err(error),
+                    });
+                },
             };
-            let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished { turn_id, result });
         }));
     }
 }
