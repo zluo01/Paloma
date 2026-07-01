@@ -9,7 +9,7 @@ pub use permission_workflow_manager::{
     PermissionWorkflowError, PermissionWorkflowManager, PermissionWorkflowManagerClient,
 };
 pub use provider_controller::{ProviderController, ProviderControllerError, ProviderStatis};
-pub use remote_query::{RemoteQuery, RemoteQueryError};
+pub use remote_query::{ChatRenderStream, RemoteQuery, RemoteQueryError};
 pub use session_manager::{SessionEvent, SessionListItem, SessionManager, SessionManagerError};
 pub use tool_controller::{ToolController, ToolControllerError};
 pub use turn_manager::TurnManager;

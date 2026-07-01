@@ -15,7 +15,7 @@ use crate::{
         helper::{Disposition, extract_args},
         remote::PermissionWorkflowManagerClient,
     },
-    db::{HistoryEntry, Session as StorageSession, Storage, StorageError},
+    db::{Session as StorageSession, Storage, StorageError},
     entity::ProviderId,
     provider::{ChatEvent, ConversationItem},
     utils::Gated,
@@ -30,10 +30,10 @@ pub struct SessionListItem {
 
 #[derive(Debug)]
 enum SessionStreamingEvent {
-    CreateSession {
-        session_id: Uuid,
+    EnsureSession {
+        session_id: Option<Uuid>,
         title: String,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<(Uuid, bool)>>,
     },
     RestoreSession {
         session_id: Uuid,
@@ -47,14 +47,11 @@ enum SessionStreamingEvent {
         session_id: Uuid,
         provider_id: ProviderId,
         payload: SessionEvent,
+        reply: oneshot::Sender<Result<()>>,
     },
     CancelEvent {
         session_id: Uuid,
         reply: oneshot::Sender<Result<()>>,
-    },
-    ConstructMessages {
-        session_id: Uuid,
-        reply: oneshot::Sender<Result<Vec<HistoryEntry>>>,
     },
     AvailableSessions {
         reply: oneshot::Sender<Result<Vec<SessionListItem>>>,
@@ -86,6 +83,16 @@ struct Session {
     delta: Vec<SessionEvent>,
     terminal: TerminalState,
     subscriber: Gated<mpsc::UnboundedSender<RenderEvent>>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            delta: vec![],
+            terminal: TerminalState::Done,
+            subscriber: Gated::empty(),
+        }
+    }
 }
 
 pub struct SessionManager {
@@ -133,30 +140,12 @@ impl SessionManager {
 
     async fn handle_event(&mut self, event: SessionStreamingEvent) -> Result<()> {
         match event {
-            SessionStreamingEvent::CreateSession {
+            SessionStreamingEvent::EnsureSession {
                 session_id,
                 title,
                 reply,
             } => {
-                let result = self
-                    .storage
-                    .create_new_session(session_id, &title)
-                    .await
-                    .map_err(SessionManagerError::from)
-                    .and_then(|()| match self.sessions.entry(session_id) {
-                        Entry::Occupied(_) => {
-                            Err(SessionManagerError::SessionAlreadyExists(session_id))
-                        },
-                        Entry::Vacant(vacant) => {
-                            vacant.insert(Session {
-                                delta: Vec::new(),
-                                terminal: TerminalState::Done,
-                                subscriber: Gated::empty(),
-                            });
-                            Ok(())
-                        },
-                    });
-                let _ = reply.send(result);
+                let _ = reply.send(self.ensure_session(session_id, title).await);
             },
             SessionStreamingEvent::RestoreSession { session_id, reply } => {
                 let _ = reply.send(self.restore_session(session_id).await);
@@ -168,13 +157,9 @@ impl SessionManager {
                 session_id,
                 provider_id,
                 payload,
+                reply,
             } => {
-                if let Err(err) = self.add_event(session_id, provider_id, payload).await {
-                    error!("session {session_id} add_event failed: {err}");
-                }
-            },
-            SessionStreamingEvent::ConstructMessages { session_id, reply } => {
-                let _ = reply.send(self.construct_messages(session_id).await);
+                let _ = reply.send(self.add_event(session_id, provider_id, payload).await);
             },
             SessionStreamingEvent::AvailableSessions { reply } => {
                 let result = self
@@ -204,6 +189,34 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Resolve chat session:
+    /// - Some + duplicate: existing session.
+    /// - Some + insert: stale id reused as new session.
+    /// - None: generated new session.
+    async fn ensure_session(
+        &mut self,
+        session_id: Option<Uuid>,
+        title: String,
+    ) -> Result<(Uuid, bool)> {
+        let id = session_id.unwrap_or_else(Uuid::now_v7);
+        match self.storage.create_new_session(id, &title).await {
+            Ok(_) => {
+                self.sessions.insert(id, Session::default());
+                Ok((id, true))
+            },
+            Err(StorageError::Duplicate(_)) => {
+                match self.sessions.entry(id) {
+                    Entry::Occupied(_) => {},
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(Session::default());
+                    },
+                }
+                Ok((id, false))
+            },
+            Err(error) => Err(error.into()),
+        }
+    }
+
     async fn add_event(
         &mut self,
         session_id: Uuid,
@@ -231,6 +244,13 @@ impl SessionManager {
         let errored = matches!(&payload, SessionEvent::Err(_));
         let touch_session = matches!(&payload, SessionEvent::UserPrompt(_));
 
+        // Persist history items before publishing them to subscribers.
+        if let Some(item) = entry {
+            self.storage
+                .insert_history(&session_id.to_string(), &provider_id, &item)
+                .await?;
+        }
+
         let render_event = payload
             .to_render_event(
                 &self.permission_workflow_client,
@@ -240,12 +260,6 @@ impl SessionManager {
             .await;
         session.update(payload);
 
-        // save only output item or tool call output item to db history
-        if let Some(item) = entry {
-            self.storage
-                .insert_history(&session_id.to_string(), &provider_id, &item)
-                .await?;
-        }
         if touch_session && let Err(e) = self.storage.touch_session(&session_id.to_string()).await {
             error!(
                 "fail to update session last update time for {}. {}",
@@ -433,11 +447,6 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<HistoryEntry>> {
-        let messages = self.storage.get_history(&session_id.to_string()).await?;
-        Ok(messages)
-    }
-
     fn subscribe(
         &mut self,
         session_id: Uuid,
@@ -577,10 +586,14 @@ async fn tool_call_render(
 }
 
 impl SessionManagerClient {
-    pub async fn create_session(&self, session_id: Uuid, title: String) -> Result<()> {
+    pub async fn ensure_session(
+        &self,
+        session_id: Option<Uuid>,
+        title: String,
+    ) -> Result<(Uuid, bool)> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
-            .send(SessionStreamingEvent::CreateSession {
+            .send(SessionStreamingEvent::EnsureSession {
                 session_id,
                 title,
                 reply: reply_tx,
@@ -598,14 +611,19 @@ impl SessionManagerClient {
         provider_id: ProviderId,
         payload: SessionEvent,
     ) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::AddEvent {
                 session_id,
                 provider_id,
                 payload,
+                reply: reply_tx,
             })
             .await
-            .map_err(|_| SessionManagerError::ChannelClosed)
+            .map_err(|_| SessionManagerError::ChannelClosed)?;
+        reply_rx
+            .await
+            .map_err(|_| SessionManagerError::ChannelClosed)?
     }
 
     pub async fn cancel_event(&self, session_id: Uuid) -> Result<()> {
@@ -659,20 +677,6 @@ impl SessionManagerClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::RemoveSession {
-                session_id,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| SessionManagerError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| SessionManagerError::ChannelClosed)?
-    }
-
-    pub async fn construct_messages(&self, session_id: Uuid) -> Result<Vec<HistoryEntry>> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(SessionStreamingEvent::ConstructMessages {
                 session_id,
                 reply: reply_tx,
             })

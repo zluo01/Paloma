@@ -21,7 +21,7 @@ use crate::{
             tool_controller::ToolCallPayload,
         },
     },
-    db::{Storage, StorageError},
+    db::{HistoryEntry, Storage, StorageError},
     entity::ProviderId,
     provider::{ChatEvent, ChatRequest, ChatStream, ConversationItem, ProviderError},
 };
@@ -73,6 +73,8 @@ enum TurnStepEvent {
         session_id: Uuid,
         reply: oneshot::Sender<Result<()>>,
     },
+    /// Self calling end state, should never be called outside
+    Done { session_id: Uuid },
 }
 
 impl TurnManager {
@@ -131,6 +133,7 @@ impl TurnManager {
             TurnStepEvent::Drop { session_id, reply } => {
                 let _ = reply.send(self.drop_turn(session_id).await);
             },
+            TurnStepEvent::Done { session_id } => self.mark_step_done(session_id),
         }
         Ok(())
     }
@@ -148,7 +151,6 @@ impl TurnManager {
         let session_client = self.session_manager_client.clone();
         let permission_client = self.permission_workflow_client.clone();
         let event_tx = self.event_tx.clone();
-        let turn_map = self.turn_map.clone();
         let tools = self.tool_controller.tool_schemas().await;
 
         let handle = tokio::spawn(async move {
@@ -167,9 +169,23 @@ impl TurnManager {
                     let _ = reply.send(Ok(()));
                     stream
                 },
+                Err(TurnManagerError::Provider(error)) => {
+                    let result = session_client
+                        .add_event(
+                            session_id,
+                            provider_id,
+                            SessionEvent::Err(error.to_string()),
+                        )
+                        .await
+                        .map_err(TurnManagerError::from);
+
+                    let _ = reply.send(result);
+                    let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
+                    return;
+                },
                 Err(err) => {
                     let _ = reply.send(Err(err));
-                    mark_step_done(&turn_map, session_id);
+                    let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
                     return;
                 },
             };
@@ -180,7 +196,6 @@ impl TurnManager {
                 tool_controller,
                 &permission_client,
                 &event_tx,
-                &turn_map,
                 provider_id,
                 session_id,
             )
@@ -210,7 +225,6 @@ impl TurnManager {
         let provider_controller = self.provider_controller.clone();
         let storage = self.storage.clone();
         let event_tx = self.event_tx.clone();
-        let turn_map = self.turn_map.clone();
         let tools = tool_controller.tool_schemas().await;
 
         let handle = tokio::spawn(async move {
@@ -259,11 +273,11 @@ impl TurnManager {
             {
                 Ok(stream) => stream,
                 Err(err) => {
-                    error!("turn {session_id}: chat request failed: {err}");
+                    error!("turn {session_id}: chat request failed during tool call turn: {err}");
                     let _ = session_client
                         .add_event(session_id, provider_id, SessionEvent::Err(err.to_string()))
                         .await;
-                    mark_step_done(&turn_map, session_id);
+                    let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
                     return;
                 },
             };
@@ -274,7 +288,6 @@ impl TurnManager {
                 tool_controller,
                 &permission_client,
                 &event_tx,
-                &turn_map,
                 provider_id,
                 session_id,
             )
@@ -309,13 +322,13 @@ impl TurnManager {
         }
         Ok(())
     }
-}
 
-fn mark_step_done(turn_map: &DashMap<Uuid, TurnState>, session_id: Uuid) {
-    if let Some(mut state) = turn_map.get_mut(&session_id)
-        && matches!(*state, TurnState::Running(_))
-    {
-        *state = TurnState::Done;
+    fn mark_step_done(&self, session_id: Uuid) {
+        if let Some(mut state) = self.turn_map.get_mut(&session_id)
+            && matches!(*state, TurnState::Running(_))
+        {
+            *state = TurnState::Done;
+        }
     }
 }
 
@@ -326,7 +339,6 @@ async fn run_step(
     tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     event_tx: &mpsc::Sender<TurnStepEvent>,
-    turn_map: &DashMap<Uuid, TurnState>,
     provider_id: ProviderId,
     session_id: Uuid,
 ) {
@@ -351,7 +363,7 @@ async fn run_step(
             })
             .await;
     } else {
-        mark_step_done(turn_map, session_id);
+        let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
     }
 }
 
@@ -367,13 +379,23 @@ async fn open_stream(
     let client = provider_controller.client(provider_id)?;
     let config = storage.prefer_model_config(&provider_id).await?;
 
+    let mut messages = storage.get_history(&session_id.to_string()).await?;
+
     if let Some(prompt) = prompt {
         session_client
-            .add_event(session_id, provider_id, SessionEvent::UserPrompt(prompt))
+            .add_event(
+                session_id,
+                provider_id,
+                SessionEvent::UserPrompt(prompt.clone()),
+            )
             .await?;
+
+        messages.push(HistoryEntry {
+            provider_id,
+            payload: ConversationItem::UserPrompt { prompt },
+        });
     }
 
-    let messages = session_client.construct_messages(session_id).await?;
     let stream = client
         .chat(ChatRequest {
             model: config.model,

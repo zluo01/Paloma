@@ -37,6 +37,8 @@ pub use entity::{
 pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
 
+use crate::controller::ChatRenderStream;
+
 pub struct AppContext {
     storage: Storage,
     connect: ConnectController,
@@ -141,28 +143,15 @@ impl AppContext {
         self.search_query.run(id, action)
     }
 
-    pub async fn init_chat(
-        &self,
-        session_id: Option<Uuid>,
-        prompt: String,
-    ) -> Result<(Uuid, bool)> {
-        Ok(self.remote_query.init_chat(session_id, prompt).await?)
-    }
-
     pub async fn chat(
         &self,
-        session_id: Uuid,
+        session_id: Option<Uuid>,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
-        Ok(self
-            .remote_query
+    ) -> ChatRenderStream {
+        self.remote_query
             .chat(session_id, provider_id, prompt)
-            .await?)
-    }
-
-    pub async fn cleanup_error_session(&self, session_id: Uuid) {
-        self.remote_query.cleanup(session_id).await;
+            .await
     }
 
     pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>> {

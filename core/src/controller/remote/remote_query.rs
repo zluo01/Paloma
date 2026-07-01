@@ -1,9 +1,9 @@
-use futures::{Stream, stream};
+use futures::{Stream, StreamExt, stream, stream::BoxStream};
 use log::error;
 use uuid::Uuid;
 
 use crate::{
-    RenderEvent,
+    ChatRenderEvent, RenderEvent,
     controller::{
         PermissionWorkflowError, ProviderControllerError, SessionManagerError,
         remote::{
@@ -22,6 +22,20 @@ pub struct RemoteQuery {
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
+pub struct ChatRenderStream {
+    pub session_id: Option<Uuid>,
+    pub stream: BoxStream<'static, RenderEvent>,
+}
+
+const CHAT_START_ERROR_MESSAGE: &str = "Internal Error. Fail to start a chat.";
+
+#[derive(Debug)]
+struct ChatStreamError {
+    session_id: Option<Uuid>,
+    is_new_session: bool,
+    error: RemoteQueryError,
+}
+
 impl RemoteQuery {
     pub fn new(
         session_manager_client: SessionManagerClient,
@@ -35,44 +49,96 @@ impl RemoteQuery {
         }
     }
 
-    pub async fn init_chat(
+    pub async fn chat(
         &self,
         session_id: Option<Uuid>,
+        provider_id: ProviderId,
         prompt: String,
-    ) -> Result<(Uuid, bool)> {
-        match session_id {
-            None => {
-                let id = Uuid::now_v7();
-                self.session_manager_client
-                    .create_session(id, prompt)
-                    .await?;
-                Ok((id, true))
-            },
-            Some(id) => Ok((id, false)),
+    ) -> ChatRenderStream {
+        match self
+            .start_chat_stream(session_id, provider_id, prompt.clone())
+            .await
+        {
+            Ok(stream) => stream,
+            Err(error) => self.chat_stream_error(&prompt, error).await,
         }
     }
 
-    /// new chat based on the session_id return from init_chat
-    pub async fn chat(
+    async fn start_chat_stream(
         &self,
-        session_id: Uuid,
+        session_id: Option<Uuid>,
         provider_id: ProviderId,
         prompt: String,
-    ) -> Result<impl Stream<Item = RenderEvent> + use<>> {
-        let mut rx = self
+    ) -> std::result::Result<ChatRenderStream, ChatStreamError> {
+        let (session_id, is_new_session) = self
             .session_manager_client
-            .subscribe(session_id, false)
-            .await?;
-
-        if let Err(error) = self
-            .turn_manager_client
-            .start_chat(session_id, provider_id, prompt)
+            .ensure_session(session_id, prompt.clone())
             .await
+            .map_err(|error| ChatStreamError {
+                session_id,
+                is_new_session: false,
+                error: RemoteQueryError::from(error),
+            })?;
+
+        let mut rx = async {
+            let rx = self
+                .session_manager_client
+                .subscribe(session_id, false)
+                .await?;
+
+            self.turn_manager_client
+                .start_chat(session_id, provider_id, prompt)
+                .await?;
+
+            Ok::<_, RemoteQueryError>(rx)
+        }
+        .await
+        .map_err(|error| ChatStreamError {
+            session_id: Some(session_id),
+            is_new_session,
+            error,
+        })?;
+
+        Ok(ChatRenderStream {
+            session_id: Some(session_id),
+            stream: stream::poll_fn(move |cx| rx.poll_recv(cx)).boxed(),
+        })
+    }
+
+    async fn chat_stream_error(&self, prompt: &str, error: ChatStreamError) -> ChatRenderStream {
+        let ChatStreamError {
+            session_id,
+            is_new_session,
+            error,
+        } = error;
+
+        let mut latest_error = error;
+
+        if is_new_session
+            && let Some(session_id) = session_id
+            && let Err(error) = self.session_manager_client.remove_session(session_id).await
         {
-            return Err(error.into());
+            latest_error = error.into();
         }
 
-        Ok(stream::poll_fn(move |cx| rx.poll_recv(cx)))
+        error!("Fail to start chat. {}", latest_error);
+
+        let returned_session_id = if is_new_session { None } else { session_id };
+        let message = match &latest_error {
+            RemoteQueryError::TurnManager(TurnManagerError::Provider(error)) => error.to_string(),
+            _ => CHAT_START_ERROR_MESSAGE.to_string(),
+        };
+
+        ChatRenderStream {
+            session_id: returned_session_id,
+            stream: stream::iter([
+                RenderEvent::Chat(ChatRenderEvent::UserPrompt {
+                    text: prompt.to_string(),
+                }),
+                RenderEvent::Error { message },
+            ])
+            .boxed(),
+        }
     }
 
     pub async fn cancel(&self, session_id: Uuid) -> Result<()> {
@@ -81,13 +147,6 @@ impl RemoteQuery {
             self.session_manager_client.cancel_event(session_id).await?;
         }
         Ok(())
-    }
-
-    // use for cleanup newly created session but the chat fails
-    pub async fn cleanup(&self, session_id: Uuid) {
-        if let Err(err) = self.session_manager_client.remove_session(session_id).await {
-            error!("cleanup: remove session {session_id} from manager: {err}");
-        }
     }
 
     pub async fn restore_session(
