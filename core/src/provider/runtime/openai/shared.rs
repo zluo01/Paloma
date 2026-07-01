@@ -245,7 +245,7 @@ pub(super) fn response_event_stream(
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.incomplete
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#error
 /// https://developers.openai.com/api/reference/resources/realtime/server-events#error
-fn parse_stream_error(data: &str) -> ProviderError {
+pub(super) fn parse_stream_error(data: &str) -> ProviderError {
     let msg = serde_json::from_str::<Value>(data)
         .ok()
         .and_then(|v| {

@@ -5,7 +5,9 @@ use std::sync::{
 
 use log::debug;
 
-use super::shared::{OPENAI_MODEL_CATALOG, build_request_body, response_event_stream};
+use super::shared::{
+    OPENAI_MODEL_CATALOG, build_request_body, parse_stream_error, response_event_stream,
+};
 use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{Auth, ChatRequest, ChatStream, Model, ProviderClient, Result},
@@ -75,8 +77,12 @@ impl ProviderClient for OpenAIRuntime {
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        if !response.status().is_success() {
+            let body = response.text().await?;
+            return Err(parse_stream_error(&body));
+        }
 
         Ok(response_event_stream(response, ProviderId::OpenAI))
     }

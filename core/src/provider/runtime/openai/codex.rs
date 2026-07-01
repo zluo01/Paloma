@@ -12,7 +12,8 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use super::shared::{
-    ModelsResponse, build_request_body, models_from_response, response_event_stream,
+    ModelsResponse, build_request_body, models_from_response, parse_stream_error,
+    response_event_stream,
 };
 use crate::{
     db::{AuthKind, Storage},
@@ -197,8 +198,12 @@ impl ProviderClient for CodexRuntime {
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        if !response.status().is_success() {
+            let body = response.text().await?;
+            return Err(parse_stream_error(&body));
+        }
 
         Ok(response_event_stream(response, ProviderId::Codex))
     }
