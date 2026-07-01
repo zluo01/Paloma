@@ -49,14 +49,12 @@ impl Status {
         view.append(&dot);
         view.append(&label);
 
-        let status = Self {
+        Self {
             view,
             dot,
             app,
             kind,
-        };
-        status.refresh();
-        status
+        }
     }
 
     pub(super) fn refresh(&self) {

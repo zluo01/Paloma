@@ -70,7 +70,6 @@ impl PermissionsPage {
             }
         });
 
-        permission_page.dispatch(Msg::RefreshRequested);
         permission_page
     }
 
@@ -101,7 +100,6 @@ impl PermissionsPage {
     fn run(self: &Rc<Self>, command: Command) {
         match command {
             Command::Render => self.render(),
-            Command::LoadPermissions => self.refresh(),
             Command::DeletePermission(prefix) => self.delete_permission(prefix),
             Command::ShowErrorDialog(message) => {
                 if let Some(window) = self.window.upgrade() {

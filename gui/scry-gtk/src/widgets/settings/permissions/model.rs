@@ -15,7 +15,6 @@ pub(super) struct Section {
 }
 
 pub(super) enum Msg {
-    RefreshRequested,
     PermissionsLoaded(Result<Vec<Permission>, AppError>),
     SearchChanged(String),
     DeleteClicked(String),
@@ -25,7 +24,6 @@ pub(super) enum Msg {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Command {
     Render,
-    LoadPermissions,
     DeletePermission(String),
     ShowErrorDialog(String),
     LogWarning(String),
@@ -34,7 +32,6 @@ pub(super) enum Command {
 impl State {
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
-            Msg::RefreshRequested => vec![Command::LoadPermissions],
             Msg::PermissionsLoaded(result) => match result {
                 Ok(permissions) => {
                     self.permissions = permissions;
@@ -159,15 +156,6 @@ mod tests {
             .into_iter()
             .flat_map(|section| section.permissions.into_iter().map(|p| p.prefix))
             .collect()
-    }
-
-    #[test]
-    fn refresh_requests_load() {
-        let mut state = State::default();
-        assert_eq!(
-            state.update(Msg::RefreshRequested),
-            vec![Command::LoadPermissions]
-        );
     }
 
     #[test]

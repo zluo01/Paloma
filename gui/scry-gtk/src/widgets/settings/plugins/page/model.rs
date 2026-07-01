@@ -34,8 +34,9 @@ pub(super) enum Command {
 impl State {
     /// Plugin page workflow:
     ///
-    /// - Page open or reload: `ReloadMcpServersRequested -> LoadMcpServers -> McpServersLoaded -> RenderMcpServers`.
-    /// - Add/edit/remove buttons: `AddMcpClicked` / `EditMcpClicked` / `RemoveMcpClicked -> Open...McpDialog` / `RemoveMcp`.
+    /// - Page refresh: `McpServersLoaded -> RenderMcpServers`.
+    /// - Add/edit/save plugin: `AddMcpClicked` / `EditMcpClicked -> Open...McpDialog -> ReloadMcpServersRequested -> LoadMcpServers`.
+    /// - Remove button: `RemoveMcpClicked -> RemoveMcp -> RemoveMcpFinished`.
     /// - Enable switch: `McpToggleChanged -> SaveMcpToggle -> McpToggleFinished`.
     /// - Failed toggle: `McpToggleFinished(Err) -> LoadMcpServers -> ShowErrorDialog`.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {

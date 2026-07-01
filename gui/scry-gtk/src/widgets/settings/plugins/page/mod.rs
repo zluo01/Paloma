@@ -72,7 +72,6 @@ impl PluginsPage {
             }
         });
 
-        this.dispatch(Msg::ReloadMcpServersRequested);
         this
     }
 

@@ -40,7 +40,6 @@ impl ModelPicker {
             app_context,
         };
         picker.connect_selected();
-        picker.refresh();
         picker
     }
 
