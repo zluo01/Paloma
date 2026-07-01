@@ -58,7 +58,7 @@ impl McpTool {
                 let schemas = tools_to_specs(&config.name, tools);
                 let description = client
                     .peer_info()
-                    .and_then(|info| info.server_info.description.as_deref())
+                    .and_then(|info| info.server_info.description.clone())
                     .unwrap_or_default()
                     .trim()
                     .to_string();
@@ -219,12 +219,9 @@ impl DynTool for McpTool {
             None => result
                 .content
                 .into_iter()
-                .filter_map(|content| match content.raw {
-                    rmcp::model::RawContent::Text(text) => Some(text.text),
-                    rmcp::model::RawContent::Image(_)
-                    | rmcp::model::RawContent::Resource(_)
-                    | rmcp::model::RawContent::ResourceLink(_)
-                    | rmcp::model::RawContent::Audio(_) => None,
+                .filter_map(|content| match content {
+                    rmcp::model::ContentBlock::Text(text) => Some(text.text),
+                    _ => None,
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
