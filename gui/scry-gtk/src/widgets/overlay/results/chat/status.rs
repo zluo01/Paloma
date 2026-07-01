@@ -73,8 +73,4 @@ impl StatusView {
         self.view.set_css_classes(&[PENDING_CLASS, CANCEL_CLASS]);
         self.view.set_visible(true)
     }
-
-    pub(super) fn is_running(&self) -> bool {
-        self.indicator.is_visible()
-    }
 }

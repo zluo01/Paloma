@@ -213,7 +213,7 @@ impl Overlay {
             },
             Command::ClearSearchResults => self.search.clear(),
             Command::HideContent => self.close_content(),
-            Command::SubmitChatPrompt => self.construct_chat_prompt(),
+            Command::SubmitChatPrompt { turn_id } => self.construct_chat_prompt(turn_id),
             Command::SendChat {
                 turn_id,
                 session_id,
@@ -389,12 +389,16 @@ impl Overlay {
 
 /// Chat related actions
 impl Overlay {
-    fn construct_chat_prompt(&self) {
-        if self.chat.is_running() {
-            return;
-        }
+    fn construct_chat_prompt(&self, turn_id: u64) {
         let prompt = self.launcher.query();
         self.launcher.clear();
+        if prompt.is_empty() {
+            let _ = self
+                .dispatcher
+                .unbounded_send(Msg::ChatPromptRejected { turn_id });
+            return;
+        }
+
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
@@ -402,12 +406,19 @@ impl Overlay {
             match result {
                 Ok(Some(provider_id)) => {
                     let _ = dispatcher.unbounded_send(Msg::ChatPromptResolved {
+                        turn_id,
                         prompt,
                         provider_id,
                     });
                 },
-                Ok(None) => error!("no preferred provider configured"),
-                Err(error) => error!("failed to load preferred provider: {error}"),
+                Ok(None) => {
+                    error!("no preferred provider configured");
+                    let _ = dispatcher.unbounded_send(Msg::ChatPromptRejected { turn_id });
+                },
+                Err(error) => {
+                    error!("failed to load preferred provider: {error}");
+                    let _ = dispatcher.unbounded_send(Msg::ChatPromptRejected { turn_id });
+                },
             }
         }));
     }
@@ -516,7 +527,7 @@ impl Overlay {
                 },
                 Err(error) => Err(error),
             };
-            let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished { result });
+            let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished { turn_id, result });
         }));
     }
 }

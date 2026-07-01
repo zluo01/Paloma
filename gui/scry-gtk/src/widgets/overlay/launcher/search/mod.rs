@@ -37,7 +37,7 @@ impl Search {
     }
 
     pub(crate) fn query(&self) -> String {
-        self.entry.text().to_string()
+        self.entry.text().trim().to_string()
     }
 
     pub(super) fn focus(&self) {

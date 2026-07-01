@@ -67,10 +67,6 @@ impl ChatView {
         *self.prev_section.borrow_mut() = None;
     }
 
-    pub(crate) fn is_running(&self) -> bool {
-        self.status.is_running()
-    }
-
     pub(crate) fn append_user_prompt(&self, prompt: &str) {
         if let Some(prev) = self.prev_section.borrow().as_ref() {
             prev.complete();
