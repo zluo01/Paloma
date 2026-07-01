@@ -311,12 +311,9 @@ impl SessionManager {
     /// if it is the first prompt of the session triggered, we delete the session from db
     /// then cleanup the in-memory cache for session and permission.
     async fn rollback_session(&mut self, session_id: Uuid) -> Result<()> {
-        self.storage
-            .rollback_history(&session_id.to_string())
-            .await?;
         if self
             .storage
-            .delete_empty_session(&session_id.to_string())
+            .rollback_session_history(&session_id.to_string())
             .await?
         {
             self.sessions.remove(&session_id);

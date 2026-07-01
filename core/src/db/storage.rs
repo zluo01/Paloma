@@ -339,23 +339,22 @@ impl Storage {
         Ok(())
     }
 
-    /// Roll one session back to its last completed assistant message, dropping
-    /// everything after it. Used to clean up a failed turn or on user request.
-    pub async fn rollback_history(&self, session_id: &str) -> Result<()> {
+    /// Roll one session back to its last completed assistant message, then delete
+    /// the session if no history remains. Returns whether the session was removed.
+    pub async fn rollback_session_history(&self, session_id: &str) -> Result<bool> {
+        let mut tx = self.pool.begin().await?;
+
         sqlx::query(queries::ROLLBACK)
             .bind(session_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
-        Ok(())
-    }
 
-    /// Delete a session (cascading its history) only when it has no history.
-    /// Returns whether a session was removed.
-    pub async fn delete_empty_session(&self, session_id: &str) -> Result<bool> {
         let result = sqlx::query(queries::DELETE_EMPTY_SESSION)
             .bind(session_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
         Ok(result.rows_affected() > 0)
     }
 }

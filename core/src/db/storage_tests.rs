@@ -1310,8 +1310,12 @@ mod history {
         )
         .await;
 
-        storage.rollback_history(&id.to_string()).await.unwrap();
+        let removed = storage
+            .rollback_session_history(&id.to_string())
+            .await
+            .unwrap();
 
+        assert!(!removed);
         let history = storage.get_history(&id.to_string()).await.unwrap();
         assert_eq!(history.len(), 2);
         assert!(matches!(
@@ -1327,8 +1331,20 @@ mod history {
         let id = uuid("019e1234-5678-7000-8000-0000000000b2");
         seed_session(&storage, id, &[user(), reasoning()]).await;
 
-        storage.rollback_history(&id.to_string()).await.unwrap();
+        let removed = storage
+            .rollback_session_history(&id.to_string())
+            .await
+            .unwrap();
 
+        assert!(removed);
+        assert!(
+            storage
+                .all_sessions()
+                .await
+                .unwrap()
+                .iter()
+                .all(|s| s.session_id != id.to_string())
+        );
         assert_eq!(history_len(&storage, id).await, 0);
     }
 
@@ -1351,46 +1367,14 @@ mod history {
         )
         .await;
 
-        storage.rollback_history(&target.to_string()).await.unwrap();
-
-        assert_eq!(history_len(&storage, target).await, 2);
-        assert_eq!(history_len(&storage, other).await, 4);
-    }
-
-    // ---- delete_empty_session ----
-
-    #[tokio::test]
-    async fn delete_empty_session_removes_session_without_history() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000c0");
-        seed_session(&storage, id, &[]).await;
-
-        let removed = storage.delete_empty_session(&id.to_string()).await.unwrap();
-
-        assert!(removed);
-        assert!(
-            storage
-                .all_sessions()
-                .await
-                .unwrap()
-                .iter()
-                .all(|s| s.session_id != id.to_string())
-        );
-        assert_eq!(history_len(&storage, id).await, 0);
-    }
-
-    #[tokio::test]
-    async fn delete_empty_session_keeps_session_with_history() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000c1");
-        seed_session(&storage, id, &[user()]).await;
-
-        let removed = storage.delete_empty_session(&id.to_string()).await.unwrap();
+        let removed = storage
+            .rollback_session_history(&target.to_string())
+            .await
+            .unwrap();
 
         assert!(!removed);
-        assert_eq!(history_len(&storage, id).await, 1);
+        assert_eq!(history_len(&storage, target).await, 2);
+        assert_eq!(history_len(&storage, other).await, 4);
     }
 }
 
