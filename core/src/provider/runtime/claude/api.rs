@@ -7,7 +7,8 @@ use log::error;
 use tokio::sync::Mutex;
 
 use super::shared::{
-    RESPONSES_URL, build_request_body, fetch_models, parse_stream_error, response_event_stream,
+    ClaudeAuth, RESPONSES_URL, build_request_body, fetch_models, parse_stream_error,
+    response_event_stream,
 };
 use crate::{
     entity::{HealthStatus, ProviderId},
@@ -41,7 +42,7 @@ impl AnthropicRuntime {
             return Self::unhealthy(request, "Anthropic API key is required".into());
         }
 
-        match fetch_models(&request, &api_key).await {
+        match fetch_models(&request, ClaudeAuth::ApiKey(&api_key)).await {
             Ok(models) => Self {
                 request,
                 api_key,
@@ -71,7 +72,7 @@ impl ProviderClient for AnthropicRuntime {
     }
 
     async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
-        let body = build_request_body(&request);
+        let body = build_request_body(&request, ProviderId::Anthropic);
 
         let response = self
             .request
@@ -100,7 +101,7 @@ impl ProviderClient for AnthropicRuntime {
             return Some(cached.models.clone());
         }
 
-        match fetch_models(&self.request, &self.api_key).await {
+        match fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key)).await {
             Ok(result) => {
                 let models = result.models.clone();
                 *cache = Some(result);

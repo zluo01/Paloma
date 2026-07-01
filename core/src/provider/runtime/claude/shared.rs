@@ -15,13 +15,14 @@ use crate::{
 
 pub(super) const RESPONSES_URL: &str = "https://api.anthropic.com/v1/messages";
 pub(super) const MODELS_URL: &str = "https://api.anthropic.com/v1/models";
+const CLAUDE_CODE_SYSTEM_PROMPT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 const EFFORT_ORDER: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L3349-L3358
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L3041-L3331
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L1776-L1799
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L1276-L1287
-pub(super) fn build_request_body(request: &ChatRequest) -> Value {
+pub(super) fn build_request_body(request: &ChatRequest, provider_id: ProviderId) -> Value {
     let mut tools: Vec<Value> = request
         .tools
         .iter()
@@ -54,13 +55,22 @@ pub(super) fn build_request_body(request: &ChatRequest) -> Value {
         })
         .collect();
 
-    let system_prompt = vec![
+    let mut system_prompt = vec![
         serde_json::json!({
             "type": "text",
             "text": INSTRUCTION
         }),
         ClaudeCodec.encode_env_context(&ENVIRONMENT_CONTEXT),
     ];
+    if provider_id == ProviderId::ClaudeCode {
+        system_prompt.insert(
+            0,
+            serde_json::json!({
+                "type": "text",
+                "text": CLAUDE_CODE_SYSTEM_PROMPT,
+            }),
+        );
+    }
 
     serde_json::json!({
         "max_tokens": 16000,
@@ -368,19 +378,28 @@ pub(super) fn parse_stream_error(data: &str) -> ProviderError {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| format!("claude messages stream error: {data}"));
+    error!("{} - {}", &message, data);
     ProviderError::Other(message)
+}
+
+pub(super) enum ClaudeAuth<'a> {
+    ApiKey(&'a str),
+    AccessToken(&'a str),
 }
 
 pub(super) async fn fetch_models(
     request: &reqwest::Client,
-    api_key: &str,
+    auth: ClaudeAuth<'_>,
 ) -> Result<AvailableModels> {
-    let response = request
+    let request = request
         .get(MODELS_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .send()
-        .await?;
+        .header("anthropic-version", "2023-06-01");
+    let request = match auth {
+        ClaudeAuth::ApiKey(api_key) => request.header("x-api-key", api_key),
+        ClaudeAuth::AccessToken(access_token) => request.bearer_auth(access_token),
+    };
+
+    let response = request.send().await?;
     if response.status().is_success() {
         let payload: Value = response.json().await?;
         Ok(AvailableModels {
@@ -443,6 +462,53 @@ fn parse_model_response(data: Value) -> Vec<Model> {
             })
         })
         .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod build_request_body_tests {
+    use super::*;
+
+    #[test]
+    fn claude_code_prepends_claude_code_system_prompt() {
+        let request = ChatRequest {
+            model: "claude-sonnet-4-6".into(),
+            effort: "medium".into(),
+            messages: vec![],
+            tools: vec![],
+        };
+
+        let body = build_request_body(&request, ProviderId::ClaudeCode);
+
+        assert_eq!(
+            body.pointer("/system/0/text").and_then(Value::as_str),
+            Some(CLAUDE_CODE_SYSTEM_PROMPT)
+        );
+        assert_eq!(
+            body.pointer("/system/1/text").and_then(Value::as_str),
+            Some(INSTRUCTION)
+        );
+    }
+
+    #[test]
+    fn anthropic_does_not_prepend_claude_code_system_prompt() {
+        let request = ChatRequest {
+            model: "claude-sonnet-4-6".into(),
+            effort: "medium".into(),
+            messages: vec![],
+            tools: vec![],
+        };
+
+        let body = build_request_body(&request, ProviderId::Anthropic);
+
+        assert_eq!(
+            body.pointer("/system/0/text").and_then(Value::as_str),
+            Some(INSTRUCTION)
+        );
+        assert_ne!(
+            body.pointer("/system/0/text").and_then(Value::as_str),
+            Some(CLAUDE_CODE_SYSTEM_PROMPT)
+        );
+    }
 }
 
 #[cfg(test)]

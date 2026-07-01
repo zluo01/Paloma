@@ -7,7 +7,9 @@ use log::error;
 use crate::{
     db::{AuthKind, Storage, StorageError},
     entity::{HealthStatus, ProviderId},
-    provider::{AnthropicRuntime, Auth, CodexRuntime, Model, OpenAIRuntime, ProviderClient},
+    provider::{
+        AnthropicRuntime, Auth, ClaudeRuntime, CodexRuntime, Model, OpenAIRuntime, ProviderClient,
+    },
 };
 
 pub struct ProviderController {
@@ -50,7 +52,9 @@ impl ProviderController {
                             ProviderId::Anthropic => {
                                 Arc::new(AnthropicRuntime::new(&auth, request).await)
                             },
-                            _ => todo!(),
+                            ProviderId::ClaudeCode => {
+                                Arc::new(ClaudeRuntime::new(&auth, request, storage).await)
+                            },
                         };
                         (client.id(), client)
                     }
@@ -89,7 +93,9 @@ impl ProviderController {
             ProviderId::Anthropic => {
                 Arc::new(AnthropicRuntime::new(auth, self.request.clone()).await)
             },
-            _ => todo!(),
+            ProviderId::ClaudeCode => {
+                Arc::new(ClaudeRuntime::new(auth, self.request.clone(), self.storage.clone()).await)
+            },
         };
 
         self.handlers.insert(provider_id, client.clone());
