@@ -6,6 +6,7 @@ use crate::entity::HealthStatus;
 #[derive(Clone, Debug)]
 pub struct Item {
     pub title: String,
+    pub subtitle: Option<String>,
     pub icon: Option<IconRef>,
     pub actions: Vec<Action>,
 }

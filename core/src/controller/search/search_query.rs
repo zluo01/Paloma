@@ -6,7 +6,9 @@ use log::error;
 use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
-    capability::{Action, ActionOutcome, AppSearch, Calculator, Clipboard, QueryHandler},
+    capability::{
+        Action, ActionOutcome, AppSearch, Calculator, Clipboard, FileSearch, QueryHandler,
+    },
     constants::RENDER_CHANNEL_CAPACITY,
     controller::{RenderEvent, SearchRenderEvent, entity::QueryResponse},
 };
@@ -31,6 +33,13 @@ impl SearchQuery {
 
         let calculator: Arc<dyn QueryHandler> = Arc::new(Calculator);
         handlers.insert(calculator.id(), calculator);
+
+        let file_search: Arc<dyn QueryHandler> =
+            Arc::new(FileSearch::new().map_err(|source| SearchQueryInitError {
+                handler: "file_search",
+                source: source.to_string(),
+            })?);
+        handlers.insert(file_search.id(), file_search);
 
         Ok(Self { handlers })
     }

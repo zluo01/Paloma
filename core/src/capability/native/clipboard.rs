@@ -8,12 +8,10 @@ use std::{
 };
 
 use log::{debug, error};
-use wl_clipboard_rs::copy::{
-    MimeType as CopyMimeType, Options as CopyOptions, Source as CopySource,
-};
 
 use crate::capability::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+    native::copy_to_clipboard,
 };
 
 const HISTORY_LIMIT: usize = 100;
@@ -64,7 +62,7 @@ impl QueryHandler for Clipboard {
         };
 
         match action.label.as_str() {
-            COPY_ACTION_LABEL => self.copy_to_clipboard(&text),
+            COPY_ACTION_LABEL => copy_to_clipboard(&text),
             REMOVE_ACTION_LABEL => self.remove_entry(&text),
             other => {
                 error!("clipboard: unknown action label: {other}");
@@ -87,17 +85,6 @@ impl Clipboard {
             .expect("spawn clipboard watcher thread");
 
         Self { history }
-    }
-
-    fn copy_to_clipboard(&self, text: &str) {
-        let opts = CopyOptions::new();
-        match opts.copy(
-            CopySource::Bytes(text.as_bytes().into()),
-            CopyMimeType::Autodetect,
-        ) {
-            Ok(()) => debug!("clipboard: copy succeeded"),
-            Err(e) => error!("clipboard: copy failed: {e}"),
-        }
     }
 
     fn remove_entry(&self, text: &str) {
@@ -169,6 +156,7 @@ fn push_entry(history: &RwLock<VecDeque<String>>, text: String) {
 fn build_item(text: &str) -> Item {
     Item {
         title: text.to_owned(),
+        subtitle: None,
         icon: Some(IconRef::Name(ICON_NAME.into())),
         actions: SUPPORTED_ACTION_LABELS
             .iter()

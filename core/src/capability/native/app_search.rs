@@ -32,6 +32,7 @@ impl AppEntry {
     fn to_item(&self) -> Item {
         Item {
             title: self.name.clone(),
+            subtitle: self.generic_name.clone(),
             icon: self.icon.clone().map(IconRef::Name),
             actions: vec![Action {
                 label: "Open".to_string(),

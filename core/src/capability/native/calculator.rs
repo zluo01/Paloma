@@ -2,10 +2,10 @@ use std::sync::LazyLock;
 
 use log::error;
 use regex::Regex;
-use wl_clipboard_rs::copy::{MimeType, Options, Source};
 
 use crate::capability::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+    native::copy_to_clipboard,
 };
 
 const MAX_EXPRESSION_BYTES: usize = 1024;
@@ -98,6 +98,7 @@ fn build_item(expression: &str, value: String) -> Item {
     let equation = format!("{expression} = {value}");
     Item {
         title: equation.clone(),
+        subtitle: None,
         icon: Some(IconRef::Name(ICON_NAME.into())),
         actions: vec![
             Action {
@@ -111,13 +112,6 @@ fn build_item(expression: &str, value: String) -> Item {
                 primary: false,
             },
         ],
-    }
-}
-
-fn copy_to_clipboard(text: &str) {
-    let opts = Options::new();
-    if let Err(e) = opts.copy(Source::Bytes(text.as_bytes().into()), MimeType::Autodetect) {
-        error!("calculator: copy failed: {e}");
     }
 }
 
