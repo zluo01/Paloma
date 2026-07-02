@@ -1,6 +1,6 @@
 use std::{
     cmp::{Ordering, Reverse},
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, RwLock, atomic, atomic::AtomicUsize, mpsc},
     thread,
@@ -9,8 +9,10 @@ use std::{
 
 use ignore::{WalkBuilder, WalkState};
 use log::{debug, error, info, warn};
-use notify::RecursiveMode;
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use notify::{EventKind, RecursiveMode, event::ModifyKind};
+use notify_debouncer_full::{
+    DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache, new_debouncer,
+};
 use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
@@ -160,14 +162,9 @@ impl FileSearch {
         let (dirty_tx, dirty_rx) = mpsc::channel::<Vec<PathBuf>>();
         let debouncer = new_debouncer(DEBOUNCE, None, move |result: DebounceEventResult| {
             let Ok(events) = result else { return };
-            let mut dirs: Vec<PathBuf> = events
-                .iter()
-                .flat_map(|event| event.paths.iter())
-                .filter_map(|path| path.parent().map(Path::to_path_buf))
-                .collect();
-            dirs.sort();
-            dirs.dedup();
+            let dirs = dirty_dirs(&events);
             if !dirs.is_empty() {
+                debug!("file_search: rescanning {dirs:?}");
                 let _ = dirty_tx.send(dirs);
             }
         })?;
@@ -196,10 +193,15 @@ impl FileSearch {
             thread::Builder::new()
                 .name("scry-file-watch".into())
                 .spawn(move || {
-                    while let Ok(dirs) = dirty_rx.recv() {
-                        for dir in dirs {
-                            rescan_dir(&dir, &home, &entries, &watcher);
+                    while let Ok(first) = dirty_rx.recv() {
+                        // coalesce the whole backlog into one rescan cycle
+                        let mut dirty = first;
+                        while let Ok(more) = dirty_rx.try_recv() {
+                            dirty.extend(more);
                         }
+                        dirty.sort();
+                        dirty.dedup();
+                        rescan_dirs(&dirty, &home, &entries, &watcher);
                     }
                 })
                 .expect("spawn file watch thread");
@@ -211,6 +213,25 @@ impl FileSearch {
             _watcher: watcher,
         })
     }
+}
+
+fn dirty_dirs(events: &[DebouncedEvent]) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.kind,
+                EventKind::Create(_)
+                    | EventKind::Remove(_)
+                    | EventKind::Modify(ModifyKind::Name(_))
+            )
+        })
+        .flat_map(|event| event.paths.iter())
+        .filter_map(|path| path.parent().map(Path::to_path_buf))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs
 }
 
 /// Shared walker configuration: skips hidden files, honors gitignore rules,
@@ -277,65 +298,139 @@ fn watch_dirs(dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
     }
 }
 
-/// Re-list a single directory after a change and diff it against the index.
-fn rescan_dir(
-    dir: &Path,
+struct DirState {
+    indexed: bool,
+    known: Vec<(PathBuf, bool)>,
+}
+
+/// Entries to drop from the index: exact file paths and whole subtrees.
+#[derive(Default)]
+struct Removals {
+    files: Vec<PathBuf>,
+    subtrees: Vec<PathBuf>,
+}
+
+fn path_bytes(path: &Path) -> &[u8] {
+    path.as_os_str().as_encoded_bytes()
+}
+
+/// Byte-level `Path::parent`, avoiding component parsing.
+fn parent_bytes(path: &Path) -> Option<&[u8]> {
+    let bytes = path_bytes(path);
+    if bytes.len() <= 1 {
+        return None;
+    }
+    let idx = bytes.iter().rposition(|&b| b == b'/')?;
+    Some(&bytes[..idx.max(1)])
+}
+
+/// `bytes` is `prefix` itself or a path below it.
+fn in_subtree(bytes: &[u8], prefix: &[u8]) -> bool {
+    bytes.starts_with(prefix) && (bytes.len() == prefix.len() || bytes[prefix.len()] == b'/')
+}
+
+/// Re-list changed directories and diff them against the index. The whole
+/// batch costs one pass over the index, regardless of how many directories
+/// are dirty.
+fn rescan_dirs(
+    dirty: &[PathBuf],
     home: &Path,
     entries: &RwLock<Vec<FileEntry>>,
     watcher: &Mutex<FsWatcher>,
 ) {
-    // Only directories we actually indexed are rescanned; events can name
-    // ancestors of home (e.g. an event on home itself), and rescanning those
-    // would re-index the whole tree as "new".
-    let known: Vec<(PathBuf, bool)> = {
-        let guard = entries.read().unwrap();
-        if dir != home && !guard.iter().any(|e| e.is_dir && e.path == dir) {
-            return;
-        }
-        guard
-            .iter()
-            .filter(|e| e.path.parent() == Some(dir))
-            .map(|e| (e.path.clone(), e.is_dir))
-            .collect()
-    };
-
-    if !dir.is_dir() {
-        remove_subtree(dir, entries, watcher);
+    if dirty.is_empty() {
         return;
     }
 
-    let mut current: Vec<FileEntry> = Vec::new();
-    for result in walker(dir).max_depth(Some(1)).build() {
-        let Ok(entry) = result else { continue };
-        if entry.depth() == 0 {
-            continue;
-        }
-        let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
-        let name = entry.file_name().to_string_lossy().into_owned();
-        current.push(FileEntry::new(name, entry.into_path(), is_dir));
-    }
-
-    // Diff on (path, kind): a path replaced by the other kind (file -> dir or
-    // dir -> file) must be removed and re-added, not treated as unchanged.
-    let current_kinds: HashMap<&Path, bool> = current
+    // Single read pass: which dirty dirs are indexed, and their known
+    // children. Only indexed directories are rescanned; events can name
+    // ancestors of home (e.g. an event on home itself), and rescanning those
+    // would re-index the whole tree as "new".
+    let mut states: HashMap<&[u8], DirState> = dirty
         .iter()
-        .map(|e| (e.path.as_path(), e.is_dir))
+        .map(|dir| {
+            let state = DirState {
+                indexed: dir.as_path() == home,
+                known: Vec::new(),
+            };
+            (path_bytes(dir), state)
+        })
         .collect();
-    for (path, was_dir) in &known {
-        if current_kinds.get(path.as_path()) != Some(was_dir) {
-            if *was_dir {
-                remove_subtree(path, entries, watcher);
-            } else {
-                entries.write().unwrap().retain(|e| e.path != *path);
+    {
+        let guard = entries.read().unwrap();
+        for entry in guard.iter() {
+            if entry.is_dir
+                && let Some(state) = states.get_mut(path_bytes(&entry.path))
+            {
+                state.indexed = true;
+            }
+            if let Some(parent) = parent_bytes(&entry.path)
+                && let Some(state) = states.get_mut(parent)
+            {
+                state.known.push((entry.path.clone(), entry.is_dir));
             }
         }
     }
 
-    let known_kinds: HashMap<PathBuf, bool> = known.into_iter().collect();
-    for entry in current {
-        if known_kinds.get(&entry.path) == Some(&entry.is_dir) {
+    let mut removals = Removals::default();
+    let mut additions: Vec<FileEntry> = Vec::new();
+
+    for dir in dirty {
+        let Some(state) = states.remove(path_bytes(dir)) else {
+            continue;
+        };
+        if !state.indexed {
             continue;
         }
+        if !dir.is_dir() {
+            removals.subtrees.push(dir.clone());
+            continue;
+        }
+
+        let mut current: Vec<FileEntry> = Vec::new();
+        for result in walker(dir).max_depth(Some(1)).build() {
+            let Ok(entry) = result else { continue };
+            if entry.depth() == 0 {
+                continue;
+            }
+            let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+            let name = entry.file_name().to_string_lossy().into_owned();
+            current.push(FileEntry::new(name, entry.into_path(), is_dir));
+        }
+
+        // Diff on (path, kind): a path replaced by the other kind (file ->
+        // dir or dir -> file) must be removed and re-added, not treated as
+        // unchanged.
+        let current_kinds: HashMap<&[u8], bool> = current
+            .iter()
+            .map(|e| (path_bytes(&e.path), e.is_dir))
+            .collect();
+        for (path, was_dir) in &state.known {
+            if current_kinds.get(path_bytes(path)) != Some(was_dir) {
+                if *was_dir {
+                    removals.subtrees.push(path.clone());
+                } else {
+                    removals.files.push(path.clone());
+                }
+            }
+        }
+
+        let known_kinds: HashMap<&[u8], bool> = state
+            .known
+            .iter()
+            .map(|(path, is_dir)| (path_bytes(path), *is_dir))
+            .collect();
+        for entry in current {
+            if known_kinds.get(path_bytes(&entry.path)) == Some(&entry.is_dir) {
+                continue;
+            }
+            additions.push(entry);
+        }
+    }
+
+    apply_removals(&removals, entries, watcher);
+
+    for entry in additions {
         if entry.is_dir {
             let (found, dirs) = scan(&entry.path);
             entries.write().unwrap().extend(found);
@@ -345,20 +440,31 @@ fn rescan_dir(
     }
 }
 
-fn remove_subtree(prefix: &Path, entries: &RwLock<Vec<FileEntry>>, watcher: &Mutex<FsWatcher>) {
-    let mut removed_dirs: Vec<PathBuf> = Vec::new();
-    entries.write().unwrap().retain(|e| {
-        if !e.path.starts_with(prefix) {
-            return true;
+/// Drop all removed files and subtrees in one pass over the index.
+fn apply_removals(
+    removals: &Removals,
+    entries: &RwLock<Vec<FileEntry>>,
+    watcher: &Mutex<FsWatcher>,
+) {
+    if removals.files.is_empty() && removals.subtrees.is_empty() {
+        return;
+    }
+
+    let files: HashSet<&[u8]> = removals.files.iter().map(|p| path_bytes(p)).collect();
+    let subtrees: Vec<&[u8]> = removals.subtrees.iter().map(|p| path_bytes(p)).collect();
+
+    let mut unwatch: Vec<PathBuf> = Vec::new();
+    entries.write().unwrap().retain(|entry| {
+        let bytes = path_bytes(&entry.path);
+        let dead = files.contains(bytes) || subtrees.iter().any(|prefix| in_subtree(bytes, prefix));
+        if dead && entry.is_dir {
+            unwatch.push(entry.path.clone());
         }
-        if e.is_dir {
-            removed_dirs.push(e.path.clone());
-        }
-        false
+        !dead
     });
 
     let mut guard = watcher.lock().unwrap();
-    for dir in &removed_dirs {
+    for dir in &unwatch {
         let _ = guard.unwatch(dir);
     }
 }
@@ -479,11 +585,22 @@ fn open_path(target: &str) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, time::Instant};
 
+    use notify::{
+        Event,
+        event::{AccessKind, AccessMode, CreateKind, DataChange, MetadataKind, RenameMode},
+    };
     use tempfile::TempDir;
 
     use super::*;
+
+    fn debounced(kind: EventKind, path: &str) -> DebouncedEvent {
+        DebouncedEvent {
+            event: Event::new(kind).add_path(PathBuf::from(path)),
+            time: Instant::now(),
+        }
+    }
 
     fn touch(path: &Path) {
         fs::write(path, b"").unwrap();
@@ -495,6 +612,46 @@ mod tests {
 
     fn test_watcher() -> Mutex<FsWatcher> {
         Mutex::new(new_debouncer(DEBOUNCE, None, |_: DebounceEventResult| {}).unwrap())
+    }
+
+    #[test]
+    fn dirty_dirs_maps_structural_events_to_parents() {
+        let events = [
+            debounced(EventKind::Create(CreateKind::File), "/home/u/docs/a.txt"),
+            debounced(
+                EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+                "/home/u/docs/b.txt",
+            ),
+            debounced(
+                EventKind::Remove(notify::event::RemoveKind::File),
+                "/home/u/pics/c.png",
+            ),
+        ];
+
+        assert_eq!(
+            dirty_dirs(&events),
+            [PathBuf::from("/home/u/docs"), PathBuf::from("/home/u/pics")]
+        );
+    }
+
+    #[test]
+    fn dirty_dirs_ignores_content_and_metadata_events() {
+        let events = [
+            debounced(
+                EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+                "/home/u/app.log",
+            ),
+            debounced(
+                EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+                "/home/u/docs/a.txt",
+            ),
+            debounced(
+                EventKind::Access(AccessKind::Close(AccessMode::Write)),
+                "/home/u/app.log",
+            ),
+        ];
+
+        assert!(dirty_dirs(&events).is_empty());
     }
 
     #[test]
@@ -581,7 +738,12 @@ mod tests {
         let watcher = test_watcher();
 
         touch(&root.path().join("new.txt"));
-        rescan_dir(root.path(), root.path(), &entries, &watcher);
+        rescan_dirs(
+            &[root.path().to_path_buf()],
+            root.path(),
+            &entries,
+            &watcher,
+        );
 
         let guard = entries.read().unwrap();
         assert_eq!(guard.len(), 1);
@@ -598,7 +760,12 @@ mod tests {
         ]);
         let watcher = test_watcher();
 
-        rescan_dir(root.path(), root.path(), &entries, &watcher);
+        rescan_dirs(
+            &[root.path().to_path_buf()],
+            root.path(),
+            &entries,
+            &watcher,
+        );
 
         assert!(entries.read().unwrap().is_empty());
     }
@@ -612,11 +779,42 @@ mod tests {
         let watcher = test_watcher();
         fs::create_dir(&target).unwrap();
 
-        rescan_dir(root.path(), root.path(), &entries, &watcher);
+        rescan_dirs(
+            &[root.path().to_path_buf()],
+            root.path(),
+            &entries,
+            &watcher,
+        );
 
         let guard = entries.read().unwrap();
         assert_eq!(guard.len(), 1);
         assert!(guard[0].is_dir);
+    }
+
+    #[test]
+    fn rescan_handles_multiple_directories_per_cycle() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("a")).unwrap();
+        fs::create_dir(root.path().join("b")).unwrap();
+        let entries = RwLock::new(vec![
+            FileEntry::new("a".into(), root.path().join("a"), true),
+            FileEntry::new("b".into(), root.path().join("b"), true),
+        ]);
+        let watcher = test_watcher();
+        touch(&root.path().join("a/x.txt"));
+        touch(&root.path().join("b/y.txt"));
+
+        rescan_dirs(
+            &[root.path().join("a"), root.path().join("b")],
+            root.path(),
+            &entries,
+            &watcher,
+        );
+
+        let guard = entries.read().unwrap();
+        let names: Vec<&str> = guard.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"x.txt"));
+        assert!(names.contains(&"y.txt"));
     }
 
     #[test]
@@ -627,7 +825,12 @@ mod tests {
         let entries = RwLock::new(Vec::new());
         let watcher = test_watcher();
 
-        rescan_dir(outside.path(), root.path(), &entries, &watcher);
+        rescan_dirs(
+            &[outside.path().to_path_buf()],
+            root.path(),
+            &entries,
+            &watcher,
+        );
 
         assert!(entries.read().unwrap().is_empty());
     }
