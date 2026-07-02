@@ -37,11 +37,16 @@ impl PluginConnectionController {
                 return HealthLevel::Inactive;
             },
         };
-        let healthy = servers
-            .iter()
-            .filter(|server| server.status == HealthStatus::Running)
-            .count();
-        HealthLevel::from_counts(servers.len(), healthy)
+        // servers still connecting don't count against health
+        let (settled, healthy) =
+            servers
+                .iter()
+                .fold((0, 0), |(settled, healthy), server| match server.status {
+                    HealthStatus::Starting => (settled, healthy),
+                    HealthStatus::Running => (settled + 1, healthy + 1),
+                    HealthStatus::Unhealthy => (settled + 1, healthy),
+                });
+        HealthLevel::from_counts(settled, healthy)
     }
 
     /// list all configured MCP servers

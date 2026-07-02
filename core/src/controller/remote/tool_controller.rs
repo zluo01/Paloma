@@ -4,15 +4,14 @@ use std::{
 };
 
 use dashmap::DashMap;
-use futures::future::join_all;
 use log::error;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
     capability::{
-        DynTool, McpTool, ProcessManagerClient, ProcessManagerError, Shell, Tool, ToolResult,
-        ToolSchema, ToolSpec,
+        DynTool, McpTool, Placeholder, ProcessManagerClient, ProcessManagerError, Shell, Tool,
+        ToolResult, ToolSchema, ToolSpec,
     },
     controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
@@ -46,7 +45,7 @@ impl ToolController {
         storage: Storage,
         process_manager_client: ProcessManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
-    ) -> Self {
+    ) -> Arc<Self> {
         let handlers: DashMap<String, Arc<dyn DynTool>> = DashMap::new();
         let mut tool_specs: BTreeMap<String, ToolSpec> = BTreeMap::new();
 
@@ -56,35 +55,61 @@ impl ToolController {
         }
         handlers.insert(Shell::NAME.to_string(), shell);
 
-        // Register configured MCP servers. `McpTool::new` never hard-fails — a
-        // server that can't connect registers itself as `Unhealthy` (filtered
-        // out at schema time) — so a bad server can't block startup.
         let plugins = storage.all_mcp_plugins().await.unwrap_or_else(|e| {
             error!("failed to load mcp plugins: {e}");
             Vec::new()
         });
 
-        let plugins = join_all(plugins.into_iter().map(|plugin| async move {
-            let name = plugin.name.clone();
-            let (tool, specs) = McpTool::new(&plugin).await;
-            (name, tool, specs)
-        }))
-        .await;
-
-        for (name, tool, specs) in plugins {
-            for spec in specs {
-                tool_specs.insert(spec.schema.name.clone(), spec);
-            }
-            handlers.insert(name, Arc::new(tool));
-        }
-
-        Self {
+        let controller = Arc::new(Self {
             handlers,
             tool_specs: RwLock::new(Arc::new(tool_specs)),
             storage,
             process_manager_client,
             permission_workflow_client,
+        });
+
+        // Connect configured MCP servers in the background so a slow or broken
+        // server can neither fail nor delay startup.
+        for plugin in plugins {
+            let placeholder: Arc<dyn DynTool> = Arc::new(Placeholder);
+            controller
+                .handlers
+                .insert(plugin.name.clone(), Arc::clone(&placeholder));
+
+            let controller = Arc::clone(&controller);
+            tokio::spawn(async move {
+                let (tool, specs) = McpTool::new(&plugin).await;
+                let mut swapped = false;
+                controller.handlers.alter(&plugin.name, |_, current| {
+                    if Arc::ptr_eq(&current, &placeholder) {
+                        swapped = true;
+                        Arc::new(tool)
+                    } else {
+                        current
+                    }
+                });
+                if swapped {
+                    controller.register_specs(specs);
+                }
+            });
         }
+
+        controller
+    }
+
+    /// insert a tool's specs and handler
+    fn register(&self, name: String, tool: McpTool, specs: Vec<ToolSpec>) {
+        self.register_specs(specs);
+        self.handlers.insert(name, Arc::new(tool));
+    }
+
+    fn register_specs(&self, specs: Vec<ToolSpec>) {
+        let mut current = self.tool_specs.write().unwrap();
+        let mut tools = (**current).clone();
+        for spec in specs {
+            tools.insert(spec.schema.name.clone(), spec);
+        }
+        *current = Arc::new(tools);
     }
 
     pub async fn tool_schemas(&self) -> Vec<ToolSchema> {
@@ -137,22 +162,13 @@ impl ToolController {
         let name = config.name.clone();
         let (tool, specs) = McpTool::new(config).await;
         // fail to init
-        if tool.health_statue() == HealthStatus::Unhealthy {
+        if tool.health_statue() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {
                 reason: tool.error().map(str::to_string),
             });
         }
 
-        {
-            let mut current = self.tool_specs.write().unwrap();
-            let mut tools = (**current).clone();
-            for spec in specs {
-                tools.insert(spec.schema.name.clone(), spec);
-            }
-            *current = Arc::new(tools);
-        }
-
-        self.handlers.insert(name, Arc::new(tool));
+        self.register(name, tool, specs);
 
         // persist in db after fully init
         self.storage
@@ -188,7 +204,7 @@ impl ToolController {
         let name = config.name.clone();
         let (tool, specs) = McpTool::new(config).await;
         // fail to init
-        if tool.health_statue() == HealthStatus::Unhealthy {
+        if tool.health_statue() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {
                 reason: tool.error().map(str::to_string),
             });

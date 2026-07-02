@@ -3,8 +3,8 @@ mod native;
 mod tools;
 
 pub use entity::{
-    Action, ActionOutcome, Capability, CapabilityMeta, DynTool, IconRef, Item, QueryHandler, Tool,
-    ToolResult, ToolSchema, ToolSpec,
+    Action, ActionOutcome, Capability, CapabilityMeta, DynTool, IconRef, Item, Placeholder,
+    QueryHandler, Tool, ToolResult, ToolSchema, ToolSpec,
 };
 pub use native::{AppSearch, Calculator, Clipboard};
 pub use tools::{

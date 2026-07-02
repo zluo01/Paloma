@@ -94,14 +94,12 @@ impl AppContext {
         let (mut process_manager, process_manager_client) = ProcessManager::new();
         tokio::spawn(async move { process_manager.run().await });
 
-        let tool_controller = Arc::new(
-            ToolController::new(
-                storage.clone(),
-                process_manager_client,
-                permission_workflow_client.clone(),
-            )
-            .await,
-        );
+        let tool_controller = ToolController::new(
+            storage.clone(),
+            process_manager_client,
+            permission_workflow_client.clone(),
+        )
+        .await;
 
         let plugin = PluginConnectionController::new(storage.clone(), Arc::clone(&tool_controller));
 

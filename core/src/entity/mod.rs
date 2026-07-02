@@ -73,8 +73,9 @@ pub struct Plugin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HealthStatus {
-    Running = 0,
-    Unhealthy = 1,
+    Starting = 0,
+    Running = 1,
+    Unhealthy = 2,
 }
 
 impl HealthStatus {
@@ -82,7 +83,8 @@ impl HealthStatus {
     /// `Unhealthy` (fail-safe: don't use a tool in an unclear state).
     pub fn from_u8(value: u8) -> Self {
         match value {
-            0 => HealthStatus::Running,
+            0 => HealthStatus::Starting,
+            1 => HealthStatus::Running,
             _ => HealthStatus::Unhealthy,
         }
     }

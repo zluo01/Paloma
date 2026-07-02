@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, glib, prelude::*};
 use libadwaita::{
     ActionRow, ApplicationWindow, ButtonRow, ExpanderRow, PreferencesGroup, PreferencesPage,
-    prelude::*,
+    Spinner, prelude::*,
 };
 use scry_core::{AppContext, HealthStatus, McpServer, Plugin, PluginArgs, PluginType};
 
@@ -230,6 +230,7 @@ impl PluginsPage {
         match server.status {
             HealthStatus::Running => actions.append(&self.toggle_switch(config)),
             HealthStatus::Unhealthy => actions.append(&unhealthy_icon(server.error.as_deref())),
+            HealthStatus::Starting => actions.append(&starting_spinner()),
         }
         actions.append(&self.edit_button(config));
         actions.append(&self.remove_button(config));
@@ -290,6 +291,13 @@ impl PluginsPage {
         });
         button
     }
+}
+
+fn starting_spinner() -> Spinner {
+    Spinner::builder()
+        .tooltip_text("Connecting…")
+        .valign(Align::Center)
+        .build()
 }
 
 fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {

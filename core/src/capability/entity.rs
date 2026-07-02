@@ -167,3 +167,26 @@ where
         Tool::invoke(self, session_id, call_id, parsed).await
     }
 }
+
+pub struct Placeholder;
+
+#[async_trait::async_trait]
+impl DynTool for Placeholder {
+    async fn specs(&self) -> Result<Vec<ToolSpec>, String> {
+        Ok(Vec::new())
+    }
+
+    fn health_statue(&self) -> HealthStatus {
+        HealthStatus::Starting
+    }
+
+    async fn invoke(
+        &self,
+        _name: Option<String>,
+        _session_id: Uuid,
+        _call_id: String,
+        _args: Value,
+    ) -> Result<ToolResult, String> {
+        Err("tool is still starting".to_string())
+    }
+}
