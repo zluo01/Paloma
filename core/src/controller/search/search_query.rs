@@ -6,7 +6,7 @@ use log::error;
 use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
-    capability::{Action, ActionOutcome, AppSearch, Clipboard, QueryHandler},
+    capability::{Action, ActionOutcome, AppSearch, Calculator, Clipboard, QueryHandler},
     constants::RENDER_CHANNEL_CAPACITY,
     controller::{RenderEvent, SearchRenderEvent, entity::QueryResponse},
 };
@@ -28,6 +28,9 @@ impl SearchQuery {
 
         let clipboard: Arc<dyn QueryHandler> = Arc::new(Clipboard::new());
         handlers.insert(clipboard.id(), clipboard);
+
+        let calculator: Arc<dyn QueryHandler> = Arc::new(Calculator);
+        handlers.insert(calculator.id(), calculator);
 
         Ok(Self { handlers })
     }

@@ -16,6 +16,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
 ] }
 dashmap = "6.2.1"
 eventsource-stream = "0.2.3"
+exmex = "0.21.0"
 freedesktop-desktop-entry = "0.8.1"
 futures = { workspace = true }
 log = { workspace = true }
