@@ -39,6 +39,12 @@
     font-size: 14px;
 }
 
+/* Secondary line under the title (e.g. file paths, app generic names). */
+.scry-item-subtitle {
+    font-size: 11px;
+    color: alpha(currentColor, 0.55);
+}
+
 /* `Ctrl K` hint keycap for multi-action rows; scoped so generic keycap styling
    cannot leak into the Shortcuts page. */
 .scry-item .scry-keycap {

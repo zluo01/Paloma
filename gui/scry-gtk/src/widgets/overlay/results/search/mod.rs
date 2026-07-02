@@ -123,6 +123,7 @@ impl SearchView {
 
         let item = Item {
             title: CHAT_ACTION_LABEL.to_string(),
+            subtitle: None,
             icon: Some(IconRef::Name("dialog-question-symbolic".to_string())),
             actions: Vec::new(),
         };
@@ -406,16 +407,34 @@ fn item_content_row(item: &Item) -> GtkBox {
     image.set_pixel_size(28);
     row.append(&image);
 
+    let text = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .valign(Align::Center)
+        .build();
+
     let title = Label::builder()
         .label(&item.title)
         .xalign(0.0)
         .halign(Align::Start)
-        .hexpand(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .single_line_mode(true)
         .css_classes(["scry-item-title"])
         .build();
-    row.append(&title);
+    text.append(&title);
+
+    if let Some(subtitle) = item.subtitle.as_deref() {
+        let subtitle = Label::builder()
+            .label(subtitle)
+            .xalign(0.0)
+            .halign(Align::Start)
+            .ellipsize(gtk4::pango::EllipsizeMode::Middle)
+            .single_line_mode(true)
+            .css_classes(["scry-item-subtitle"])
+            .build();
+        text.append(&subtitle);
+    }
+    row.append(&text);
 
     row
 }
