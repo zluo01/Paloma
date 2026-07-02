@@ -124,10 +124,6 @@ impl RemoteQuery {
         error!("Fail to start chat. {}", latest_error);
 
         let returned_session_id = if is_new_session { None } else { session_id };
-        let message = match &latest_error {
-            RemoteQueryError::TurnManager(TurnManagerError::Provider(error)) => error.to_string(),
-            _ => CHAT_START_ERROR_MESSAGE.to_string(),
-        };
 
         ChatRenderStream {
             session_id: returned_session_id,
@@ -135,7 +131,9 @@ impl RemoteQuery {
                 RenderEvent::Chat(ChatRenderEvent::UserPrompt {
                     text: prompt.to_string(),
                 }),
-                RenderEvent::Error { message },
+                RenderEvent::Error {
+                    message: CHAT_START_ERROR_MESSAGE.to_string(),
+                },
             ])
             .boxed(),
         }

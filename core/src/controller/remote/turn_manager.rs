@@ -10,7 +10,6 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    capability::ToolSchema,
     constants::TURN_MANAGER_CHANNEL_CAPACITY,
     controller::{
         ProviderController, ProviderControllerError, SessionManagerError, ToolController,
@@ -154,37 +153,52 @@ impl TurnManager {
         let tools = self.tool_controller.tool_schemas().await;
 
         let handle = tokio::spawn(async move {
-            let stream = match open_stream(
-                provider_controller,
-                storage,
-                session_client.clone(),
-                provider_id,
-                session_id,
-                Some(prompt),
-                tools,
-            )
+            let (messages, client, config) = match async {
+                let config = storage.prefer_model_config(&provider_id).await?;
+                let client = provider_controller.client(provider_id)?;
+                let messages = construct_messages(
+                    &storage,
+                    &session_client,
+                    provider_id,
+                    session_id,
+                    Some(prompt),
+                )
+                .await?;
+
+                Ok::<_, TurnManagerError>((messages, client, config))
+            }
             .await
             {
-                Ok(stream) => {
+                Ok(messages) => {
                     let _ = reply.send(Ok(()));
-                    stream
+                    messages
                 },
-                Err(TurnManagerError::Provider(error)) => {
-                    let result = session_client
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                    let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
+                    return;
+                },
+            };
+
+            let stream = match client
+                .chat(ChatRequest {
+                    model: config.model,
+                    effort: config.effort,
+                    messages,
+                    tools,
+                })
+                .await
+            {
+                Ok(stream) => stream,
+                Err(error) => {
+                    error!("fail to start chat. {}", error);
+                    let _ = session_client
                         .add_event(
                             session_id,
                             provider_id,
                             SessionEvent::Err(error.to_string()),
                         )
-                        .await
-                        .map_err(TurnManagerError::from);
-
-                    let _ = reply.send(result);
-                    let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
-                    return;
-                },
-                Err(err) => {
-                    let _ = reply.send(Err(err));
+                        .await;
                     let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
                     return;
                 },
@@ -260,15 +274,25 @@ impl TurnManager {
                 }
             }
 
-            let stream = match open_stream(
-                provider_controller,
-                storage,
-                session_client.clone(),
-                provider_id,
-                session_id,
-                None,
-                tools,
-            )
+            let stream = match async {
+                let config = storage.prefer_model_config(&provider_id).await?;
+                let client = provider_controller.client(provider_id)?;
+
+                let messages =
+                    construct_messages(&storage, &session_client, provider_id, session_id, None)
+                        .await?;
+
+                let stream = client
+                    .chat(ChatRequest {
+                        model: config.model,
+                        effort: config.effort,
+                        messages,
+                        tools,
+                    })
+                    .await?;
+
+                Ok::<_, TurnManagerError>(stream)
+            }
             .await
             {
                 Ok(stream) => stream,
@@ -367,18 +391,13 @@ async fn run_step(
     }
 }
 
-async fn open_stream(
-    provider_controller: Arc<ProviderController>,
-    storage: Storage,
-    session_client: SessionManagerClient,
+async fn construct_messages(
+    storage: &Storage,
+    session_client: &SessionManagerClient,
     provider_id: ProviderId,
     session_id: Uuid,
     prompt: Option<String>,
-    tools: Vec<ToolSchema>,
-) -> Result<ChatStream> {
-    let client = provider_controller.client(provider_id)?;
-    let config = storage.prefer_model_config(&provider_id).await?;
-
+) -> Result<Vec<HistoryEntry>> {
     let mut messages = storage.get_history(&session_id.to_string()).await?;
 
     if let Some(prompt) = prompt {
@@ -395,16 +414,7 @@ async fn open_stream(
             payload: ConversationItem::UserPrompt { prompt },
         });
     }
-
-    let stream = client
-        .chat(ChatRequest {
-            model: config.model,
-            effort: config.effort,
-            messages,
-            tools,
-        })
-        .await?;
-    Ok(stream)
+    Ok(messages)
 }
 
 async fn exhaust_events(
