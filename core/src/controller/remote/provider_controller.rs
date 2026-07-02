@@ -115,18 +115,20 @@ impl ProviderController {
             .map(|entry| (*entry.key(), Arc::clone(entry.value())))
             .collect();
 
-        let mut providers = HashMap::with_capacity(clients.len());
-        for (id, client) in clients {
-            providers.insert(
+        join_all(clients.into_iter().map(|(id, client)| async move {
+            let model = client.models().await.unwrap_or_default();
+            (
                 id,
                 ProviderStatis {
-                    model: client.models().await.unwrap_or_default(),
+                    model,
                     status: client.health_statue(),
                     error: client.error(),
                 },
-            );
-        }
-        providers
+            )
+        }))
+        .await
+        .into_iter()
+        .collect()
     }
 
     pub fn client(
