@@ -10,15 +10,19 @@ use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{debug, error, info, warn};
 use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use nucleo_matcher::{
+    Config, Matcher, Utf32Str,
+    pattern::{CaseMatching, Normalization, Pattern},
+};
 
 use crate::capability::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
 };
 
-const NAME_WEIGHT: i64 = 10_000;
-const GENERIC_NAME_WEIGHT: i64 = 7_000;
-const KEYWORD_WEIGHT: i64 = 5_000;
-const EXEC_WEIGHT: i64 = 3_000;
+const NAME_WEIGHT: u32 = 10_000;
+const GENERIC_NAME_WEIGHT: u32 = 7_000;
+const KEYWORD_WEIGHT: u32 = 5_000;
+const EXEC_WEIGHT: u32 = 3_000;
 
 struct AppEntry {
     name: String,
@@ -67,11 +71,20 @@ impl Capability for AppSearch {
 
 impl QueryHandler for AppSearch {
     fn query(&self, input: &str) -> Vec<Item> {
+        let pattern = Pattern::parse(input.trim(), CaseMatching::Ignore, Normalization::Smart);
+        if pattern.atoms.is_empty() {
+            return Vec::new();
+        }
+
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let mut buf = Vec::new();
         let entries = self.entries.read().unwrap();
 
         let mut ranked: Vec<_> = entries
             .iter()
-            .filter_map(|app| score_app(input, app).map(|score| (score, app)))
+            .filter_map(|app| {
+                score_app(&pattern, app, &mut matcher, &mut buf).map(|score| (score, app))
+            })
             .collect();
 
         ranked.sort_by(|(left_score, left), (right_score, right)| {
@@ -177,18 +190,12 @@ fn load() -> Vec<AppEntry> {
     entries
 }
 
-fn score_app(query: &str, app: &AppEntry) -> Option<i64> {
-    let words: Vec<_> = query
-        .to_ascii_lowercase()
-        .split_ascii_whitespace()
-        .filter(|word| !word.is_empty())
-        .map(str::to_owned)
-        .collect();
-
-    if words.is_empty() {
-        return None;
-    }
-
+fn score_app(
+    pattern: &Pattern,
+    app: &AppEntry,
+    matcher: &mut Matcher,
+    buf: &mut Vec<char>,
+) -> Option<u32> {
     let exec_interest = app
         .exec
         .iter()
@@ -212,78 +219,19 @@ fn score_app(query: &str, app: &AppEntry) -> Option<i64> {
     let fields: Vec<_> = fields.collect();
     let mut total = 0;
 
-    for word in words {
+    for atom in &pattern.atoms {
         let best = fields
             .iter()
-            .filter_map(|(field, weight)| score_field(&word, field).map(|score| score + weight))
+            .filter_map(|(field, weight)| {
+                let haystack = Utf32Str::new(field, buf);
+                atom.score(haystack, matcher)
+                    .map(|score| u32::from(score) + weight)
+            })
             .max()?;
         total += best;
     }
 
     Some(total)
-}
-
-fn score_field(query: &str, field: &str) -> Option<i64> {
-    let field = field.to_ascii_lowercase();
-    let words: Vec<_> = field
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .collect();
-
-    if field == query {
-        return Some(2_000);
-    }
-
-    if words.contains(&query) {
-        return Some(1_800);
-    }
-
-    if field.starts_with(query) {
-        return Some(1_600 - length_penalty(query, &field));
-    }
-
-    if words.iter().any(|word| word.starts_with(query)) {
-        return Some(1_450 - best_word_prefix_penalty(query, &words));
-    }
-
-    let acronym = words
-        .iter()
-        .filter_map(|word| word.chars().next())
-        .collect::<String>();
-    if acronym.starts_with(query) {
-        return Some(1_350 - length_penalty(query, &acronym));
-    }
-
-    if query.len() >= 3
-        && let Some(index) = field.find(query)
-    {
-        return Some(1_000 - index as i64);
-    }
-
-    if query.len() >= 5 {
-        let best_similarity = words
-            .iter()
-            .map(|word| strsim::jaro_winkler(query, word))
-            .fold(0.0, f64::max);
-        if best_similarity >= 0.88 {
-            return Some((best_similarity * 800.0).round() as i64);
-        }
-    }
-
-    None
-}
-
-fn length_penalty(query: &str, field: &str) -> i64 {
-    field.len().saturating_sub(query.len()).min(50) as i64
-}
-
-fn best_word_prefix_penalty(query: &str, words: &[&str]) -> i64 {
-    words
-        .iter()
-        .filter(|word| word.starts_with(query))
-        .map(|word| length_penalty(query, word))
-        .min()
-        .unwrap_or(0)
 }
 
 fn keep(de: &DesktopEntry, current_desktop: Option<&[String]>, seen: &mut HashSet<String>) -> bool {
@@ -431,6 +379,13 @@ mod tests {
         }
     }
 
+    fn score(query: &str, app: &AppEntry) -> Option<u32> {
+        let pattern = Pattern::parse(query, CaseMatching::Ignore, Normalization::Smart);
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let mut buf = Vec::new();
+        score_app(&pattern, app, &mut matcher, &mut buf)
+    }
+
     #[test]
     fn decode_filters_empty_keywords() {
         let mut entry = DesktopEntry::from_appid("firefox.desktop".to_string());
@@ -447,28 +402,28 @@ mod tests {
     }
 
     #[test]
-    fn short_queries_do_not_use_loose_typo_matching() {
-        assert!(score_app("fire", &FIREFOX).is_some());
-        assert!(score_app("fire", &FIREWALL).is_some());
-        assert_eq!(score_app("fire", &FILELIGHT), None);
-        assert_eq!(score_app("fire", &KFIND), None);
+    fn unrelated_apps_do_not_match() {
+        assert!(score("fire", &FIREFOX).is_some());
+        assert!(score("fire", &FIREWALL).is_some());
+        assert_eq!(score("fire", &FILELIGHT), None);
+        assert_eq!(score("fire", &KFIND), None);
     }
 
     #[test]
     fn every_query_word_must_match() {
-        assert!(score_app("fire web", &FIREFOX).is_some());
-        assert_eq!(score_app("fire web", &FIREWALL), None);
+        assert!(score("fire web", &FIREFOX).is_some());
+        assert_eq!(score("fire web", &FIREWALL), None);
     }
 
     #[test]
     fn names_rank_ahead_of_generic_names_and_keywords() {
         let browser = app("Browser", Some("Firefox helper"), &["fire"], &["browser"]);
 
-        assert!(score_app("fire", &FIREFOX) > score_app("fire", &browser));
+        assert!(score("fire", &FIREFOX) > score("fire", &browser));
     }
 
     #[test]
     fn acronyms_and_keyword_prefixes_match() {
-        assert!(score_app("vsc", &VSCODE).is_some());
+        assert!(score("vsc", &VSCODE).is_some());
     }
 }
