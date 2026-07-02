@@ -45,12 +45,12 @@ impl Capability for Clipboard {
 
 impl QueryHandler for Clipboard {
     fn query(&self, input: &str) -> Vec<Item> {
-        let q = input.trim().to_lowercase();
+        let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
         let entries = self.history.read().unwrap();
 
         entries
             .iter()
-            .filter(|e| q.is_empty() || e.to_lowercase().contains(&q))
+            .filter(|e| matches_all_words(e, &words))
             .map(|e| build_item(e))
             .collect()
     }
@@ -153,6 +153,11 @@ fn push_entry(history: &RwLock<VecDeque<String>>, text: String) {
     }
 }
 
+fn matches_all_words(entry: &str, words: &[String]) -> bool {
+    let text = entry.to_lowercase();
+    words.iter().all(|word| text.contains(word))
+}
+
 fn build_item(text: &str) -> Item {
     Item {
         title: text.to_owned(),
@@ -172,6 +177,36 @@ fn build_item(text: &str) -> Item {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn words(query: &str) -> Vec<String> {
+        query.split_whitespace().map(str::to_lowercase).collect()
+    }
+
+    #[test]
+    fn matches_words_in_any_order() {
+        assert!(matches_all_words(
+            "my token for github.com",
+            &words("github token")
+        ));
+    }
+
+    #[test]
+    fn rejects_entries_missing_a_word() {
+        assert!(!matches_all_words(
+            "my token for github.com",
+            &words("github secret")
+        ));
+    }
+
+    #[test]
+    fn matching_ignores_case() {
+        assert!(matches_all_words("GitHub Token", &words("gItHuB")));
+    }
+
+    #[test]
+    fn empty_query_matches_everything() {
+        assert!(matches_all_words("anything", &words("   ")));
+    }
 
     #[test]
     fn push_entry_dedupes_and_bumps_to_front() {
