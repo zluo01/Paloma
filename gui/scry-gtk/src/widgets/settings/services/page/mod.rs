@@ -174,10 +174,9 @@ impl ServicesPage {
         self.connected_group.clear();
         self.available_group.clear();
 
-        let state = self.model.borrow();
+        let connectors = self.model.borrow().connectors.clone();
         for provider in PROVIDERS {
-            let connection = state
-                .connectors
+            let connection = connectors
                 .iter()
                 .find(|connector| connector.id == provider.id)
                 .and_then(|connector| connector.connection.as_ref());

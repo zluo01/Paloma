@@ -194,8 +194,8 @@ impl PluginsPage {
 
     fn render_mcp_servers(self: &Rc<Self>) {
         self.mcp_view.clear();
-        let state = self.state.borrow();
-        for server in &state.servers {
+        let servers = self.state.borrow().servers.clone();
+        for server in &servers {
             self.mcp_view.add(&self.mcp_row(server));
         }
         // The add row sits last so new servers appear above it.
