@@ -8,6 +8,7 @@ use crate::{
     entity::{HealthLevel, HealthStatus, Plugin, PluginType},
 };
 
+#[derive(Clone)]
 pub struct McpServer {
     pub config: Plugin,
     pub description: String,

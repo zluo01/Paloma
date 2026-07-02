@@ -187,11 +187,13 @@ impl ConnectController {
     }
 }
 
+#[derive(Clone)]
 pub struct Connector {
     pub id: ProviderId,
     pub connection: Option<ConnectorConnection>,
 }
 
+#[derive(Clone)]
 pub struct ConnectorConnection {
     pub preferred: bool,
     pub prefer_model: String,

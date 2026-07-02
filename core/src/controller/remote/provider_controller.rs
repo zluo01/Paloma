@@ -151,6 +151,7 @@ pub enum ProviderControllerError {
     Storage(#[from] StorageError),
 }
 
+#[derive(Clone)]
 pub struct ProviderStatis {
     pub model: Vec<Model>,
     pub status: HealthStatus,
