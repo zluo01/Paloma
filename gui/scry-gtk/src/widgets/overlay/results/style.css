@@ -45,6 +45,17 @@
     color: alpha(currentColor, 0.55);
 }
 
+/* "Show N more": a compact centered affordance, not a result row. */
+.scry-show-more {
+    padding: 3px 8px;
+}
+
+.scry-show-more label,
+.scry-show-more image {
+    font-size: 12px;
+    color: alpha(currentColor, 0.6);
+}
+
 /* `Ctrl K` hint keycap for multi-action rows; scoped so generic keycap styling
    cannot leak into the Shortcuts page. */
 .scry-item .scry-keycap {

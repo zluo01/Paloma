@@ -1,35 +1,33 @@
 mod action_panel;
+mod section;
 
 use std::cell::{Cell, RefCell};
 
 use futures::channel::mpsc;
-use gtk4::{
-    Align, Box as GtkBox, Button, Image, Label, Orientation, ScrolledWindow, Separator, Widget,
-    prelude::*,
-};
-use scry_core::{Action, IconRef, Item};
+use gtk4::{Align, Box as GtkBox, Button, Orientation, ScrolledWindow, prelude::*};
+use scry_core::Item;
 
 use crate::{
     helper::{Clear, scroll_into_view},
     widgets::overlay::{
-        CHAT_ACTION_LABEL, OVERLAY_WIDTH_PX, SELECTED_CLASS,
+        OVERLAY_WIDTH_PX, SELECTED_CLASS,
         model::Msg,
-        results::{search::action_panel::ActionPanel, step_index},
+        results::{
+            search::{
+                action_panel::ActionPanel,
+                section::{SearchAction, Section},
+            },
+            step_index,
+        },
     },
 };
 
-struct SearchAction {
-    button: Button,
-    handler_id: &'static str,
-    panel_actions: Vec<Action>,
-}
-
 pub struct SearchView {
     widget: GtkBox,
-    actions: RefCell<Vec<SearchAction>>,
-    dispatcher: mpsc::UnboundedSender<Msg>,
+    sections: RefCell<Vec<Section>>,
     selected: Cell<Option<usize>>,
     action_panel: RefCell<Option<ActionPanel>>,
+    dispatcher: mpsc::UnboundedSender<Msg>,
 }
 
 impl SearchView {
@@ -43,7 +41,7 @@ impl SearchView {
             .build();
         Self {
             widget,
-            actions: RefCell::new(vec![]),
+            sections: RefCell::new(vec![]),
             dispatcher,
             selected: Cell::new(None),
             action_panel: RefCell::new(None),
@@ -55,7 +53,7 @@ impl SearchView {
     }
 
     pub(crate) fn clear(&self) {
-        self.actions.borrow_mut().clear();
+        self.sections.borrow_mut().clear();
         self.selected.set(None);
 
         if let Some(panel) = self.action_panel.borrow_mut().take() {
@@ -80,88 +78,36 @@ impl SearchView {
             return false;
         }
 
-        let section = GtkBox::builder().orientation(Orientation::Vertical).build();
+        let section =
+            Section::search_section(handler_id, handler_name, items, self.dispatcher.clone());
 
-        let header = Label::builder()
-            .label(handler_name)
-            .xalign(0.0)
-            .halign(Align::Start)
-            .css_classes(["scry-section-header"])
-            .build();
-        section.append(&header);
-
-        let mut rows = Vec::with_capacity(items.len());
-        for item in items.into_iter() {
-            let result_action = if item.actions.len() == 1 {
-                build_row(handler_id, &item, self.dispatcher.clone())
-            } else {
-                build_actionable_row(handler_id, &item, self.dispatcher.clone())
-            };
-            section.append(&result_action.button);
-            rows.push(result_action);
-        }
-
-        self.push_section(&section);
-        self.actions.borrow_mut().append(&mut rows);
+        self.push_section(section.widget());
+        self.sections.borrow_mut().push(section);
         true
     }
 
     /// Append the "Chat about it" pseudo-row; `invoke` enters chat mode.
     pub(crate) fn append_chat_action(&self) {
-        let row_idx = self.actions.borrow().len();
-        let section = GtkBox::builder().orientation(Orientation::Vertical).build();
-        // A divider sets the chat action apart from the launcher results above.
-        if row_idx > 0 {
-            let separator = Separator::builder()
-                .orientation(Orientation::Horizontal)
-                .margin_top(8)
-                .margin_bottom(4)
-                .margin_end(4)
-                .build();
-            section.append(&separator);
-        }
+        let section = Section::chat_section(self.action_len(), self.dispatcher.clone());
 
-        let item = Item {
-            title: CHAT_ACTION_LABEL.to_string(),
-            subtitle: None,
-            icon: Some(IconRef::Name("dialog-question-symbolic".to_string())),
-            actions: Vec::new(),
-        };
-        let button = flat_button(&item_content_row(&item), Some("scry-chat-action"));
-        let action_dispatcher = self.dispatcher.clone();
-        button.connect_clicked(move |_| {
-            let _ = action_dispatcher.unbounded_send(Msg::ChatPromptSubmitted);
-        });
-
-        section.append(&button);
-
-        self.push_section(&section);
-        self.actions.borrow_mut().push(SearchAction {
-            button,
-            handler_id: "",
-            panel_actions: vec![],
-        });
+        self.push_section(section.widget());
+        self.sections.borrow_mut().push(section);
     }
 
     pub(crate) fn open_action_panel(&self) {
         if self.is_action_panel_open() {
             return;
         }
-        let Some(selected) = self.selected.get() else {
-            return;
-        };
 
-        let Some((button, handler_id, actions)) =
-            self.actions.borrow().get(selected).and_then(|row| {
-                (row.panel_actions.len() > 1).then(|| {
-                    (
-                        row.button.clone(),
-                        row.handler_id,
-                        row.panel_actions.clone(),
-                    )
-                })
+        let Some((button, handler_id, actions)) = self.selected_action().and_then(|row| {
+            (row.panel_actions.len() > 1).then(|| {
+                (
+                    row.button.clone(),
+                    row.handler_id,
+                    row.panel_actions.clone(),
+                )
             })
-        else {
+        }) else {
             return;
         };
 
@@ -185,16 +131,7 @@ impl SearchView {
             return true;
         }
 
-        let Some(selected) = self.selected.get() else {
-            return false;
-        };
-
-        let row_button = self
-            .actions
-            .borrow()
-            .get(selected)
-            .map(|action| action.button.clone());
-        if let Some(button) = row_button {
+        if let Some(button) = self.selected_button() {
             button.emit_clicked();
             return true;
         }
@@ -210,7 +147,7 @@ impl SearchView {
             return true;
         }
 
-        let actions_len = self.actions.borrow().len();
+        let actions_len = self.action_len();
         let next = match self.selected.get() {
             Some(current) => step_index(current, delta, actions_len),
             None if actions_len > 0 => Some(0),
@@ -221,7 +158,7 @@ impl SearchView {
             None => false,
             Some(next) => {
                 self.select_row(next);
-                self.scroll_selection_into_view();
+                self.scroll_selection_into_view(next, actions_len);
                 true
             },
         }
@@ -252,32 +189,18 @@ impl SearchView {
             return;
         }
 
-        let Some(button) = self
-            .actions
-            .borrow()
-            .get(idx)
-            .map(|action| action.button.clone())
-        else {
-            return;
-        };
-
         self.clear_selected();
-        button.add_css_class(SELECTED_CLASS);
         self.selected.set(Some(idx));
+        if let Some(button) = self.selected_button() {
+            button.add_css_class(SELECTED_CLASS);
+        };
     }
 
     fn clear_selected(&self) {
-        if let Some(idx) = self.selected.get() {
-            self.selected.set(None);
-            if let Some(button) = self
-                .actions
-                .borrow()
-                .get(idx)
-                .map(|action| action.button.clone())
-            {
-                button.remove_css_class(SELECTED_CLASS);
-            }
+        if let Some(button) = self.selected_button() {
+            button.remove_css_class(SELECTED_CLASS);
         }
+        self.selected.set(None);
     }
 
     fn push_section(&self, section: &GtkBox) {
@@ -285,16 +208,8 @@ impl SearchView {
         self.widget.set_visible(true);
     }
 
-    fn scroll_selection_into_view(&self) {
-        let Some(idx) = self.selected.get() else {
-            return;
-        };
-        let Some(button) = self
-            .actions
-            .borrow()
-            .get(idx)
-            .map(|action| action.button.clone())
-        else {
+    fn scroll_selection_into_view(&self, index: usize, size: usize) {
+        let Some(button) = self.selected_button() else {
             return;
         };
         let Some(scroller) = button
@@ -308,133 +223,34 @@ impl SearchView {
         // card padding, so a minimal scroll-to would leave that padding cut off.
         // Middle rows use the minimal scroll.
         let adj = scroller.vadjustment();
-        let len = self.actions.borrow().len();
-        match idx {
+        match index {
             0 => adj.set_value(0.0),
-            i if i + 1 == len => adj.set_value((adj.upper() - adj.page_size()).max(0.0)),
+            i if i + 1 == size => adj.set_value((adj.upper() - adj.page_size()).max(0.0)),
             _ => scroll_into_view(&button),
         }
     }
 
+    fn action_len(&self) -> usize {
+        self.sections.borrow().iter().map(|s| s.len()).sum()
+    }
+
+    fn selected_button(&self) -> Option<Button> {
+        self.selected_action().map(|a| a.button.clone())
+    }
+
+    fn selected_action(&self) -> Option<SearchAction> {
+        let mut selected = self.selected.get()?;
+        for section in self.sections.borrow().iter() {
+            let len = section.len();
+            if selected < len {
+                return section.action(selected);
+            }
+            selected -= len;
+        }
+        None
+    }
+
     pub(crate) fn render_any(&self) -> bool {
-        !self.actions.borrow().is_empty()
+        !self.sections.borrow().is_empty()
     }
-}
-
-fn build_row(
-    handler_id: &'static str,
-    item: &Item,
-    dispatcher: mpsc::UnboundedSender<Msg>,
-) -> SearchAction {
-    let content = item_content_row(item);
-    let button = flat_button(&content, None);
-    let action = item.actions.first().unwrap().clone();
-
-    let action_dispatcher = dispatcher.clone();
-    button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::LocalQueryResultActionRequested {
-            handler_id,
-            action: action.clone(),
-        });
-    });
-
-    SearchAction {
-        button,
-        handler_id,
-        panel_actions: vec![],
-    }
-}
-
-fn build_actionable_row(
-    handler_id: &'static str,
-    item: &Item,
-    dispatcher: mpsc::UnboundedSender<Msg>,
-) -> SearchAction {
-    let primary_idx = item.actions.iter().position(|a| a.primary).unwrap_or(0);
-    let primary = item.actions.get(primary_idx).cloned().unwrap();
-
-    let content = item_content_row(item);
-    let chip = Label::builder()
-        .label("Ctrl ↵")
-        .valign(Align::Center)
-        .css_classes(["scry-keycap"])
-        .build();
-    content.append(&chip);
-
-    let button = flat_button(&content, None);
-
-    let primary_action = primary.clone();
-    let action_dispatcher = dispatcher.clone();
-    button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::LocalQueryResultActionRequested {
-            handler_id,
-            action: primary_action.clone(),
-        });
-    });
-
-    SearchAction {
-        button,
-        handler_id,
-        panel_actions: item.actions.clone(),
-    }
-}
-
-fn flat_button(content: &impl IsA<Widget>, extra_class: Option<&str>) -> Button {
-    let button = Button::builder()
-        .child(content)
-        .focusable(false)
-        .can_focus(false)
-        .css_classes(["flat", "scry-item"])
-        .build();
-    if let Some(class) = extra_class {
-        button.add_css_class(class);
-    }
-    button
-}
-
-fn item_content_row(item: &Item) -> GtkBox {
-    let row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(10)
-        .build();
-
-    let image = match item.icon.as_ref() {
-        Some(IconRef::Name(name)) => Image::from_icon_name(name),
-        Some(IconRef::Path(path)) => Image::from_file(path),
-        Some(IconRef::Embedded { .. }) | None => Image::new(),
-    };
-    image.add_css_class("scry-item-icon");
-    image.set_pixel_size(28);
-    row.append(&image);
-
-    let text = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .hexpand(true)
-        .valign(Align::Center)
-        .build();
-
-    let title = Label::builder()
-        .label(&item.title)
-        .xalign(0.0)
-        .halign(Align::Start)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .single_line_mode(true)
-        .css_classes(["scry-item-title"])
-        .build();
-    text.append(&title);
-
-    if let Some(subtitle) = item.subtitle.as_deref() {
-        let subtitle = Label::builder()
-            .label(subtitle)
-            .xalign(0.0)
-            .halign(Align::Start)
-            .ellipsize(gtk4::pango::EllipsizeMode::Middle)
-            .single_line_mode(true)
-            .css_classes(["scry-item-subtitle"])
-            .build();
-        text.append(&subtitle);
-    }
-    row.append(&text);
-
-    row
 }

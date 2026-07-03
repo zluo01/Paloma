@@ -43,7 +43,6 @@ const SESSIONS_WIDTH_PX: i32 = 260;
 const PANEL_GAP_PX: i32 = 8;
 
 const SELECTED_CLASS: &str = "selected";
-const CHAT_ACTION_LABEL: &str = "Chat about it";
 
 const CSS: &str = include_str!("style.css");
 
