@@ -15,7 +15,7 @@ use notify_debouncer_full::{
 };
 use nucleo_matcher::{
     Config, Matcher, Utf32Str,
-    pattern::{CaseMatching, Normalization, Pattern},
+    pattern::{AtomKind, CaseMatching, Normalization, Pattern},
 };
 use rayon::prelude::*;
 
@@ -475,7 +475,20 @@ fn rank<'a>(input: &str, entries: &'a [FileEntry]) -> Vec<&'a FileEntry> {
         return Vec::new();
     }
 
-    let pattern = Pattern::parse(input, CaseMatching::Smart, Normalization::Smart);
+    // A single word matches fuzzily (subsequence, typo-friendly). Multi-word
+    // input requires every word as a contiguous substring: fuzzy atoms
+    // degenerate at corpus scale — scattered word-boundary hits let almost
+    // any sentence match some long file name.
+    let pattern = if input.contains(char::is_whitespace) {
+        Pattern::new(
+            input,
+            CaseMatching::Smart,
+            Normalization::Smart,
+            AtomKind::Substring,
+        )
+    } else {
+        Pattern::parse(input, CaseMatching::Smart, Normalization::Smart)
+    };
 
     let chunk_size = entries
         .len()
@@ -713,6 +726,38 @@ mod tests {
         let ranked = rank("notes", &entries);
 
         assert_eq!(ranked[0].path, PathBuf::from("/home/u/notes.md"));
+    }
+
+    #[test]
+    fn multi_word_queries_require_every_word_as_substring() {
+        let entries = vec![
+            entry(
+                "annual_report_2026.pdf",
+                "/home/u/annual_report_2026.pdf",
+                false,
+            ),
+            entry(
+                "annual_summary_export.pdf",
+                "/home/u/annual_summary_export.pdf",
+                false,
+            ),
+        ];
+
+        let ranked = rank("annual report", &entries);
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].name, "annual_report_2026.pdf");
+    }
+
+    #[test]
+    fn sentences_do_not_match_scattered_names() {
+        let entries = vec![entry(
+            "homework_todo_maker_playlist_agenda.txt",
+            "/home/u/homework_todo_maker_playlist_agenda.txt",
+            false,
+        )];
+
+        assert!(rank("how to make pasta", &entries).is_empty());
     }
 
     #[test]
