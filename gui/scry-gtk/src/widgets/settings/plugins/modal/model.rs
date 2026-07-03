@@ -207,7 +207,6 @@ pub(super) enum Msg {
     CancelClicked,
 }
 
-#[derive(Debug, PartialEq)]
 pub(super) enum Command {
     RenderForm,
     ScheduleValidation,
@@ -365,13 +364,11 @@ mod tests {
     fn local_form_builds_local_plugin() {
         let plugin = local_form().to_plugin();
         assert_eq!(plugin.transport, Transport::Local);
-        assert_eq!(
+        assert!(matches!(
             plugin.args,
-            PluginArgs::Local {
-                command: "node".into(),
-                args: vec!["server.js".into()],
-            }
-        );
+            PluginArgs::Local { ref command, ref args }
+                if command == "node" && args[..] == ["server.js"]
+        ));
     }
 
     #[test]
@@ -384,13 +381,11 @@ mod tests {
         let mut form = remote_form();
         form.requires_auth = true;
         let plugin = form.to_plugin();
-        assert_eq!(
+        assert!(matches!(
             plugin.args,
-            PluginArgs::Remote {
-                url: "https://example.com/mcp".into(),
-                requires_auth: true,
-            }
-        );
+            PluginArgs::Remote { ref url, requires_auth: true }
+                if url == "https://example.com/mcp"
+        ));
     }
 
     #[test]
@@ -453,7 +448,10 @@ mod tests {
         let mut form = local_form();
         let cmds = form.update(Msg::NameChanged("new".into()));
         assert!(!form.settled);
-        assert_eq!(cmds, vec![Command::RenderForm, Command::ScheduleValidation]);
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::RenderForm, Command::ScheduleValidation]
+        ));
     }
 
     #[test]

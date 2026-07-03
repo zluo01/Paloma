@@ -7,12 +7,11 @@
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
-use gtk4::{Label, gio, glib, prelude::*, subclass::prelude::*};
+use gtk4::{Label, glib, prelude::*, subclass::prelude::*};
 use libadwaita::prelude::*;
-use log::warn;
 use scry_core::{AppContext, Connection, ProviderId};
 
-use crate::runtime;
+use crate::{runtime, widgets::settings::helper::launch_url};
 
 /// Time to leave the success state visible before auto-close.
 const CLOSE_DELAY: Duration = Duration::from_millis(800);
@@ -389,12 +388,5 @@ impl ConnectDialog {
         let imp = self.imp();
         imp.error_message.set_label(message);
         imp.stack.set_visible_child_name("error");
-    }
-}
-
-fn launch_url(uri: &str) {
-    let launcher = gio::AppLaunchContext::new();
-    if let Err(e) = gio::AppInfo::launch_default_for_uri(uri, Some(&launcher)) {
-        warn!("failed to open {uri}: {e}");
     }
 }

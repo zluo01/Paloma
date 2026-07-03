@@ -1,20 +1,24 @@
 mod model;
 
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+    sync::Arc,
+};
 
 use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, glib, prelude::*};
 use libadwaita::{
-    ActionRow, ApplicationWindow, ButtonRow, ExpanderRow, PreferencesGroup, PreferencesPage,
-    Spinner, prelude::*,
+    ActionRow, ApplicationWindow, ButtonRow, Dialog, ExpanderRow, HeaderBar, PreferencesGroup,
+    PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
 };
-use scry_core::{AppContext, HealthStatus, McpServer, Plugin, PluginArgs, PluginType};
+use scry_core::{AppContext, AppError, HealthStatus, McpServer, Plugin, PluginArgs, PluginType};
 
 use self::model::{Command, Msg, State};
 use crate::{
     helper::Clear,
     runtime,
     widgets::settings::{
-        helper::{show_error_dialog, unhealthy_icon},
+        helper::{launch_url, show_error_dialog, unhealthy_icon},
         plugins::{
             modal,
             modal::{SaveFinished, SavePlugin},
@@ -170,26 +174,69 @@ impl PluginsPage {
     }
 
     fn persist(self: &Rc<Self>, editing: bool, config: Plugin, save_finished: SaveFinished) {
+        if editing {
+            self.update_mcp(config, save_finished);
+        } else {
+            self.create_mcp(config, save_finished);
+        }
+    }
+
+    fn update_mcp(self: &Rc<Self>, config: Plugin, save_finished: SaveFinished) {
         let app_context = self.app_context.clone();
         let weak = Rc::downgrade(self);
         runtime::spawn_with(
-            async move {
-                if editing {
-                    app_context.update_plugin(PluginType::Mcp, config).await
-                } else {
-                    app_context.add_mcp(config).await
+            async move { app_context.update_plugin(PluginType::Mcp, config).await },
+            move |result| Self::finish_save(&weak, result, &save_finished),
+        );
+    }
+
+    /// Add flow: init the connection, then for OAuth servers keep a wait
+    /// dialog up while finalize runs the browser authorization.
+    fn create_mcp(self: &Rc<Self>, config: Plugin, save_finished: SaveFinished) {
+        let app_context = self.app_context.clone();
+        let weak = Rc::downgrade(self);
+        glib::MainContext::default().spawn_local(async move {
+            let init = runtime::spawn({
+                let app_context = app_context.clone();
+                let config = config.clone();
+                async move { app_context.init_mcp_connection(config).await }
+            })
+            .await;
+
+            // None means no authorization step: connect straight away.
+            let state = match init {
+                Ok(state) => state,
+                Err(e) => return save_finished(Err(e.to_string())),
+            };
+            let dialog = state.as_ref().and_then(|state| {
+                let window = weak.upgrade()?.window.upgrade()?;
+                Some(open_oauth_dialog(&window, state.auth_url()))
+            });
+
+            let result =
+                runtime::spawn(
+                    async move { app_context.finalize_mcp_connection(config, state).await },
+                )
+                .await;
+
+            if let Some(dialog) = dialog {
+                dialog.force_close();
+            }
+            Self::finish_save(&weak, result, &save_finished);
+        });
+    }
+
+    /// Report the save result to the dialog and reload the list on success.
+    fn finish_save(weak: &Weak<Self>, result: Result<(), AppError>, save_finished: &SaveFinished) {
+        match result {
+            Ok(()) => {
+                save_finished(Ok(()));
+                if let Some(this) = weak.upgrade() {
+                    this.dispatch(Msg::ReloadMcpServersRequested);
                 }
             },
-            move |result| match result {
-                Ok(()) => {
-                    save_finished(Ok(()));
-                    if let Some(this) = weak.upgrade() {
-                        this.dispatch(Msg::ReloadMcpServersRequested);
-                    }
-                },
-                Err(e) => save_finished(Err(e.to_string())),
-            },
-        );
+            Err(e) => save_finished(Err(e.to_string())),
+        }
     }
 
     fn render_mcp_servers(self: &Rc<Self>) {
@@ -298,6 +345,45 @@ fn starting_spinner() -> Spinner {
         .tooltip_text("Connecting…")
         .valign(Align::Center)
         .build()
+}
+
+/// Present the "waiting for authorization" popup. It cannot be dismissed;
+/// the caller closes it with `force_close` once the authorization settles.
+fn open_oauth_dialog(parent: &impl IsA<gtk4::Widget>, auth_url: &str) -> Dialog {
+    let status = StatusPage::builder()
+        .title("Waiting for Authorization")
+        .description("Complete the sign-in in your browser.")
+        .build();
+    status.set_paintable(Some(&SpinnerPaintable::new(Some(&status))));
+
+    // Fallback in case the browser did not open on its own.
+    let open = Button::builder()
+        .label("Open the authorization page")
+        .halign(Align::Center)
+        .tooltip_text(auth_url)
+        .css_classes(["link"])
+        .build();
+    let url = auth_url.to_string();
+    open.connect_clicked(move |_| launch_url(&url));
+    status.set_child(Some(&open));
+
+    let view = ToolbarView::builder().content(&status).build();
+    // No title buttons: the close button would fight can-close below.
+    view.add_top_bar(
+        &HeaderBar::builder()
+            .show_start_title_buttons(false)
+            .show_end_title_buttons(false)
+            .build(),
+    );
+
+    let dialog = Dialog::builder()
+        .title("Connect Plugin")
+        .can_close(false)
+        .content_width(420)
+        .child(&view)
+        .build();
+    dialog.present(Some(parent));
+    dialog
 }
 
 fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {

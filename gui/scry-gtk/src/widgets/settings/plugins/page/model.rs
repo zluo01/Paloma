@@ -19,7 +19,6 @@ pub(super) enum Msg {
     McpToggleFinished(Result<(), AppError>),
 }
 
-#[derive(Debug, PartialEq)]
 pub(super) enum Command {
     RenderMcpServers,
     LoadMcpServers,
@@ -36,6 +35,8 @@ impl State {
     ///
     /// - Page refresh: `McpServersLoaded -> RenderMcpServers`.
     /// - Add/edit/save plugin: `AddMcpClicked` / `EditMcpClicked -> Open...McpDialog -> ReloadMcpServersRequested -> LoadMcpServers`.
+    ///   Saving a new OAuth server shows a wait dialog between the init and
+    ///   finalize connection calls (see `PluginsPage::create_mcp`).
     /// - Remove button: `RemoveMcpClicked -> RemoveMcp -> RemoveMcpFinished`.
     /// - Enable switch: `McpToggleChanged -> SaveMcpToggle -> McpToggleFinished`.
     /// - Failed toggle: `McpToggleFinished(Err) -> LoadMcpServers -> ShowErrorDialog`.
@@ -126,10 +127,8 @@ mod tests {
     #[test]
     fn reload_requests_a_load() {
         let mut state = State::default();
-        assert_eq!(
-            state.update(Msg::ReloadMcpServersRequested),
-            vec![Command::LoadMcpServers]
-        );
+        let cmds = state.update(Msg::ReloadMcpServersRequested);
+        assert!(matches!(cmds.as_slice(), [Command::LoadMcpServers]));
     }
 
     #[test]
@@ -137,7 +136,7 @@ mod tests {
         let mut state = State::default();
         let cmds = state.update(Msg::McpServersLoaded(Ok(vec![server("fs", false)])));
 
-        assert_eq!(cmds, vec![Command::RenderMcpServers]);
+        assert!(matches!(cmds.as_slice(), [Command::RenderMcpServers]));
         assert_eq!(state.servers.len(), 1);
         assert!(state.names.contains("fs"));
     }
@@ -152,10 +151,8 @@ mod tests {
     #[test]
     fn add_click_opens_the_add_dialog() {
         let mut state = State::default();
-        assert_eq!(
-            state.update(Msg::AddMcpClicked),
-            vec![Command::OpenAddMcpDialog]
-        );
+        let cmds = state.update(Msg::AddMcpClicked);
+        assert!(matches!(cmds.as_slice(), [Command::OpenAddMcpDialog]));
     }
 
     #[test]
@@ -176,19 +173,15 @@ mod tests {
     #[test]
     fn remove_click_calls_backend() {
         let mut state = State::default();
-        assert_eq!(
-            state.update(Msg::RemoveMcpClicked("fs".into())),
-            vec![Command::RemoveMcp("fs".into())]
-        );
+        let cmds = state.update(Msg::RemoveMcpClicked("fs".into()));
+        assert!(matches!(cmds.as_slice(), [Command::RemoveMcp(name)] if name == "fs"));
     }
 
     #[test]
     fn finished_remove_reloads() {
         let mut state = State::default();
-        assert_eq!(
-            state.update(Msg::RemoveMcpFinished(Ok(()))),
-            vec![Command::LoadMcpServers]
-        );
+        let cmds = state.update(Msg::RemoveMcpFinished(Ok(())));
+        assert!(matches!(cmds.as_slice(), [Command::LoadMcpServers]));
     }
 
     #[test]
@@ -205,7 +198,7 @@ mod tests {
 
         let cmds = state.update(Msg::McpToggleChanged("fs".into(), true));
 
-        assert_eq!(cmds, vec![Command::SaveMcpToggle("fs".into(), true)]);
+        assert!(matches!(cmds.as_slice(), [Command::SaveMcpToggle(name, true)] if name == "fs"));
         assert!(!state.servers[0].config.disabled);
     }
 
