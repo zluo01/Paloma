@@ -52,13 +52,13 @@ pub enum Transport {
     Http,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginArgs {
     Local { command: String, args: Vec<String> },
     Remote { url: String, requires_auth: bool },
 }
 
-#[derive(Debug, Clone, PartialEq, FromRow)]
+#[derive(Clone, FromRow)]
 pub struct Plugin {
     pub name: String,
     pub transport: Transport,

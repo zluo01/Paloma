@@ -36,6 +36,7 @@ pub use entity::{
 };
 pub use permission::{PermissionState, UserDecision};
 pub use provider::Connection;
+pub use utils::{OAuthCallbackState, OAuthError};
 
 use crate::controller::ChatRenderStream;
 
@@ -83,8 +84,11 @@ impl AppContext {
 
         let provider_controller =
             Arc::new(ProviderController::new(storage.clone(), http.clone()).await?);
-        let connect =
-            ConnectController::new(storage.clone(), Arc::clone(&provider_controller), http);
+        let connect = ConnectController::new(
+            storage.clone(),
+            Arc::clone(&provider_controller),
+            http.clone(),
+        );
 
         let permission_controller = PermissionController::new(storage.clone());
         let (mut permission_workflow_manager, permission_workflow_client) =
@@ -96,6 +100,7 @@ impl AppContext {
 
         let tool_controller = ToolController::new(
             storage.clone(),
+            http.clone(),
             process_manager_client,
             permission_workflow_client.clone(),
         )
@@ -225,7 +230,9 @@ impl AppContext {
     pub async fn connectors_health_level(&self) -> HealthLevel {
         self.connect.health_level().await
     }
+}
 
+impl AppContext {
     pub async fn plugins_health_level(&self) -> HealthLevel {
         self.plugin.health_level().await
     }
@@ -234,8 +241,16 @@ impl AppContext {
         Ok(self.plugin.list_mcps().await?)
     }
 
-    pub async fn add_mcp(&self, plugin: Plugin) -> Result<()> {
-        Ok(self.plugin.add_mcp(plugin).await?)
+    pub async fn init_mcp_connection(&self, config: Plugin) -> Result<Option<OAuthCallbackState>> {
+        Ok(self.plugin.init_mcp_connection(config).await?)
+    }
+
+    pub async fn finalize_mcp_connection(
+        &self,
+        config: Plugin,
+        state: Option<OAuthCallbackState>,
+    ) -> Result<()> {
+        Ok(self.plugin.finalize_mcp_connection(config, state).await?)
     }
 
     pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {

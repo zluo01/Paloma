@@ -1,3 +1,5 @@
+mod credentials;
+
 use std::{
     collections::HashMap,
     future::Future,
@@ -11,7 +13,10 @@ use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, Tool},
     service::RunningService,
-    transport::{StreamableHttpClientTransport, TokioChildProcess},
+    transport::{
+        AuthClient, AuthError, AuthorizationManager, StreamableHttpClientTransport,
+        TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use serde_json::Value;
 use tokio::{
@@ -22,8 +27,11 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    capability::{DynTool, ToolResult, ToolSchema, ToolSpec},
+    capability::{
+        DynTool, ToolResult, ToolSchema, ToolSpec, tools::mcp::credentials::CredentialStorage,
+    },
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
+    db::Storage,
     entity::{HealthStatus, Plugin, PluginArgs},
     utils::{Element, mcp_function_name_encode, write_spill_file},
 };
@@ -43,11 +51,23 @@ pub struct McpTool {
 }
 
 impl McpTool {
-    pub async fn new(config: &Plugin) -> (Self, Vec<ToolSpec>) {
+    pub async fn new(
+        config: &Plugin,
+        request_client: reqwest::Client,
+        storage: Storage,
+    ) -> (Self, Vec<ToolSpec>) {
         // make sure problematic mcp server will not hang the startup
         let init = timeout(CONNECTION_TIMEOUT, async {
-            let client =
-                attempt_with_retry(|| connect(&config.name, &config.args, &config.env)).await?;
+            let client = attempt_with_retry(|| {
+                connect(
+                    request_client.clone(),
+                    storage.clone(),
+                    &config.name,
+                    &config.args,
+                    &config.env,
+                )
+            })
+            .await?;
             let tools = client.list_all_tools().await?;
             Ok::<_, McpToolError>((client, tools))
         })
@@ -260,6 +280,8 @@ async fn truncate_payload(tool: &str, call_id: &str, text: String) -> String {
 }
 
 async fn connect(
+    request_client: reqwest::Client,
+    storage: Storage,
     name: &str,
     cfg: &PluginArgs,
     env: &HashMap<String, String>,
@@ -294,22 +316,50 @@ async fn connect(
 
             Ok(().serve(transport).await?)
         },
-        // Plain HTTP
         PluginArgs::Remote {
             url,
             requires_auth: false,
-        } => Ok(
-            ().serve(StreamableHttpClientTransport::from_uri(url.clone()))
-                .await?,
-        ),
-        // OAuth-protected HTTP — not implemented yet.
+        } => Ok(create_http_connection(request_client.clone(), url).await?),
         PluginArgs::Remote {
+            url,
             requires_auth: true,
-            ..
-        } => Err(McpToolError::Unsupported(
-            "authenticated HTTP MCP servers are not supported yet".to_string(),
-        )),
+        } => Ok(
+            create_auth_http_connection(request_client.clone(), storage.clone(), url, name).await?,
+        ),
     }
+}
+
+async fn create_http_connection(
+    request_client: reqwest::Client,
+    url: &str,
+) -> Result<RunningService<RoleClient, ()>> {
+    let config = StreamableHttpClientTransportConfig::with_uri(url);
+    let transport = StreamableHttpClientTransport::with_client(request_client, config);
+    Ok(().serve(transport).await?)
+}
+
+async fn create_auth_http_connection(
+    request_client: reqwest::Client,
+    storage: Storage,
+    url: &str,
+    name: &str,
+) -> Result<RunningService<RoleClient, ()>> {
+    let credential_store = CredentialStorage::new(storage, name.to_string());
+    let mut auth_manager = AuthorizationManager::new(url).await?;
+    auth_manager.set_credential_store(credential_store);
+
+    // Connecting never starts an interactive flow: stored credentials are
+    // required, and authorization happens through the settings action.
+    if !auth_manager.initialize_from_store().await? {
+        return Err(McpToolError::Auth(AuthError::AuthorizationRequired));
+    }
+    // eagerly validate the access token
+    auth_manager.get_access_token().await?;
+
+    let auth_client = AuthClient::new(request_client, auth_manager);
+    let config = StreamableHttpClientTransportConfig::with_uri(url);
+    let transport = StreamableHttpClientTransport::with_client(auth_client, config);
+    Ok(().serve(transport).await?)
 }
 
 /// Retry an MCP call on transient transport failures with exponential backoff +
@@ -358,8 +408,8 @@ pub enum McpToolError {
     #[error("MCP request failed: {0}")]
     Service(#[from] rmcp::service::ServiceError),
 
-    #[error("unsupported: {0}")]
-    Unsupported(String),
+    #[error("MCP authorization failed: {0}")]
+    Auth(#[from] AuthError),
 }
 
 // `ClientInitializeError` is large (~500 bytes), so box it to keep `McpToolError`
@@ -382,6 +432,7 @@ impl McpToolError {
                     rmcp::service::ServiceError::TransportSend(_)
                         | rmcp::service::ServiceError::TransportClosed
                 )
+                | McpToolError::Auth(AuthError::HttpError(_))
         )
     }
 }

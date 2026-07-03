@@ -20,8 +20,9 @@ use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
         Auth, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
-        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, RefreshRequest, unix_now},
+        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, RefreshRequest},
     },
+    utils::unix_now,
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";

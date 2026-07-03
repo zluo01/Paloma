@@ -15,7 +15,7 @@ use crate::{
     },
     controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
-    entity::{HealthStatus, Plugin, PluginType},
+    entity::{HealthStatus, Plugin},
     permission::PermissionState,
 };
 
@@ -29,6 +29,7 @@ pub struct ToolController {
     handlers: DashMap<String, Arc<dyn DynTool>>,
     tool_specs: RwLock<Arc<BTreeMap<String, ToolSpec>>>,
     storage: Storage,
+    request_client: reqwest::Client,
     process_manager_client: ProcessManagerClient,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
@@ -43,6 +44,7 @@ pub struct ToolCallPayload {
 impl ToolController {
     pub async fn new(
         storage: Storage,
+        request_client: reqwest::Client,
         process_manager_client: ProcessManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Arc<Self> {
@@ -63,7 +65,8 @@ impl ToolController {
         let controller = Arc::new(Self {
             handlers,
             tool_specs: RwLock::new(Arc::new(tool_specs)),
-            storage,
+            storage: storage.clone(),
+            request_client: request_client.clone(),
             process_manager_client,
             permission_workflow_client,
         });
@@ -77,8 +80,10 @@ impl ToolController {
                 .insert(plugin.name.clone(), Arc::clone(&placeholder));
 
             let controller = Arc::clone(&controller);
+            let client = request_client.clone();
+            let storage = storage.clone();
             tokio::spawn(async move {
-                let (tool, specs) = McpTool::new(&plugin).await;
+                let (tool, specs) = McpTool::new(&plugin, client.clone(), storage.clone()).await;
                 let mut swapped = false;
                 controller.handlers.alter(&plugin.name, |_, current| {
                     if Arc::ptr_eq(&current, &placeholder) {
@@ -160,7 +165,8 @@ impl ToolController {
     /// add new tool to the controller in runtime
     pub async fn register_tool(&self, config: &Plugin) -> Result<()> {
         let name = config.name.clone();
-        let (tool, specs) = McpTool::new(config).await;
+        let (tool, specs) =
+            McpTool::new(config, self.request_client.clone(), self.storage.clone()).await;
         // fail to init
         if tool.health_statue() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {
@@ -169,18 +175,6 @@ impl ToolController {
         }
 
         self.register(name, tool, specs);
-
-        // persist in db after fully init
-        self.storage
-            .insert_plugin(
-                &config.name,
-                PluginType::Mcp,
-                config.transport,
-                config.timeout,
-                &config.env,
-                &config.args,
-            )
-            .await?;
         Ok(())
     }
 
@@ -202,7 +196,8 @@ impl ToolController {
     /// update tool with new setting or simply reinit the tool
     pub async fn update_tool(&self, config: &Plugin) -> Result<()> {
         let name = config.name.clone();
-        let (tool, specs) = McpTool::new(config).await;
+        let (tool, specs) =
+            McpTool::new(config, self.request_client.clone(), self.storage.clone()).await;
         // fail to init
         if tool.health_statue() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {

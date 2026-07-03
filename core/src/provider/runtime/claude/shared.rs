@@ -9,8 +9,9 @@ use crate::{
     provider::{
         ChatEvent, ChatRequest, ChatStream, ConversationItem, Model, ProviderError, Result,
         codec::{ClaudeCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
-        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, SSE_IDLE_TIMEOUT, unix_now},
+        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, SSE_IDLE_TIMEOUT},
     },
+    utils::unix_now,
 };
 
 pub(super) const RESPONSES_URL: &str = "https://api.anthropic.com/v1/messages";

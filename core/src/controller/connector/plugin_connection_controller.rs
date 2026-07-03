@@ -5,7 +5,8 @@ use log::error;
 use crate::{
     controller::{ToolController, ToolControllerError},
     db::{Storage, StorageError},
-    entity::{HealthLevel, HealthStatus, Plugin, PluginType},
+    entity::{HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType},
+    utils::{OAuthCallbackState, OAuthError, finalize_oauth_connection, init_oauth_connection},
 };
 
 #[derive(Clone)]
@@ -74,8 +75,51 @@ impl PluginConnectionController {
             .collect())
     }
 
-    pub async fn add_mcp(&self, config: Plugin) -> Result<()> {
-        self.tool_controller.register_tool(&config).await?;
+    pub async fn init_mcp_connection(&self, config: Plugin) -> Result<Option<OAuthCallbackState>> {
+        match config.args {
+            PluginArgs::Remote {
+                url,
+                requires_auth: true,
+            } => Ok(Some(init_oauth_connection(&url).await?)),
+            _ => Ok(None),
+        }
+    }
+
+    pub async fn finalize_mcp_connection(
+        &self,
+        config: Plugin,
+        state: Option<OAuthCallbackState>,
+    ) -> Result<()> {
+        let credential = match state {
+            Some(state) => Some(
+                serde_json::to_value(finalize_oauth_connection(state).await?)
+                    .map_err(StorageError::from)?,
+            ),
+            None => None,
+        };
+        // the row must be in the db before register_tool connects: an oauth
+        // connect loads its credential from there
+        self.storage
+            .insert_plugin(
+                &config.name,
+                PluginType::Mcp,
+                config.transport,
+                config.timeout,
+                &config.env,
+                &config.args,
+                credential.as_ref(),
+            )
+            .await?;
+        // roll the row back if the connect fails so a bad config isn't left behind
+        if let Err(register_error) = self.tool_controller.register_tool(&config).await {
+            if let Err(e) = self.storage.delete_plugin(&config.name).await {
+                error!(
+                    "failed to remove plugin {} after failed connect: {e}",
+                    config.name
+                );
+            }
+            return Err(register_error.into());
+        }
         Ok(())
     }
 
@@ -108,6 +152,9 @@ pub enum PluginConnectionError {
 
     #[error(transparent)]
     Storage(#[from] StorageError),
+
+    #[error(transparent)]
+    OAuth(#[from] OAuthError),
 }
 
 type Result<T> = std::result::Result<T, PluginConnectionError>;

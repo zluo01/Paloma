@@ -1,7 +1,7 @@
 mod claude;
 mod openai;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 pub use claude::{AnthropicRuntime, ClaudeRuntime};
 pub use openai::{CodexRuntime, OpenAIRuntime};
@@ -17,14 +17,6 @@ const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 struct AvailableModels {
     models: Vec<Model>,
     expires_at: u64,
-}
-
-/// unix epoch in seconds.
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 #[derive(Serialize)]

@@ -13,9 +13,9 @@ use super::shared::{
 use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
-        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result,
-        runtime::{AvailableModels, unix_now},
+        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result, runtime::AvailableModels,
     },
+    utils::unix_now,
 };
 
 pub struct AnthropicRuntime {

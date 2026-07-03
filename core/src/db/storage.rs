@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use serde_json::Value;
 use sqlx::{
     Pool, Sqlite,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -194,6 +195,7 @@ impl Storage {
             .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_plugin(
         &self,
         name: &str,
@@ -202,6 +204,7 @@ impl Storage {
         timeout: u32,
         env: &HashMap<String, String>,
         args: &PluginArgs,
+        credential: Option<&Value>,
     ) -> Result<()> {
         sqlx::query(queries::INSERT_PLUGIN_QUERY)
             .bind(name)
@@ -210,6 +213,7 @@ impl Storage {
             .bind(timeout)
             .bind(serde_json::to_string(env)?)
             .bind(serde_json::to_string(args)?)
+            .bind(credential.map(serde_json::to_string).transpose()?)
             .execute(&self.pool)
             .await
             .map_err(|e| match &e {
@@ -243,11 +247,36 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn set_plugin_credential(
+        &self,
+        name: &str,
+        credential: Option<&Value>,
+    ) -> Result<()> {
+        let result = sqlx::query(queries::UPDATE_PLUGIN_CREDENTIAL_QUERY)
+            .bind(credential.map(serde_json::to_string).transpose()?)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(name.to_string()));
+        }
+        Ok(())
+    }
+
     pub async fn all_mcp_plugins(&self) -> Result<Vec<Plugin>> {
         let plugins = sqlx::query_as::<_, Plugin>(queries::GET_ALL_MCP_QUERY)
             .fetch_all(&self.pool)
             .await?;
         Ok(plugins)
+    }
+
+    pub async fn plugin_credential(&self, name: &str) -> Result<Option<Value>> {
+        let credential =
+            sqlx::query_scalar::<_, Option<Value>>(queries::GET_PLUGIN_CREDENTIAL_QUERY)
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(credential.flatten())
     }
 
     pub async fn delete_plugin(&self, name: &str) -> Result<()> {

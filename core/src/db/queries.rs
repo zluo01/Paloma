@@ -49,6 +49,12 @@ pub const INSERT_PLUGIN_QUERY: &str = include_str!("queries/plugins/insert_plugi
 
 pub const GET_ALL_MCP_QUERY: &str = include_str!("queries/plugins/get_all_mcp.sql");
 
+pub const GET_PLUGIN_CREDENTIAL_QUERY: &str =
+    include_str!("queries/plugins/get_plugin_credential.sql");
+
+pub const UPDATE_PLUGIN_CREDENTIAL_QUERY: &str =
+    include_str!("queries/plugins/update_credential.sql");
+
 pub const DISABLED_PLUGINS_QUERY: &str = include_str!("queries/plugins/disabled_plugins.sql");
 
 pub const DELETE_PLUGIN_QUERY: &str = include_str!("queries/plugins/delete_plugin.sql");

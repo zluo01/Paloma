@@ -19,8 +19,9 @@ use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
         Auth, ChatRequest, ChatStream, Model, ProviderClient, Result,
-        runtime::{AvailableModels, RefreshRequest, unix_now},
+        runtime::{AvailableModels, RefreshRequest},
     },
+    utils::unix_now,
 };
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";

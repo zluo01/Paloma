@@ -1595,11 +1595,27 @@ mod plugins {
             args: vec![],
         };
         storage
-            .insert_plugin("ok", PluginType::Mcp, Transport::Local, 300, &env, &args)
+            .insert_plugin(
+                "ok",
+                PluginType::Mcp,
+                Transport::Local,
+                300,
+                &env,
+                &args,
+                None,
+            )
             .await
             .expect("positive timeout should insert");
         let zero = storage
-            .insert_plugin("zero", PluginType::Mcp, Transport::Local, 0, &env, &args)
+            .insert_plugin(
+                "zero",
+                PluginType::Mcp,
+                Transport::Local,
+                0,
+                &env,
+                &args,
+                None,
+            )
             .await;
         assert!(matches!(zero, Err(StorageError::Sqlx(_))), "zero: {zero:?}");
     }
