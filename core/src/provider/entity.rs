@@ -53,7 +53,6 @@ pub enum Connection {
         api_key: String,
         instructions_url: Option<String>,
     },
-    None,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
