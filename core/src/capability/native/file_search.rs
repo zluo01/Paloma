@@ -11,7 +11,7 @@ use ignore::{WalkBuilder, WalkState};
 use log::{debug, error, info, warn};
 use notify::{EventKind, RecursiveMode, event::ModifyKind};
 use notify_debouncer_full::{
-    DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache, new_debouncer,
+    DebounceEventResult, DebouncedEvent, Debouncer, NoCache, new_debouncer_opt,
 };
 use nucleo_matcher::{
     Config, Matcher, Utf32Str,
@@ -49,7 +49,7 @@ const COPY_PATH_ACTION_LABEL: &str = "Copy Path";
 const FOLDER_ICON: &str = "folder";
 const FALLBACK_ICON: &str = "text-x-generic";
 
-type FsWatcher = Debouncer<notify::RecommendedWatcher, RecommendedCache>;
+type FsWatcher = Debouncer<notify::RecommendedWatcher, NoCache>;
 
 struct FileEntry {
     name: String,
@@ -160,14 +160,20 @@ impl FileSearch {
         // The debouncer callback cannot touch the debouncer that owns it, so
         // it only forwards affected directories to the maintenance thread.
         let (dirty_tx, dirty_rx) = mpsc::channel::<Vec<PathBuf>>();
-        let debouncer = new_debouncer(DEBOUNCE, None, move |result: DebounceEventResult| {
-            let Ok(events) = result else { return };
-            let dirs = dirty_dirs(&events);
-            if !dirs.is_empty() {
-                debug!("file_search: rescanning {dirs:?}");
-                let _ = dirty_tx.send(dirs);
-            }
-        })?;
+        let debouncer: FsWatcher = new_debouncer_opt(
+            DEBOUNCE,
+            None,
+            move |result: DebounceEventResult| {
+                let Ok(events) = result else { return };
+                let dirs = dirty_dirs(&events);
+                if !dirs.is_empty() {
+                    debug!("file_search: rescanning {dirs:?}");
+                    let _ = dirty_tx.send(dirs);
+                }
+            },
+            NoCache,
+            notify::Config::default(),
+        )?;
         let watcher = Arc::new(Mutex::new(debouncer));
 
         // initial index in the background; queries see an empty index until done
@@ -181,7 +187,7 @@ impl FileSearch {
                     let (found, dirs) = scan(&home);
                     info!("file_search: indexed {} entries", found.len());
                     *entries.write().unwrap() = found;
-                    watch_dirs(&dirs, &watcher);
+                    watch_initial(&home, &dirs, &watcher);
                 })
                 .expect("spawn file index thread");
         }
@@ -287,6 +293,29 @@ fn scan(root: &Path) -> (Vec<FileEntry>, Vec<PathBuf>) {
     (found, dirs)
 }
 
+// FSEvents is recursive natively
+#[cfg(target_os = "macos")]
+fn watch_initial(root: &Path, _dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
+    let watched = watcher
+        .lock()
+        .unwrap()
+        .watch(root, RecursiveMode::Recursive)
+        .is_ok();
+    if !watched {
+        warn!("file_search: failed to watch {root:?}; results may go stale");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn watch_initial(_root: &Path, dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
+    watch_dirs(dirs, watcher);
+}
+
+/// The recursive root watch already covers directories created later.
+#[cfg(target_os = "macos")]
+fn watch_dirs(_dirs: &[PathBuf], _watcher: &Mutex<FsWatcher>) {}
+
+#[cfg(target_os = "linux")]
 fn watch_dirs(dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
     let mut guard = watcher.lock().unwrap();
     let failures = dirs
@@ -295,6 +324,17 @@ fn watch_dirs(dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
         .count();
     if failures > 0 {
         warn!("file_search: failed to watch {failures} directories; results there may go stale");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn unwatch_dirs(_dirs: &[PathBuf], _watcher: &Mutex<FsWatcher>) {}
+
+#[cfg(target_os = "linux")]
+fn unwatch_dirs(dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
+    let mut guard = watcher.lock().unwrap();
+    for dir in dirs {
+        let _ = guard.unwatch(dir);
     }
 }
 
@@ -463,10 +503,7 @@ fn apply_removals(
         !dead
     });
 
-    let mut guard = watcher.lock().unwrap();
-    for dir in &unwatch {
-        let _ = guard.unwatch(dir);
-    }
+    unwatch_dirs(&unwatch, watcher);
 }
 
 fn rank<'a>(input: &str, entries: &'a [FileEntry]) -> Vec<&'a FileEntry> {
@@ -624,7 +661,16 @@ mod tests {
     }
 
     fn test_watcher() -> Mutex<FsWatcher> {
-        Mutex::new(new_debouncer(DEBOUNCE, None, |_: DebounceEventResult| {}).unwrap())
+        Mutex::new(
+            new_debouncer_opt(
+                DEBOUNCE,
+                None,
+                |_: DebounceEventResult| {},
+                NoCache,
+                notify::Config::default(),
+            )
+            .unwrap(),
+        )
     }
 
     #[test]
