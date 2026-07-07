@@ -27,6 +27,17 @@ pub use crate::{error::ScryError, types::*};
 
 uniffi::setup_scaffolding!("scry");
 
+/// Route core's `log` records to stderr, which Xcode's console captures.
+/// Call once at app startup, before [`ScryApp::new`]; extra calls are
+/// no-ops. `RUST_LOG` overrides the default filter.
+#[uniffi::export]
+pub fn init_logging() {
+    let env = env_logger::Env::default().default_filter_or("info,rmcp=warn");
+    let _ = env_logger::Builder::from_env(env)
+        .format_timestamp_millis()
+        .try_init();
+}
+
 /// Matches core's `RENDER_CHANNEL_CAPACITY` so the pump adds no extra slack.
 const EVENT_BUFFER: usize = 32;
 
@@ -157,10 +168,17 @@ impl ScryApp {
         Ok(Arc::new(stream))
     }
 
-    pub fn run_query_action(&self, id: String, action: Action) -> Option<ActionOutcome> {
-        self.inner
-            .run_query_action(&id, action.into())
-            .map(Into::into)
+    /// Run an action off the caller's thread: handlers may spawn processes
+    /// or touch the pasteboard, which shouldn't stall the UI thread.
+    pub async fn run_query_action(
+        &self,
+        id: String,
+        action: Action,
+    ) -> Result<Option<ActionOutcome>, ScryError> {
+        let inner = Arc::clone(&self.inner);
+        let outcome =
+            on_runtime(async move { inner.run_query_action(&id, action.into()) }).await?;
+        Ok(outcome.map(Into::into))
     }
 
     /// Start (or continue) a chat turn. `session_id` of `None` opens a new
