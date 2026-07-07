@@ -1,13 +1,20 @@
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux::Platform;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::Platform;
+
 use std::{
-    collections::HashSet,
-    os::unix::process::CommandExt,
-    process::{Command, Stdio},
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
     time::Duration,
 };
 
-use freedesktop_desktop_entry::{self as fde, DesktopEntry};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use nucleo_matcher::{
@@ -19,6 +26,21 @@ use crate::capability::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
 };
 
+/// Contract each platform backend implements on its `Platform` struct.
+/// Porting to a new OS means adding a module above and implementing this.
+trait AppSearchBackend {
+    /// Discover installed applications.
+    fn load() -> Vec<AppEntry>;
+    /// Directories to watch (non-recursively) for application
+    /// install/uninstall changes.
+    fn watch_paths() -> Vec<PathBuf>;
+    /// Whether a filesystem event path is relevant to the application
+    /// index and should trigger a rescan.
+    fn is_app_file(path: &Path) -> bool;
+    /// Launch the application referenced by an action's params.
+    fn launch(params: &[String]);
+}
+
 const NAME_WEIGHT: u32 = 10_000;
 const GENERIC_NAME_WEIGHT: u32 = 7_000;
 const KEYWORD_WEIGHT: u32 = 5_000;
@@ -28,8 +50,13 @@ struct AppEntry {
     name: String,
     generic_name: Option<String>,
     keywords: Vec<String>,
+    /// Params passed to `AppSearchBackend::launch`; not used for matching.
     exec: Vec<String>,
-    icon: Option<String>,
+    /// Extra low-weight haystack for matching (e.g. the binary or bundle
+    /// name) — kept separate from `exec` so shared path prefixes like
+    /// "/Applications" don't make every entry match.
+    exec_interest: Option<String>,
+    icon: Option<IconRef>,
 }
 
 impl AppEntry {
@@ -37,7 +64,7 @@ impl AppEntry {
         Item {
             title: self.name.clone(),
             subtitle: self.generic_name.clone(),
-            icon: self.icon.clone().map(IconRef::Name),
+            icon: self.icon.clone(),
             actions: vec![Action {
                 label: "Open".to_string(),
                 params: self.exec.clone(),
@@ -99,31 +126,14 @@ impl QueryHandler for AppSearch {
     }
 
     fn run(&self, action: Action) -> ActionOutcome {
-        let Some((program, args)) = action.params.split_first() else {
-            error!("app_search: empty argv, nothing to launch");
-            return ActionOutcome::Hide;
-        };
-
-        let result = Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0)
-            .spawn();
-
-        match result {
-            Ok(_child) => debug!("app_search: launched {program}"),
-            Err(err) => error!("app_search: failed to launch {program}: {err}"),
-        }
-
+        Platform::launch(&action.params);
         ActionOutcome::Hide
     }
 }
 
 impl AppSearch {
     pub fn new() -> notify::Result<Self> {
-        let entries = Arc::new(RwLock::new(load()));
+        let entries = Arc::new(RwLock::new(Platform::load()));
         let entries_for_watcher = Arc::clone(&entries);
 
         let mut debouncer = new_debouncer(
@@ -135,29 +145,26 @@ impl AppSearch {
                     matches!(
                         e.kind,
                         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-                    ) && e
-                        .paths
-                        .iter()
-                        .any(|p| p.extension().is_some_and(|ext| ext == "desktop"))
+                    ) && e.paths.iter().any(|p| Platform::is_app_file(p))
                 });
                 if !should_load {
                     return;
                 }
-                let fresh = load();
+                let fresh = Platform::load();
                 if let Ok(mut guard) = entries_for_watcher.write() {
                     *guard = fresh;
                 }
             },
         )?;
 
-        for path in fde::default_paths() {
+        for path in Platform::watch_paths() {
             if !path.is_dir() {
-                debug!("app_search: skipping missing watch path {path:?}");
+                debug!("skipping missing watch path {path:?}");
                 continue;
             }
             match debouncer.watch(&path, RecursiveMode::NonRecursive) {
-                Ok(_) => info!("app_search: watching {path:?}"),
-                Err(e) => warn!("app_search: failed to watch {path:?}: {e}"),
+                Ok(_) => info!("watching {path:?}"),
+                Err(e) => warn!("failed to watch {path:?}: {e}"),
             }
         }
 
@@ -168,40 +175,12 @@ impl AppSearch {
     }
 }
 
-fn load() -> Vec<AppEntry> {
-    let locales = fde::get_languages_from_env();
-    let current_desktop = fde::current_desktop();
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut entries = Vec::new();
-
-    for path in fde::Iter::new(fde::default_paths()) {
-        let Ok(de) = DesktopEntry::from_path(path, Some(&locales)) else {
-            continue;
-        };
-        if !keep(&de, current_desktop.as_deref(), &mut seen) {
-            continue;
-        }
-        let Some(app) = decode(&de, &locales) else {
-            continue;
-        };
-        entries.push(app);
-    }
-
-    entries
-}
-
 fn score_app(
     pattern: &Pattern,
     app: &AppEntry,
     matcher: &mut Matcher,
     buf: &mut Vec<char>,
 ) -> Option<u32> {
-    let exec_interest = app
-        .exec
-        .iter()
-        .find(|tok| !is_interpreter(tok))
-        .or_else(|| app.exec.first());
-
     let fields = std::iter::once((app.name.as_str(), NAME_WEIGHT))
         .chain(
             app.generic_name
@@ -214,7 +193,7 @@ fn score_app(
                 .filter(|kw| !kw.is_empty())
                 .map(|kw| (kw.as_str(), KEYWORD_WEIGHT)),
         )
-        .chain(exec_interest.map(|s| (s.as_str(), EXEC_WEIGHT)));
+        .chain(app.exec_interest.as_deref().map(|s| (s, EXEC_WEIGHT)));
 
     let fields: Vec<_> = fields.collect();
     let mut total = 0;
@@ -232,90 +211,6 @@ fn score_app(
     }
 
     Some(total)
-}
-
-fn keep(de: &DesktopEntry, current_desktop: Option<&[String]>, seen: &mut HashSet<String>) -> bool {
-    let appid = match de.flatpak() {
-        Some(base) => format!("{}.{}", base, de.appid),
-        None => de.appid.to_string(),
-    };
-    if seen.contains(&appid) {
-        return false;
-    }
-
-    let exec_first = de.exec().and_then(|e| e.split_ascii_whitespace().next());
-    if matches!(exec_first, None | Some("false")) {
-        return false;
-    }
-
-    if let (Some(not_show), Some(current)) = (de.not_show_in(), current_desktop)
-        && not_show
-            .iter()
-            .any(|d| current.iter().any(|c| c.eq_ignore_ascii_case(d)))
-    {
-        return false;
-    }
-
-    if let Some(only_show) = de.only_show_in() {
-        if let Some(current) = current_desktop
-            && !only_show
-                .iter()
-                .any(|d| current.iter().any(|c| c.eq_ignore_ascii_case(d)))
-        {
-            return false;
-        }
-    } else if de.no_display() {
-        return false;
-    }
-
-    seen.insert(appid);
-    true
-}
-
-fn decode(de: &DesktopEntry, locales: &[String]) -> Option<AppEntry> {
-    let name = de.name(locales)?.to_string();
-    let exec = de.parse_exec().ok().filter(|v| !v.is_empty())?;
-    let generic_name = de.generic_name(locales).map(|s| s.to_string());
-    let keywords = de
-        .keywords(locales)
-        .map(|kws| {
-            kws.iter()
-                .filter(|kw| !kw.trim().is_empty())
-                .map(|kw| kw.to_string())
-                .collect()
-        })
-        .unwrap_or_default();
-    let icon = de.icon().map(str::to_owned);
-    Some(AppEntry {
-        name,
-        generic_name,
-        keywords,
-        exec,
-        icon,
-    })
-}
-
-/// Interpreter / wrapper binaries we don't want to count as the "app name"
-/// for search interests. Pattern from Albert.
-fn is_interpreter(tok: &str) -> bool {
-    let last = std::path::Path::new(tok)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(tok);
-    matches!(
-        last,
-        "bash"
-            | "dbus-send"
-            | "env"
-            | "flatpak"
-            | "java"
-            | "perl"
-            | "python"
-            | "python2"
-            | "python3"
-            | "ruby"
-            | "sh"
-    )
 }
 
 #[cfg(test)]
@@ -375,6 +270,7 @@ mod tests {
             generic_name: generic_name.map(str::to_string),
             keywords: keywords.iter().map(|kw| kw.to_string()).collect(),
             exec: exec.iter().map(|arg| arg.to_string()).collect(),
+            exec_interest: exec.first().map(|arg| arg.to_string()),
             icon: None,
         }
     }
@@ -384,21 +280,6 @@ mod tests {
         let mut matcher = Matcher::new(Config::DEFAULT);
         let mut buf = Vec::new();
         score_app(&pattern, app, &mut matcher, &mut buf)
-    }
-
-    #[test]
-    fn decode_filters_empty_keywords() {
-        let mut entry = DesktopEntry::from_appid("firefox.desktop".to_string());
-        entry.add_desktop_entry("Name".to_string(), "Firefox".to_string());
-        entry.add_desktop_entry("Exec".to_string(), "firefox".to_string());
-        entry.add_desktop_entry(
-            "Keywords".to_string(),
-            "web;browser;internet;; ".to_string(),
-        );
-
-        let app = decode(&entry, &[]).expect("test desktop entry should decode");
-
-        assert_eq!(app.keywords, ["web", "browser", "internet"]);
     }
 
     #[test]

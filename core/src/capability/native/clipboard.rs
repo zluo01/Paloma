@@ -1,13 +1,21 @@
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader},
-    process::{Command, Stdio},
     sync::{Arc, RwLock},
     thread,
     time::Duration,
 };
 
+#[cfg(target_os = "linux")]
+use std::{
+    io::{BufRead, BufReader},
+    process::{Command, Stdio},
+};
+
 use log::{debug, error};
+#[cfg(target_os = "macos")]
+use objc2::rc::autoreleasepool;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 
 use crate::capability::{
     Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
@@ -16,6 +24,16 @@ use crate::capability::{
 
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
+#[cfg(target_os = "macos")]
+const POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// De-facto standard markers (<https://nspasteboard.org>) set by password
+/// managers and similar tools on entries that must stay out of history.
+#[cfg(target_os = "macos")]
+const PRIVATE_TYPE_MARKERS: &[&str] = &[
+    "org.nspasteboard.ConcealedType",
+    "org.nspasteboard.TransientType",
+];
 const ICON_NAME: &str = "edit-paste";
 
 const COPY_ACTION_LABEL: &str = "Copy";
@@ -57,7 +75,7 @@ impl QueryHandler for Clipboard {
 
     fn run(&self, action: Action) -> ActionOutcome {
         let Some(text) = action.params.into_iter().next() else {
-            error!("clipboard: action with no payload");
+            error!("action with no payload");
             return ActionOutcome::Hide;
         };
 
@@ -65,7 +83,7 @@ impl QueryHandler for Clipboard {
             COPY_ACTION_LABEL => copy_to_clipboard(&text),
             REMOVE_ACTION_LABEL => self.remove_entry(&text),
             other => {
-                error!("clipboard: unknown action label: {other}");
+                error!("unknown action label: {other}");
             },
         };
 
@@ -101,15 +119,16 @@ impl Default for Clipboard {
 
 fn watcher_loop(history: Arc<RwLock<VecDeque<String>>>) {
     loop {
-        match run_wl_paste_watch(&history) {
-            Ok(()) => debug!("clipboard: wl-paste --watch exited cleanly; respawning"),
-            Err(e) => error!("clipboard: wl-paste watcher error: {e}; respawning"),
+        match watch_clipboard(&history) {
+            Ok(()) => debug!("watcher exited cleanly; respawning"),
+            Err(e) => error!("watcher error: {e}; respawning"),
         }
         thread::sleep(RESPAWN_BACKOFF);
     }
 }
 
-fn run_wl_paste_watch(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
+#[cfg(target_os = "linux")]
+fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
     // wl-paste --watch runs the inner command on every clipboard change.
     // The inner command writes the new selection followed by a NUL byte so
     // we can frame entries that themselves contain newlines.
@@ -142,6 +161,62 @@ fn run_wl_paste_watch(history: &RwLock<VecDeque<String>>) -> std::io::Result<()>
             },
         }
     }
+}
+
+// macOS has no clipboard-change notification API; poll the pasteboard's
+// change counter (an in-process message send, no data transfer) and read
+// the contents only when it moves.
+#[cfg(target_os = "macos")]
+fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    // Start from the current count so pre-launch contents are not recorded.
+    let mut last_change = pasteboard.changeCount();
+
+    loop {
+        // The pool drains the objects the pasteboard calls autorelease each
+        // tick; without it they accumulate for the lifetime of this
+        // never-exiting thread.
+        autoreleasepool(|_| {
+            let change = pasteboard.changeCount();
+            if change == last_change {
+                return;
+            }
+            let text = recordable_text(&pasteboard);
+            // Discard the sample if the pasteboard moved mid-read — the
+            // marker check and the text could belong to different entries
+            // (e.g. a concealed password landing between the two calls).
+            // The new entry is examined on the next tick.
+            if pasteboard.changeCount() != change {
+                return;
+            }
+            last_change = change;
+            if let Some(text) = text
+                && !text.trim().is_empty()
+            {
+                push_entry(history, text);
+            }
+        });
+        thread::sleep(POLL_INTERVAL);
+    }
+}
+
+// Skips non-text contents and anything flagged with a privacy marker.
+#[cfg(target_os = "macos")]
+fn recordable_text(pasteboard: &NSPasteboard) -> Option<String> {
+    let types = pasteboard.types()?;
+    if has_private_marker(types.iter().map(|t| t.to_string())) {
+        return None;
+    }
+    pasteboard
+        .stringForType(unsafe { NSPasteboardTypeString })
+        .map(|s| s.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn has_private_marker<S: AsRef<str>>(types: impl IntoIterator<Item = S>) -> bool {
+    types
+        .into_iter()
+        .any(|t| PRIVATE_TYPE_MARKERS.contains(&t.as_ref()))
 }
 
 fn push_entry(history: &RwLock<VecDeque<String>>, text: String) {
@@ -226,5 +301,26 @@ mod tests {
             push_entry(&h, format!("entry-{i}"));
         }
         assert_eq!(h.read().unwrap().len(), HISTORY_LIMIT);
+    }
+
+    // Read-only smoke test: the pasteboard is usable from a non-main
+    // thread (tests run off-main), which is where the watcher lives.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pasteboard_reads_off_main_thread() {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        assert!(pasteboard.changeCount() >= 0);
+        let _ = recordable_text(&pasteboard);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn private_pasteboard_markers_are_detected() {
+        assert!(has_private_marker([
+            "public.utf8-plain-text",
+            "org.nspasteboard.ConcealedType",
+        ]));
+        assert!(has_private_marker(["org.nspasteboard.TransientType"]));
+        assert!(!has_private_marker(["public.utf8-plain-text"]));
     }
 }
