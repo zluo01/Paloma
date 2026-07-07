@@ -1,0 +1,44 @@
+//
+//  SearchRowView.swift
+//  Scry
+//
+//
+
+import SwiftUI
+
+struct SearchRowView: View {
+    let item: Item
+    let index: Int
+    let selected: Bool
+    let actionHint: Bool
+    let onEvent: (SearchEvent) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            IconView(icon: item.icon)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+                if let subtitle = item.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if actionHint {
+                Text("⌘⏎")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .searchRow(selected: selected) {
+            onEvent(.action(index: index))
+        }
+        .anchorPreference(key: SelectedRowBounds.self, value: .bounds) { anchor in
+            selected ? anchor : nil
+        }
+    }
+}

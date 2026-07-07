@@ -149,3 +149,6 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# xcode generated bindings
+gui/macos/Scry/Scry/Generated/
