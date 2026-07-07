@@ -25,7 +25,7 @@ mod permission;
 mod provider;
 mod utils;
 
-pub use capability::{Action, ActionOutcome, IconRef, Item};
+pub use capability::{Action, ActionOutcome, IconRef, ImageFormat, Item};
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, RenderEvent, SearchRenderEvent,
     SessionListItem,

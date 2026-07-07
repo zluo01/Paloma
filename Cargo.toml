@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "gui/scry-gtk"]
+members = ["core", "ffi", "gui/scry-gtk", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,6 +12,7 @@ futures = "0.3.32"
 log = "0.4.33"
 serde_json = "1.0.150"
 tokio = { version = "1.52.3", default-features = false }
+uniffi = "0.32.0"
 uuid = { version = "1.23.4", default-features = false }
 
 [profile.release]

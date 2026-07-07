@@ -1,0 +1,20 @@
+[package]
+name = "scry-ffi"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+[lib]
+# staticlib is what the Swift/Xcode side links; cdylib lets uniffi-bindgen
+# run in library mode on the host during development.
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+futures = { workspace = true }
+scry-core = { path = "../core" }
+serde_json = { workspace = true }
+thiserror = "2.0.18"
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+uniffi = { workspace = true }
+uuid = { workspace = true, features = ["std"] }
