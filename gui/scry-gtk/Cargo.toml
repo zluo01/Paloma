@@ -10,7 +10,7 @@ description = "GTK4/Linux frontend: overlay UI, settings, hotkey portal, and tra
 name = "scry"
 path = "src/main.rs"
 
-[dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13.12", default-features = false, features = [
     "tokio",
     "global_shortcuts",
