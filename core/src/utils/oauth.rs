@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io, time::Duration};
 
-use log::{debug, info, warn};
+use log::{debug, info};
 use oauth2::TokenResponse;
 use rmcp::transport::{AuthError, StoredCredentials, auth::OAuthState};
 use tokio::{
@@ -49,10 +49,6 @@ pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackStat
 pub(crate) async fn finalize_oauth_connection(
     mut state: OAuthCallbackState,
 ) -> Result<StoredCredentials> {
-    if let Err(e) = open::that_detached(&state.auth_url) {
-        warn!("failed to open the browser: {e}");
-    }
-
     let (code, csrf) = timeout(CALLBACK_TIMEOUT, wait_for_callback(&state.listener))
         .await
         .map_err(|_| OAuthError::Timeout)??;
