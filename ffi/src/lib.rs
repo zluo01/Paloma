@@ -32,15 +32,52 @@ pub use crate::{error::ScryError, types::*};
 
 uniffi::setup_scaffolding!("scry");
 
-/// Route core's `log` records to stderr, which Xcode's console captures.
-/// Call once at app startup, before [`ScryApp::new`]; extra calls are
-/// no-ops. `RUST_LOG` overrides the default filter.
+/// Route `log` records to ~/Library/Logs/Scry/scry-YYYY-MM-DD.log
+/// (per-day files, appended) and to stderr for Xcode/terminal runs. Call
+/// once at app startup, before [`ScryApp::new`]; extra calls are no-ops.
+/// `RUST_LOG` overrides the default filter.
 #[uniffi::export]
 pub fn init_logging() {
     let env = env_logger::Env::default().default_filter_or("info,rmcp=warn");
-    let _ = env_logger::Builder::from_env(env)
-        .format_timestamp_millis()
-        .try_init();
+    let mut builder = env_logger::Builder::from_env(env);
+    builder.format_timestamp_millis();
+    if let Some(file) = log_file() {
+        builder.target(env_logger::Target::Pipe(Box::new(Tee(file))));
+    }
+    let _ = builder.try_init();
+}
+
+/// The frontend's sink into the same log file; Swift has no portable
+/// path into `log`.
+#[uniffi::export]
+pub fn log_error(target: String, message: String) {
+    log::error!(target: target.as_str(), "{message}");
+}
+
+fn log_file() -> Option<std::fs::File> {
+    let dir = std::env::home_dir()?.join("Library/Logs/Scry");
+    std::fs::create_dir_all(&dir).ok()?;
+    let name = format!("scry-{}.log", chrono::Local::now().format("%Y-%m-%d"));
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(name))
+        .ok()
+}
+
+struct Tee(std::fs::File);
+
+impl std::io::Write for Tee {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let _ = std::io::stderr().write_all(buf);
+        self.0.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = std::io::stderr().flush();
+        self.0.flush()
+    }
 }
 
 /// Matches core's render channel so the pump adds no extra slack.

@@ -6,7 +6,6 @@
 
 import Foundation
 import Observation
-import os
 
 @MainActor
 @Observable
@@ -18,9 +17,6 @@ final class SessionModel {
     private(set) var selection: Int?
 
     @ObservationIgnored private var searchTask: Task<Void, Never>?
-    @ObservationIgnored private let logger = Logger(
-        subsystem: "scry.overlay", category: "sessions"
-    )
 
     var filtered: [SessionListItem] {
         guard let searchResult else { return sessions }
@@ -52,7 +48,7 @@ final class SessionModel {
     }
 
     func refresh() {
-        CoreClient.shared.load({ try await $0.availableSessions() }, or: "failed to refresh sessions", logger: logger) {
+        CoreClient.shared.load({ try await $0.availableSessions() }, or: "failed to refresh sessions", category: "sessions") {
             self.sessions = $0
             self.selectFirst()
         }
@@ -79,7 +75,7 @@ final class SessionModel {
                 searchResult = Set(ids)
                 selectFirst()
             case let .failure(error):
-                logger.error("failed to search sessions: \(String(describing: error))")
+                logError(target: "sessions", message: "failed to search sessions: \(String(describing: error))")
             }
         }
     }

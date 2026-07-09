@@ -5,7 +5,6 @@
 //
 
 import Observation
-import os
 
 enum ServiceConnectionPhase {
     /// init_connection in flight.
@@ -42,12 +41,8 @@ enum ServiceConnectionPhase {
 final class ServiceModel {
     private(set) var services: [Connector] = []
 
-    @ObservationIgnored private let logger = Logger(
-        subsystem: "scry.settings", category: "services"
-    )
-
     func refresh() {
-        CoreClient.shared.load({ try await $0.availableConnectors() }, or: "failed to refresh connectors", logger: logger) {
+        CoreClient.shared.load({ try await $0.availableConnectors() }, or: "failed to refresh connectors", category: "services") {
             self.services = $0
         }
     }

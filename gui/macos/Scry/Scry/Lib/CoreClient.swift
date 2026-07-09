@@ -4,7 +4,6 @@
 //
 
 import Observation
-import os
 
 @Observable
 final class CoreClient {
@@ -45,7 +44,7 @@ final class CoreClient {
     func load<T>(
         _ operation: @MainActor @escaping (ScryApp) async throws -> T,
         or failure: String,
-        logger: Logger,
+        category: String,
         into assign: @MainActor @escaping (T) -> Void
     ) {
         Task {
@@ -53,7 +52,7 @@ final class CoreClient {
             case let .success(value):
                 assign(value)
             case let .failure(error):
-                logger.error("\(failure): \(String(describing: error))")
+                logError(target: category, message: "\(failure): \(String(describing: error))")
             }
         }
     }

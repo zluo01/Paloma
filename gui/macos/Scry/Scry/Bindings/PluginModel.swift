@@ -5,19 +5,14 @@
 //
 
 import Observation
-import os
 
 @MainActor
 @Observable
 final class PluginModel {
     private(set) var mcps: [McpServer] = []
 
-    @ObservationIgnored private let logger = Logger(
-        subsystem: "scry.settings", category: "plugins"
-    )
-
     func refresh() {
-        CoreClient.shared.load({ try await $0.listMcps() }, or: "failed to refresh MCP servers", logger: logger) {
+        CoreClient.shared.load({ try await $0.listMcps() }, or: "failed to refresh MCP servers", category: "plugins") {
             self.mcps = $0
         }
     }

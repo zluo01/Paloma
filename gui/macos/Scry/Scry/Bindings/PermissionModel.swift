@@ -5,19 +5,14 @@
 //
 
 import Observation
-import os
 
 @MainActor
 @Observable
 final class PermissionModel {
     private(set) var permissions: [Permission] = []
 
-    @ObservationIgnored private let logger = Logger(
-        subsystem: "scry.settings", category: "permissions"
-    )
-
     func refresh() {
-        CoreClient.shared.load({ try await $0.getPermissions() }, or: "failed to load permissions", logger: logger) {
+        CoreClient.shared.load({ try await $0.getPermissions() }, or: "failed to load permissions", category: "permissions") {
             self.permissions = $0
         }
     }

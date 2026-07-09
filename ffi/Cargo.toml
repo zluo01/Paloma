@@ -13,8 +13,10 @@ crate-type = ["lib", "staticlib", "cdylib"]
 # The swift bridge only exists for the macos frontend; on other platforms
 # the crate builds empty (see the crate-level cfg in src/lib.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
+chrono = { workspace = true }
 env_logger = "0.11.11"
 futures = { workspace = true }
+log = { workspace = true }
 scry-core = { path = "../core" }
 serde_json = { workspace = true }
 thiserror = "2.0.18"

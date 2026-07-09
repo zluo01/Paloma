@@ -9,11 +9,7 @@ publish = false
 async-trait = "0.1.89"
 backon = "1.6.0"
 base64 = { version = "0.22.1", default-features = false, features = ["std"] }
-chrono = { version = "0.4.45", default-features = false, features = [
-    "clock",
-    "serde",
-    "std",
-] }
+chrono = { workspace = true, features = ["serde"] }
 dashmap = "6.2.1"
 eventsource-stream = "0.2.3"
 exmex = "0.21.0"

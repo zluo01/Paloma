@@ -3216,8 +3216,10 @@ dependencies = [
 name = "scry-ffi"
 version = "0.0.1"
 dependencies = [
+ "chrono",
  "env_logger",
  "futures",
+ "log",
  "scry-core",
  "serde_json",
  "thiserror 2.0.18",
