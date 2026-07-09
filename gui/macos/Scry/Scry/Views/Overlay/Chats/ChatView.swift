@@ -5,12 +5,6 @@
 
 import SwiftUI
 
-private struct ScrollMetrics: Equatable {
-    var offset: CGFloat
-    var container: CGFloat
-    var content: CGFloat
-}
-
 struct ChatView: View {
     @Bindable var model: ChatModel
     /// Pinned to the tail until the user scrolls away.
@@ -30,16 +24,19 @@ struct ChatView: View {
             }
             // Opens restored transcripts at the tail without a follow event.
             .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
-                ScrollMetrics(
-                    offset: geometry.contentOffset.y,
-                    container: geometry.containerSize.height,
-                    content: geometry.contentSize.height
-                )
-            } action: { old, new in
-                // Only a real scroll (unchanged content height) re-decides the pin.
-                guard old.content == new.content else { return }
-                stuckToBottom = new.offset + new.container >= new.content - 24
+            .onScrollPhaseChange { _, newPhase, context in
+                // A user scroll suspends the follow; where it settles decides.
+                guard newPhase != .animating else { return }
+                if newPhase == .idle {
+                    let geometry = context.geometry
+                    let pinned = geometry.contentOffset.y + geometry.containerSize.height
+                        >= geometry.contentSize.height - 24
+                    if stuckToBottom != pinned {
+                        stuckToBottom = pinned
+                    }
+                } else if stuckToBottom {
+                    stuckToBottom = false
+                }
             }
             .onChange(of: model.chatRevision) {
                 if stuckToBottom {
