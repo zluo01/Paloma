@@ -334,6 +334,8 @@ fn open_oauth_dialog(
     auth_url: &str,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> (Dialog, glib::SignalHandlerId) {
+    launch_url(auth_url);
+
     let status = StatusPage::builder()
         .title("Waiting for Authorization")
         .description("Complete the sign-in in your browser.")

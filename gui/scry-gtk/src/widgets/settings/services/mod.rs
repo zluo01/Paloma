@@ -197,7 +197,7 @@ impl ServicesPage {
         if conn.status.status == HealthStatus::Running {
             row.set_subtitle("Connected");
             row.add_css_class("scry-connected");
-            if conn.status.model.is_empty() {
+            if conn.status.models.is_empty() {
                 row.set_enable_expansion(false);
             } else {
                 self.add_picker_rows(provider.id, &row, conn);
@@ -244,7 +244,7 @@ impl ServicesPage {
     }
 
     fn add_picker_rows(&self, id: ProviderId, row: &ExpanderRow, conn: &ConnectorConnection) {
-        let models = Rc::new(conn.status.model.clone());
+        let models = Rc::new(conn.status.models.clone());
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         let model_row = ComboRow::builder()

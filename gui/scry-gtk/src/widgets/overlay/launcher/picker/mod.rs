@@ -112,7 +112,7 @@ fn set_options(model_button: &MenuButton, effort_button: &MenuButton, connectors
     for c in &healthy {
         let conn = c.connection.as_ref().expect("filtered to Some");
         let models = gio::Menu::new();
-        for model in &conn.status.model {
+        for model in &conn.status.models {
             models.append_item(&select_item(
                 &model.name,
                 c.id,
@@ -128,7 +128,11 @@ fn set_options(model_button: &MenuButton, effort_button: &MenuButton, connectors
     match healthy.iter().find(|c| is_preferred(c)) {
         Some(current) => {
             let conn = current.connection.as_ref().expect("preferred is Some");
-            let model = conn.status.model.iter().find(|m| m.id == conn.prefer_model);
+            let model = conn
+                .status
+                .models
+                .iter()
+                .find(|m| m.id == conn.prefer_model);
 
             let effort_menu = gio::Menu::new();
             if let Some(model) = model {
