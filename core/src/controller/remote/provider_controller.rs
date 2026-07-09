@@ -108,7 +108,7 @@ impl ProviderController {
 
     /// Per-provider status (models, health, error) for every registered
     /// runtime client.
-    pub async fn available_providers(&self) -> HashMap<ProviderId, ProviderStatis> {
+    pub async fn available_providers(&self) -> HashMap<ProviderId, ProviderStatus> {
         let clients: Vec<(ProviderId, Arc<dyn ProviderClient>)> = self
             .handlers
             .iter()
@@ -116,11 +116,11 @@ impl ProviderController {
             .collect();
 
         join_all(clients.into_iter().map(|(id, client)| async move {
-            let model = client.models().await.unwrap_or_default();
+            let models = client.models().await.unwrap_or_default();
             (
                 id,
-                ProviderStatis {
-                    model,
+                ProviderStatus {
+                    models,
                     status: client.health_statue(),
                     error: client.error(),
                 },
@@ -152,8 +152,8 @@ pub enum ProviderControllerError {
 }
 
 #[derive(Clone)]
-pub struct ProviderStatis {
-    pub model: Vec<Model>,
+pub struct ProviderStatus {
+    pub models: Vec<Model>,
     pub status: HealthStatus,
     pub error: Option<String>,
 }

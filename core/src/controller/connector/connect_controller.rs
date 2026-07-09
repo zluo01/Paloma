@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use log::error;
 
 use crate::{
-    controller::{ProviderController, remote::ProviderStatis},
+    controller::{ProviderController, remote::ProviderStatus},
     db::{AuthKind, ConnectedProvider, Storage, StorageError},
     entity::{HealthLevel, HealthStatus, ProviderId},
     provider::{
@@ -198,7 +198,7 @@ pub struct ConnectorConnection {
     pub preferred: bool,
     pub prefer_model: String,
     pub prefer_effort: String,
-    pub status: ProviderStatis,
+    pub status: ProviderStatus,
 }
 
 #[derive(Debug, thiserror::Error)]

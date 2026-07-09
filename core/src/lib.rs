@@ -27,15 +27,15 @@ mod utils;
 
 pub use capability::{Action, ActionOutcome, IconRef, ImageFormat, Item};
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, McpServer, RenderEvent, SearchRenderEvent,
-    SessionListItem,
+    ChatRenderEvent, Connector, ConnectorConnection, McpServer, ProviderStatus, RenderEvent,
+    SearchRenderEvent, SessionListItem,
 };
 pub use db::Permission;
 pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
 };
 pub use permission::{PermissionState, UserDecision};
-pub use provider::Connection;
+pub use provider::{Connection, Model};
 pub use utils::{OAuthCallbackState, OAuthError};
 
 use crate::controller::ChatRenderStream;

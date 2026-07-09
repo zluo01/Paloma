@@ -11,7 +11,7 @@ pub use connector::{
 pub use entity::{ChatRenderEvent, RenderEvent, SearchRenderEvent};
 pub use remote::{
     ChatRenderStream, PermissionWorkflowError, PermissionWorkflowManager, ProviderController,
-    ProviderControllerError, RemoteQuery, RemoteQueryError, SessionListItem, SessionManager,
-    SessionManagerError, ToolController, ToolControllerError, TurnManager,
+    ProviderControllerError, ProviderStatus, RemoteQuery, RemoteQueryError, SessionListItem,
+    SessionManager, SessionManagerError, ToolController, ToolControllerError, TurnManager,
 };
 pub use search::{SearchQuery, SearchQueryInitError};
