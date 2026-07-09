@@ -26,6 +26,7 @@ mod provider;
 mod utils;
 
 pub use capability::{Action, ActionOutcome, IconRef, ImageFormat, Item};
+pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, ProviderStatus, RenderEvent,
     SearchRenderEvent, SessionListItem,

@@ -10,7 +10,9 @@ publish = false
 # run in library mode on the host during development.
 crate-type = ["lib", "staticlib", "cdylib"]
 
-[dependencies]
+# The swift bridge only exists for the macos frontend; on other platforms
+# the crate builds empty (see the crate-level cfg in src/lib.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
 env_logger = "0.11.11"
 futures = { workspace = true }
 scry-core = { path = "../core" }

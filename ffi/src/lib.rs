@@ -6,6 +6,10 @@
 //! and only the join handle is awaited on the foreign side; streams are pumped
 //! into channels from inside the runtime for the same reason.
 
+// The swift bridge only exists for the macos frontend; elsewhere the crate
+// (and its whole dependency tree, moved to a target section) compiles empty.
+#![cfg(target_os = "macos")]
+
 mod error;
 mod types;
 
@@ -20,6 +24,7 @@ use scry_core::AppContext;
 use tokio::{
     runtime::Runtime,
     sync::{Mutex as AsyncMutex, mpsc},
+    task::AbortHandle,
 };
 use uuid::Uuid;
 
@@ -38,8 +43,8 @@ pub fn init_logging() {
         .try_init();
 }
 
-/// Matches core's `RENDER_CHANNEL_CAPACITY` so the pump adds no extra slack.
-const EVENT_BUFFER: usize = 32;
+/// Matches core's render channel so the pump adds no extra slack.
+const EVENT_BUFFER: usize = scry_core::RENDER_CHANNEL_CAPACITY;
 
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
@@ -56,8 +61,35 @@ where
     T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
 {
-    RUNTIME.spawn(task).await.map_err(|e| ScryError::Runtime {
-        message: e.to_string(),
+    RUNTIME
+        .spawn(task)
+        .await
+        .map_err(|e| ScryError::new(e.to_string()))
+}
+
+/// Like [`on_runtime`], but parks the task's abort handle in `slot` so a
+/// concurrent cancel can abort it; an abort surfaces as a "cancelled"
+/// failure.
+///
+/// TODO: drop this hand-rolled abort plumbing once uniffi's Swift bindings
+/// support cancelling async futures, so dropping the future cancels the
+/// task instead (tracked in mozilla/uniffi-rs#2771; the docs currently
+/// recommend exactly this kind of side-channel cancel).
+async fn run_abortable<T, F>(slot: &Mutex<Option<AbortHandle>>, task: F) -> Result<T, ScryError>
+where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+{
+    let handle = RUNTIME.spawn(task);
+    *slot.lock().expect("abort slot lock poisoned") = Some(handle.abort_handle());
+    let outcome = handle.await;
+    slot.lock().expect("abort slot lock poisoned").take();
+    outcome.map_err(|join_error| {
+        ScryError::new(if join_error.is_cancelled() {
+            "cancelled".to_owned()
+        } else {
+            join_error.to_string()
+        })
     })
 }
 
@@ -118,11 +150,12 @@ impl ChatStream {
 
 /// Opaque handle to an in-flight MCP OAuth flow. It owns the local callback
 /// listener, so it must be handed back to `finalize_mcp_connection` exactly
-/// once; dropping it aborts the flow.
+/// once; [`Self::cancel`] aborts a finalize already in flight.
 #[derive(uniffi::Object)]
 pub struct McpOauthSession {
     inner: Mutex<Option<scry_core::OAuthCallbackState>>,
     auth_url: String,
+    abort: Mutex<Option<AbortHandle>>,
 }
 
 #[uniffi::export]
@@ -130,6 +163,15 @@ impl McpOauthSession {
     /// URL the user must open in a browser to authorize the connection.
     pub fn auth_url(&self) -> String {
         self.auth_url.clone()
+    }
+
+    /// Abort the finalize running with this session: the callback listener
+    /// drops, so a late browser approval can no longer add the server. No-op
+    /// before finalize starts or after it settles.
+    pub fn cancel(&self) {
+        if let Some(abort) = self.abort_slot().take() {
+            abort.abort();
+        }
     }
 }
 
@@ -139,9 +181,11 @@ impl McpOauthSession {
             .lock()
             .expect("MCP OAuth session lock poisoned")
             .take()
-            .ok_or_else(|| ScryError::InvalidArgument {
-                message: "MCP OAuth session was already consumed".to_owned(),
-            })
+            .ok_or_else(|| ScryError::new("MCP OAuth session was already consumed"))
+    }
+
+    fn abort_slot(&self) -> std::sync::MutexGuard<'_, Option<AbortHandle>> {
+        self.abort.lock().expect("MCP OAuth abort lock poisoned")
     }
 }
 
@@ -149,6 +193,28 @@ impl McpOauthSession {
 #[derive(uniffi::Object)]
 pub struct ScryApp {
     inner: Arc<AppContext>,
+    /// Abort handle for the in-flight connect init/finalize; the flow is
+    /// sequential and the UI allows one attempt at a time, so a single
+    /// slot suffices (mirroring [`McpOauthSession`]).
+    connect_abort: Mutex<Option<AbortHandle>>,
+}
+
+impl ScryApp {
+    /// [`run_abortable`] on the connect slot, so [`Self::cancel_connection`]
+    /// can abort whichever connect phase is in flight.
+    async fn on_runtime_cancellable<T, F>(&self, task: F) -> Result<T, ScryError>
+    where
+        T: Send + 'static,
+        F: Future<Output = T> + Send + 'static,
+    {
+        run_abortable(&self.connect_abort, task).await
+    }
+
+    fn connect_abort_slot(&self) -> std::sync::MutexGuard<'_, Option<AbortHandle>> {
+        self.connect_abort
+            .lock()
+            .expect("connect abort lock poisoned")
+    }
 }
 
 #[uniffi::export]
@@ -158,7 +224,10 @@ impl ScryApp {
     #[uniffi::constructor]
     pub async fn new() -> Result<Arc<Self>, ScryError> {
         let inner = on_runtime(AppContext::build()).await??;
-        Ok(Arc::new(Self { inner }))
+        Ok(Arc::new(Self {
+            inner,
+            connect_abort: Mutex::new(None),
+        }))
     }
 
     /// Run a launcher search; results arrive on the returned stream.
@@ -176,9 +245,7 @@ impl ScryApp {
         action: Action,
     ) -> Result<Option<ActionOutcome>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let outcome =
-            on_runtime(async move { inner.run_query_action(&id, action.into()) }).await?;
-        Ok(outcome.map(Into::into))
+        on_runtime(async move { inner.run_query_action(&id, action) }).await
     }
 
     /// Start (or continue) a chat turn. `session_id` of `None` opens a new
@@ -191,7 +258,7 @@ impl ScryApp {
     ) -> Result<Arc<ChatStream>, ScryError> {
         let inner = Arc::clone(&self.inner);
         let stream = on_runtime(async move {
-            let chat = inner.chat(session_id, provider_id.into(), prompt).await;
+            let chat = inner.chat(session_id, provider_id, prompt).await;
             ChatStream {
                 session_id: chat.session_id,
                 events: EventStream::pump(chat.stream),
@@ -203,8 +270,14 @@ impl ScryApp {
 
     pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let sessions = on_runtime(async move { inner.available_sessions().await }).await??;
-        Ok(sessions.into_iter().map(Into::into).collect())
+        Ok(on_runtime(async move { inner.available_sessions().await }).await??)
+    }
+
+    /// Ids of stored sessions whose user prompts or assistant messages
+    /// contain `needle`.
+    pub async fn search_sessions(&self, needle: String) -> Result<Vec<Uuid>, ScryError> {
+        let inner = Arc::clone(&self.inner);
+        Ok(on_runtime(async move { inner.search_sessions(needle).await }).await??)
     }
 
     pub async fn restore_session(&self, session_id: Uuid) -> Result<Arc<EventStream>, ScryError> {
@@ -234,19 +307,15 @@ impl ScryApp {
         user_decision: UserDecision,
     ) -> Result<PermissionState, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let state = on_runtime(async move {
-            inner
-                .decide_toolcall_permissions(user_decision.into())
-                .await
-        })
-        .await??;
-        Ok(state.into())
+        Ok(
+            on_runtime(async move { inner.decide_toolcall_permissions(user_decision).await })
+                .await??,
+        )
     }
 
     pub async fn get_permissions(&self) -> Result<Vec<Permission>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let permissions = on_runtime(async move { inner.get_permissions().await }).await??;
-        Ok(permissions.into_iter().map(Into::into).collect())
+        Ok(on_runtime(async move { inner.get_permissions().await }).await??)
     }
 
     pub async fn delete_permission(&self, prefix: String) -> Result<(), ScryError> {
@@ -254,13 +323,19 @@ impl ScryApp {
         Ok(on_runtime(async move { inner.delete_permission(&prefix).await }).await??)
     }
 
+    /// Start connecting a provider; [`Self::cancel_connection`] aborts the
+    /// in-flight call.
     pub async fn init_connection(&self, provider_id: ProviderId) -> Result<Connection, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let connection =
-            on_runtime(async move { inner.init_connection(provider_id.into()).await }).await??;
-        Ok(connection.into())
+        Ok(self
+            .on_runtime_cancellable(async move { inner.init_connection(provider_id).await })
+            .await??
+            .into())
     }
 
+    /// Complete the connection; for device-code providers this polls until
+    /// the user approves in the browser. [`Self::cancel_connection`] aborts
+    /// the wait.
     pub async fn finalize_connection(
         &self,
         provider_id: ProviderId,
@@ -268,18 +343,24 @@ impl ScryApp {
     ) -> Result<(), ScryError> {
         let payload: scry_core::Connection = payload.try_into()?;
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.finalize_connection(provider_id.into(), payload).await })
-                .await??,
-        )
+        Ok(self
+            .on_runtime_cancellable(
+                async move { inner.finalize_connection(provider_id, payload).await },
+            )
+            .await??)
+    }
+
+    /// Abort the in-flight connect init or finalize, if any: the awaiting
+    /// call returns a "cancelled" failure. No-op when nothing is running.
+    pub fn cancel_connection(&self) {
+        if let Some(abort) = self.connect_abort_slot().take() {
+            abort.abort();
+        }
     }
 
     pub async fn disconnect_connector(&self, provider_id: ProviderId) -> Result<(), ScryError> {
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.disconnect_connector(provider_id.into()).await })
-                .await??,
-        )
+        Ok(on_runtime(async move { inner.disconnect_connector(provider_id).await }).await??)
     }
 
     pub async fn set_model_preference(
@@ -291,7 +372,7 @@ impl ScryApp {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner
-                .set_model_preference(provider_id.into(), &model, &effort)
+                .set_model_preference(provider_id, &model, &effort)
                 .await
         })
         .await??)
@@ -299,32 +380,27 @@ impl ScryApp {
 
     pub async fn prefer_model(&self) -> Result<Option<ProviderId>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let provider = on_runtime(async move { inner.prefer_model().await }).await??;
-        Ok(provider.map(Into::into))
+        Ok(on_runtime(async move { inner.prefer_model().await }).await??)
     }
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let connectors = on_runtime(async move { inner.available_connectors().await }).await??;
-        Ok(connectors.into_iter().map(Into::into).collect())
+        Ok(on_runtime(async move { inner.available_connectors().await }).await??)
     }
 
     pub async fn connectors_health_level(&self) -> Result<HealthLevel, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let level = on_runtime(async move { inner.connectors_health_level().await }).await?;
-        Ok(level.into())
+        on_runtime(async move { inner.connectors_health_level().await }).await
     }
 
     pub async fn plugins_health_level(&self) -> Result<HealthLevel, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let level = on_runtime(async move { inner.plugins_health_level().await }).await?;
-        Ok(level.into())
+        on_runtime(async move { inner.plugins_health_level().await }).await
     }
 
     pub async fn list_mcps(&self) -> Result<Vec<McpServer>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let servers = on_runtime(async move { inner.list_mcps().await }).await??;
-        Ok(servers.into_iter().map(Into::into).collect())
+        Ok(on_runtime(async move { inner.list_mcps().await }).await??)
     }
 
     /// Start connecting an MCP server. Returns an OAuth handle when the server
@@ -335,27 +411,30 @@ impl ScryApp {
         config: Plugin,
     ) -> Result<Option<Arc<McpOauthSession>>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let state =
-            on_runtime(async move { inner.init_mcp_connection(config.into()).await }).await??;
+        let state = on_runtime(async move { inner.init_mcp_connection(config).await }).await??;
         Ok(state.map(|state| {
             Arc::new(McpOauthSession {
                 auth_url: state.auth_url().to_owned(),
                 inner: Mutex::new(Some(state)),
+                abort: Mutex::new(None),
             })
         }))
     }
 
+    /// Persist and connect the server. For OAuth servers this waits for the
+    /// browser approval; [`McpOauthSession::cancel`] aborts the wait.
     pub async fn finalize_mcp_connection(
         &self,
         config: Plugin,
         session: Option<Arc<McpOauthSession>>,
     ) -> Result<(), ScryError> {
-        let state = session.map(|session| session.take()).transpose()?;
+        let state = session.as_ref().map(|session| session.take()).transpose()?;
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.finalize_mcp_connection(config.into(), state).await })
-                .await??,
-        )
+        let task = async move { inner.finalize_mcp_connection(config, state).await };
+        match &session {
+            Some(session) => Ok(run_abortable(&session.abort, task).await??),
+            None => Ok(on_runtime(task).await??),
+        }
     }
 
     pub async fn update_plugin(
@@ -364,10 +443,7 @@ impl ScryApp {
         plugin: Plugin,
     ) -> Result<(), ScryError> {
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.update_plugin(plugin_type.into(), plugin.into()).await })
-                .await??,
-        )
+        Ok(on_runtime(async move { inner.update_plugin(plugin_type, plugin).await }).await??)
     }
 
     pub async fn remove_plugin(
@@ -376,10 +452,7 @@ impl ScryApp {
         name: String,
     ) -> Result<(), ScryError> {
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.remove_plugin(plugin_type.into(), &name).await })
-                .await??,
-        )
+        Ok(on_runtime(async move { inner.remove_plugin(plugin_type, &name).await }).await??)
     }
 
     pub async fn toggle_plugin(&self, name: String, disabled: bool) -> Result<(), ScryError> {
