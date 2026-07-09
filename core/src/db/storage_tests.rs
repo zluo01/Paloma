@@ -617,6 +617,76 @@ mod sessions {
     use super::*;
 
     #[tokio::test]
+    async fn search_sessions_matches_prompts_and_messages() {
+        use crate::provider::MessageContentItem;
+
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+
+        let prompted = uuid("019e1234-5678-7000-8000-0000000000a1");
+        let answered = uuid("019e1234-5678-7000-8000-0000000000a2");
+        let unrelated = uuid("019e1234-5678-7000-8000-0000000000a3");
+        for id in [prompted, answered, unrelated] {
+            storage.create_new_session(id, "t").await.unwrap();
+        }
+
+        storage
+            .insert_history(
+                &prompted.to_string(),
+                &ProviderId::Codex,
+                &ConversationItem::UserPrompt {
+                    prompt: "deploy the staging cluster".into(),
+                },
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_history(
+                &answered.to_string(),
+                &ProviderId::Codex,
+                &ConversationItem::Message {
+                    message: vec![MessageContentItem {
+                        content: "Kubernetes upgrade notes".into(),
+                        provider_meta: Default::default(),
+                    }],
+                    provider_meta: Default::default(),
+                },
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_history(
+                &unrelated.to_string(),
+                &ProviderId::Codex,
+                &ConversationItem::UserPrompt {
+                    prompt: "something else".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let hits = storage.search_sessions("staging").await.expect("search");
+        assert_eq!(hits, vec![prompted.to_string()]);
+
+        // Case-insensitive, and assistant message content is searched too.
+        let hits = storage.search_sessions("kubernetes").await.expect("search");
+        assert_eq!(hits, vec![answered.to_string()]);
+
+        // LIKE wildcards in the needle match literally, not everything.
+        let hits = storage.search_sessions("100%").await.expect("search");
+        assert!(hits.is_empty(), "expected no matches, got {hits:?}");
+    }
+
+    #[tokio::test]
     async fn create_session_persists_title_and_defaults() {
         let storage = fresh_storage().await;
         storage

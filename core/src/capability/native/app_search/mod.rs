@@ -5,9 +5,6 @@ use linux::Platform;
 
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(target_os = "macos")]
-use macos::Platform;
-
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -15,6 +12,8 @@ use std::{
 };
 
 use log::{debug, info, warn};
+#[cfg(target_os = "macos")]
+use macos::Platform;
 use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use nucleo_matcher::{

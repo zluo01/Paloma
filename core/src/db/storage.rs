@@ -162,6 +162,22 @@ impl Storage {
         Ok(sessions)
     }
 
+    pub async fn search_sessions(&self, needle: &str) -> Result<Vec<String>> {
+        let pattern = format!(
+            "%{}%",
+            needle
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let sessions = sqlx::query_scalar::<_, String>(queries::SEARCH_SESSIONS_QUERY)
+            .bind(&pattern)
+            .bind(&pattern)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(sessions)
+    }
+
     pub async fn delete_session(&self, session_id: &str) -> Result<()> {
         let result = sqlx::query(queries::DELETE_SESSION_QUERY)
             .bind(session_id)

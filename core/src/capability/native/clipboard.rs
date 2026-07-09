@@ -4,7 +4,6 @@ use std::{
     thread,
     time::Duration,
 };
-
 #[cfg(target_os = "linux")]
 use std::{
     io::{BufRead, BufReader},

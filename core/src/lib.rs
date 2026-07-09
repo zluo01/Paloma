@@ -161,6 +161,14 @@ impl AppContext {
         Ok(self.remote_query.available_sessions().await?)
     }
 
+    pub async fn search_sessions(&self, needle: String) -> Result<Vec<Uuid>> {
+        let ids = self.storage.search_sessions(&needle).await?;
+        Ok(ids
+            .iter()
+            .filter_map(|id| Uuid::parse_str(id).ok())
+            .collect())
+    }
+
     pub async fn restore_session(
         &self,
         session_id: Uuid,

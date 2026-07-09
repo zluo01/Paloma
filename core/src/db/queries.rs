@@ -18,6 +18,8 @@ pub const CREATE_NEW_SESSION_QUERY: &str = include_str!("queries/sessions/create
 
 pub const GET_ALL_SESSIONS_QUERY: &str = include_str!("queries/sessions/get_all_sessions.sql");
 
+pub const SEARCH_SESSIONS_QUERY: &str = include_str!("queries/sessions/search_sessions.sql");
+
 pub const DELETE_SESSION_QUERY: &str = include_str!("queries/sessions/delete_session.sql");
 
 pub const PREFER_MODEL_CONFIG_QUERY: &str =
