@@ -92,6 +92,7 @@ struct OverlayView: View {
             Divider()
             FooterView(
                 model: launcher,
+                mode: mode,
                 onOpenSettings: onOpenSettings,
                 onOpenSession: openSession,
                 onSelectModel: selectModel
