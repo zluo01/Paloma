@@ -3229,7 +3229,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "scry-gtk"
+name = "scry-linux"
 version = "0.0.1"
 dependencies = [
  "ashpd",
