@@ -10,6 +10,7 @@ mod status;
 use scry_core::AppContext;
 
 use crate::widgets::overlay::{
+    OVERLAY_WIDTH_PX,
     launcher::{picker::ModelPicker, search::Search, status::Status},
     model::Msg,
 };
@@ -26,7 +27,6 @@ pub(super) struct LauncherView {
 
 impl LauncherView {
     pub(super) fn new(
-        width_px: i32,
         app_context: Arc<AppContext>,
         dispatcher: mpsc::UnboundedSender<Msg>,
     ) -> Self {
@@ -35,7 +35,7 @@ impl LauncherView {
             .halign(Align::Start)
             .valign(Align::Start)
             .spacing(6)
-            .width_request(width_px)
+            .width_request(OVERLAY_WIDTH_PX)
             .css_classes(["scry-surface", "scry-card"])
             .build();
 
@@ -122,6 +122,8 @@ fn icon_button(icon_name: &str, tooltip: &str) -> Button {
     Button::builder()
         .icon_name(icon_name)
         .tooltip_text(tooltip)
+        // keep keyboard focus on the entry so type-to-filter keeps working
+        .focus_on_click(false)
         .valign(Align::Center)
         .css_classes(["flat", "circular"])
         .build()

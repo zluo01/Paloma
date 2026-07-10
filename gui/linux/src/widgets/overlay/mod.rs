@@ -19,35 +19,36 @@ mod keys;
 mod launcher;
 mod model;
 mod results;
-mod sessions;
 mod window;
 
 use scry_core::{
     Action, ActionOutcome, AppContext, ChatRenderEvent, ProviderId, RenderEvent, SearchRenderEvent,
 };
-use sessions::SessionsView;
 
 use crate::{
     runtime,
     widgets::overlay::{
         launcher::LauncherView,
         model::{Command, Mode, Model, Msg},
-        results::{ChatView, SearchView},
+        results::{ChatView, SearchView, SessionsView},
     },
 };
 
 const SEARCH_BAR_HEIGHT_PX: i32 = 94;
 const OVERLAY_WIDTH_PX: i32 = 640;
 const OVERLAY_CONTENT_HEIGHT_PX: i32 = 420;
-const SESSIONS_WIDTH_PX: i32 = 260;
 const PANEL_GAP_PX: i32 = 8;
+
+const SEARCH_VIEW_KEY: &str = "searches";
+const CHAT_VIEW_KEY: &str = "chats";
+const SESSION_VIEW_KEY: &str = "sessions";
 
 const SELECTED_CLASS: &str = "selected";
 
 const CSS: &str = include_str!("style.css");
 
 /// Overlay stylesheet fragments loaded into the global GTK provider.
-pub(crate) const CSS_PARTS: &[&str] = &[CSS, launcher::CSS, results::CSS, sessions::CSS];
+pub(crate) const CSS_PARTS: &[&str] = &[CSS, launcher::CSS, results::CSS];
 
 pub(crate) fn new(
     app: &Application,
@@ -61,7 +62,6 @@ pub(crate) struct Overlay {
     gapp: Application,
     launcher_window: ApplicationWindow,
     content_window: ApplicationWindow,
-    sessions_window: ApplicationWindow,
     scroller: ScrolledWindow,
     content_stack: Stack,
     launcher: LauncherView,
@@ -95,18 +95,21 @@ impl Overlay {
 
         let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
 
-        let launcher = LauncherView::new(OVERLAY_WIDTH_PX, app_context.clone(), dispatcher.clone());
+        let launcher = LauncherView::new(app_context.clone(), dispatcher.clone());
         launcher_window.set_child(Some(launcher.widget()));
 
         let content_stack = Stack::builder()
             .transition_type(StackTransitionType::None)
+            .vhomogeneous(false)
             .build();
 
         let search = SearchView::new(dispatcher.clone());
-        let chat = ChatView::new(OVERLAY_WIDTH_PX, app_context.clone());
+        let chat = ChatView::new(app_context.clone());
+        let sessions = SessionsView::new(app_context.clone(), dispatcher.clone());
 
-        content_stack.add_named(search.widget(), Some("search"));
-        content_stack.add_named(chat.widget(), Some("chat"));
+        content_stack.add_named(search.widget(), Some(SEARCH_VIEW_KEY));
+        content_stack.add_named(chat.widget(), Some(CHAT_VIEW_KEY));
+        content_stack.add_named(sessions.widget(), Some(SESSION_VIEW_KEY));
 
         let scroller = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Never)
@@ -126,11 +129,6 @@ impl Overlay {
             layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
         content_window.set_child(Some(&scroller));
 
-        let sessions_window =
-            layer_window(app, "scry-sessions", SESSIONS_WIDTH_PX, KeyboardMode::None);
-        let sessions = SessionsView::new(app_context.clone(), dispatcher.clone());
-        sessions_window.set_child(Some(sessions.widget()));
-
         let overlay = Rc::new(Self {
             gapp: app.clone(),
             launcher_window,
@@ -141,7 +139,6 @@ impl Overlay {
             search,
             chat,
             sessions,
-            sessions_window,
             app_context,
             model: RefCell::new(Model::new()),
             dispatcher: dispatcher.clone(),
@@ -190,7 +187,6 @@ impl Overlay {
             Command::ToggleLauncher => self.toggle_launcher(),
             Command::HideOverlay => self.hide(),
             Command::OpenSettings => self.open_settings(),
-            Command::ToggleSessions { session_id } => self.toggle_sessions(session_id),
             Command::RunSearchQuery { content, query_id } => self.search(content, query_id),
             Command::RenderSearchQueryResult { event } => self.render_search_result(event),
             Command::RenderChatAction => self.render_chat_button(),
@@ -198,7 +194,7 @@ impl Overlay {
                 self.run_action(handler_id, action);
             },
             Command::FocusSearchEntry => self.launcher.focus(),
-            Command::CloseSessions => self.close_sessions(),
+            Command::ClearQuery => self.launcher.clear(),
             Command::OpenSelectedSession => self.sessions.activate_selected(),
             Command::DeleteSelectedSession => self.sessions.delete_selected(),
             Command::RestoreSession {
@@ -222,8 +218,10 @@ impl Overlay {
             Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
             Command::RenderChatEvent { event } => self.render_chat_event(event),
             Command::ShowChatView => self.show_chat_view(),
+            Command::FilterSessions { content } => self.sessions.filter(content),
+            Command::OpenSessions => self.show_session_view(),
             Command::ClearChatContent => self.clear_session(),
-            Command::ExitSearch => self.exist_search(),
+            Command::ExitSearch => self.exit_search(),
         }
     }
 }
@@ -239,17 +237,21 @@ impl Overlay {
     }
 
     fn show_search_view(&self) {
-        self.content_stack.set_visible_child_name("search");
+        self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.show_content();
     }
 
     fn show_chat_view(&self) {
-        self.content_stack.set_visible_child_name("chat");
+        self.content_stack.set_visible_child_name(CHAT_VIEW_KEY);
         self.show_content();
     }
 
-    fn is_sessions_open(&self) -> bool {
-        self.sessions_window.is_visible()
+    fn show_session_view(&self) {
+        self.sessions.clear();
+        self.sessions.refresh();
+        self.content_stack.set_visible_child_name(SESSION_VIEW_KEY);
+        self.show_content();
+        self.scroller.vadjustment().set_value(0.0);
     }
 
     fn toggle_launcher(&self) {
@@ -280,8 +282,6 @@ impl Overlay {
 
     fn hide(&self) {
         self.launcher.clear();
-
-        self.close_sessions();
         self.close_content();
         self.launcher_window.set_visible(false);
     }
@@ -303,10 +303,11 @@ impl Overlay {
     fn close_content(&self) {
         self.search.clear();
         self.clear_session();
+        self.sessions.clear();
 
-        self.content_stack.set_visible_child_name("search");
+        self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.content_window.set_visible(false);
-        // Mode is back to Local before content hides, so this reset does not
+        // Mode is back to Search before content hides, so this reset does not
         // affect chat stickiness.
         self.scroller.vadjustment().set_value(0.0);
     }
@@ -376,7 +377,7 @@ impl Overlay {
         self.search.render_any()
     }
 
-    fn exist_search(&self) {
+    fn exit_search(&self) {
         if self.render_any() {
             self.close_content();
             self.launcher.clear();
@@ -489,49 +490,18 @@ impl Overlay {
 
 /// Session related actions
 impl Overlay {
-    fn open_sessions(&self, session_id: Option<Uuid>) {
-        if self.sessions_window.is_visible() {
-            return;
-        }
-        self.sessions.refresh(session_id);
-        self.sessions_window.present();
-    }
-
-    fn close_sessions(&self) {
-        if !self.sessions_window.is_visible() {
-            return;
-        }
-        self.sessions_window.set_visible(false);
-        self.sessions.clear_selection();
-    }
-
-    fn toggle_sessions(&self, session_id: Option<Uuid>) {
-        if self.sessions_window.is_visible() {
-            self.close_sessions();
-        } else {
-            self.open_sessions(session_id);
-        }
-    }
-
     fn restore_session(&self, turn_id: u64, session_id: Uuid) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             match app_context.restore_session(session_id).await {
                 Ok(mut render_stream) => {
-                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished {
-                        turn_id,
-                        result: Ok(()),
-                    });
                     while let Some(event) = render_stream.next().await {
                         let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
                     }
                 },
                 Err(error) => {
-                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreFinished {
-                        turn_id,
-                        result: Err(error),
-                    });
+                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreError { turn_id, error });
                 },
             };
         }));

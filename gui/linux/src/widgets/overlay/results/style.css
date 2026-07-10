@@ -323,3 +323,18 @@
 .scry-md-table-rule-head {
     background: alpha(currentColor, 0.3);
 }
+
+.scry-sessions-list {
+    background: transparent;
+}
+
+.scry-sessions-list > row {
+    border-radius: 8px;
+}
+
+.scry-sessions-empty {
+    color: alpha(currentColor, 0.45);
+    font-size: 12px;
+    font-style: italic;
+    padding: 4px;
+}

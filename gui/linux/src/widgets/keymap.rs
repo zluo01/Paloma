@@ -31,10 +31,11 @@ pub(in crate::widgets) enum Group {
     Sessions,
 }
 
-/// Dispatch context, mirroring `keys.rs` precedence. A binding's context can
-/// differ from its display group (e.g. `OpenSessions` shows under Search but is
-/// matched globally, before the mode split).
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Dispatch context; `keys.rs` checks `Global` first, then the active mode's
+/// context. A binding's context can differ from its display group (e.g.
+/// `OpenSessions` shows under Search but is matched globally, before the mode
+/// split).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(in crate::widgets) enum Context {
     Sessions,
     Global,
@@ -67,8 +68,7 @@ pub(in crate::widgets) struct Binding {
     pub(in crate::widgets) label: &'static str,
     /// Accelerators rendered on the page.
     pub(in crate::widgets) shown: &'static [Chord],
-    /// Accelerators accepted by dispatch but never rendered (keypad aliases,
-    /// `Shift+Left`).
+    /// Accelerators accepted by dispatch but never rendered (keypad aliases).
     pub(in crate::widgets) hidden: &'static [Chord],
 }
 
@@ -107,8 +107,8 @@ const ALL: &[Binding] = &[
         group: Group::Search,
         context: Context::Search,
         label: "Move selection",
-        shown: &[key(Key::Up), key(Key::Down)],
-        hidden: &[],
+        shown: &[plain(Key::Up), plain(Key::Down)],
+        hidden: &[plain(Key::KP_Up), plain(Key::KP_Down)],
     },
     Binding {
         id: BindingId::SearchSubmit,
@@ -131,7 +131,7 @@ const ALL: &[Binding] = &[
         group: Group::Search,
         context: Context::Global,
         label: "Open sessions",
-        shown: &[shift(Key::Right)],
+        shown: &[shift(Key::Down)],
         hidden: &[],
     },
     Binding {
@@ -163,8 +163,8 @@ const ALL: &[Binding] = &[
         group: Group::Chat,
         context: Context::Chat,
         label: "Move between prompts",
-        shown: &[key(Key::Up), key(Key::Down)],
-        hidden: &[],
+        shown: &[plain(Key::Up), plain(Key::Down)],
+        hidden: &[plain(Key::KP_Up), plain(Key::KP_Down)],
     },
     Binding {
         id: BindingId::ChatExit,
@@ -179,24 +179,24 @@ const ALL: &[Binding] = &[
         group: Group::Sessions,
         context: Context::Sessions,
         label: "Move between sessions",
-        shown: &[key(Key::Up), key(Key::Down)],
-        hidden: &[],
+        shown: &[plain(Key::Up), plain(Key::Down)],
+        hidden: &[plain(Key::KP_Up), plain(Key::KP_Down)],
     },
     Binding {
         id: BindingId::SessionOpen,
         group: Group::Sessions,
         context: Context::Sessions,
         label: "Open session",
-        shown: &[key(Key::Return)],
-        hidden: &[key(Key::KP_Enter)],
+        shown: &[plain(Key::Return)],
+        hidden: &[plain(Key::KP_Enter)],
     },
     Binding {
         id: BindingId::SessionDelete,
         group: Group::Sessions,
         context: Context::Sessions,
         label: "Delete session",
-        shown: &[key(Key::Delete)],
-        hidden: &[key(Key::KP_Delete)],
+        shown: &[plain(Key::Delete)],
+        hidden: &[plain(Key::KP_Delete)],
     },
     Binding {
         id: BindingId::SessionClose,
@@ -204,7 +204,7 @@ const ALL: &[Binding] = &[
         context: Context::Sessions,
         label: "Close",
         shown: &[key(Key::Escape)],
-        hidden: &[shift(Key::Left)],
+        hidden: &[],
     },
 ];
 
@@ -222,6 +222,14 @@ pub(in crate::widgets) fn group_bindings(group: Group) -> impl Iterator<Item = &
     ALL.iter().filter(move |b| b.group == group)
 }
 
+/// Modifiers that distinguish chords; lock and pointer-button state must not.
+const ACCEL_MODS: ModifierType = ModifierType::SHIFT_MASK
+    .union(ModifierType::CONTROL_MASK)
+    .union(ModifierType::ALT_MASK)
+    .union(ModifierType::SUPER_MASK)
+    .union(ModifierType::HYPER_MASK)
+    .union(ModifierType::META_MASK);
+
 /// The binding a key event resolves to within a dispatch context, scanning both
 /// shown and hidden accelerators. `None` means the key is unbound there.
 pub(in crate::widgets) fn match_binding(
@@ -229,6 +237,7 @@ pub(in crate::widgets) fn match_binding(
     k: Key,
     mods: ModifierType,
 ) -> Option<BindingId> {
+    let mods = mods.intersection(ACCEL_MODS);
     ALL.iter()
         .filter(|b| b.context == ctx)
         .find(|b| {
@@ -343,11 +352,47 @@ mod tests {
     }
 
     #[test]
-    fn key_only_binding_matches_with_extra_modifier() {
+    fn modified_arrows_resolve_to_none() {
         assert_eq!(
             match_binding(Context::Search, Key::Up, ModifierType::CONTROL_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Chat, Key::Up, ModifierType::SHIFT_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Sessions, Key::Down, ModifierType::SHIFT_MASK),
+            None
+        );
+    }
+
+    #[test]
+    fn lock_state_does_not_affect_matching() {
+        assert_eq!(
+            match_binding(Context::Chat, Key::Return, ModifierType::LOCK_MASK),
+            Some(BindingId::ChatSend)
+        );
+        assert_eq!(
+            match_binding(Context::Search, Key::Down, ModifierType::LOCK_MASK),
             Some(BindingId::SearchMove)
         );
+    }
+
+    #[test]
+    fn global_chords_do_not_shadow_context_bindings() {
+        for g in ALL.iter().filter(|b| b.context == Context::Global) {
+            for c in g.shown.iter().chain(g.hidden) {
+                for ctx in [Context::Sessions, Context::Search, Context::Chat] {
+                    assert_eq!(
+                        match_binding(ctx, c.accel.0, c.accel.1),
+                        None,
+                        "global {:?} chord shadows a {ctx:?} binding",
+                        g.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -358,6 +403,10 @@ mod tests {
         );
         assert_eq!(
             match_binding(Context::Chat, Key::Return, ModifierType::SHIFT_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Sessions, Key::Return, ModifierType::CONTROL_MASK),
             None
         );
     }
@@ -387,6 +436,22 @@ mod tests {
     }
 
     #[test]
+    fn modified_delete_resolves_to_none() {
+        assert_eq!(
+            match_binding(Context::Sessions, Key::Delete, ModifierType::CONTROL_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Sessions, Key::Delete, ModifierType::SHIFT_MASK),
+            None
+        );
+        assert_eq!(
+            match_binding(Context::Sessions, Key::KP_Delete, ModifierType::SHIFT_MASK),
+            None
+        );
+    }
+
+    #[test]
     fn kp_delete_is_a_hidden_alias_of_delete() {
         assert_eq!(
             match_binding(Context::Sessions, Key::KP_Delete, ModifierType::empty()),
@@ -395,15 +460,27 @@ mod tests {
     }
 
     #[test]
-    fn shift_left_is_a_hidden_alias_of_close_sessions() {
+    fn kp_arrows_are_hidden_aliases_of_move() {
         assert_eq!(
-            match_binding(Context::Sessions, Key::Left, ModifierType::SHIFT_MASK),
-            Some(BindingId::SessionClose)
+            match_binding(Context::Search, Key::KP_Up, ModifierType::empty()),
+            Some(BindingId::SearchMove)
+        );
+        assert_eq!(
+            match_binding(Context::Chat, Key::KP_Down, ModifierType::empty()),
+            Some(BindingId::ChatMovePrompt)
+        );
+        assert_eq!(
+            match_binding(Context::Sessions, Key::KP_Down, ModifierType::empty()),
+            Some(BindingId::SessionMove)
         );
     }
 
     #[test]
-    fn plain_left_in_sessions_resolves_to_none() {
+    fn left_in_sessions_resolves_to_none() {
+        assert_eq!(
+            match_binding(Context::Sessions, Key::Left, ModifierType::SHIFT_MASK),
+            None
+        );
         assert_eq!(
             match_binding(Context::Sessions, Key::Left, ModifierType::empty()),
             None

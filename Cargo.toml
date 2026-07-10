@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["core", "ffi", "gui/linux", "uniffi-bindgen"]
+# skip the macos-only crates in bare cargo invocations
+default-members = ["core", "gui/linux"]
 
 [workspace.package]
 version = "0.0.1"

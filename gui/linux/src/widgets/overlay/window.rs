@@ -1,8 +1,8 @@
 //! Layer-window placement and chat scroll behavior for the overlay.
 //!
-//! The bar, content, and sessions windows are anchored top-left and positioned
-//! with pixel margins. Dragging updates the shared bar position; monitor
-//! changes recenter the overlay on the output that actually receives the bar.
+//! The bar and content windows are anchored top-left and positioned with
+//! pixel margins. Dragging updates the shared bar position; monitor changes
+//! recenter the overlay on the output that actually receives the bar.
 
 use std::{cell::Cell, rc::Rc};
 
@@ -19,19 +19,13 @@ impl Overlay {
         }
     }
 
-    /// Place content below the bar and center sessions beside it.
+    /// Place content below the bar.
     pub(super) fn layout_at(&self, x: i32, y: i32) {
         set_position(&self.launcher_window, x, y);
         set_position(
             &self.content_window,
             x,
             y + SEARCH_BAR_HEIGHT_PX + PANEL_GAP_PX,
-        );
-        let sessions_y = (y + SEARCH_BAR_HEIGHT_PX / 2 - self.sessions.height() / 2).max(0);
-        set_position(
-            &self.sessions_window,
-            x + OVERLAY_WIDTH_PX + PANEL_GAP_PX,
-            sessions_y,
         );
     }
 
@@ -107,11 +101,9 @@ impl Overlay {
                 }
                 *overlay.monitor.borrow_mut() = Some(monitor.clone());
                 overlay.content_window.set_monitor(Some(monitor));
-                overlay.sessions_window.set_monitor(Some(monitor));
                 // Positions from another output are not meaningful, so recenter
-                // and resize the satellite panels for the new monitor.
+                // and resize the content panel for the new monitor.
                 let panel = (monitor.geometry().height() as f64 * GOLDEN_SECTION_FROM_TOP) as i32;
-                overlay.sessions.set_height(panel);
                 overlay.scroller.set_max_content_height(panel);
                 overlay.position.set(Some(centered_on(monitor)));
                 overlay.layout();

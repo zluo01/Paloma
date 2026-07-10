@@ -29,10 +29,6 @@ impl Overlay {
     }
 
     fn handle_key_press(&self, key: Key, state: ModifierType) -> Propagation {
-        if self.is_sessions_open() {
-            return self.handle_sessions_key(key, state);
-        }
-
         if keymap::match_binding(Context::Global, key, state) == Some(BindingId::OpenSessions) {
             let _ = self.dispatcher.unbounded_send(Msg::ToggleSessionsRequested);
             return Propagation::Stop;
@@ -41,6 +37,7 @@ impl Overlay {
         match self.current_mode() {
             Mode::Search => self.handle_search_view_key(key, state),
             Mode::Chat => self.handle_chat_view_key(key, state),
+            Mode::Session => self.handle_sessions_key(key, state),
         }
     }
 
@@ -114,16 +111,18 @@ impl Overlay {
                 let _ = self.dispatcher.unbounded_send(Msg::SessionOpenRequested);
             },
             Some(BindingId::SessionDelete) => {
+                // without an explicit selection the key belongs to the filter entry
+                if !self.sessions.has_selection() {
+                    return Propagation::Proceed;
+                }
                 let _ = self.dispatcher.unbounded_send(Msg::SessionDeleteRequested);
             },
             Some(BindingId::SessionClose) => {
-                let _ = self
-                    .dispatcher
-                    .unbounded_send(Msg::SessionWindowCloseRequested);
+                let _ = self.dispatcher.unbounded_send(Msg::SessionsCloseRequested);
             },
-            None => {},
+            None => return Propagation::Proceed,
             Some(other) => {
-                error!("unknown binding for session window {other:?}. This indicates a bug.")
+                error!("unknown binding for sessions view {other:?}. This indicates a bug.")
             },
         };
         Propagation::Stop
@@ -132,8 +131,8 @@ impl Overlay {
 
 fn move_delta(key: Key) -> i32 {
     match key {
-        Key::Up => -1,
-        Key::Down => 1,
-        _ => unreachable!("move bindings only declare Up/Down"),
+        Key::Up | Key::KP_Up => -1,
+        Key::Down | Key::KP_Down => 1,
+        _ => unreachable!("move bindings only declare up/down keys"),
     }
 }

@@ -1,10 +1,12 @@
 mod chat;
 mod search;
+mod sessions;
 
 pub(super) const CSS: &str = include_str!("style.css");
 
 pub(super) use chat::ChatView;
 pub(super) use search::SearchView;
+pub(super) use sessions::SessionsView;
 
 fn step_index(current: usize, delta: i32, len: usize) -> Option<usize> {
     if len == 0 {

@@ -14,7 +14,7 @@ mod status;
 
 use self::sections::{AssistantSection, ReasoningSection, UserPromptSection};
 use crate::widgets::overlay::{
-    SELECTED_CLASS,
+    OVERLAY_WIDTH_PX, SELECTED_CLASS,
     results::{
         chat::{
             sections::{Section, ToolCallDecision, ToolCallSection},
@@ -33,13 +33,13 @@ pub struct ChatView {
 }
 
 impl ChatView {
-    pub(crate) fn new(width: i32, app_context: Arc<AppContext>) -> Self {
+    pub(crate) fn new(app_context: Arc<AppContext>) -> Self {
         let turns = GtkBox::builder().orientation(Orientation::Vertical).build();
         let widget = GtkBox::builder()
             .orientation(Orientation::Vertical)
             .halign(Align::Center)
             .valign(Align::Start)
-            .width_request(width)
+            .width_request(OVERLAY_WIDTH_PX)
             .css_classes(["scry-chat-card"])
             .build();
         widget.append(&turns);

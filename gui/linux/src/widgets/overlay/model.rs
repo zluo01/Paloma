@@ -5,6 +5,7 @@ use uuid::Uuid;
 pub(super) enum Mode {
     Search,
     Chat,
+    Session,
 }
 
 #[derive(PartialEq, Eq)]
@@ -97,15 +98,15 @@ pub(super) enum Msg {
     ChatInterruptRequested,
     ChatExitRequested,
     ActionPanelClosed,
-    SessionWindowCloseRequested,
+    SessionsCloseRequested,
     SessionDeleteRequested,
     SessionOpenRequested,
     SessionRestoreRequested {
         session_id: Uuid,
     },
-    SessionRestoreFinished {
+    SessionRestoreError {
         turn_id: u64,
-        result: Result<(), AppError>,
+        error: AppError,
     },
 }
 
@@ -113,9 +114,6 @@ pub(super) enum Command {
     ToggleLauncher,
     HideOverlay,
     OpenSettings,
-    ToggleSessions {
-        session_id: Option<Uuid>,
-    },
     ShowChatView,
     RunSearchQuery {
         query_id: u64,
@@ -149,7 +147,11 @@ pub(super) enum Command {
     },
     ClearChatContent,
     FocusSearchEntry,
-    CloseSessions,
+    ClearQuery,
+    FilterSessions {
+        content: String,
+    },
+    OpenSessions,
     OpenSelectedSession,
     DeleteSelectedSession,
     RestoreSession {
@@ -183,6 +185,11 @@ impl Model {
         self.begin_query();
     }
 
+    fn exit_to_search(&mut self) -> Vec<Command> {
+        self.reset();
+        vec![Command::ClearQuery, Command::HideContent]
+    }
+
     /// Overlay workflow. Each bullet is one distinct user action traced end to
     /// end: a command that does async work loops its result back as a follow-up
     /// message (stale results dropped by the `query_id`/`turn_id` guards), so a
@@ -190,17 +197,18 @@ impl Model {
     ///
     /// - Toggle launcher (hotkey): `ToggleLauncherRequested -> ToggleLauncher`.
     /// - Open settings: `OpenSettingsRequested -> OpenSettings + HideOverlay`.
-    /// - Toggle sessions window: `ToggleSessionsRequested -> ToggleSessions`.
+    /// - Toggle sessions view: `ToggleSessionsRequested -> ClearQuery + [ClearChatContent +] OpenSessions` (enters Session mode, abandoning any live chat or pending prompt); a second toggle resets and ends at `ClearQuery + HideContent`.
     /// - Search: `LauncherQueryChanged -> ClearSearchResults + RunSearchQuery -> SearchQueryRenderEvent -> RenderSearchQueryResult` (per result) `-> SearchQueryRenderFinished -> RenderChatAction`. Empty query / no result ends at `HideContent`.
     /// - Activate a result: `LocalQueryResultActionRequested -> InvokeLocalQueryResultAction + HideOverlay`.
     /// - Close action panel: `ActionPanelClosed -> FocusSearchEntry`.
     /// - Exit search: `SearchExitRequest -> ExitSearch`.
     /// - Submit a prompt `ChatPromptSubmitted -> SubmitChatPrompt`; invalid/no-provider paths return `ChatPromptRejected`. Accepted prompts continue `-> ChatPromptResolved -> ShowChatView + SendChat -> ChatSent` (session id accepted) `-> ChatRenderEvent -> RenderChatEvent` (per delta, until `RenderEvent::Done`/`Cancel`/`Error`).
     /// - Interrupt the turn: `ChatInterruptRequested -> CancelChatSession`; the running `SendChat` stream then delivers `RenderEvent::Cancel` as `ChatRenderEvent -> RenderChatEvent`.
-    /// - Exit chat: `ChatExitRequested -> HideContent`.
-    /// - Open a session: `SessionOpenRequested -> OpenSelectedSession -> SessionRestoreRequested -> ClearChatContent + ShowChatView + RestoreSession -> ChatRenderEvent -> RenderChatEvent` (replay) `-> SessionRestoreFinished -> CloseSessions`. `SessionRestoreFinished(Err) -> ReportError`.
+    /// - Exit chat: `ChatExitRequested -> ClearQuery + HideContent`.
+    /// - Open a session: `SessionOpenRequested -> OpenSelectedSession -> SessionRestoreRequested -> ClearQuery + ClearChatContent + ShowChatView + RestoreSession -> ChatRenderEvent -> RenderChatEvent` (replay, until `RenderEvent::Done`/`Cancel`/`Error` releases the turn). A restore whose stream fails to open ends at `SessionRestoreError -> ReportError` (turn released).
+    /// - Filter sessions: `LauncherQueryChanged -> FilterSessions`.
     /// - Delete a session: `SessionDeleteRequested -> DeleteSelectedSession`.
-    /// - Close sessions window: `SessionWindowCloseRequested -> CloseSessions`.
+    /// - Close sessions view: `SessionsCloseRequested -> ClearQuery + HideContent` (resets like exiting chat).
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
             Msg::ToggleLauncherRequested => {
@@ -212,9 +220,22 @@ impl Model {
                 vec![Command::OpenSettings, Command::HideOverlay]
             },
             Msg::ToggleSessionsRequested => {
-                vec![Command::ToggleSessions {
-                    session_id: self.current_session,
-                }]
+                if self.mode != Mode::Session {
+                    // late search results or a pending prompt must not flip the visible page
+                    self.begin_query();
+                    self.chat_status.reset();
+                    let mut commands = vec![Command::ClearQuery];
+                    // a live-streaming session must not double-append on restore
+                    if self.mode == Mode::Chat {
+                        self.current_session = None;
+                        commands.push(Command::ClearChatContent);
+                    }
+                    self.mode = Mode::Session;
+                    commands.push(Command::OpenSessions);
+                    commands
+                } else {
+                    self.exit_to_search()
+                }
             },
             Msg::LauncherQueryChanged { content } => match self.mode {
                 Mode::Search => {
@@ -230,6 +251,9 @@ impl Model {
                 },
                 Mode::Chat => {
                     vec![]
+                },
+                Mode::Session => {
+                    vec![Command::FilterSessions { content }]
                 },
             },
             Msg::SearchQueryRenderEvent { event, query_id } => {
@@ -323,19 +347,19 @@ impl Model {
                 };
                 vec![Command::CancelChatSession { session_id }]
             },
-            Msg::ChatExitRequested => {
-                self.reset();
-                vec![Command::HideContent]
-            },
+            Msg::ChatExitRequested | Msg::SessionsCloseRequested => self.exit_to_search(),
             Msg::ActionPanelClosed => vec![Command::FocusSearchEntry],
-            Msg::SessionWindowCloseRequested => vec![Command::CloseSessions],
             Msg::SessionOpenRequested => vec![Command::OpenSelectedSession],
             Msg::SessionDeleteRequested => vec![Command::DeleteSelectedSession],
             Msg::SessionRestoreRequested { session_id } => {
+                if self.current_session == Some(session_id) {
+                    return vec![];
+                }
                 let turn_id = self.chat_status.begin();
                 self.mode = Mode::Chat;
                 self.current_session = Some(session_id);
                 vec![
+                    Command::ClearQuery,
                     Command::ClearChatContent,
                     Command::ShowChatView,
                     Command::RestoreSession {
@@ -344,18 +368,11 @@ impl Model {
                     },
                 ]
             },
-            Msg::SessionRestoreFinished { result, turn_id } => {
+            Msg::SessionRestoreError { error, turn_id } => {
                 if self.chat_status.is_current(turn_id) {
                     self.chat_status.finish();
-                    return match result {
-                        Ok(()) => {
-                            vec![Command::CloseSessions]
-                        },
-                        Err(error) => {
-                            self.current_session = None;
-                            vec![Command::ReportError { error }]
-                        },
-                    };
+                    self.current_session = None;
+                    return vec![Command::ReportError { error }];
                 }
                 vec![]
             },
@@ -420,6 +437,7 @@ mod tests {
     fn expect_restore_session(model: &mut Model, session_id: Uuid) -> u64 {
         let commands = model.update(Msg::SessionRestoreRequested { session_id });
         let [
+            Command::ClearQuery,
             Command::ClearChatContent,
             Command::ShowChatView,
             Command::RestoreSession {
@@ -542,17 +560,6 @@ mod tests {
         assert_eq!(model.current_session, Some(session_id));
         assert_chat_running(&model, turn_id);
 
-        let commands = model.update(Msg::ToggleSessionsRequested);
-        let [
-            Command::ToggleSessions {
-                session_id: selected_session,
-            },
-        ] = commands.as_slice()
-        else {
-            panic!("expected current session to be passed to sessions window");
-        };
-        assert_eq!(*selected_session, Some(session_id));
-
         let commands = model.update(Msg::ChatInterruptRequested);
         let [
             Command::CancelChatSession {
@@ -563,6 +570,169 @@ mod tests {
             panic!("expected interrupt to cancel the active backend session");
         };
         assert_eq!(*cancel_session, session_id);
+
+        // Entering sessions abandons the live chat: turn invalidated,
+        // session dropped, transcript cleared.
+        let commands = model.update(Msg::ToggleSessionsRequested);
+        let [
+            Command::ClearQuery,
+            Command::ClearChatContent,
+            Command::OpenSessions,
+        ] = commands.as_slice()
+        else {
+            panic!("expected toggle to abandon the chat and open the sessions view");
+        };
+        assert!(matches!(model.mode, Mode::Session));
+        assert_eq!(model.current_session, None);
+        assert_chat_idle(&model);
+
+        let commands = model.update(Msg::ToggleSessionsRequested);
+        let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
+            panic!("expected a second toggle to hide the content");
+        };
+        assert!(matches!(model.mode, Mode::Search));
+        assert_eq!(model.current_session, None);
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn opening_sessions_mid_stream_abandons_the_live_turn() {
+        let mut model = Model::new();
+        let turn_id = expect_running_chat(&mut model, "hello");
+        let session_id = Uuid::now_v7();
+        let _ = model.update(Msg::ChatSent {
+            turn_id,
+            session_id: Some(session_id),
+        });
+
+        let commands = model.update(Msg::ToggleSessionsRequested);
+        let [
+            Command::ClearQuery,
+            Command::ClearChatContent,
+            Command::OpenSessions,
+        ] = commands.as_slice()
+        else {
+            panic!("expected entering sessions to abandon the live chat");
+        };
+        assert!(matches!(model.mode, Mode::Session));
+        assert_eq!(model.current_session, None);
+        assert_chat_idle(&model);
+
+        // The orphaned stream no longer renders into the hidden chat view.
+        let commands = model.update(Msg::ChatRenderEvent {
+            turn_id,
+            event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                provider_id: ProviderId::Codex,
+                text: "late".into(),
+            }),
+        });
+        assert!(commands.is_empty());
+
+        // Restoring that same session is now an ordinary restore; core
+        // replays history plus pending deltas and re-attaches the stream.
+        let restore_turn_id = expect_restore_session(&mut model, session_id);
+        assert_ne!(restore_turn_id, turn_id);
+    }
+
+    #[test]
+    fn opening_sessions_invalidates_in_flight_search_results() {
+        let mut model = Model::new();
+        let commands = model.update(Msg::LauncherQueryChanged {
+            content: "docker".into(),
+        });
+        let [
+            Command::ClearSearchResults,
+            Command::RunSearchQuery { query_id, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected a search query to start");
+        };
+        let query_id = *query_id;
+
+        let commands = model.update(Msg::ToggleSessionsRequested);
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ClearQuery, Command::OpenSessions]
+        ));
+
+        // Late results from the pre-toggle search are dropped instead of
+        // flipping the visible page back to search.
+        let commands = model.update(Msg::SearchQueryRenderFinished {
+            query_id,
+            has_result: true,
+        });
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn opening_sessions_drops_a_pending_prompt() {
+        let mut model = Model::new();
+        let turn_id = expect_submit_prompt(&mut model);
+
+        let commands = model.update(Msg::ToggleSessionsRequested);
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ClearQuery, Command::OpenSessions]
+        ));
+
+        // The late resolution is dropped instead of flipping the visible
+        // page back to chat and sending the abandoned prompt.
+        let commands = model.update(Msg::ChatPromptResolved {
+            turn_id,
+            prompt: "hello".into(),
+            provider_id: ProviderId::Codex,
+        });
+        assert!(commands.is_empty());
+        assert!(matches!(model.mode, Mode::Session));
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn duplicate_restore_of_the_current_session_is_ignored() {
+        let mut model = Model::new();
+        let session_id = Uuid::now_v7();
+        let turn_id = expect_restore_session(&mut model, session_id);
+
+        let commands = model.update(Msg::SessionRestoreRequested { session_id });
+        assert!(commands.is_empty());
+        assert_chat_running(&model, turn_id);
+        assert_eq!(model.current_session, Some(session_id));
+    }
+
+    #[test]
+    fn typing_in_session_mode_filters_sessions() {
+        let mut model = Model::new();
+        let _ = model.update(Msg::ToggleSessionsRequested);
+
+        let commands = model.update(Msg::LauncherQueryChanged {
+            content: "docker".into(),
+        });
+        let [Command::FilterSessions { content }] = commands.as_slice() else {
+            panic!("expected session-mode typing to filter sessions");
+        };
+        assert_eq!(content.as_str(), "docker");
+
+        // an emptied query must reach the view untrimmed to reset visibility
+        let commands = model.update(Msg::LauncherQueryChanged { content: "".into() });
+        let [Command::FilterSessions { content }] = commands.as_slice() else {
+            panic!("expected an emptied query to reach the filter");
+        };
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn closing_sessions_clears_the_query_and_resets_to_search() {
+        let mut model = Model::new();
+        let _ = model.update(Msg::ToggleSessionsRequested);
+        assert!(matches!(model.mode, Mode::Session));
+
+        let commands = model.update(Msg::SessionsCloseRequested);
+        let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
+            panic!("expected closing sessions to clear the query and hide content");
+        };
+        assert!(matches!(model.mode, Mode::Search));
+        assert_eq!(model.current_session, None);
+        assert_chat_idle(&model);
     }
 
     #[test]
@@ -622,24 +792,23 @@ mod tests {
         assert_eq!(model.current_session, Some(current_session));
         assert_chat_running(&model, current_turn_id);
 
-        let commands = model.update(Msg::SessionRestoreFinished {
+        let commands = model.update(Msg::SessionRestoreError {
             turn_id: stale_turn_id,
-            result: Err(AppError::Io(std::io::Error::other("stale restore"))),
+            error: AppError::Io(std::io::Error::other("stale restore")),
         });
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, Some(current_session));
         assert_chat_running(&model, current_turn_id);
 
-        let commands = model.update(Msg::SessionRestoreFinished {
+        let commands = model.update(Msg::ChatRenderEvent {
             turn_id: current_turn_id,
-            result: Ok(()),
+            event: RenderEvent::Done,
         });
-        let [Command::CloseSessions] = commands.as_slice() else {
-            panic!("expected current restore finish to close sessions");
-        };
-        assert!(matches!(model.mode, Mode::Chat));
-        assert_eq!(model.current_session, Some(current_session));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RenderChatEvent { .. }]
+        ));
         assert_chat_idle(&model);
     }
 
@@ -649,9 +818,9 @@ mod tests {
         let session_id = Uuid::now_v7();
         let turn_id = expect_restore_session(&mut model, session_id);
 
-        let commands = model.update(Msg::SessionRestoreFinished {
+        let commands = model.update(Msg::SessionRestoreError {
             turn_id,
-            result: Err(AppError::Io(std::io::Error::other("restore failed"))),
+            error: AppError::Io(std::io::Error::other("restore failed")),
         });
         let [Command::ReportError { error }] = commands.as_slice() else {
             panic!("expected current restore failure to report the error");
@@ -659,6 +828,40 @@ mod tests {
         assert!(error.to_string().contains("restore failed"));
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, None);
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn restored_stream_blocks_prompts_until_its_terminal_event() {
+        let mut model = Model::new();
+        let session_id = Uuid::now_v7();
+        let turn_id = expect_restore_session(&mut model, session_id);
+        assert_chat_running(&model, turn_id);
+
+        // Enter during the replayed/re-attached stream stays a guarded no-op.
+        let commands = model.update(Msg::ChatPromptSubmitted);
+        assert!(commands.is_empty());
+
+        let commands = model.update(Msg::ChatRenderEvent {
+            turn_id,
+            event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                provider_id: ProviderId::Codex,
+                text: "still streaming".into(),
+            }),
+        });
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RenderChatEvent { .. }]
+        ));
+
+        let commands = model.update(Msg::ChatRenderEvent {
+            turn_id,
+            event: RenderEvent::Done,
+        });
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RenderChatEvent { .. }]
+        ));
         assert_chat_idle(&model);
     }
 
@@ -703,7 +906,7 @@ mod tests {
         assert_eq!(model.current_session, Some(session_id));
 
         let commands = model.update(Msg::ChatExitRequested);
-        let [Command::HideContent] = commands.as_slice() else {
+        let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
             panic!("expected chat exit to hide content");
         };
         assert!(matches!(model.mode, Mode::Search));
