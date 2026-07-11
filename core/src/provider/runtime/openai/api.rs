@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc, RwLock,
-    atomic::{AtomicU8, Ordering},
+use std::{
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::Duration,
 };
 
 use log::{debug, error};
@@ -21,6 +24,7 @@ use crate::{
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const HEALTH_CHECK_URL: &str = "https://api.openai.com/v1/models";
 const MODELS_URL: &str = "https://raw.githubusercontent.com/openai/codex/refs/heads/main/codex-rs/models-manager/models.json";
+const MODELS_FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct OpenAIRuntime {
     request: reqwest::Client,
@@ -167,6 +171,7 @@ async fn fetch_models(request: &reqwest::Client) -> Result<Vec<Model>> {
             Ok(request
                 .get(MODELS_URL)
                 .header(reqwest::header::USER_AGENT, "scry")
+                .timeout(MODELS_FETCH_TIMEOUT)
                 .send()
                 .await?
                 .error_for_status()?
