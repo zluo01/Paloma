@@ -29,8 +29,11 @@ const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
-// const CLIENT_VERSION_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
-const CLIENT_VERSION: &str = "0.144.0";
+const CLIENT_VERSION_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const CLIENT_VERSION_CACHE_KEY: &str = "codex.client_version";
+const CLIENT_VERSION_CACHE_TTL_SECS: u64 = Duration::from_hours(24).as_secs();
+const CLIENT_VERSION_FETCH_TIMEOUT: Duration = Duration::from_secs(3);
+const CLIENT_VERSION_FALLBACK: &str = "0.144.0";
 
 pub struct CodexRuntime {
     request: reqwest::Client,
@@ -78,8 +81,9 @@ impl CodexRuntime {
         match fetch_access_token(&request, &auth, &storage).await {
             Ok((access_token, auth)) => {
                 let warmup = provider_cache
-                    .models(ProviderId::Codex, || {
-                        fetch_models(&request, &access_token, CLIENT_VERSION)
+                    .models(ProviderId::Codex, || async {
+                        let version = client_version(&provider_cache, &request).await;
+                        fetch_models(&request, &access_token, &version).await
                     })
                     .await;
                 match warmup {
@@ -227,11 +231,12 @@ impl ProviderClient for CodexRuntime {
 
     async fn models(&self) -> Option<Vec<Model>> {
         cached_models(&self.provider_cache, ProviderId::Codex, || async move {
+            let version = client_version(&self.provider_cache, &self.request).await;
             let token = self
                 .refresh()
                 .await
                 .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
-            fetch_models(&self.request, &token, CLIENT_VERSION).await
+            fetch_models(&self.request, &token, &version).await
         })
         .await
     }
@@ -321,6 +326,48 @@ async fn fetch_models(
         .await?;
 
     Ok(models_from_response(response))
+}
+
+/// Codex CLI's own version, sent as `?client_version=` on `/backend-api/codex/models`.
+/// The backend gates per-model availability on this via `minimal_client_version`
+/// in each `ModelInfo`. Since we're impersonating Codex CLI, this must track
+/// what real Codex CLI publishes, not our own package version.
+///
+/// Construction in Codex (major.minor.patch from `CARGO_PKG_VERSION`):
+///   <https://github.com/openai/codex/blob/main/codex-rs/models-manager/src/lib.rs#L19-L26>
+/// Query-param append:
+///   <https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs#L35-L38>
+async fn client_version(cache: &ProviderCache, request: &reqwest::Client) -> String {
+    cache
+        .value(
+            CLIENT_VERSION_CACHE_KEY,
+            CLIENT_VERSION_CACHE_TTL_SECS,
+            || fetch_client_version(request),
+        )
+        .await
+        .unwrap_or_else(|e| {
+            error!(
+                "fail to fetch codex client version, fallback to {CLIENT_VERSION_FALLBACK}. {e}"
+            );
+            CLIENT_VERSION_FALLBACK.into()
+        })
+}
+
+async fn fetch_client_version(request: &reqwest::Client) -> Result<String> {
+    let release: serde_json::Value = request
+        .get(CLIENT_VERSION_URL)
+        .header(reqwest::header::USER_AGENT, "scry")
+        .timeout(CLIENT_VERSION_FETCH_TIMEOUT)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    release["name"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| ProviderError::Other("latest release response is missing a name".into()))
 }
 
 /// OAuth and access-token data derived from a refresh-token exchange. Held

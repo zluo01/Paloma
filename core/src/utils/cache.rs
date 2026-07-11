@@ -10,13 +10,30 @@ const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(8).as_secs();
 
 pub struct ProviderCache {
     models: DashMap<ProviderId, Arc<RefreshSlot<Vec<Model>>>>,
+    values: DashMap<String, Arc<RefreshSlot<String>>>,
 }
 
 impl ProviderCache {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             models: DashMap::new(),
+            values: DashMap::new(),
         })
+    }
+
+    pub(crate) async fn value<E, F, Fut>(
+        &self,
+        key: &str,
+        ttl_secs: u64,
+        fetch: F,
+    ) -> Result<String, E>
+    where
+        E: Display,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<String, E>>,
+    {
+        let slot = self.values.entry(key.to_owned()).or_default().clone();
+        slot.get_or_refresh(ttl_secs, fetch).await
     }
 
     pub(crate) async fn models<E, F, Fut>(&self, id: ProviderId, fetch: F) -> Result<Vec<Model>, E>
@@ -207,6 +224,27 @@ mod tests {
             .unwrap();
         assert_eq!(models[0].id, "m1");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn string_values_cache_by_key() {
+        let cache = ProviderCache::new();
+        let calls = AtomicUsize::new(0);
+        for _ in 0..2 {
+            let value = cache
+                .value("a", 60, || async {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok::<_, String>("one".to_string())
+                })
+                .await;
+            assert_eq!(value.unwrap(), "one");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let other = cache
+            .value("b", 60, || async { Ok::<_, String>("two".to_string()) })
+            .await;
+        assert_eq!(other.unwrap(), "two");
     }
 
     #[tokio::test]
