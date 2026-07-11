@@ -274,15 +274,25 @@ pub(super) fn models_from_response(response: ModelsResponse) -> Vec<Model> {
 
     models
         .into_iter()
-        .map(|m| Model {
-            id: m.slug,
-            name: m.display_name,
-            default_reasoning_effort: m.default_reasoning_level.unwrap_or("medium".to_string()),
-            supported_reasoning_efforts: m
+        .filter_map(|m| {
+            let supported_reasoning_efforts: Vec<String> = m
                 .supported_reasoning_levels
                 .into_iter()
                 .map(|p| p.effort)
-                .collect(),
+                .collect();
+
+            // only keep models with reasoning efforts
+            let default_reasoning_effort = m
+                .default_reasoning_level
+                .filter(|level| supported_reasoning_efforts.contains(level))
+                .or_else(|| supported_reasoning_efforts.first().cloned())?;
+
+            Some(Model {
+                id: m.slug,
+                name: m.display_name,
+                default_reasoning_effort,
+                supported_reasoning_efforts,
+            })
         })
         .collect()
 }
@@ -308,6 +318,70 @@ struct RawModel {
 #[derive(Debug, Deserialize)]
 struct RawReasoningEffortPreset {
     effort: String,
+}
+
+#[cfg(test)]
+mod models_from_response_tests {
+    use super::*;
+
+    fn models(raw: &str) -> Vec<Model> {
+        let response: ModelsResponse = serde_json::from_str(raw).expect("valid models response");
+        models_from_response(response)
+    }
+
+    #[test]
+    fn model_without_reasoning_efforts_is_dropped() {
+        let parsed = models(
+            r#"{"models": [{
+              "slug": "chat-only",
+              "display_name": "Chat Only",
+              "visibility": "list",
+              "supported_in_api": true,
+              "priority": 1,
+              "default_reasoning_level": "medium",
+              "supported_reasoning_levels": []
+            }]}"#,
+        );
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn default_effort_is_always_one_of_the_supported_efforts() {
+        let parsed = models(
+            r#"{"models": [{
+              "slug": "reasoner",
+              "display_name": "Reasoner",
+              "visibility": "list",
+              "supported_in_api": true,
+              "priority": 1,
+              "default_reasoning_level": "medium",
+              "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
+            }]}"#,
+        );
+        let model = parsed.first().expect("model kept");
+        assert_eq!(model.default_reasoning_effort, "low");
+        assert!(
+            model
+                .supported_reasoning_efforts
+                .contains(&model.default_reasoning_effort)
+        );
+    }
+
+    #[test]
+    fn supported_default_effort_is_preserved() {
+        let parsed = models(
+            r#"{"models": [{
+              "slug": "reasoner",
+              "display_name": "Reasoner",
+              "visibility": "list",
+              "supported_in_api": true,
+              "priority": 1,
+              "default_reasoning_level": "high",
+              "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
+            }]}"#,
+        );
+        assert_eq!(parsed[0].default_reasoning_effort, "high");
+    }
 }
 
 #[cfg(test)]
