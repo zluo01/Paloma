@@ -45,7 +45,7 @@ pub(crate) fn run() -> ExitCode {
 }
 
 fn on_startup(gapp: &Application, startup_failed: &Cell<bool>) {
-    let app_context = match tokio_runtime().block_on(AppContext::build()) {
+    let app_context = match tokio_runtime().block_on(AppContext::build(glib::user_data_dir())) {
         Ok(a) => a,
         Err(e) => {
             error!("{e}");
