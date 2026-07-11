@@ -37,7 +37,7 @@ pub use entity::{
 };
 pub use permission::{PermissionState, UserDecision};
 pub use provider::{Connection, Model};
-pub use utils::{OAuthCallbackState, OAuthError};
+pub use utils::OAuthCallbackState;
 
 use crate::controller::ChatRenderStream;
 

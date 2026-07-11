@@ -1,10 +1,7 @@
 use std::sync::{
-    RwLock,
+    Arc, RwLock,
     atomic::{AtomicU8, Ordering},
 };
-
-use log::error;
-use tokio::sync::Mutex;
 
 use super::shared::{
     ClaudeAuth, RESPONSES_URL, build_request_body, fetch_models, parse_stream_error,
@@ -13,54 +10,77 @@ use super::shared::{
 use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
-        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result, runtime::AvailableModels,
+        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result, runtime::cached_models,
     },
-    utils::unix_now,
+    utils::ProviderCache,
 };
 
 pub struct AnthropicRuntime {
     request: reqwest::Client,
     api_key: String,
     status: AtomicU8,
+    provider_cache: Arc<ProviderCache>,
     error: RwLock<Option<String>>,
-    models: Mutex<Option<AvailableModels>>,
 }
 
 impl AnthropicRuntime {
-    pub async fn new(credential: &Auth, request: reqwest::Client) -> Self {
+    pub async fn new(
+        credential: &Auth,
+        request: reqwest::Client,
+        provider_cache: Arc<ProviderCache>,
+    ) -> Self {
         let api_key = match credential {
             Auth::ApiKey(api_key) => api_key.trim().to_string(),
             Auth::OAuth { .. } => {
                 return Self::unhealthy(
                     request,
+                    provider_cache,
                     "Anthropic API provider requires api_key credentials".into(),
                 );
             },
         };
 
         if api_key.is_empty() {
-            return Self::unhealthy(request, "Anthropic API key is required".into());
+            return Self::unhealthy(
+                request,
+                provider_cache,
+                "Anthropic API key is required".into(),
+            );
         }
 
+        // call fetch model explicitly to verify api key validness, then cache the models
         match fetch_models(&request, ClaudeAuth::ApiKey(&api_key)).await {
-            Ok(models) => Self {
-                request,
-                api_key,
-                status: AtomicU8::new(HealthStatus::Running as u8),
-                error: RwLock::new(None),
-                models: Mutex::new(Some(models)),
+            Ok(models) => {
+                provider_cache
+                    .insert_models(ProviderId::Anthropic, models)
+                    .await;
+                Self {
+                    request,
+                    api_key,
+                    status: AtomicU8::new(HealthStatus::Running as u8),
+                    provider_cache,
+                    error: RwLock::new(None),
+                }
             },
-            Err(e) => Self::unhealthy(request, format!("fail to connect to Anthropic: {e}")),
+            Err(e) => Self::unhealthy(
+                request,
+                provider_cache,
+                format!("fail to connect to Anthropic: {e}"),
+            ),
         }
     }
 
-    fn unhealthy(request: reqwest::Client, error_msg: String) -> Self {
+    fn unhealthy(
+        request: reqwest::Client,
+        provider_cache: Arc<ProviderCache>,
+        error_msg: String,
+    ) -> Self {
         Self {
             request,
             api_key: String::new(),
             status: AtomicU8::new(HealthStatus::Unhealthy as u8),
+            provider_cache,
             error: RwLock::new(Some(error_msg)),
-            models: Mutex::new(None),
         }
     }
 }
@@ -92,26 +112,10 @@ impl ProviderClient for AnthropicRuntime {
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        let mut cache = self.models.lock().await;
-
-        // Serve the cached catalogue while it's still fresh.
-        if let Some(cached) = cache.as_ref()
-            && unix_now() < cached.expires_at
-        {
-            return Some(cached.models.clone());
-        }
-
-        match fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key)).await {
-            Ok(result) => {
-                let models = result.models.clone();
-                *cache = Some(result);
-                Some(models)
-            },
-            Err(e) => {
-                error!("failed to refresh claude model catalogue: {e}");
-                cache.as_ref().map(|cached| cached.models.clone())
-            },
-        }
+        cached_models(&self.provider_cache, ProviderId::Anthropic, || {
+            fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key))
+        })
+        .await
     }
 
     fn health_statue(&self) -> HealthStatus {

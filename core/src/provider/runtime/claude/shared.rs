@@ -9,9 +9,8 @@ use crate::{
     provider::{
         ChatEvent, ChatRequest, ChatStream, ConversationItem, Model, ProviderError, Result,
         codec::{ClaudeCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
-        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, SSE_IDLE_TIMEOUT},
+        runtime::SSE_IDLE_TIMEOUT,
     },
-    utils::unix_now,
 };
 
 pub(super) const RESPONSES_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -391,7 +390,7 @@ pub(super) enum ClaudeAuth<'a> {
 pub(super) async fn fetch_models(
     request: &reqwest::Client,
     auth: ClaudeAuth<'_>,
-) -> Result<AvailableModels> {
+) -> Result<Vec<Model>> {
     let request = request
         .get(MODELS_URL)
         .header("anthropic-version", "2023-06-01");
@@ -403,10 +402,7 @@ pub(super) async fn fetch_models(
     let response = request.send().await?;
     if response.status().is_success() {
         let payload: Value = response.json().await?;
-        Ok(AvailableModels {
-            models: parse_model_response(payload),
-            expires_at: unix_now() + MODELS_CACHE_TTL_SECS,
-        })
+        Ok(parse_model_response(payload))
     } else {
         let error = response.text().await?;
         Err(parse_stream_error(&error))

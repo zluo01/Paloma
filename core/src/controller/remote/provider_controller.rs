@@ -10,12 +10,14 @@ use crate::{
     provider::{
         AnthropicRuntime, Auth, ClaudeRuntime, CodexRuntime, Model, OpenAIRuntime, ProviderClient,
     },
+    utils::ProviderCache,
 };
 
 pub struct ProviderController {
     handlers: DashMap<ProviderId, Arc<dyn ProviderClient>>,
     storage: Storage,
     request: reqwest::Client,
+    provider_cache: Arc<ProviderCache>,
 }
 
 impl ProviderController {
@@ -26,6 +28,8 @@ impl ProviderController {
     ) -> Result<Self, ProviderControllerError> {
         let handlers: DashMap<ProviderId, Arc<dyn ProviderClient>> = DashMap::new();
 
+        let provider_cache = ProviderCache::new();
+
         let clients = join_all(
             storage
                 .connected_providers()
@@ -34,6 +38,7 @@ impl ProviderController {
                 .map(|cred| {
                     let request = request.clone();
                     let storage = storage.clone();
+                    let cache = provider_cache.clone();
                     async move {
                         let auth = match cred.auth_kind {
                             AuthKind::ApiKey => Auth::ApiKey(cred.secret),
@@ -44,16 +49,16 @@ impl ProviderController {
                         };
                         let client: Arc<dyn ProviderClient> = match cred.provider_id {
                             ProviderId::Codex => {
-                                Arc::new(CodexRuntime::new(&auth, request, storage).await)
+                                Arc::new(CodexRuntime::new(&auth, request, storage, cache).await)
                             },
                             ProviderId::OpenAI => {
                                 Arc::new(OpenAIRuntime::new(&auth, request).await)
                             },
                             ProviderId::Anthropic => {
-                                Arc::new(AnthropicRuntime::new(&auth, request).await)
+                                Arc::new(AnthropicRuntime::new(&auth, request, cache).await)
                             },
                             ProviderId::ClaudeCode => {
-                                Arc::new(ClaudeRuntime::new(&auth, request, storage).await)
+                                Arc::new(ClaudeRuntime::new(&auth, request, storage, cache).await)
                             },
                         };
                         (client.id(), client)
@@ -70,6 +75,7 @@ impl ProviderController {
             handlers,
             storage,
             request,
+            provider_cache,
         })
     }
 
@@ -86,16 +92,29 @@ impl ProviderController {
         }
 
         let client: Arc<dyn ProviderClient> = match provider_id {
-            ProviderId::Codex => {
-                Arc::new(CodexRuntime::new(auth, self.request.clone(), self.storage.clone()).await)
-            },
+            ProviderId::Codex => Arc::new(
+                CodexRuntime::new(
+                    auth,
+                    self.request.clone(),
+                    self.storage.clone(),
+                    self.provider_cache.clone(),
+                )
+                .await,
+            ),
             ProviderId::OpenAI => Arc::new(OpenAIRuntime::new(auth, self.request.clone()).await),
-            ProviderId::Anthropic => {
-                Arc::new(AnthropicRuntime::new(auth, self.request.clone()).await)
-            },
-            ProviderId::ClaudeCode => {
-                Arc::new(ClaudeRuntime::new(auth, self.request.clone(), self.storage.clone()).await)
-            },
+            ProviderId::Anthropic => Arc::new(
+                AnthropicRuntime::new(auth, self.request.clone(), self.provider_cache.clone())
+                    .await,
+            ),
+            ProviderId::ClaudeCode => Arc::new(
+                ClaudeRuntime::new(
+                    auth,
+                    self.request.clone(),
+                    self.storage.clone(),
+                    self.provider_cache.clone(),
+                )
+                .await,
+            ),
         };
 
         self.handlers.insert(provider_id, client.clone());

@@ -1,3 +1,4 @@
+mod cache;
 mod future;
 mod gated;
 mod mcp;
@@ -7,13 +8,14 @@ mod xml;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use future::CompletableFuture;
+pub(crate) use cache::ProviderCache;
+pub(crate) use future::CompletableFuture;
 pub(crate) use gated::Gated;
-pub use mcp::mcp_function_name_encode;
-pub use oauth::{OAuthCallbackState, OAuthError};
-pub(crate) use oauth::{finalize_oauth_connection, init_oauth_connection};
-pub use spill::write_spill_file;
-pub use xml::Element;
+pub(crate) use mcp::mcp_function_name_encode;
+pub use oauth::OAuthCallbackState;
+pub(crate) use oauth::{OAuthError, finalize_oauth_connection, init_oauth_connection};
+pub(crate) use spill::write_spill_file;
+pub(crate) use xml::Element;
 
 /// unix epoch in seconds.
 pub(crate) fn unix_now() -> u64 {

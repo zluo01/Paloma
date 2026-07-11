@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        RwLock,
+        Arc, RwLock,
         atomic::{AtomicU8, Ordering},
     },
     time::Duration,
@@ -19,9 +19,9 @@ use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
         Auth, ChatRequest, ChatStream, Model, ProviderClient, Result,
-        runtime::{AvailableModels, RefreshRequest},
+        runtime::{RefreshRequest, cached_models},
     },
-    utils::unix_now,
+    utils::{ProviderCache, unix_now},
 };
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -33,15 +33,20 @@ const CLAUDE_CODE_BETA_HEADER: &str =
 pub struct ClaudeRuntime {
     request: reqwest::Client,
     storage: Storage,
+    provider_cache: Arc<ProviderCache>,
     token_state: RwLock<TokenState>,
     refresh_lock: Mutex<()>,
     status: AtomicU8,
     error: RwLock<Option<String>>,
-    models: Mutex<Option<AvailableModels>>,
 }
 
 impl ClaudeRuntime {
-    pub async fn new(credential: &Auth, request: reqwest::Client, storage: Storage) -> Self {
+    pub async fn new(
+        credential: &Auth,
+        request: reqwest::Client,
+        storage: Storage,
+        provider_cache: Arc<ProviderCache>,
+    ) -> Self {
         let auth = match credential {
             Auth::OAuth {
                 refresh_token: Some(_),
@@ -54,6 +59,7 @@ impl ClaudeRuntime {
                 return Self::unhealthy(
                     request,
                     storage,
+                    provider_cache,
                     "Claude credential is missing a refresh_token".into(),
                 );
             },
@@ -61,6 +67,7 @@ impl ClaudeRuntime {
                 return Self::unhealthy(
                     request,
                     storage,
+                    provider_cache,
                     "Claude does not support api_key credentials".into(),
                 );
             },
@@ -68,21 +75,27 @@ impl ClaudeRuntime {
 
         match fetch_access_token(&request, &auth, &storage).await {
             Ok((access_token, auth)) => {
-                match fetch_models(&request, ClaudeAuth::AccessToken(&access_token)).await {
-                    Ok(models) => Self {
+                let warmup = provider_cache
+                    .models(ProviderId::Anthropic, || {
+                        fetch_models(&request, ClaudeAuth::AccessToken(&access_token))
+                    })
+                    .await;
+                match warmup {
+                    Ok(_) => Self {
                         request,
                         token_state: RwLock::new(TokenState { auth, access_token }),
                         refresh_lock: Mutex::new(()),
                         storage,
+                        provider_cache,
                         status: AtomicU8::new(HealthStatus::Running as u8),
                         error: RwLock::new(None),
-                        models: Mutex::new(Some(models)),
                     },
                     Err(e) => {
                         error!("fail to fetch models on initialization. {e}");
                         Self::unhealthy(
                             request,
                             storage,
+                            provider_cache,
                             format!("fail to connect to Claude Code: {e}"),
                         )
                     },
@@ -93,6 +106,7 @@ impl ClaudeRuntime {
                 Self::unhealthy(
                     request,
                     storage,
+                    provider_cache,
                     format!("fail to connect to Claude Code: {e}"),
                 )
             },
@@ -100,7 +114,12 @@ impl ClaudeRuntime {
     }
 
     /// unhealthy constructor
-    fn unhealthy(request: reqwest::Client, storage: Storage, error_msg: String) -> Self {
+    fn unhealthy(
+        request: reqwest::Client,
+        storage: Storage,
+        provider_cache: Arc<ProviderCache>,
+        error_msg: String,
+    ) -> Self {
         Self {
             request,
             token_state: RwLock::new(TokenState {
@@ -112,9 +131,9 @@ impl ClaudeRuntime {
             }),
             refresh_lock: Mutex::new(()),
             storage,
+            provider_cache,
             status: AtomicU8::new(HealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
-            models: Mutex::new(None),
         }
     }
 
@@ -201,37 +220,14 @@ impl ProviderClient for ClaudeRuntime {
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        // Hold the lock across the refetch: concurrent callers single-flight
-        // — the first refetches, the rest wait and pick up its cached result.
-        let mut cache = self.models.lock().await;
-
-        // Serve the cached catalogue while it's still fresh.
-        if let Some(cached) = cache.as_ref()
-            && unix_now() < cached.expires_at
-        {
-            return Some(cached.models.clone());
-        }
-
-        match self.refresh().await {
-            Ok(access_token) => {
-                match fetch_models(&self.request, ClaudeAuth::AccessToken(&access_token)).await {
-                    Ok(result) => {
-                        let models = result.models.clone();
-                        *cache = Some(result);
-                        Some(models)
-                    },
-                    Err(e) => {
-                        error!("failed to refresh model catalogue: {e}");
-                        cache.as_ref().map(|cached| cached.models.clone())
-                    },
-                }
-            },
-            Err(e) => {
-                error!("failed to get access token to refresh model catalogue: {e}");
-                self.mark_unhealthy(e.to_string());
-                cache.as_ref().map(|cached| cached.models.clone())
-            },
-        }
+        cached_models(&self.provider_cache, ProviderId::Anthropic, || async move {
+            let token = self
+                .refresh()
+                .await
+                .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+            fetch_models(&self.request, ClaudeAuth::AccessToken(&token)).await
+        })
+        .await
     }
 
     fn health_statue(&self) -> HealthStatus {

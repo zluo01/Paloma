@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        RwLock,
+        Arc, RwLock,
         atomic::{AtomicU8, Ordering},
     },
     time::Duration,
@@ -20,40 +20,35 @@ use crate::{
     entity::{HealthStatus, ProviderId},
     provider::{
         Auth, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
-        runtime::{AvailableModels, MODELS_CACHE_TTL_SECS, RefreshRequest},
+        runtime::{RefreshRequest, cached_models},
     },
-    utils::unix_now,
+    utils::{ProviderCache, unix_now},
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
-/// Codex CLI's own version, sent as `?client_version=` on `/backend-api/codex/models`.
-/// The backend gates per-model availability on this via `minimal_client_version`
-/// in each `ModelInfo`. Since we're impersonating Codex CLI, this must track
-/// what real Codex CLI publishes, not our own package version.
-///
-/// Construction in Codex (major.minor.patch from `CARGO_PKG_VERSION`):
-///   <https://github.com/openai/codex/blob/main/codex-rs/models-manager/src/lib.rs#L19-L26>
-/// Query-param append:
-///   <https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs#L35-L38>
-/// Current published version (the source of truth — bump to match):
-///   <https://www.npmjs.com/package/@openai/codex>
-const CLIENT_VERSION: &str = "0.142.0";
+// const CLIENT_VERSION_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const CLIENT_VERSION: &str = "0.144.0";
 
 pub struct CodexRuntime {
     request: reqwest::Client,
     storage: Storage,
+    provider_cache: Arc<ProviderCache>,
     token_state: RwLock<TokenState>,
     refresh_lock: Mutex<()>,
     status: AtomicU8,
     error: RwLock<Option<String>>,
-    models: Mutex<Option<AvailableModels>>,
 }
 
 impl CodexRuntime {
-    pub async fn new(credential: &Auth, request: reqwest::Client, storage: Storage) -> Self {
+    pub async fn new(
+        credential: &Auth,
+        request: reqwest::Client,
+        storage: Storage,
+        provider_cache: Arc<ProviderCache>,
+    ) -> Self {
         let auth = match credential {
             Auth::OAuth {
                 refresh_token: Some(_),
@@ -66,6 +61,7 @@ impl CodexRuntime {
                 return Self::unhealthy(
                     request,
                     storage,
+                    provider_cache,
                     "Codex credential is missing a refresh_token".into(),
                 );
             },
@@ -73,36 +69,59 @@ impl CodexRuntime {
                 return Self::unhealthy(
                     request,
                     storage,
+                    provider_cache,
                     "Codex does not support api_key credentials".into(),
                 );
             },
         };
 
         match fetch_access_token(&request, &auth, &storage).await {
-            Ok((access_token, auth)) => match fetch_models(&request, &access_token).await {
-                Ok(models) => Self {
-                    request,
-                    token_state: RwLock::new(TokenState { auth, access_token }),
-                    refresh_lock: Mutex::new(()),
-                    storage,
-                    status: AtomicU8::new(HealthStatus::Running as u8),
-                    error: RwLock::new(None),
-                    models: Mutex::new(Some(models)),
-                },
-                Err(e) => {
-                    error!("fail to fetch models on initialization. {e}");
-                    Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
-                },
+            Ok((access_token, auth)) => {
+                let warmup = provider_cache
+                    .models(ProviderId::Codex, || {
+                        fetch_models(&request, &access_token, CLIENT_VERSION)
+                    })
+                    .await;
+                match warmup {
+                    Ok(_) => Self {
+                        request,
+                        token_state: RwLock::new(TokenState { auth, access_token }),
+                        refresh_lock: Mutex::new(()),
+                        storage,
+                        provider_cache,
+                        status: AtomicU8::new(HealthStatus::Running as u8),
+                        error: RwLock::new(None),
+                    },
+                    Err(e) => {
+                        error!("fail to fetch models on initialization. {e}");
+                        Self::unhealthy(
+                            request,
+                            storage,
+                            provider_cache,
+                            format!("fail to connect to codex: {e}"),
+                        )
+                    },
+                }
             },
             Err(e) => {
                 error!("fail to refresh for access token on initialization. {e}");
-                Self::unhealthy(request, storage, format!("fail to connect to codex: {e}"))
+                Self::unhealthy(
+                    request,
+                    storage,
+                    provider_cache,
+                    format!("fail to connect to codex: {e}"),
+                )
             },
         }
     }
 
     /// unhealthy constructor
-    fn unhealthy(request: reqwest::Client, storage: Storage, error_msg: String) -> Self {
+    fn unhealthy(
+        request: reqwest::Client,
+        storage: Storage,
+        provider_cache: Arc<ProviderCache>,
+        error_msg: String,
+    ) -> Self {
         Self {
             request,
             token_state: RwLock::new(TokenState {
@@ -117,9 +136,9 @@ impl CodexRuntime {
             }),
             refresh_lock: Mutex::new(()),
             storage,
+            provider_cache,
             status: AtomicU8::new(HealthStatus::Unhealthy as u8),
             error: RwLock::new(Some(error_msg)),
-            models: Mutex::new(None),
         }
     }
 
@@ -207,35 +226,14 @@ impl ProviderClient for CodexRuntime {
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        // Hold the lock across the refetch: concurrent callers single-flight
-        // — the first refetches, the rest wait and pick up its cached result.
-        let mut cache = self.models.lock().await;
-
-        // Serve the cached catalogue while it's still fresh.
-        if let Some(cached) = cache.as_ref()
-            && unix_now() < cached.expires_at
-        {
-            return Some(cached.models.clone());
-        }
-
-        match self.refresh().await {
-            Ok(access_token) => match fetch_models(&self.request, &access_token).await {
-                Ok(result) => {
-                    let models = result.models.clone();
-                    *cache = Some(result);
-                    Some(models)
-                },
-                Err(e) => {
-                    error!("failed to refresh model catalogue: {e}");
-                    cache.as_ref().map(|cached| cached.models.clone())
-                },
-            },
-            Err(e) => {
-                error!("failed to get access token to refresh model catalogue: {e}");
-                self.mark_unhealthy(e.to_string());
-                cache.as_ref().map(|cached| cached.models.clone())
-            },
-        }
+        cached_models(&self.provider_cache, ProviderId::Codex, || async move {
+            let token = self
+                .refresh()
+                .await
+                .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+            fetch_models(&self.request, &token, CLIENT_VERSION).await
+        })
+        .await
     }
 
     fn health_statue(&self) -> HealthStatus {
@@ -305,8 +303,12 @@ fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<AvailableModels> {
-    let url = format!("{MODELS_URL}?client_version={CLIENT_VERSION}");
+async fn fetch_models(
+    request: &reqwest::Client,
+    token: &AccessToken,
+    client_version: &str,
+) -> Result<Vec<Model>> {
+    let url = format!("{MODELS_URL}?client_version={client_version}");
     let response: ModelsResponse = request
         .get(&url)
         .bearer_auth(&token.access_token)
@@ -318,11 +320,7 @@ async fn fetch_models(request: &reqwest::Client, token: &AccessToken) -> Result<
         .json()
         .await?;
 
-    let available_models = models_from_response(response);
-    Ok(AvailableModels {
-        models: available_models,
-        expires_at: unix_now() + MODELS_CACHE_TTL_SECS,
-    })
+    Ok(models_from_response(response))
 }
 
 /// OAuth and access-token data derived from a refresh-token exchange. Held
