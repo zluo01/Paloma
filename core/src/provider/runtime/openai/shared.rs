@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::{StreamExt, stream};
 use log::warn;
@@ -15,13 +13,6 @@ use crate::{
         runtime::SSE_IDLE_TIMEOUT,
     },
 };
-
-/// https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json
-pub(super) static OPENAI_MODEL_CATALOG: LazyLock<Vec<Model>> = LazyLock::new(|| {
-    let response = serde_json::from_str(include_str!("models.json"))
-        .expect("bundled OpenAI model catalog should parse");
-    models_from_response(response)
-});
 
 pub(super) fn build_request_body(request: &ChatRequest, provider_id: ProviderId) -> Value {
     // Wrap each provider-agnostic ToolSchema in the OpenAI Responses API

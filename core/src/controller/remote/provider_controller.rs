@@ -52,7 +52,7 @@ impl ProviderController {
                                 Arc::new(CodexRuntime::new(&auth, request, storage, cache).await)
                             },
                             ProviderId::OpenAI => {
-                                Arc::new(OpenAIRuntime::new(&auth, request).await)
+                                Arc::new(OpenAIRuntime::new(&auth, request, cache).await)
                             },
                             ProviderId::Anthropic => {
                                 Arc::new(AnthropicRuntime::new(&auth, request, cache).await)
@@ -101,7 +101,9 @@ impl ProviderController {
                 )
                 .await,
             ),
-            ProviderId::OpenAI => Arc::new(OpenAIRuntime::new(auth, self.request.clone()).await),
+            ProviderId::OpenAI => Arc::new(
+                OpenAIRuntime::new(auth, self.request.clone(), self.provider_cache.clone()).await,
+            ),
             ProviderId::Anthropic => Arc::new(
                 AnthropicRuntime::new(auth, self.request.clone(), self.provider_cache.clone())
                     .await,
