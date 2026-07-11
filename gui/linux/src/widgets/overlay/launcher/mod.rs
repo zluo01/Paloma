@@ -61,8 +61,7 @@ impl LauncherView {
             .build();
 
         let model_picker = ModelPicker::new(app_context.clone());
-        controls.append(model_picker.model_dropdown());
-        controls.append(model_picker.effort_dropdown());
+        controls.append(model_picker.widget());
 
         let settings_button = icon_button("emblem-system-symbolic", "Settings");
         let settings_dispatcher = dispatcher.clone();
