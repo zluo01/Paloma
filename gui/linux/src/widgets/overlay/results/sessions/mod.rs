@@ -8,8 +8,8 @@ use std::{
 
 use futures::channel::mpsc;
 use gtk4::{
-    Align, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Orientation, SelectionMode,
-    prelude::*,
+    Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow, Orientation, Revealer,
+    RevealerTransitionType, SelectionMode, StateFlags, prelude::*,
 };
 use libadwaita::{ActionRow, prelude::*};
 use log::error;
@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::step_index;
 use crate::{
-    helper::{Clear, scroll_into_view},
+    helper::{Clear, scroll_selection_into_view},
     runtime,
     widgets::overlay::{
         OVERLAY_WIDTH_PX,
@@ -62,11 +62,24 @@ impl SessionsView {
 
         let empty = Label::builder()
             .label(EMPTY_PLACEHOLDER)
+            .justify(gtk4::Justification::Center)
+            .css_classes(["scry-sessions-empty-title"])
+            .build();
+        let empty_icon = Image::builder()
+            .icon_name("document-open-recent-symbolic")
+            .pixel_size(32)
+            .css_classes(["scry-sessions-empty-icon"])
+            .build();
+        let placeholder = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(10)
             .halign(Align::Center)
             .valign(Align::Center)
             .css_classes(["scry-sessions-empty"])
             .build();
-        list.set_placeholder(Some(&empty));
+        placeholder.append(&empty_icon);
+        placeholder.append(&empty);
+        list.set_placeholder(Some(&placeholder));
 
         view.append(&list);
 
@@ -187,7 +200,7 @@ impl SessionsView {
 
         let action_row = &visible_sessions[next].action_row;
         self.list.select_row(Some(action_row));
-        scroll_into_view(action_row);
+        scroll_selection_into_view(action_row, next, visible_sessions.len());
     }
 
     pub(crate) fn filter(&self, query: String) {
@@ -238,12 +251,18 @@ fn set_sessions(
             .title(&session.title)
             // titles are user content, not Pango markup
             .use_markup(false)
-            .subtitle(relative_time_at(now, session.last_update))
             .title_lines(1)
-            .subtitle_lines(1)
             .activatable(true)
             .tooltip_text(&session.title)
             .build();
+
+        let icon = Image::builder()
+            .icon_name("document-open-recent-symbolic")
+            .pixel_size(14)
+            .valign(Align::Center)
+            .css_classes(["scry-session-icon"])
+            .build();
+        row.add_prefix(&icon);
 
         let session_id = session.session_id;
         let action_dispatcher = dispatcher.clone();
@@ -272,7 +291,26 @@ fn set_sessions(
                 app_context.clone(),
             );
         });
-        row.add_suffix(&delete);
+
+        let time = Label::builder()
+            .label(relative_time_at(now, session.last_update))
+            .valign(Align::Center)
+            .css_classes(["scry-session-time"])
+            .build();
+        row.add_suffix(&time);
+
+        // zero width until hovered, so the time sits flush right otherwise
+        let reveal = Revealer::builder()
+            .child(&delete)
+            .transition_type(RevealerTransitionType::SlideLeft)
+            .transition_duration(150)
+            .valign(Align::Center)
+            .build();
+        row.add_suffix(&reveal);
+
+        row.connect_state_flags_changed(move |row, _| {
+            reveal.set_reveal_child(row.state_flags().contains(StateFlags::PRELIGHT));
+        });
 
         list.append(&row);
         rows.push(SessionRow {
@@ -314,13 +352,21 @@ fn remove_session(
                 list.remove(&removed);
 
                 if was_selected {
-                    let nearest = rows[pos..]
+                    let visible: Vec<&SessionRow> =
+                        rows.iter().filter(|s| s.action_row.is_visible()).collect();
+                    let before = rows[..pos]
                         .iter()
-                        .find(|s| s.action_row.is_visible())
-                        .or_else(|| rows[..pos].iter().rev().find(|s| s.action_row.is_visible()));
-                    if let Some(nearest) = nearest {
-                        list.select_row(Some(&nearest.action_row));
-                        scroll_into_view(&nearest.action_row);
+                        .filter(|s| s.action_row.is_visible())
+                        .count();
+                    if !visible.is_empty() {
+                        // first visible row at/after the deleted position, else the last one
+                        let nearest = before.min(visible.len() - 1);
+                        list.select_row(Some(&visible[nearest].action_row));
+                        scroll_selection_into_view(
+                            &visible[nearest].action_row,
+                            nearest,
+                            visible.len(),
+                        );
                     }
                 }
 

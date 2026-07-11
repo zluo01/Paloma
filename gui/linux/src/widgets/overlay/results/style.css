@@ -324,17 +324,71 @@
     background: alpha(currentColor, 0.3);
 }
 
+/* Sessions list: launcher-style rows — icon badge, single-line title,
+   relative time and a hover/selection-revealed delete on the right. */
 .scry-sessions-list {
     background: transparent;
 }
 
 .scry-sessions-list > row {
     border-radius: 8px;
+    padding: 3px 8px;
+    margin: 1px 0;
+}
+
+/* the row padding above is the single inset; drop the ActionRow's own */
+.scry-sessions-list > row > box.header {
+    min-height: 30px;
+    padding: 0;
+}
+
+.scry-sessions-list > row label.title {
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.scry-sessions-list > row:hover {
+    background: alpha(currentColor, 0.06);
+}
+
+.scry-sessions-list > row:selected,
+.scry-sessions-list > row:selected:hover {
+    background: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+}
+
+.scry-session-icon {
+    color: alpha(currentColor, 0.6);
+    background: alpha(currentColor, 0.08);
+    border-radius: 6px;
+    min-width: 24px;
+    min-height: 24px;
+}
+
+.scry-sessions-list > row:selected .scry-session-icon {
+    color: var(--accent-fg-color);
+    background: alpha(currentColor, 0.15);
+}
+
+.scry-session-time {
+    font-size: 11px;
+    font-feature-settings: "tnum";
+    color: alpha(currentColor, 0.55);
+}
+
+.scry-sessions-list > row:selected .scry-session-time {
+    color: alpha(var(--accent-fg-color), 0.8);
 }
 
 .scry-sessions-empty {
+    padding: 24px 0 28px 0;
+}
+
+.scry-sessions-empty-icon {
+    color: alpha(currentColor, 0.3);
+}
+
+.scry-sessions-empty-title {
     color: alpha(currentColor, 0.45);
-    font-size: 12px;
-    font-style: italic;
-    padding: 4px;
+    font-size: 13px;
 }

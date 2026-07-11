@@ -4,11 +4,11 @@ mod section;
 use std::cell::{Cell, RefCell};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Orientation, ScrolledWindow, prelude::*};
+use gtk4::{Align, Box as GtkBox, Button, Orientation, prelude::*};
 use scry_core::Item;
 
 use crate::{
-    helper::{Clear, scroll_into_view},
+    helper::{Clear, scroll_selection_into_view},
     widgets::overlay::{
         OVERLAY_WIDTH_PX, SELECTED_CLASS,
         model::Msg,
@@ -158,7 +158,9 @@ impl SearchView {
             None => false,
             Some(next) => {
                 self.select_row(next);
-                self.scroll_selection_into_view(next, actions_len);
+                if let Some(button) = self.selected_button() {
+                    scroll_selection_into_view(&button, next, actions_len);
+                }
                 true
             },
         }
@@ -206,28 +208,6 @@ impl SearchView {
     fn push_section(&self, section: &GtkBox) {
         self.widget.append(section);
         self.widget.set_visible(true);
-    }
-
-    fn scroll_selection_into_view(&self, index: usize, size: usize) {
-        let Some(button) = self.selected_button() else {
-            return;
-        };
-        let Some(scroller) = button
-            .ancestor(ScrolledWindow::static_type())
-            .and_downcast::<ScrolledWindow>()
-        else {
-            return;
-        };
-        // The first/last rows snap the card fully to the top/bottom so its
-        // padding (and the chat divider) isn't clipped; the rows sit below the
-        // card padding, so a minimal scroll-to would leave that padding cut off.
-        // Middle rows use the minimal scroll.
-        let adj = scroller.vadjustment();
-        match index {
-            0 => adj.set_value(0.0),
-            i if i + 1 == size => adj.set_value((adj.upper() - adj.page_size()).max(0.0)),
-            _ => scroll_into_view(&button),
-        }
     }
 
     fn action_len(&self) -> usize {
