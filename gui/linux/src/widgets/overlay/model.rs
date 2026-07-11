@@ -59,55 +59,63 @@ pub(super) struct Model {
 }
 
 pub(super) enum Msg {
-    ToggleLauncherRequested,
+    Launcher(LauncherMsg),
+    Search(SearchMsg),
+    Chat(ChatMsg),
+    Session(SessionMsg),
+    ContentCloseRequested,
+}
+
+pub(super) enum LauncherMsg {
+    ToggleVisibilityRequested,
     OpenSettingsRequested,
-    ToggleSessionsRequested,
-    LauncherQueryChanged {
-        content: String,
-    },
-    SearchQueryRenderEvent {
+    QueryChanged { content: String },
+}
+
+pub(super) enum SearchMsg {
+    QueryEventReceived {
         query_id: u64,
         event: SearchRenderEvent,
     },
-    SearchQueryRenderFinished {
+    QueryFinished {
         query_id: u64,
         has_result: bool,
     },
-    LocalQueryResultActionRequested {
+    ResultActionRequested {
         handler_id: &'static str,
         action: Action,
     },
-    SearchExitRequest,
-    ChatPromptSubmitted,
-    ChatPromptRejected {
+    ExitRequested,
+    ActionPanelClosed,
+}
+
+pub(super) enum ChatMsg {
+    PromptSubmitRequested,
+    PromptPreparationFailed {
         turn_id: u64,
     },
-    ChatPromptResolved {
+    PromptPrepared {
         turn_id: u64,
         prompt: String,
         provider_id: ProviderId,
     },
-    ChatSent {
+    RequestStarted {
         turn_id: u64,
         session_id: Option<Uuid>,
     },
-    ChatRenderEvent {
+    RenderEventReceived {
         turn_id: u64,
         event: RenderEvent,
     },
-    ChatInterruptRequested,
-    ChatExitRequested,
-    ActionPanelClosed,
-    SessionsCloseRequested,
-    SessionDeleteRequested,
-    SessionOpenRequested,
-    SessionRestoreRequested {
-        session_id: Uuid,
-    },
-    SessionRestoreError {
-        turn_id: u64,
-        error: AppError,
-    },
+    InterruptRequested,
+}
+
+pub(super) enum SessionMsg {
+    ToggleViewRequested,
+    OpenSelectedRequested,
+    DeleteSelectedRequested,
+    RestoreRequested { session_id: Uuid },
+    RestoreFailed { turn_id: u64, error: AppError },
 }
 
 pub(super) enum Command {
@@ -190,54 +198,39 @@ impl Model {
         vec![Command::ClearQuery, Command::HideContent]
     }
 
-    /// Overlay workflow. Each bullet is one distinct user action traced end to
-    /// end: a command that does async work loops its result back as a follow-up
-    /// message (stale results dropped by the `query_id`/`turn_id` guards), so a
-    /// chain runs `Msg -> Command -> Msg -> Command -> …` until a terminal command.
+    /// Routes each message group to its workflow reducer:
+    /// - `Launcher` -> `update_launcher`
+    /// - `Search` -> `update_search`
+    /// - `Chat` -> `update_chat`
+    /// - `Session` -> `update_session`
     ///
-    /// - Toggle launcher (hotkey): `ToggleLauncherRequested -> ToggleLauncher`.
-    /// - Open settings: `OpenSettingsRequested -> OpenSettings + HideOverlay`.
-    /// - Toggle sessions view: `ToggleSessionsRequested -> ClearQuery + [ClearChatContent +] OpenSessions` (enters Session mode, abandoning any live chat or pending prompt); a second toggle resets and ends at `ClearQuery + HideContent`.
-    /// - Search: `LauncherQueryChanged -> ClearSearchResults + RunSearchQuery -> SearchQueryRenderEvent -> RenderSearchQueryResult` (per result) `-> SearchQueryRenderFinished -> RenderChatAction`. Empty query / no result ends at `HideContent`.
-    /// - Activate a result: `LocalQueryResultActionRequested -> InvokeLocalQueryResultAction + HideOverlay`.
-    /// - Close action panel: `ActionPanelClosed -> FocusSearchEntry`.
-    /// - Exit search: `SearchExitRequest -> ExitSearch`.
-    /// - Submit a prompt `ChatPromptSubmitted -> SubmitChatPrompt`; invalid/no-provider paths return `ChatPromptRejected`. Accepted prompts continue `-> ChatPromptResolved -> ShowChatView + SendChat -> ChatSent` (session id accepted) `-> ChatRenderEvent -> RenderChatEvent` (per delta, until `RenderEvent::Done`/`Cancel`/`Error`).
-    /// - Interrupt the turn: `ChatInterruptRequested -> CancelChatSession`; the running `SendChat` stream then delivers `RenderEvent::Cancel` as `ChatRenderEvent -> RenderChatEvent`.
-    /// - Exit chat: `ChatExitRequested -> ClearQuery + HideContent`.
-    /// - Open a session: `SessionOpenRequested -> OpenSelectedSession -> SessionRestoreRequested -> ClearQuery + ClearChatContent + ShowChatView + RestoreSession -> ChatRenderEvent -> RenderChatEvent` (replay, until `RenderEvent::Done`/`Cancel`/`Error` releases the turn). A restore whose stream fails to open ends at `SessionRestoreError -> ReportError` (turn released).
-    /// - Filter sessions: `LauncherQueryChanged -> FilterSessions`.
-    /// - Delete a session: `SessionDeleteRequested -> DeleteSelectedSession`.
-    /// - Close sessions view: `SessionsCloseRequested -> ClearQuery + HideContent` (resets like exiting chat).
+    /// `ContentCloseRequested` is shared by Chat and Session and resets the
+    /// model to Search before clearing the query and hiding content.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
-            Msg::ToggleLauncherRequested => {
+            Msg::Launcher(msg) => self.update_launcher(msg),
+            Msg::Search(msg) => self.update_search(msg),
+            Msg::Chat(msg) => self.update_chat(msg),
+            Msg::Session(msg) => self.update_session(msg),
+            Msg::ContentCloseRequested => self.exit_to_search(),
+        }
+    }
+
+    /// Launcher workflow:
+    /// - Toggle visibility: `ToggleVisibilityRequested -> ToggleLauncher`.
+    /// - Open settings: `OpenSettingsRequested -> OpenSettings + HideOverlay`.
+    /// - Query input: `QueryChanged` starts a search, filters sessions, or is ignored in Chat mode. Search follow-up messages are handled by `update_search`.
+    fn update_launcher(&mut self, msg: LauncherMsg) -> Vec<Command> {
+        match msg {
+            LauncherMsg::ToggleVisibilityRequested => {
                 self.reset();
                 vec![Command::ToggleLauncher]
             },
-            Msg::OpenSettingsRequested => {
+            LauncherMsg::OpenSettingsRequested => {
                 self.reset();
                 vec![Command::OpenSettings, Command::HideOverlay]
             },
-            Msg::ToggleSessionsRequested => {
-                if self.mode != Mode::Session {
-                    // late search results or a pending prompt must not flip the visible page
-                    self.begin_query();
-                    self.chat_status.reset();
-                    let mut commands = vec![Command::ClearQuery];
-                    // a live-streaming session must not double-append on restore
-                    if self.mode == Mode::Chat {
-                        self.current_session = None;
-                        commands.push(Command::ClearChatContent);
-                    }
-                    self.mode = Mode::Session;
-                    commands.push(Command::OpenSessions);
-                    commands
-                } else {
-                    self.exit_to_search()
-                }
-            },
-            Msg::LauncherQueryChanged { content } => match self.mode {
+            LauncherMsg::QueryChanged { content } => match self.mode {
                 Mode::Search => {
                     let query_id = self.begin_query();
                     if content.trim().is_empty() {
@@ -256,50 +249,28 @@ impl Model {
                     vec![Command::FilterSessions { content }]
                 },
             },
-            Msg::SearchQueryRenderEvent { event, query_id } => {
-                if query_id != self.query_id {
-                    return vec![];
-                }
-                vec![Command::RenderSearchQueryResult { event }]
-            },
-            Msg::SearchQueryRenderFinished {
-                query_id,
-                has_result,
-            } => {
-                if query_id != self.query_id {
-                    return vec![];
-                }
-                if has_result {
-                    vec![Command::RenderChatAction]
-                } else {
-                    vec![Command::HideContent]
-                }
-            },
-            Msg::SearchExitRequest => {
-                self.reset();
-                vec![Command::ExitSearch]
-            },
-            Msg::LocalQueryResultActionRequested { handler_id, action } => {
-                self.reset();
-                vec![
-                    Command::InvokeLocalQueryResultAction { handler_id, action },
-                    Command::HideOverlay,
-                ]
-            },
-            Msg::ChatPromptSubmitted => {
+        }
+    }
+
+    /// Chat workflow:
+    /// - Submit prompt: `PromptSubmitRequested -> SubmitChatPrompt`; empty/no-provider paths return `PromptPreparationFailed`. A prepared prompt continues `-> PromptPrepared -> ShowChatView + SendChat -> RequestStarted` (session id accepted) `-> RenderEventReceived -> RenderChatEvent` until a terminal event releases the turn.
+    /// - Interrupt turn: `InterruptRequested -> CancelChatSession`; the running stream then delivers `RenderEvent::Cancel` through `RenderEventReceived`.
+    fn update_chat(&mut self, msg: ChatMsg) -> Vec<Command> {
+        match msg {
+            ChatMsg::PromptSubmitRequested => {
                 if self.chat_status.is_running() {
                     return vec![];
                 }
                 let turn_id = self.chat_status.begin();
                 vec![Command::SubmitChatPrompt { turn_id }]
             },
-            Msg::ChatPromptRejected { turn_id } => {
+            ChatMsg::PromptPreparationFailed { turn_id } => {
                 if self.chat_status.is_current(turn_id) {
                     self.chat_status.finish();
                 }
                 vec![]
             },
-            Msg::ChatPromptResolved {
+            ChatMsg::PromptPrepared {
                 turn_id,
                 prompt,
                 provider_id,
@@ -320,7 +291,7 @@ impl Model {
                     },
                 ]
             },
-            Msg::ChatSent {
+            ChatMsg::RequestStarted {
                 turn_id,
                 session_id,
             } => {
@@ -329,7 +300,7 @@ impl Model {
                 }
                 vec![]
             },
-            Msg::ChatRenderEvent { turn_id, event } => {
+            ChatMsg::RenderEventReceived { turn_id, event } => {
                 if !self.chat_status.is_current(turn_id) {
                     return vec![];
                 }
@@ -341,17 +312,83 @@ impl Model {
                 }
                 vec![Command::RenderChatEvent { event }]
             },
-            Msg::ChatInterruptRequested => {
+            ChatMsg::InterruptRequested => {
                 let Some(session_id) = self.current_session else {
                     return vec![];
                 };
                 vec![Command::CancelChatSession { session_id }]
             },
-            Msg::ChatExitRequested | Msg::SessionsCloseRequested => self.exit_to_search(),
-            Msg::ActionPanelClosed => vec![Command::FocusSearchEntry],
-            Msg::SessionOpenRequested => vec![Command::OpenSelectedSession],
-            Msg::SessionDeleteRequested => vec![Command::DeleteSelectedSession],
-            Msg::SessionRestoreRequested { session_id } => {
+        }
+    }
+
+    /// Search workflow:
+    /// - Query: `Launcher(QueryChanged) -> ClearSearchResults + RunSearchQuery -> QueryEventReceived -> RenderSearchQueryResult` (per result) `-> QueryFinished -> RenderChatAction`. Empty query / no result ends at `HideContent`.
+    /// - Activate result: `ResultActionRequested -> InvokeLocalQueryResultAction + HideOverlay`.
+    /// - Close action panel: `ActionPanelClosed -> FocusSearchEntry`.
+    /// - Exit view: `ExitRequested -> ExitSearch`.
+    fn update_search(&mut self, msg: SearchMsg) -> Vec<Command> {
+        match msg {
+            SearchMsg::QueryEventReceived { event, query_id } => {
+                if query_id != self.query_id {
+                    return vec![];
+                }
+                vec![Command::RenderSearchQueryResult { event }]
+            },
+            SearchMsg::QueryFinished {
+                query_id,
+                has_result,
+            } => {
+                if query_id != self.query_id {
+                    return vec![];
+                }
+                if has_result {
+                    vec![Command::RenderChatAction]
+                } else {
+                    vec![Command::HideContent]
+                }
+            },
+            SearchMsg::ResultActionRequested { handler_id, action } => {
+                self.reset();
+                vec![
+                    Command::InvokeLocalQueryResultAction { handler_id, action },
+                    Command::HideOverlay,
+                ]
+            },
+            SearchMsg::ExitRequested => {
+                self.reset();
+                vec![Command::ExitSearch]
+            },
+            SearchMsg::ActionPanelClosed => vec![Command::FocusSearchEntry],
+        }
+    }
+
+    /// Session workflow:
+    /// - Toggle view: `ToggleViewRequested -> ClearQuery + [ClearChatContent +] OpenSessions` (enters Session mode, abandoning any live chat or pending prompt); a second toggle resets and ends at `ClearQuery + HideContent`.
+    /// - Open selected: `OpenSelectedRequested -> OpenSelectedSession -> RestoreRequested -> ClearQuery + ClearChatContent + ShowChatView + RestoreSession -> Chat(RenderEventReceived) -> RenderChatEvent` (replay, until a terminal event releases the turn). A stream-open failure ends at `RestoreFailed -> ReportError`.
+    /// - Delete selected: `DeleteSelectedRequested -> DeleteSelectedSession`.
+    fn update_session(&mut self, msg: SessionMsg) -> Vec<Command> {
+        match msg {
+            SessionMsg::ToggleViewRequested => {
+                if self.mode != Mode::Session {
+                    // late search results or a pending prompt must not flip the visible page
+                    self.begin_query();
+                    self.chat_status.reset();
+                    let mut commands = vec![Command::ClearQuery];
+                    // a live-streaming session must not double-append on restore
+                    if self.mode == Mode::Chat {
+                        self.current_session = None;
+                        commands.push(Command::ClearChatContent);
+                    }
+                    self.mode = Mode::Session;
+                    commands.push(Command::OpenSessions);
+                    commands
+                } else {
+                    self.exit_to_search()
+                }
+            },
+            SessionMsg::OpenSelectedRequested => vec![Command::OpenSelectedSession],
+            SessionMsg::DeleteSelectedRequested => vec![Command::DeleteSelectedSession],
+            SessionMsg::RestoreRequested { session_id } => {
                 if self.current_session == Some(session_id) {
                     return vec![];
                 }
@@ -368,7 +405,7 @@ impl Model {
                     },
                 ]
             },
-            Msg::SessionRestoreError { error, turn_id } => {
+            SessionMsg::RestoreFailed { error, turn_id } => {
                 if self.chat_status.is_current(turn_id) {
                     self.chat_status.finish();
                     self.current_session = None;
@@ -382,7 +419,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{ChatRenderEvent, ProviderId, RenderEvent};
+    use scry_core::{ChatRenderEvent, ProviderId, QueryResponse, RenderEvent};
 
     use super::*;
 
@@ -398,7 +435,7 @@ mod tests {
     }
 
     fn expect_submit_prompt(model: &mut Model) -> u64 {
-        let commands = model.update(Msg::ChatPromptSubmitted);
+        let commands = model.update(Msg::Chat(ChatMsg::PromptSubmitRequested));
         let [Command::SubmitChatPrompt { turn_id }] = commands.as_slice() else {
             panic!("expected chat prompt construction to start");
         };
@@ -408,11 +445,11 @@ mod tests {
 
     fn expect_running_chat(model: &mut Model, prompt: &str) -> u64 {
         let turn_id = expect_submit_prompt(model);
-        let commands = model.update(Msg::ChatPromptResolved {
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: prompt.into(),
             provider_id: ProviderId::Codex,
-        });
+        }));
         let [
             Command::ShowChatView,
             Command::SendChat {
@@ -435,7 +472,7 @@ mod tests {
     }
 
     fn expect_restore_session(model: &mut Model, session_id: Uuid) -> u64 {
-        let commands = model.update(Msg::SessionRestoreRequested { session_id });
+        let commands = model.update(Msg::Session(SessionMsg::RestoreRequested { session_id }));
         let [
             Command::ClearQuery,
             Command::ClearChatContent,
@@ -455,13 +492,23 @@ mod tests {
         *turn_id
     }
 
+    fn query_event(id: &'static str) -> SearchRenderEvent {
+        SearchRenderEvent::Append {
+            response: QueryResponse {
+                id,
+                name: id.into(),
+                items: vec![],
+            },
+        }
+    }
+
     #[test]
     fn search_results_are_tied_to_the_latest_search_query() {
         let mut model = Model::new();
 
-        let commands = model.update(Msg::LauncherQueryChanged {
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
             content: "RANDOM_QUERY".into(),
-        });
+        }));
         let [
             Command::ClearSearchResults,
             Command::RunSearchQuery {
@@ -479,16 +526,18 @@ mod tests {
         assert_eq!(model.current_session, None);
         assert_chat_idle(&model);
 
-        let commands = model.update(Msg::LauncherQueryChanged { content: "".into() });
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "".into(),
+        }));
         let [Command::ClearSearchResults, Command::HideContent] = commands.as_slice() else {
             panic!("expected empty search to clear and hide content");
         };
         assert_eq!(model.query_id, stale_query_id.wrapping_add(1));
 
-        let commands = model.update(Msg::SearchQueryRenderFinished {
+        let commands = model.update(Msg::Search(SearchMsg::QueryFinished {
             query_id: stale_query_id,
             has_result: true,
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Search));
         assert_eq!(model.current_session, None);
@@ -496,21 +545,159 @@ mod tests {
     }
 
     #[test]
-    fn prompt_submit_blocks_duplicates_until_prompt_resolution_rejects() {
+    fn search_query_events_accept_only_the_current_query() {
+        let mut model = Model::new();
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "first".into(),
+        }));
+        let [
+            Command::ClearSearchResults,
+            Command::RunSearchQuery { query_id, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected a search query to start");
+        };
+        let query_id = *query_id;
+
+        let commands = model.update(Msg::Search(SearchMsg::QueryEventReceived {
+            query_id,
+            event: query_event("current"),
+        }));
+        let [
+            Command::RenderSearchQueryResult {
+                event: SearchRenderEvent::Append { response },
+            },
+        ] = commands.as_slice()
+        else {
+            panic!("expected the current query event to render");
+        };
+        assert_eq!(response.id, "current");
+
+        let _ = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "second".into(),
+        }));
+        let commands = model.update(Msg::Search(SearchMsg::QueryEventReceived {
+            query_id,
+            event: query_event("stale"),
+        }));
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn current_search_completion_renders_action_or_hides_content() {
+        let mut model = Model::new();
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "with result".into(),
+        }));
+        let [
+            Command::ClearSearchResults,
+            Command::RunSearchQuery { query_id, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected a search query to start");
+        };
+        let query_id = *query_id;
+
+        assert!(matches!(
+            model
+                .update(Msg::Search(SearchMsg::QueryFinished {
+                    query_id,
+                    has_result: true,
+                }))
+                .as_slice(),
+            [Command::RenderChatAction]
+        ));
+
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "without result".into(),
+        }));
+        let [
+            Command::ClearSearchResults,
+            Command::RunSearchQuery { query_id, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected another search query to start");
+        };
+        assert!(matches!(
+            model
+                .update(Msg::Search(SearchMsg::QueryFinished {
+                    query_id: *query_id,
+                    has_result: false,
+                }))
+                .as_slice(),
+            [Command::HideContent]
+        ));
+    }
+
+    #[test]
+    fn search_result_action_invokes_handler_and_resets_model() {
+        let mut model = Model::new();
+        let _ = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "query".into(),
+        }));
+        let query_id = model.query_id;
+        let action = Action {
+            label: "Open".into(),
+            params: vec!["target".into()],
+            primary: true,
+        };
+
+        let commands = model.update(Msg::Search(SearchMsg::ResultActionRequested {
+            handler_id: "handler",
+            action,
+        }));
+        let [
+            Command::InvokeLocalQueryResultAction { handler_id, action },
+            Command::HideOverlay,
+        ] = commands.as_slice()
+        else {
+            panic!("expected the result action to run and hide the overlay");
+        };
+        assert_eq!(*handler_id, "handler");
+        assert_eq!(action.label, "Open");
+        assert_eq!(action.params, ["target"]);
+        assert!(action.primary);
+        assert_eq!(model.query_id, query_id.wrapping_add(1));
+        assert!(matches!(model.mode, Mode::Search));
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn search_exit_and_action_panel_close_emit_their_view_commands() {
+        let mut model = Model::new();
+
+        assert!(matches!(
+            model
+                .update(Msg::Search(SearchMsg::ActionPanelClosed))
+                .as_slice(),
+            [Command::FocusSearchEntry]
+        ));
+        assert!(matches!(
+            model
+                .update(Msg::Search(SearchMsg::ExitRequested))
+                .as_slice(),
+            [Command::ExitSearch]
+        ));
+        assert!(matches!(model.mode, Mode::Search));
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn prompt_submit_blocks_duplicates_until_preparation_fails() {
         let mut model = Model::new();
         assert!(matches!(model.mode, Mode::Search));
         assert_chat_idle(&model);
 
         let rejected_turn_id = expect_submit_prompt(&mut model);
-        let duplicate_commands = model.update(Msg::ChatPromptSubmitted);
+        let duplicate_commands = model.update(Msg::Chat(ChatMsg::PromptSubmitRequested));
         assert!(duplicate_commands.is_empty());
         assert!(matches!(model.mode, Mode::Search));
         assert_eq!(model.current_session, None);
         assert_chat_running(&model, rejected_turn_id);
 
-        let commands = model.update(Msg::ChatPromptRejected {
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPreparationFailed {
             turn_id: rejected_turn_id,
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Search));
         assert_eq!(model.current_session, None);
@@ -525,11 +712,11 @@ mod tests {
     fn accepted_prompt_enters_chat_and_uses_the_backend_session_id() {
         let mut model = Model::new();
         let turn_id = expect_submit_prompt(&mut model);
-        let commands = model.update(Msg::ChatPromptResolved {
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
             provider_id: ProviderId::Codex,
-        });
+        }));
         let [
             Command::ShowChatView,
             Command::SendChat {
@@ -551,16 +738,16 @@ mod tests {
         assert_chat_running(&model, turn_id);
 
         let session_id = Uuid::now_v7();
-        let commands = model.update(Msg::ChatSent {
+        let commands = model.update(Msg::Chat(ChatMsg::RequestStarted {
             turn_id,
             session_id: Some(session_id),
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, Some(session_id));
         assert_chat_running(&model, turn_id);
 
-        let commands = model.update(Msg::ChatInterruptRequested);
+        let commands = model.update(Msg::Chat(ChatMsg::InterruptRequested));
         let [
             Command::CancelChatSession {
                 session_id: cancel_session,
@@ -573,7 +760,7 @@ mod tests {
 
         // Entering sessions abandons the live chat: turn invalidated,
         // session dropped, transcript cleared.
-        let commands = model.update(Msg::ToggleSessionsRequested);
+        let commands = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         let [
             Command::ClearQuery,
             Command::ClearChatContent,
@@ -586,7 +773,7 @@ mod tests {
         assert_eq!(model.current_session, None);
         assert_chat_idle(&model);
 
-        let commands = model.update(Msg::ToggleSessionsRequested);
+        let commands = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
             panic!("expected a second toggle to hide the content");
         };
@@ -600,12 +787,12 @@ mod tests {
         let mut model = Model::new();
         let turn_id = expect_running_chat(&mut model, "hello");
         let session_id = Uuid::now_v7();
-        let _ = model.update(Msg::ChatSent {
+        let _ = model.update(Msg::Chat(ChatMsg::RequestStarted {
             turn_id,
             session_id: Some(session_id),
-        });
+        }));
 
-        let commands = model.update(Msg::ToggleSessionsRequested);
+        let commands = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         let [
             Command::ClearQuery,
             Command::ClearChatContent,
@@ -619,13 +806,13 @@ mod tests {
         assert_chat_idle(&model);
 
         // The orphaned stream no longer renders into the hidden chat view.
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
                 provider_id: ProviderId::Codex,
                 text: "late".into(),
             }),
-        });
+        }));
         assert!(commands.is_empty());
 
         // Restoring that same session is now an ordinary restore; core
@@ -637,9 +824,9 @@ mod tests {
     #[test]
     fn opening_sessions_invalidates_in_flight_search_results() {
         let mut model = Model::new();
-        let commands = model.update(Msg::LauncherQueryChanged {
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
             content: "docker".into(),
-        });
+        }));
         let [
             Command::ClearSearchResults,
             Command::RunSearchQuery { query_id, .. },
@@ -649,7 +836,7 @@ mod tests {
         };
         let query_id = *query_id;
 
-        let commands = model.update(Msg::ToggleSessionsRequested);
+        let commands = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         assert!(matches!(
             commands.as_slice(),
             [Command::ClearQuery, Command::OpenSessions]
@@ -657,10 +844,10 @@ mod tests {
 
         // Late results from the pre-toggle search are dropped instead of
         // flipping the visible page back to search.
-        let commands = model.update(Msg::SearchQueryRenderFinished {
+        let commands = model.update(Msg::Search(SearchMsg::QueryFinished {
             query_id,
             has_result: true,
-        });
+        }));
         assert!(commands.is_empty());
     }
 
@@ -669,19 +856,19 @@ mod tests {
         let mut model = Model::new();
         let turn_id = expect_submit_prompt(&mut model);
 
-        let commands = model.update(Msg::ToggleSessionsRequested);
+        let commands = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         assert!(matches!(
             commands.as_slice(),
             [Command::ClearQuery, Command::OpenSessions]
         ));
 
-        // The late resolution is dropped instead of flipping the visible
+        // The late prepared prompt is dropped instead of flipping the visible
         // page back to chat and sending the abandoned prompt.
-        let commands = model.update(Msg::ChatPromptResolved {
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
             provider_id: ProviderId::Codex,
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Session));
         assert_chat_idle(&model);
@@ -693,7 +880,7 @@ mod tests {
         let session_id = Uuid::now_v7();
         let turn_id = expect_restore_session(&mut model, session_id);
 
-        let commands = model.update(Msg::SessionRestoreRequested { session_id });
+        let commands = model.update(Msg::Session(SessionMsg::RestoreRequested { session_id }));
         assert!(commands.is_empty());
         assert_chat_running(&model, turn_id);
         assert_eq!(model.current_session, Some(session_id));
@@ -702,18 +889,20 @@ mod tests {
     #[test]
     fn typing_in_session_mode_filters_sessions() {
         let mut model = Model::new();
-        let _ = model.update(Msg::ToggleSessionsRequested);
+        let _ = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
 
-        let commands = model.update(Msg::LauncherQueryChanged {
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
             content: "docker".into(),
-        });
+        }));
         let [Command::FilterSessions { content }] = commands.as_slice() else {
             panic!("expected session-mode typing to filter sessions");
         };
         assert_eq!(content.as_str(), "docker");
 
         // an emptied query must reach the view untrimmed to reset visibility
-        let commands = model.update(Msg::LauncherQueryChanged { content: "".into() });
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "".into(),
+        }));
         let [Command::FilterSessions { content }] = commands.as_slice() else {
             panic!("expected an emptied query to reach the filter");
         };
@@ -723,10 +912,10 @@ mod tests {
     #[test]
     fn closing_sessions_clears_the_query_and_resets_to_search() {
         let mut model = Model::new();
-        let _ = model.update(Msg::ToggleSessionsRequested);
+        let _ = model.update(Msg::Session(SessionMsg::ToggleViewRequested));
         assert!(matches!(model.mode, Mode::Session));
 
-        let commands = model.update(Msg::SessionsCloseRequested);
+        let commands = model.update(Msg::ContentCloseRequested);
         let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
             panic!("expected closing sessions to clear the query and hide content");
         };
@@ -736,38 +925,38 @@ mod tests {
     }
 
     #[test]
-    fn stale_prompt_resolution_cannot_replace_a_restored_session() {
+    fn stale_prepared_prompt_cannot_replace_a_restored_session() {
         let mut model = Model::new();
         let stale_turn_id = expect_submit_prompt(&mut model);
         let restored_session = Uuid::now_v7();
         let restore_turn_id = expect_restore_session(&mut model, restored_session);
 
-        let commands = model.update(Msg::ChatPromptResolved {
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id: stale_turn_id,
             prompt: "hello".into(),
             provider_id: ProviderId::Codex,
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, Some(restored_session));
         assert_chat_running(&model, restore_turn_id);
 
         let stale_session = Uuid::now_v7();
-        let commands = model.update(Msg::ChatSent {
+        let commands = model.update(Msg::Chat(ChatMsg::RequestStarted {
             turn_id: stale_turn_id,
             session_id: Some(stale_session),
-        });
+        }));
         assert!(commands.is_empty());
         assert_eq!(model.current_session, Some(restored_session));
         assert_chat_running(&model, restore_turn_id);
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id: stale_turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
                 provider_id: ProviderId::Codex,
                 text: "stale".into(),
             }),
-        });
+        }));
         assert!(commands.is_empty());
         assert_eq!(model.current_session, Some(restored_session));
         assert_chat_running(&model, restore_turn_id);
@@ -783,28 +972,28 @@ mod tests {
         let current_turn_id = expect_restore_session(&mut model, current_session);
         assert_ne!(current_turn_id, stale_turn_id);
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id: stale_turn_id,
             event: RenderEvent::Done,
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, Some(current_session));
         assert_chat_running(&model, current_turn_id);
 
-        let commands = model.update(Msg::SessionRestoreError {
+        let commands = model.update(Msg::Session(SessionMsg::RestoreFailed {
             turn_id: stale_turn_id,
             error: AppError::Io(std::io::Error::other("stale restore")),
-        });
+        }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, Some(current_session));
         assert_chat_running(&model, current_turn_id);
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id: current_turn_id,
             event: RenderEvent::Done,
-        });
+        }));
         assert!(matches!(
             commands.as_slice(),
             [Command::RenderChatEvent { .. }]
@@ -818,10 +1007,10 @@ mod tests {
         let session_id = Uuid::now_v7();
         let turn_id = expect_restore_session(&mut model, session_id);
 
-        let commands = model.update(Msg::SessionRestoreError {
+        let commands = model.update(Msg::Session(SessionMsg::RestoreFailed {
             turn_id,
             error: AppError::Io(std::io::Error::other("restore failed")),
-        });
+        }));
         let [Command::ReportError { error }] = commands.as_slice() else {
             panic!("expected current restore failure to report the error");
         };
@@ -839,25 +1028,25 @@ mod tests {
         assert_chat_running(&model, turn_id);
 
         // Enter during the replayed/re-attached stream stays a guarded no-op.
-        let commands = model.update(Msg::ChatPromptSubmitted);
+        let commands = model.update(Msg::Chat(ChatMsg::PromptSubmitRequested));
         assert!(commands.is_empty());
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
                 provider_id: ProviderId::Codex,
                 text: "still streaming".into(),
             }),
-        });
+        }));
         assert!(matches!(
             commands.as_slice(),
             [Command::RenderChatEvent { .. }]
         ));
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Done,
-        });
+        }));
         assert!(matches!(
             commands.as_slice(),
             [Command::RenderChatEvent { .. }]
@@ -870,12 +1059,12 @@ mod tests {
         let mut model = Model::new();
         let turn_id = expect_running_chat(&mut model, "hello");
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Error {
                 message: "provider failed".into(),
             },
-        });
+        }));
         let [
             Command::RenderChatEvent {
                 event: RenderEvent::Error { message },
@@ -899,13 +1088,13 @@ mod tests {
         let turn_id = expect_running_chat(&mut model, "hello");
         let session_id = Uuid::now_v7();
 
-        model.update(Msg::ChatSent {
+        model.update(Msg::Chat(ChatMsg::RequestStarted {
             turn_id,
             session_id: Some(session_id),
-        });
+        }));
         assert_eq!(model.current_session, Some(session_id));
 
-        let commands = model.update(Msg::ChatExitRequested);
+        let commands = model.update(Msg::ContentCloseRequested);
         let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
             panic!("expected chat exit to hide content");
         };
@@ -913,17 +1102,17 @@ mod tests {
         assert_eq!(model.current_session, None);
         assert_chat_idle(&model);
 
-        let commands = model.update(Msg::ChatRenderEvent {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Done,
-        });
+        }));
         assert!(commands.is_empty());
 
         let stale_session = Uuid::now_v7();
-        let commands = model.update(Msg::ChatSent {
+        let commands = model.update(Msg::Chat(ChatMsg::RequestStarted {
             turn_id,
             session_id: Some(stale_session),
-        });
+        }));
         assert!(commands.is_empty());
         assert_eq!(model.current_session, None);
         assert!(matches!(model.mode, Mode::Search));

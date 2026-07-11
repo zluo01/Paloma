@@ -6,7 +6,10 @@ use gtk4::{
 };
 use scry_core::Action;
 
-use crate::widgets::overlay::{SELECTED_CLASS, model::Msg};
+use crate::widgets::overlay::{
+    SELECTED_CLASS,
+    model::{Msg, SearchMsg},
+};
 
 const LABEL_MAX_CHARS: i32 = 40;
 
@@ -60,10 +63,12 @@ impl ActionPanel {
             let action_dispatcher = dispatcher.clone();
             button.connect_clicked(move |_| {
                 action_popover.popdown();
-                let _ = action_dispatcher.unbounded_send(Msg::LocalQueryResultActionRequested {
-                    handler_id,
-                    action: action.clone(),
-                });
+                let _ = action_dispatcher.unbounded_send(Msg::Search(
+                    SearchMsg::ResultActionRequested {
+                        handler_id,
+                        action: action.clone(),
+                    },
+                ));
             });
             list.append(&button);
             buttons.push(button);
@@ -76,7 +81,7 @@ impl ActionPanel {
         popover.set_parent(anchor);
         popover.connect_closed(move |popover| {
             popover.unparent();
-            let _ = dispatcher.unbounded_send(Msg::ActionPanelClosed);
+            let _ = dispatcher.unbounded_send(Msg::Search(SearchMsg::ActionPanelClosed));
         });
 
         let panel = Self {

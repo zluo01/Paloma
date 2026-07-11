@@ -5,7 +5,7 @@ use gtk4::{
 };
 use scry_core::{Action, IconRef, Item};
 
-use crate::widgets::overlay::model::Msg;
+use crate::widgets::overlay::model::{ChatMsg, Msg, SearchMsg};
 
 const CHAT_ACTION_LABEL: &str = "Chat about it";
 
@@ -110,7 +110,7 @@ impl Section {
         let button = flat_button(&item_content_row(&item), Some("scry-chat-action"));
         let action_dispatcher = dispatcher.clone();
         button.connect_clicked(move |_| {
-            let _ = action_dispatcher.unbounded_send(Msg::ChatPromptSubmitted);
+            let _ = action_dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
         });
 
         section.append(&button);
@@ -177,10 +177,10 @@ fn build_row(
 
     let action_dispatcher = dispatcher.clone();
     button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::LocalQueryResultActionRequested {
+        let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
             handler_id,
             action: action.clone(),
-        });
+        }));
     });
 
     SearchAction {
@@ -211,10 +211,10 @@ fn build_actionable_row(
     let primary_action = primary.clone();
     let action_dispatcher = dispatcher.clone();
     button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::LocalQueryResultActionRequested {
+        let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
             handler_id,
             action: primary_action.clone(),
-        });
+        }));
     });
 
     SearchAction {

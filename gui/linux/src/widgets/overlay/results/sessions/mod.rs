@@ -20,7 +20,10 @@ use super::step_index;
 use crate::{
     helper::{Clear, scroll_into_view},
     runtime,
-    widgets::overlay::{OVERLAY_WIDTH_PX, model::Msg},
+    widgets::overlay::{
+        OVERLAY_WIDTH_PX,
+        model::{Msg, SessionMsg},
+    },
 };
 
 const EMPTY_PLACEHOLDER: &str = "No sessions yet";
@@ -245,7 +248,8 @@ fn set_sessions(
         let session_id = session.session_id;
         let action_dispatcher = dispatcher.clone();
         row.connect_activated(move |_| {
-            let _ = action_dispatcher.unbounded_send(Msg::SessionRestoreRequested { session_id });
+            let _ = action_dispatcher
+                .unbounded_send(Msg::Session(SessionMsg::RestoreRequested { session_id }));
         });
 
         let delete = Button::builder()

@@ -29,7 +29,7 @@ use crate::{
     runtime,
     widgets::overlay::{
         launcher::LauncherView,
-        model::{Command, Mode, Model, Msg},
+        model::{ChatMsg, Command, LauncherMsg, Mode, Model, Msg, SearchMsg, SessionMsg},
         results::{ChatView, SearchView, SessionsView},
     },
 };
@@ -171,7 +171,8 @@ impl Overlay {
             loop {
                 match rx.recv().await {
                     Ok(()) => {
-                        let _ = hotkey_dispatcher.unbounded_send(Msg::ToggleLauncherRequested);
+                        let _ = hotkey_dispatcher
+                            .unbounded_send(Msg::Launcher(LauncherMsg::ToggleVisibilityRequested));
                     },
                     Err(RecvError::Lagged(n)) => warn!("hotkey: lagged by {n} events"),
                     Err(RecvError::Closed) => break,
@@ -330,14 +331,17 @@ impl Overlay {
                     RenderEvent::Search(event) => {
                         let SearchRenderEvent::Append { response } = &event;
                         has_result |= response.items.iter().any(|item| !item.actions.is_empty());
-                        let _ = dispatcher
-                            .unbounded_send(Msg::SearchQueryRenderEvent { event, query_id });
+                        let _ =
+                            dispatcher.unbounded_send(Msg::Search(SearchMsg::QueryEventReceived {
+                                event,
+                                query_id,
+                            }));
                     },
                     RenderEvent::Done => {
-                        let _ = dispatcher.unbounded_send(Msg::SearchQueryRenderFinished {
+                        let _ = dispatcher.unbounded_send(Msg::Search(SearchMsg::QueryFinished {
                             query_id,
                             has_result,
-                        });
+                        }));
                     },
                     RenderEvent::Error { message } => {
                         error!("query render: {message}");
@@ -399,7 +403,7 @@ impl Overlay {
         if prompt.is_empty() {
             let _ = self
                 .dispatcher
-                .unbounded_send(Msg::ChatPromptRejected { turn_id });
+                .unbounded_send(Msg::Chat(ChatMsg::PromptPreparationFailed { turn_id }));
             return;
         }
 
@@ -409,19 +413,21 @@ impl Overlay {
             let result = app_context.prefer_model().await;
             match result {
                 Ok(Some(provider_id)) => {
-                    let _ = dispatcher.unbounded_send(Msg::ChatPromptResolved {
+                    let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptPrepared {
                         turn_id,
                         prompt,
                         provider_id,
-                    });
+                    }));
                 },
                 Ok(None) => {
                     error!("no preferred provider configured");
-                    let _ = dispatcher.unbounded_send(Msg::ChatPromptRejected { turn_id });
+                    let _ = dispatcher
+                        .unbounded_send(Msg::Chat(ChatMsg::PromptPreparationFailed { turn_id }));
                 },
                 Err(error) => {
                     error!("failed to load preferred provider: {error}");
-                    let _ = dispatcher.unbounded_send(Msg::ChatPromptRejected { turn_id });
+                    let _ = dispatcher
+                        .unbounded_send(Msg::Chat(ChatMsg::PromptPreparationFailed { turn_id }));
                 },
             }
         }));
@@ -439,12 +445,13 @@ impl Overlay {
         drop(runtime::tokio_runtime().spawn(async move {
             let mut chat_render_stream = app_context.chat(session_id, provider, prompt).await;
             let session_id = chat_render_stream.session_id;
-            let _ = dispatcher.unbounded_send(Msg::ChatSent {
+            let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::RequestStarted {
                 turn_id,
                 session_id,
-            });
+            }));
             while let Some(event) = chat_render_stream.stream.next().await {
-                let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
+                let _ = dispatcher
+                    .unbounded_send(Msg::Chat(ChatMsg::RenderEventReceived { turn_id, event }));
             }
         }));
     }
@@ -501,11 +508,16 @@ impl Overlay {
             match app_context.restore_session(session_id).await {
                 Ok(mut render_stream) => {
                     while let Some(event) = render_stream.next().await {
-                        let _ = dispatcher.unbounded_send(Msg::ChatRenderEvent { turn_id, event });
+                        let _ =
+                            dispatcher.unbounded_send(Msg::Chat(ChatMsg::RenderEventReceived {
+                                turn_id,
+                                event,
+                            }));
                     }
                 },
                 Err(error) => {
-                    let _ = dispatcher.unbounded_send(Msg::SessionRestoreError { turn_id, error });
+                    let _ = dispatcher
+                        .unbounded_send(Msg::Session(SessionMsg::RestoreFailed { turn_id, error }));
                 },
             };
         }));

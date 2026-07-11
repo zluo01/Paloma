@@ -12,7 +12,7 @@ use scry_core::AppContext;
 use crate::widgets::overlay::{
     OVERLAY_WIDTH_PX,
     launcher::{picker::ModelPicker, search::Search, status::Status},
-    model::{Mode, Msg},
+    model::{LauncherMsg, Mode, Msg, SessionMsg},
 };
 
 pub(super) const CSS: &str = include_str!("style.css");
@@ -67,13 +67,15 @@ impl LauncherView {
         let settings_button = icon_button("emblem-system-symbolic", "Settings");
         let settings_dispatcher = dispatcher.clone();
         settings_button.connect_clicked(move |_| {
-            let _ = settings_dispatcher.unbounded_send(Msg::OpenSettingsRequested);
+            let _ = settings_dispatcher
+                .unbounded_send(Msg::Launcher(LauncherMsg::OpenSettingsRequested));
         });
 
         let sessions_button = icon_button("document-open-recent-symbolic", "Sessions");
         let sessions_dispatcher = dispatcher.clone();
         sessions_button.connect_clicked(move |_| {
-            let _ = sessions_dispatcher.unbounded_send(Msg::ToggleSessionsRequested);
+            let _ =
+                sessions_dispatcher.unbounded_send(Msg::Session(SessionMsg::ToggleViewRequested));
         });
 
         controls.append(&settings_button);

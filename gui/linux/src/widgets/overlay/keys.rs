@@ -11,7 +11,7 @@ use log::error;
 use super::Overlay;
 use crate::widgets::{
     keymap::{self, BindingId, Context},
-    overlay::model::{Mode, Msg},
+    overlay::model::{ChatMsg, Mode, Msg, SearchMsg, SessionMsg},
 };
 
 impl Overlay {
@@ -30,7 +30,9 @@ impl Overlay {
 
     fn handle_key_press(&self, key: Key, state: ModifierType) -> Propagation {
         if keymap::match_binding(Context::Global, key, state) == Some(BindingId::OpenSessions) {
-            let _ = self.dispatcher.unbounded_send(Msg::ToggleSessionsRequested);
+            let _ = self
+                .dispatcher
+                .unbounded_send(Msg::Session(SessionMsg::ToggleViewRequested));
             return Propagation::Stop;
         }
 
@@ -44,7 +46,7 @@ impl Overlay {
     fn handle_chat_view_key(&self, key: Key, state: ModifierType) -> Propagation {
         match keymap::match_binding(Context::Chat, key, state) {
             Some(BindingId::ChatExit) => {
-                let _ = self.dispatcher.unbounded_send(Msg::ChatExitRequested);
+                let _ = self.dispatcher.unbounded_send(Msg::ContentCloseRequested);
             },
             Some(BindingId::ChatMovePrompt) => {
                 if !self.chat.navigate(move_delta(key)) {
@@ -53,7 +55,9 @@ impl Overlay {
             },
             Some(BindingId::ChatSend) => {
                 if !self.chat.activate() {
-                    let _ = self.dispatcher.unbounded_send(Msg::ChatPromptSubmitted);
+                    let _ = self
+                        .dispatcher
+                        .unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
                 }
             },
             Some(BindingId::ChatInterrupt) => {
@@ -63,7 +67,9 @@ impl Overlay {
                 if self.chat.copy_selection() {
                     return Propagation::Stop;
                 }
-                let _ = self.dispatcher.unbounded_send(Msg::ChatInterruptRequested);
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Chat(ChatMsg::InterruptRequested));
             },
             None => return Propagation::Proceed,
             Some(other) => {
@@ -77,7 +83,9 @@ impl Overlay {
         match keymap::match_binding(Context::Search, key, state) {
             Some(BindingId::SearchClose) => {
                 if !self.search.close_action_panel() {
-                    let _ = self.dispatcher.unbounded_send(Msg::SearchExitRequest);
+                    let _ = self
+                        .dispatcher
+                        .unbounded_send(Msg::Search(SearchMsg::ExitRequested));
                 }
             },
             Some(BindingId::SearchMove) => {
@@ -88,7 +96,9 @@ impl Overlay {
             Some(BindingId::SearchSubmit) => {
                 if !self.search.activate() && !self.render_any() {
                     // this is trigger if we do not select any action and no search result exists.
-                    let _ = self.dispatcher.unbounded_send(Msg::ChatPromptSubmitted);
+                    let _ = self
+                        .dispatcher
+                        .unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
                 }
             },
             Some(BindingId::SearchShowActions) => self.search.open_action_panel(),
@@ -108,17 +118,21 @@ impl Overlay {
         match keymap::match_binding(Context::Sessions, key, state) {
             Some(BindingId::SessionMove) => self.sessions.navigate(move_delta(key)),
             Some(BindingId::SessionOpen) => {
-                let _ = self.dispatcher.unbounded_send(Msg::SessionOpenRequested);
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Session(SessionMsg::OpenSelectedRequested));
             },
             Some(BindingId::SessionDelete) => {
                 // without an explicit selection the key belongs to the filter entry
                 if !self.sessions.has_selection() {
                     return Propagation::Proceed;
                 }
-                let _ = self.dispatcher.unbounded_send(Msg::SessionDeleteRequested);
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Session(SessionMsg::DeleteSelectedRequested));
             },
             Some(BindingId::SessionClose) => {
-                let _ = self.dispatcher.unbounded_send(Msg::SessionsCloseRequested);
+                let _ = self.dispatcher.unbounded_send(Msg::ContentCloseRequested);
             },
             None => return Propagation::Proceed,
             Some(other) => {

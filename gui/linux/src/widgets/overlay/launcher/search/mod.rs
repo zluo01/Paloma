@@ -3,7 +3,7 @@ use std::{cell::Cell, rc::Rc};
 use futures::channel::mpsc;
 use gtk4::{SearchEntry, prelude::*};
 
-use crate::widgets::overlay::model::{Mode, Msg};
+use crate::widgets::overlay::model::{LauncherMsg, Mode, Msg};
 
 const SEARCH_DEBOUNCE_MS: u32 = 200;
 
@@ -30,7 +30,8 @@ impl Search {
                 return;
             }
             let content = entry.text().to_string();
-            let _ = search_dispatcher.unbounded_send(Msg::LauncherQueryChanged { content });
+            let _ = search_dispatcher
+                .unbounded_send(Msg::Launcher(LauncherMsg::QueryChanged { content }));
         });
 
         Self { entry, suppress }
