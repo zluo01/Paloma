@@ -3,6 +3,7 @@ mod future;
 mod gated;
 mod mcp;
 mod oauth;
+mod retry;
 mod spill;
 mod xml;
 
@@ -14,6 +15,7 @@ pub(crate) use gated::Gated;
 pub(crate) use mcp::mcp_function_name_encode;
 pub use oauth::OAuthCallbackState;
 pub(crate) use oauth::{OAuthError, finalize_oauth_connection, init_oauth_connection};
+pub(crate) use retry::attempt_with_retry;
 pub(crate) use spill::write_spill_file;
 pub(crate) use xml::Element;
 

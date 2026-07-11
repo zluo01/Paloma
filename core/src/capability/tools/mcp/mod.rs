@@ -2,12 +2,10 @@ mod credentials;
 
 use std::{
     collections::HashMap,
-    future::Future,
     sync::atomic::{AtomicU8, Ordering},
     time::Duration,
 };
 
-use backon::{ExponentialBuilder, Retryable};
 use log::{error, warn};
 use rmcp::{
     RoleClient, ServiceExt,
@@ -33,11 +31,8 @@ use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
     entity::{HealthStatus, Plugin, PluginArgs},
-    utils::{Element, mcp_function_name_encode, write_spill_file},
+    utils::{Element, attempt_with_retry, mcp_function_name_encode, write_spill_file},
 };
-
-/// Maximum number of retry attempts for a transient MCP transport failure.
-const MAX_RETRY_TIMES: usize = 3;
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -58,15 +53,18 @@ impl McpTool {
     ) -> (Self, Vec<ToolSpec>) {
         // make sure problematic mcp server will not hang the startup
         let init = timeout(CONNECTION_TIMEOUT, async {
-            let client = attempt_with_retry(|| {
-                connect(
-                    request_client.clone(),
-                    storage.clone(),
-                    &config.name,
-                    &config.args,
-                    &config.env,
-                )
-            })
+            let client = attempt_with_retry(
+                || {
+                    connect(
+                        request_client.clone(),
+                        storage.clone(),
+                        &config.name,
+                        &config.args,
+                        &config.env,
+                    )
+                },
+                McpToolError::is_connection_level,
+            )
             .await?;
             let tools = client.list_all_tools().await?;
             Ok::<_, McpToolError>((client, tools))
@@ -136,9 +134,10 @@ impl DynTool for McpTool {
 
         let outcome = timeout(
             Duration::from_secs(self.timeout as u64),
-            attempt_with_retry(|| async move {
-                client.list_all_tools().await.map_err(McpToolError::Service)
-            }),
+            attempt_with_retry(
+                || async move { client.list_all_tools().await.map_err(McpToolError::Service) },
+                McpToolError::is_connection_level,
+            ),
         )
         .await;
 
@@ -196,16 +195,19 @@ impl DynTool for McpTool {
 
         let outcome = timeout(
             Duration::from_secs(self.timeout as u64),
-            attempt_with_retry(|| {
-                let params =
-                    CallToolRequestParams::new(tool.to_string()).with_arguments(arguments.clone());
-                async move {
-                    client
-                        .call_tool(params)
-                        .await
-                        .map_err(McpToolError::Service)
-                }
-            }),
+            attempt_with_retry(
+                || {
+                    let params = CallToolRequestParams::new(tool.to_string())
+                        .with_arguments(arguments.clone());
+                    async move {
+                        client
+                            .call_tool(params)
+                            .await
+                            .map_err(McpToolError::Service)
+                    }
+                },
+                McpToolError::is_connection_level,
+            ),
         )
         .await;
 
@@ -360,22 +362,6 @@ async fn create_auth_http_connection(
     let config = StreamableHttpClientTransportConfig::with_uri(url);
     let transport = StreamableHttpClientTransport::with_client(auth_client, config);
     Ok(().serve(transport).await?)
-}
-
-/// Retry an MCP call on transient transport failures with exponential backoff +
-/// jitter. Non-transport errors fail immediately; if every attempt fails, the
-/// last error is returned.
-async fn attempt_with_retry<T, F>(call: impl Fn() -> F) -> Result<T>
-where
-    F: Future<Output = Result<T>>,
-{
-    call.retry(
-        ExponentialBuilder::default()
-            .with_max_times(MAX_RETRY_TIMES)
-            .with_jitter(),
-    )
-    .when(McpToolError::is_connection_level)
-    .await
 }
 
 /// convert list of rmcp tools to tool specs
