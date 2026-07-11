@@ -12,10 +12,20 @@
     box-shadow: 0 14px 48px var(--shade-color);
 }
 
-/* The scroller carries the surface chrome for the result/chat content;
-   its viewport stays transparent so only the rounded frame paints. */
+/* The panel box carries the surface chrome for the result/chat content;
+   the scroller viewport stays transparent so only the rounded frame paints. */
 .scry-scroller > viewport {
     background: transparent;
     border: none;
     box-shadow: none;
+}
+
+.scry-footer {
+    padding: 5px 12px;
+    font-size: 11px;
+    color: alpha(currentColor, 0.55);
+}
+
+.scry-footer-key {
+    color: alpha(var(--popover-fg-color), 0.85);
 }

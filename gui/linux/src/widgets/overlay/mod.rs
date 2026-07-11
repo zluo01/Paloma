@@ -6,8 +6,8 @@ use std::{
 
 use futures::{StreamExt, channel::mpsc};
 use gtk4::{
-    ApplicationWindow, Overflow, PolicyType, ScrolledWindow, Stack, StackTransitionType,
-    gdk::Monitor, glib, prelude::*,
+    ApplicationWindow, Box as GtkBox, Orientation, Overflow, PolicyType, ScrolledWindow, Separator,
+    Stack, StackTransitionType, gdk::Monitor, glib, prelude::*,
 };
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::Application;
@@ -15,6 +15,7 @@ use log::{error, warn};
 use tokio::sync::{broadcast, broadcast::error::RecvError};
 use uuid::Uuid;
 
+mod footer;
 mod keys;
 mod launcher;
 mod model;
@@ -121,13 +122,28 @@ impl Overlay {
             // Avoid competing with TextView drag selection in chat output.
             .kinetic_scrolling(false)
             .overflow(Overflow::Hidden)
-            .css_classes(["scry-surface", "scry-scroller"])
+            .css_classes(["scry-scroller"])
             .build();
         scroller.set_child(Some(&content_stack));
 
+        let footer = footer::build();
+        content_stack
+            .bind_property("visible-child-name", &footer, "visible-child-name")
+            .sync_create()
+            .build();
+
+        let panel = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .overflow(Overflow::Hidden)
+            .css_classes(["scry-surface"])
+            .build();
+        panel.append(&scroller);
+        panel.append(&Separator::new(Orientation::Horizontal));
+        panel.append(&footer);
+
         let content_window =
             layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
-        content_window.set_child(Some(&scroller));
+        content_window.set_child(Some(&panel));
 
         let overlay = Rc::new(Self {
             gapp: app.clone(),

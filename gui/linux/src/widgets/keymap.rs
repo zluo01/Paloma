@@ -222,6 +222,12 @@ pub(in crate::widgets) fn group_bindings(group: Group) -> impl Iterator<Item = &
     ALL.iter().filter(move |b| b.group == group)
 }
 
+pub(in crate::widgets) fn binding(id: BindingId) -> &'static Binding {
+    ALL.iter()
+        .find(|b| b.id == id)
+        .expect("every BindingId has a row in ALL")
+}
+
 /// Modifiers that distinguish chords; lock and pointer-button state must not.
 const ACCEL_MODS: ModifierType = ModifierType::SHIFT_MASK
     .union(ModifierType::CONTROL_MASK)
