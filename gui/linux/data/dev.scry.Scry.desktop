@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Scry
+Exec=@BIN@
+Icon=preferences-system
+Terminal=false
+Categories=Utility;
+StartupNotify=false
