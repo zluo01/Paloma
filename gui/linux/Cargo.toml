@@ -17,7 +17,7 @@ ashpd = { version = "0.13.12", default-features = false, features = [
 ] }
 env_logger = "0.11.11"
 futures = { workspace = true }
-gtk4 = { version = "0.11.4", features = ["v4_22"] }
+gtk4 = { version = "0.11.4", default-features = false, features = ["v4_22"] }
 gtk4-layer-shell = "0.8.0"
 ksni = { version = "0.3.5", default-features = false, features = ["tokio"] }
 libadwaita = { version = "0.9.1", features = ["v1_9"] }

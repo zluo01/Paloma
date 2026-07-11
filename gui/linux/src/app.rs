@@ -13,7 +13,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{
     runtime::tokio_runtime,
-    services::{Shortcut, TrayEvent, run_tray},
+    services::{Shortcut, TrayEvent, init_logging, run_tray},
     style,
     widgets::{overlay, settings::SettingsWindow},
 };
@@ -21,13 +21,6 @@ use crate::{
 const APP_ID: &str = "dev.scry.Scry";
 
 const UI_CHANNEL_CAPACITY: usize = 8;
-
-fn init_logging() {
-    let env = env_logger::Env::default().default_filter_or("info,zbus=warn,rmcp=warn");
-    let _ = env_logger::Builder::from_env(env)
-        .format_timestamp_millis()
-        .try_init();
-}
 
 pub(crate) fn run() -> ExitCode {
     init_logging();
