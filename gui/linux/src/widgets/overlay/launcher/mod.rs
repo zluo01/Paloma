@@ -12,7 +12,7 @@ use scry_core::AppContext;
 use crate::widgets::overlay::{
     OVERLAY_WIDTH_PX,
     launcher::{picker::ModelPicker, search::Search, status::Status},
-    model::Msg,
+    model::{Mode, Msg},
 };
 
 pub(super) const CSS: &str = include_str!("style.css");
@@ -99,6 +99,10 @@ impl LauncherView {
         self.models_status.refresh();
         self.plugins_status.refresh();
         self.model_picker.refresh();
+    }
+
+    pub(crate) fn set_mode(&self, mode: Mode) {
+        self.search.set_mode(mode);
     }
 
     pub(crate) fn query(&self) -> String {

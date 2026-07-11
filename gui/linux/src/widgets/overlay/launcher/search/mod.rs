@@ -3,7 +3,7 @@ use std::{cell::Cell, rc::Rc};
 use futures::channel::mpsc;
 use gtk4::{SearchEntry, prelude::*};
 
-use crate::widgets::overlay::model::Msg;
+use crate::widgets::overlay::model::{Mode, Msg};
 
 const SEARCH_DEBOUNCE_MS: u32 = 200;
 
@@ -15,7 +15,7 @@ pub(super) struct Search {
 impl Search {
     pub(super) fn new(dispatcher: mpsc::UnboundedSender<Msg>) -> Self {
         let entry = SearchEntry::builder()
-            .placeholder_text("Search or ask Scry...")
+            .placeholder_text(placeholder(Mode::Search))
             .hexpand(true)
             .search_delay(SEARCH_DEBOUNCE_MS)
             .css_classes(["scry-entry"])
@@ -54,5 +54,29 @@ impl Search {
         }
         self.suppress.set(true);
         self.entry.set_text("");
+    }
+
+    pub(super) fn set_mode(&self, mode: Mode) {
+        self.entry.set_placeholder_text(Some(placeholder(mode)));
+    }
+}
+
+fn placeholder(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Search => "Search, or ask anything…",
+        Mode::Chat => "Reply…",
+        Mode::Session => "Search sessions…",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_follows_overlay_mode() {
+        assert_eq!(placeholder(Mode::Search), "Search, or ask anything…");
+        assert_eq!(placeholder(Mode::Chat), "Reply…");
+        assert_eq!(placeholder(Mode::Session), "Search sessions…");
     }
 }

@@ -237,16 +237,19 @@ impl Overlay {
     }
 
     fn show_search_view(&self) {
+        self.launcher.set_mode(Mode::Search);
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.show_content();
     }
 
     fn show_chat_view(&self) {
+        self.launcher.set_mode(Mode::Chat);
         self.content_stack.set_visible_child_name(CHAT_VIEW_KEY);
         self.show_content();
     }
 
     fn show_session_view(&self) {
+        self.launcher.set_mode(Mode::Session);
         self.sessions.clear();
         self.sessions.refresh();
         self.content_stack.set_visible_child_name(SESSION_VIEW_KEY);
@@ -305,6 +308,7 @@ impl Overlay {
         self.clear_session();
         self.sessions.clear();
 
+        self.launcher.set_mode(Mode::Search);
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.content_window.set_visible(false);
         // Mode is back to Search before content hides, so this reset does not
