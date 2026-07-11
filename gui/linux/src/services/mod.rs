@@ -1,8 +1,4 @@
-//! Desktop integration services.
-//!
-//! Shortcut and tray run outside GTK and forward UI events through broadcast
-//! channels.
-
+pub(crate) mod autostart;
 mod shortcut;
 mod tray;
 

@@ -1,3 +1,4 @@
+mod general;
 mod helper;
 mod permissions;
 mod plugins;
@@ -15,13 +16,15 @@ use log::error;
 use scry_core::AppContext;
 
 use crate::widgets::settings::{
-    permissions::PermissionsPage, plugins::PluginsPage, services::ServicesPage,
+    general::GeneralPage, permissions::PermissionsPage, plugins::PluginsPage,
+    services::ServicesPage,
 };
 
 pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
 
 #[derive(Clone, Copy, Debug)]
 enum Page {
+    General,
     Services,
     Plugins,
     Permissions,
@@ -30,6 +33,7 @@ enum Page {
 
 impl Page {
     const ALL: &[Self] = &[
+        Self::General,
         Self::Services,
         Self::Plugins,
         Self::Permissions,
@@ -38,6 +42,7 @@ impl Page {
 
     fn title(self) -> &'static str {
         match self {
+            Self::General => "General",
             Self::Services => "Services",
             Self::Plugins => "Plugins",
             Self::Permissions => "Permissions",
@@ -49,6 +54,7 @@ impl Page {
 pub(crate) struct SettingsWindow {
     window: ApplicationWindow,
     sidebar: Sidebar,
+    general: Rc<GeneralPage>,
     services: Rc<ServicesPage>,
     plugins: Rc<PluginsPage>,
     permissions: Rc<PermissionsPage>,
@@ -92,9 +98,15 @@ impl SettingsWindow {
             .build();
 
         let parent: ApplicationWindow = window.clone().upcast();
+        let general = GeneralPage::new(&parent);
         let services = ServicesPage::new(app_context.clone(), &parent);
         let plugins = PluginsPage::new(app_context.clone(), &parent);
         let permissions = PermissionsPage::new(app_context, &parent);
+        stack.add_titled(
+            general.widget(),
+            Some(Page::General.title()),
+            Page::General.title(),
+        );
         stack.add_titled(
             services.widget(),
             Some(Page::Services.title()),
@@ -122,6 +134,7 @@ impl SettingsWindow {
             content_page.set_title(first.title());
         }
 
+        let general_cb = general.clone();
         let services_cb = services.clone();
         let plugins_cb = plugins.clone();
         let permissions_cb = permissions.clone();
@@ -130,7 +143,13 @@ impl SettingsWindow {
             if let Some(page) = Page::ALL.get(sidebar.selected() as usize) {
                 stack.set_visible_child_name(page.title());
                 content_page_cb.set_title(page.title());
-                refresh_page(Some(page), &services_cb, &plugins_cb, &permissions_cb);
+                refresh_page(
+                    Some(page),
+                    &general_cb,
+                    &services_cb,
+                    &plugins_cb,
+                    &permissions_cb,
+                );
             }
         });
 
@@ -151,6 +170,7 @@ impl SettingsWindow {
         Self {
             window,
             sidebar,
+            general,
             services,
             plugins,
             permissions,
@@ -160,6 +180,7 @@ impl SettingsWindow {
     pub(crate) fn present(&self) {
         refresh_page(
             Page::ALL.get(self.sidebar.selected() as usize),
+            &self.general,
             &self.services,
             &self.plugins,
             &self.permissions,
@@ -170,11 +191,13 @@ impl SettingsWindow {
 
 fn refresh_page(
     page: Option<&Page>,
+    general: &Rc<GeneralPage>,
     services: &Rc<ServicesPage>,
     plugins: &Rc<PluginsPage>,
     permissions: &Rc<PermissionsPage>,
 ) {
     match page {
+        Some(Page::General) => general.refresh(),
         Some(Page::Services) => services.refresh(),
         Some(Page::Plugins) => plugins.refresh(),
         Some(Page::Permissions) => permissions.refresh(),
