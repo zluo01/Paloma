@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::LazyLock};
 
-const APP_DIR: &str = "scry";
+pub(crate) const APP_NAME: &str = "scry";
+pub(crate) const DATABASE_FILE: &str = "main.db";
 
 pub const RENDER_CHANNEL_CAPACITY: usize = 32;
 pub const SESSION_MANAGER_CHANNEL_CAPACITY: usize = 128;
@@ -18,16 +19,10 @@ pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 
 /// Root directory where spilled tool output lives, keyed by call id; never
 /// cleaned by the process — relies on the system tmp lifecycle.
-pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp/scry"));
+pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp").join(APP_NAME));
 
 pub static ENVIRONMENT_CONTEXT: LazyLock<BTreeMap<&'static str, String>> =
     LazyLock::new(build_environment_context);
-
-pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| HOME_DIR.join(".config").join(APP_DIR));
-
-pub static DATABASE_PATH: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("scry.db"));
-
-static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(build_home_dir);
 
 /// Static system prompt sent as the `instructions` field on every LLM call.
 /// Describes role, tool contract, and behavioral rules.
@@ -49,14 +44,4 @@ fn build_environment_context() -> BTreeMap<&'static str, String> {
         ("home", home),
         ("shell", shell),
     ])
-}
-
-fn build_home_dir() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .expect("HOME is unset; cannot resolve Scry config paths");
-    if !home.is_absolute() {
-        panic!("HOME is set but not absolute; cannot resolve Scry config paths");
-    }
-    home
 }

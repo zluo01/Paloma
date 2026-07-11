@@ -1,11 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use futures::Stream;
 use uuid::Uuid;
 
 use crate::{
     capability::ProcessManager,
-    constants::DATABASE_PATH,
     controller::{
         ConnectController, ConnectError, PermissionWorkflowManager, PluginConnectionController,
         PluginConnectionError, ProviderController, ProviderControllerError, RemoteQuery,
@@ -39,7 +38,10 @@ pub use permission::{PermissionState, UserDecision};
 pub use provider::{Connection, Model};
 pub use utils::OAuthCallbackState;
 
-use crate::controller::ChatRenderStream;
+use crate::{
+    constants::{APP_NAME, DATABASE_FILE},
+    controller::ChatRenderStream,
+};
 
 pub struct AppContext {
     storage: Storage,
@@ -50,8 +52,10 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub async fn build() -> Result<Arc<Self>> {
-        let db_path = DATABASE_PATH.clone();
+    /// `app_data_path` is the platform data parent, such as `~/.local/share`
+    /// or `~/Library/Application Support`.
+    pub async fn build(app_data_path: PathBuf) -> Result<Arc<Self>> {
+        let db_path = app_data_path.join(APP_NAME).join(DATABASE_FILE);
         if let Some(parent) = db_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
