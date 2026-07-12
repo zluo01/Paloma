@@ -107,6 +107,7 @@ impl Storage {
         provider_id: &ProviderId,
         model: &str,
         effort: &str,
+        as_default: bool,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
@@ -120,10 +121,12 @@ impl Storage {
             return Err(StorageError::NotFound(provider_id.to_string()));
         }
 
-        sqlx::query(queries::SET_PREFERRED_QUERY)
-            .bind(provider_id)
-            .execute(&mut *tx)
-            .await?;
+        if as_default {
+            sqlx::query(queries::SET_PREFERRED_QUERY)
+                .bind(provider_id)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         tx.commit().await?;
         Ok(())

@@ -127,9 +127,10 @@ impl ConnectController {
         provider_id: ProviderId,
         model: &str,
         effort: &str,
+        as_default: bool,
     ) -> Result<()> {
         self.storage
-            .set_preferred_provider_config(&provider_id, model, effort)
+            .set_preferred_provider_config(&provider_id, model, effort, as_default)
             .await?;
         Ok(())
     }

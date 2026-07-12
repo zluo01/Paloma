@@ -203,7 +203,10 @@ impl AppContext {
     pub async fn delete_permission(&self, prefix: &str) -> Result<()> {
         Ok(self.storage.delete_permission(prefix).await?)
     }
+}
 
+/// model connections + config
+impl AppContext {
     pub async fn init_connection(&self, provider_id: ProviderId) -> Result<Connection> {
         Ok(self.connect.init(provider_id).await?)
     }
@@ -225,10 +228,11 @@ impl AppContext {
         provider_id: ProviderId,
         model: &str,
         effort: &str,
+        as_default: bool,
     ) -> Result<()> {
         Ok(self
             .connect
-            .set_preferred(provider_id, model, effort)
+            .set_preferred(provider_id, model, effort, as_default)
             .await?)
     }
 
@@ -245,6 +249,7 @@ impl AppContext {
     }
 }
 
+/// plugins + mcps
 impl AppContext {
     pub async fn plugins_health_level(&self) -> HealthLevel {
         self.plugin.health_level().await

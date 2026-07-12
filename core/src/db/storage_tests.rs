@@ -413,12 +413,51 @@ mod providers {
             .unwrap();
 
         storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high")
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high", true)
             .await
             .expect("set preferred");
 
         // Exactly one preferred, and it switched to the target.
         assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+
+        let config = storage
+            .prefer_model_config(&ProviderId::OpenAI)
+            .await
+            .expect("openai config");
+        assert_eq!(config.model, "gpt-5.1");
+        assert_eq!(config.effort, "high");
+    }
+
+    #[tokio::test]
+    async fn set_preferred_provider_config_without_default_updates_config_only() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_provider(
+                &ProviderId::Codex,
+                &AuthKind::Oauth,
+                "tok",
+                "gpt-5",
+                "medium",
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_provider(
+                &ProviderId::OpenAI,
+                &AuthKind::ApiKey,
+                "sk",
+                "gpt-5-mini",
+                "low",
+            )
+            .await
+            .unwrap();
+
+        storage
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high", false)
+            .await
+            .expect("update config");
+
+        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
 
         let config = storage
             .prefer_model_config(&ProviderId::OpenAI)
@@ -443,7 +482,7 @@ mod providers {
             .unwrap();
 
         let err = storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high")
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high", true)
             .await
             .expect_err("must fail");
 
@@ -486,7 +525,7 @@ mod providers {
             .unwrap();
 
         storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high")
+            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high", true)
             .await
             .expect("set preferred");
 
