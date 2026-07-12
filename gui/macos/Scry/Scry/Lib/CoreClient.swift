@@ -44,9 +44,9 @@ final class CoreClient {
         }
     }
 
-    func setModelPreference(_ provider: ProviderId, model: String, effort: String) async -> Result<Void, Error> {
+    func setModelPreference(_ provider: ProviderId, model: String, effort: String, setDefault: Bool) async -> Result<Void, Error> {
         await withApp { app in
-            try await app.setModelPreference(providerId: provider, model: model, effort: effort)
+            try await app.setModelPreference(providerId: provider, model: model, effort: effort, setDefault: setDefault)
         }
     }
 

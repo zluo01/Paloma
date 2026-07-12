@@ -406,11 +406,12 @@ impl ScryApp {
         provider_id: ProviderId,
         model: String,
         effort: String,
+        set_default: bool,
     ) -> Result<(), ScryError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner
-                .set_model_preference(provider_id, &model, &effort)
+                .set_model_preference(provider_id, &model, &effort, set_default)
                 .await
         })
         .await??)

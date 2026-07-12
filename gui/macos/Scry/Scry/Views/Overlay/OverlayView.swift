@@ -215,7 +215,7 @@ struct OverlayView: View {
 
     private func selectModel(_ provider: ProviderId, _ model: String, _ effort: String) {
         OperationError.run("Failed to Set Model", into: $operationError) {
-            await CoreClient.shared.setModelPreference(provider, model: model, effort: effort)
+            await CoreClient.shared.setModelPreference(provider, model: model, effort: effort, setDefault: true)
         } onSuccess: {
             launcher.refresh()
         }

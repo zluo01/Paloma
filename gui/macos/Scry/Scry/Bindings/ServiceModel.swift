@@ -101,7 +101,7 @@ final class ServiceModel {
     }
 
     func setPreference(_ provider: ProviderId, model: String, effort: String) async -> Result<Void, Error> {
-        let result = await CoreClient.shared.setModelPreference(provider, model: model, effort: effort)
+        let result = await CoreClient.shared.setModelPreference(provider, model: model, effort: effort, setDefault: false)
         if case .success = result, let index = services.firstIndex(where: { $0.id == provider }) {
             services[index].connection?.preferModel = model
             services[index].connection?.preferEffort = effort
