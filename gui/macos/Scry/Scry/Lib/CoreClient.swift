@@ -4,6 +4,7 @@
 //
 
 import Observation
+import Foundation
 
 @Observable
 final class CoreClient {
@@ -17,7 +18,13 @@ final class CoreClient {
         guard app == nil else { return .success(()) }
         initLogging()
         do {
-            app = try await ScryApp()
+            let dataDir = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            )
+            app = try await ScryApp(appDataPath: dataDir.path)
             return .success(())
         } catch {
             return .failure(error)

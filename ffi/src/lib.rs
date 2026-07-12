@@ -15,6 +15,7 @@ mod types;
 
 use std::{
     future::Future,
+    path::PathBuf,
     pin::pin,
     sync::{Arc, LazyLock, Mutex},
 };
@@ -259,8 +260,8 @@ impl ScryApp {
     /// Build the whole core: storage, providers, and the plugin/session/turn
     /// event loops, all living on the FFI-owned runtime.
     #[uniffi::constructor]
-    pub async fn new() -> Result<Arc<Self>, ScryError> {
-        let inner = on_runtime(AppContext::build()).await??;
+    pub async fn new(app_data_path: String) -> Result<Arc<Self>, ScryError> {
+        let inner = on_runtime(AppContext::build(PathBuf::from(app_data_path))).await??;
         Ok(Arc::new(Self {
             inner,
             connect_abort: Mutex::new(None),
