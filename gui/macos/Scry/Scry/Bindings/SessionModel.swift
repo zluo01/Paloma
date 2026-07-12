@@ -42,15 +42,9 @@ final class SessionModel {
         selection = min(max(anchor + delta, 0), sessions.count - 1)
     }
 
-    /// The panel exists to pick, so a fresh list starts on the first row.
-    private func selectFirst() {
-        selection = filtered.isEmpty ? nil : 0
-    }
-
     func refresh() {
         CoreClient.shared.load({ try await $0.availableSessions() }, or: "failed to refresh sessions", category: "sessions") {
             self.sessions = $0
-            self.selectFirst()
         }
     }
 
@@ -61,7 +55,6 @@ final class SessionModel {
         let input = needle.trimmingCharacters(in: .whitespaces)
         guard !input.isEmpty else {
             searchResult = nil
-            selectFirst()
             return
         }
 
@@ -73,7 +66,6 @@ final class SessionModel {
             switch result {
             case let .success(ids):
                 searchResult = Set(ids)
-                selectFirst()
             case let .failure(error):
                 logError(target: "sessions", message: "failed to search sessions: \(String(describing: error))")
             }
