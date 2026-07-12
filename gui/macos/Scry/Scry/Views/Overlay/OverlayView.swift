@@ -206,7 +206,11 @@ struct OverlayView: View {
     }
 
     private func openSession() {
-        mode = .session
+        if mode == .session {
+            mode = .search
+        } else {
+            mode = .session
+        }
     }
 
     private func selectModel(_ provider: ProviderId, _ model: String, _ effort: String) {

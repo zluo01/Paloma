@@ -8,7 +8,9 @@ import SwiftUI
 /// Self-sizing scroll container capped at the overlay content height.
 struct CappedScrollView<Content: View>: View {
     /// Tallest the content area gets before it scrolls internally.
-    private static var contentCap: CGFloat { 340 }
+    private static var contentCap: CGFloat {
+        340
+    }
 
     @State private var contentHeight: CGFloat = 0
     private let content: Content
