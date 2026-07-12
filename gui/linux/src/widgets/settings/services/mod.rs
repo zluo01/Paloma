@@ -118,7 +118,9 @@ impl ServicesPage {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
-            let result = app_context.set_model_preference(id, &model, &effort).await;
+            let result = app_context
+                .set_model_preference(id, &model, &effort, false)
+                .await;
             let _ = dispatcher.unbounded_send(Msg::PreferenceSaveFinished(result));
         }));
     }

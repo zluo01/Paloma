@@ -85,7 +85,10 @@ impl ModelPicker {
             let app = picker.app_context.clone();
             let picker = picker.clone();
             runtime::spawn_with(
-                async move { app.set_model_preference(provider_id, &model, &effort).await },
+                async move {
+                    app.set_model_preference(provider_id, &model, &effort, true)
+                        .await
+                },
                 move |result| match result {
                     Ok(()) => refresh(picker),
                     Err(err) => error!("set preferred model: {err}"),
