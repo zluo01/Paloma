@@ -41,5 +41,4 @@ case ":${PATH}:" in
 esac
 
 stop_running
-gio launch "${APP_DIR}/${APP_ID}.desktop"
-echo "Installed and started scry."
+echo "Installed scry."
