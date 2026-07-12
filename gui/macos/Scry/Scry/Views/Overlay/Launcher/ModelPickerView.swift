@@ -43,9 +43,15 @@ struct ModelPickerView: View {
     }
 
     private var title: String {
-        guard let preferredModel else { return "No model" }
+        guard let preferredModel else {
+            return hasConnections ? "Select model" : "No model"
+        }
         guard let preferredEffort, !preferredEffort.isEmpty else { return preferredModel }
         return "\(preferredModel) · \(preferredEffort)"
+    }
+
+    private var hasConnections: Bool {
+        connectors.contains { $0.connection != nil }
     }
 
     private func providerMenu(_ provider: ProviderId, _ connection: ConnectorConnection) -> some View {
