@@ -3,8 +3,8 @@
 //  Scry
 //
 
-import Observation
 import Foundation
+import Observation
 
 @Observable
 final class CoreClient {
@@ -16,8 +16,12 @@ final class CoreClient {
 
     func bootstrap() async -> Result<Void, Error> {
         guard app == nil else { return .success(()) }
-        initLogging()
         do {
+            let logsDir = try FileManager.default.url(
+                for: .libraryDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: false
+            ).appendingPathComponent("Logs", isDirectory: true)
+            initLogging(logPath: logsDir.path())
             let dataDir = try FileManager.default.url(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask,

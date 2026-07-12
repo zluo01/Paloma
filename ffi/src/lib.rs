@@ -38,11 +38,11 @@ uniffi::setup_scaffolding!("scry");
 /// once at app startup, before [`ScryApp::new`]; extra calls are no-ops.
 /// `RUST_LOG` overrides the default filter.
 #[uniffi::export]
-pub fn init_logging() {
+pub fn init_logging(log_path: String) {
     let env = env_logger::Env::default().default_filter_or("info,rmcp=warn");
     let mut builder = env_logger::Builder::from_env(env);
     builder.format_timestamp_millis();
-    if let Some(file) = log_file() {
+    if let Some(file) = log_file(log_path) {
         builder.target(env_logger::Target::Pipe(Box::new(Tee(file))));
     }
     let _ = builder.try_init();
@@ -55,8 +55,8 @@ pub fn log_error(target: String, message: String) {
     log::error!(target: target.as_str(), "{message}");
 }
 
-fn log_file() -> Option<std::fs::File> {
-    let dir = std::env::home_dir()?.join("Library/Logs/Scry");
+fn log_file(log_path: String) -> Option<std::fs::File> {
+    let dir = PathBuf::from(log_path).join("Scry");
     std::fs::create_dir_all(&dir).ok()?;
     let name = format!("scry-{}.log", chrono::Local::now().format("%Y-%m-%d"));
     std::fs::OpenOptions::new()
