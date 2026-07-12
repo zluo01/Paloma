@@ -44,6 +44,9 @@ pub trait ProviderEncoder: Send + Sync {
                 content,
                 provider_meta,
             } => self.encode_hosted_tool(function_type, content, provider_meta, encode_mode),
+            ConversationItem::Unknown { provider_meta } => {
+                self.encode_unknown(provider_meta, encode_mode)
+            },
         }
     }
 
@@ -80,6 +83,12 @@ pub trait ProviderEncoder: Send + Sync {
         &self,
         function_type: &str,
         content: &Option<String>,
+        provider_meta: &ProviderMeta,
+        encode_mode: EncodeMode,
+    ) -> Option<Value>;
+
+    fn encode_unknown(
+        &self,
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value>;

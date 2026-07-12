@@ -89,9 +89,6 @@ impl ProviderEncoder for ClaudeCodec {
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or("thinking");
-        if "redacted_thinking" == content_type || "web_search_tool_result" == content_type {
-            return Some(message_param("assistant", Value::Object(item)));
-        }
 
         item.insert("type".to_string(), Value::String(content_type.to_string()));
         item.insert(
@@ -173,6 +170,18 @@ impl ProviderEncoder for ClaudeCodec {
         }
         Some(message_param("assistant", Value::Object(item)))
     }
+
+    fn encode_unknown(
+        &self,
+        provider_meta: &ProviderMeta,
+        encode_mode: EncodeMode,
+    ) -> Option<Value> {
+        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+            return None;
+        }
+        let item = provider_meta_to_map(provider_meta, true);
+        Some(message_param("assistant", Value::Object(item)))
+    }
 }
 
 fn message_param(role: &'static str, content: Value) -> Value {
@@ -210,17 +219,11 @@ impl ProviderDecoder for ClaudeCodec {
             "thinking" => decode_reasoning_item(&data),
             "redacted_thinking" => {
                 let provider_meta = provider_meta(&data, &[]);
-                Ok(ConversationItem::Reasoning {
-                    reasoning: vec![],
-                    provider_meta,
-                })
+                Ok(ConversationItem::Unknown { provider_meta })
             },
             "web_search_tool_result" => {
                 let provider_meta = provider_meta(&data, &[]);
-                Ok(ConversationItem::Reasoning {
-                    reasoning: vec![],
-                    provider_meta,
-                })
+                Ok(ConversationItem::Unknown { provider_meta })
             },
             "tool_use" => decode_function_call_item(&data),
             "server_tool_use" => decode_hosted_tool_item(&data),

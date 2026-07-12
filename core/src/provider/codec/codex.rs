@@ -177,6 +177,14 @@ impl ProviderEncoder for CodexCodec {
 
         Some(Value::Object(item))
     }
+
+    fn encode_unknown(
+        &self,
+        _provider_meta: &ProviderMeta,
+        _encode_mode: EncodeMode,
+    ) -> Option<Value> {
+        None
+    }
 }
 
 impl ProviderDecoder for CodexCodec {

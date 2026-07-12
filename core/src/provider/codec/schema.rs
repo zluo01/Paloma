@@ -42,6 +42,10 @@ pub enum ConversationItem {
         #[serde(default, skip_serializing_if = "ProviderMeta::is_empty")]
         provider_meta: ProviderMeta,
     },
+    // placeholder for model specific message
+    Unknown {
+        provider_meta: ProviderMeta,
+    },
 }
 
 impl ConversationItem {
@@ -53,6 +57,7 @@ impl ConversationItem {
             ConversationItem::ToolCall { .. } => "tool_call",
             ConversationItem::ToolResult { .. } => "tool_result",
             ConversationItem::HostedTool { .. } => "hosted_tool",
+            ConversationItem::Unknown { .. } => "unknown",
         }
     }
 }
