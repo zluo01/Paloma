@@ -10,6 +10,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case services = "Services"
     case plugins = "Plugins"
     case permissions = "Permissions"
+    case shortcuts = "Shortcuts"
 
     var id: String {
         rawValue
@@ -21,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .services: "brain"
         case .plugins: "puzzlepiece.extension"
         case .permissions: "checkmark.shield"
+        case .shortcuts: "keyboard"
         }
     }
 }
@@ -68,6 +70,8 @@ struct SettingsView: View {
             PluginsView(model: plugins)
         case .permissions:
             PermissionsView(model: permissions)
+        case .shortcuts:
+            ShortcutsView()
         }
     }
 
@@ -81,6 +85,8 @@ struct SettingsView: View {
             plugins.refresh()
         case .permissions:
             permissions.refresh()
+        case .shortcuts:
+            break
         }
     }
 }
