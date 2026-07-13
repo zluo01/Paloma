@@ -8,7 +8,10 @@ use std::{
 };
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Image, Orientation, StringList, glib};
+use gtk4::{
+    Align, Box as GtkBox, Button, Image, Label, Orientation, StringList,
+    accessible::Property as AccessibleProperty, glib,
+};
 use libadwaita::{
     ActionRow, AlertDialog, ApplicationWindow, ComboRow, ExpanderRow, PreferencesGroup,
     PreferencesPage, ResponseAppearance,
@@ -33,12 +36,14 @@ pub(super) const CSS: &str = include_str!("style.css");
 
 struct Provider {
     id: ProviderId,
+    description: &'static str,
     logo: &'static [u8],
 }
 
 const PROVIDERS: &[Provider] = &[
     Provider {
         id: ProviderId::Anthropic,
+        description: "Claude models via the Anthropic API",
         logo: include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/icons/providers/claude.svg"
@@ -46,6 +51,7 @@ const PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: ProviderId::ClaudeCode,
+        description: "Claude models with your Claude subscription",
         logo: include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/icons/providers/claude.svg"
@@ -53,6 +59,7 @@ const PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: ProviderId::Codex,
+        description: "OpenAI models with your ChatGPT subscription",
         logo: include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/icons/providers/openai.svg"
@@ -60,6 +67,7 @@ const PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: ProviderId::OpenAI,
+        description: "OpenAI models via the OpenAI API",
         logo: include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../assets/icons/providers/openai.svg"
@@ -186,7 +194,10 @@ impl ServicesPage {
     }
 
     fn available_row(&self, provider: &'static Provider) -> ActionRow {
-        let row = ActionRow::builder().title(provider.id.to_string()).build();
+        let row = ActionRow::builder()
+            .title(provider.id.to_string())
+            .subtitle(provider.description)
+            .build();
         row.add_prefix(&logo(provider));
         row.add_suffix(&self.connect_button(provider));
         row
@@ -197,10 +208,10 @@ impl ServicesPage {
         provider: &'static Provider,
         conn: &ConnectorConnection,
     ) -> ExpanderRow {
-        let row = ExpanderRow::builder()
-            .title(provider.id.to_string())
-            .build();
-        row.add_prefix(&logo(provider));
+        let row = ExpanderRow::new();
+        row.add_prefix(&provider_identity(provider, conn.status.status));
+        let accessible_label = format!("{} — {}", provider.id, provider.description);
+        row.update_property(&[AccessibleProperty::Label(&accessible_label)]);
 
         let actions = GtkBox::builder()
             .orientation(Orientation::Horizontal)
@@ -208,19 +219,17 @@ impl ServicesPage {
             .valign(Align::Center)
             .build();
 
-        if conn.status.status == HealthStatus::Running {
-            row.set_subtitle("Connected");
-            row.add_css_class("scry-connected");
-            if conn.status.models.is_empty() {
-                row.set_enable_expansion(false);
-            } else {
+        match conn.status.status {
+            HealthStatus::Running if !conn.status.models.is_empty() => {
                 self.add_picker_rows(provider.id, &row, conn);
-            }
-        } else {
-            row.set_subtitle("Connection error");
-            row.add_css_class("scry-error");
-            row.set_enable_expansion(false);
-            actions.append(&unhealthy_icon(conn.status.error.as_deref()));
+            },
+            HealthStatus::Unhealthy => {
+                row.set_enable_expansion(false);
+                actions.append(&unhealthy_icon(conn.status.error.as_deref()));
+            },
+            HealthStatus::Starting | HealthStatus::Running => {
+                row.set_enable_expansion(false);
+            },
         }
 
         actions.append(&self.disconnect_button(provider));
@@ -484,4 +493,55 @@ fn logo(provider: &Provider) -> Image {
     };
     image.set_pixel_size(40);
     image
+}
+
+fn provider_identity(provider: &Provider, status: HealthStatus) -> GtkBox {
+    let title = Label::builder()
+        .label(provider.id.to_string())
+        .xalign(0.0)
+        .valign(Align::Center)
+        .build();
+    title.add_css_class("scry-service-title");
+
+    let dot_class = match status {
+        HealthStatus::Starting => "scry-status-degraded",
+        HealthStatus::Running => "scry-status-healthy",
+        HealthStatus::Unhealthy => "scry-status-down",
+    };
+    let dot = GtkBox::builder()
+        .valign(Align::Center)
+        .css_classes(["scry-status-dot", "scry-service-status-dot", dot_class])
+        .build();
+
+    let title_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .valign(Align::Center)
+        .build();
+    title_row.append(&title);
+    title_row.append(&dot);
+
+    let subtitle = Label::builder()
+        .label(provider.description)
+        .xalign(0.0)
+        .build();
+    subtitle.add_css_class("subtitle");
+
+    let labels = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .build();
+    labels.append(&title_row);
+    labels.append(&subtitle);
+
+    let identity = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .valign(Align::Center)
+        .hexpand(true)
+        .build();
+    identity.append(&logo(provider));
+    identity.append(&labels);
+    identity
 }

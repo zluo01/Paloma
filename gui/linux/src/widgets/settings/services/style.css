@@ -1,12 +1,6 @@
-/* Subtitle color tracks the provider's health, via libadwaita tokens so it
-   follows the theme. Scoped to .subtitle since AdwExpanderRow exposes no
-   handle to apply .success/.error to that label directly. */
-.scry-connected .subtitle {
-    color: var(--success-color);
-}
-
-.scry-error .subtitle {
-    color: var(--error-color);
+.scry-service-status-dot {
+    min-width: 6px;
+    min-height: 6px;
 }
 
 .scry-unhealthy-icon {
