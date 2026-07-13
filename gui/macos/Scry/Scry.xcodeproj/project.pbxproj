@@ -8,10 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		2720853B2FFCC5E8000773FF /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 2720853C2FFCC5E8000773FF /* KeyboardShortcuts */; };
+		A10000000000000000000001 /* openai.svg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* openai.svg */; };
+		A10000000000000000000002 /* claude.svg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* claude.svg */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2720851D2FFCC5E8000773FF /* Scry.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Scry.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000003 /* openai.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; name = openai.svg; path = ../../../assets/icons/providers/openai.svg; sourceTree = "<group>"; };
+		A10000000000000000000004 /* claude.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; name = claude.svg; path = ../../../assets/icons/providers/claude.svg; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -38,6 +42,7 @@
 			isa = PBXGroup;
 			children = (
 				2720851F2FFCC5E8000773FF /* Scry */,
+				A10000000000000000000005 /* Provider Icons */,
 				2720851E2FFCC5E8000773FF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +53,15 @@
 				2720851D2FFCC5E8000773FF /* Scry.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000005 /* Provider Icons */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000003 /* openai.svg */,
+				A10000000000000000000004 /* claude.svg */,
+			);
+			name = "Provider Icons";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -119,6 +133,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000001 /* openai.svg in Resources */,
+				A10000000000000000000002 /* claude.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

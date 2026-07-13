@@ -39,19 +39,31 @@ struct Provider {
 const PROVIDERS: &[Provider] = &[
     Provider {
         id: ProviderId::Anthropic,
-        logo: include_bytes!("assets/claude.svg"),
+        logo: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/icons/providers/claude.svg"
+        )),
     },
     Provider {
         id: ProviderId::ClaudeCode,
-        logo: include_bytes!("assets/claude.svg"),
+        logo: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/icons/providers/claude.svg"
+        )),
     },
     Provider {
         id: ProviderId::Codex,
-        logo: include_bytes!("assets/openai.svg"),
+        logo: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/icons/providers/openai.svg"
+        )),
     },
     Provider {
         id: ProviderId::OpenAI,
-        logo: include_bytes!("assets/openai.svg"),
+        logo: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/icons/providers/openai.svg"
+        )),
     },
 ];
 

@@ -25,7 +25,7 @@ struct ServiceRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(connector.id.logo)
+            Image(nsImage: connector.id.logo)
                 .resizable()
                 .frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 2) {

@@ -36,7 +36,7 @@ struct ServicesView: View {
                 }
                 ForEach(model.available, id: \.id) { connector in
                     HStack(spacing: 12) {
-                        Image(connector.id.logo)
+                        Image(nsImage: connector.id.logo)
                             .resizable()
                             .frame(width: 26, height: 26)
                         Text(connector.id.label)
