@@ -4,7 +4,7 @@ use backon::{ExponentialBuilder, Retryable};
 
 const MAX_RETRY_TIMES: usize = 3;
 
-pub(crate) async fn attempt_with_retry<T, E, Fut>(
+pub async fn attempt_with_retry<T, E, Fut>(
     call: impl Fn() -> Fut,
     retryable: impl FnMut(&E) -> bool,
 ) -> Result<T, E>

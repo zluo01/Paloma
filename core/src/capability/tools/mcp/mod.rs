@@ -16,6 +16,7 @@ use rmcp::{
         TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
+use scry_utils::{Element, attempt_with_retry};
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -31,7 +32,7 @@ use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
     entity::{HealthStatus, Plugin, PluginArgs},
-    utils::{Element, attempt_with_retry, mcp_function_name_encode, write_spill_file},
+    utils::{mcp_function_name_encode, write_spill_file},
 };
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);

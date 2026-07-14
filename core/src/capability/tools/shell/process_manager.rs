@@ -1,6 +1,7 @@
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
+use scry_utils::Element;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
@@ -12,7 +13,6 @@ use uuid::Uuid;
 use crate::{
     capability::ToolResult,
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
-    utils::Element,
 };
 
 /// Bounded mpsc capacity for the actor's incoming event queue.

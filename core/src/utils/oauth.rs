@@ -3,13 +3,12 @@ use std::{collections::HashMap, io, time::Duration};
 use log::{debug, info};
 use oauth2::TokenResponse;
 use rmcp::transport::{AuthError, StoredCredentials, auth::OAuthState};
+use scry_utils::unix_now;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     time::timeout,
 };
-
-use crate::utils::unix_now;
 
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
