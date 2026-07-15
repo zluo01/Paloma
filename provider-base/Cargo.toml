@@ -1,0 +1,25 @@
+[package]
+name = "scry-provider-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+async-trait = { workspace = true }
+
+dashmap = { workspace = true }
+env_logger = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+scry-provider-protocol = { workspace = true }
+scry-utils = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["io-std", "macros", "rt", "sync"] }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }

@@ -2,14 +2,14 @@ use std::{fmt::Display, future::Future, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use log::error;
+use scry_provider_protocol::v1::Model;
+use scry_utils::unix_now;
 use tokio::sync::Mutex;
-
-use crate::{Model, ProviderId, utils::unix_now};
 
 const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(8).as_secs();
 
 pub struct ProviderCache {
-    models: DashMap<ProviderId, Arc<RefreshSlot<Vec<Model>>>>,
+    models: DashMap<String, Arc<RefreshSlot<Vec<Model>>>>,
     values: DashMap<String, Arc<RefreshSlot<String>>>,
 }
 
@@ -21,12 +21,7 @@ impl ProviderCache {
         })
     }
 
-    pub(crate) async fn value<E, F, Fut>(
-        &self,
-        key: &str,
-        ttl_secs: u64,
-        fetch: F,
-    ) -> Result<String, E>
+    pub async fn value<E, F, Fut>(&self, key: &str, ttl_secs: u64, fetch: F) -> Result<String, E>
     where
         E: Display,
         F: FnOnce() -> Fut,
@@ -36,7 +31,7 @@ impl ProviderCache {
         slot.get_or_refresh(ttl_secs, fetch).await
     }
 
-    pub(crate) async fn models<E, F, Fut>(&self, id: ProviderId, fetch: F) -> Result<Vec<Model>, E>
+    pub async fn models<E, F, Fut>(&self, id: String, fetch: F) -> Result<Vec<Model>, E>
     where
         E: Display,
         F: FnOnce() -> Fut,
@@ -46,7 +41,7 @@ impl ProviderCache {
         slot.get_or_refresh(MODELS_CACHE_TTL_SECS, fetch).await
     }
 
-    pub(crate) async fn insert_models(&self, id: ProviderId, models: Vec<Model>) {
+    pub async fn insert_models(&self, id: String, models: Vec<Model>) {
         let slot = self.models.entry(id).or_default().clone();
         slot.insert(models, MODELS_CACHE_TTL_SECS).await;
     }
@@ -112,7 +107,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::entity::ProviderId;
 
     fn model(id: &str) -> Model {
         Model {
@@ -210,13 +204,11 @@ mod tests {
     #[tokio::test]
     async fn insert_models_seeds_the_read_through() {
         let cache = ProviderCache::new();
-        cache
-            .insert_models(ProviderId::Codex, vec![model("m1")])
-            .await;
+        cache.insert_models("codex".into(), vec![model("m1")]).await;
 
         let calls = AtomicUsize::new(0);
         let models = cache
-            .models(ProviderId::Codex, || async {
+            .models("codex".into(), || async {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Ok::<_, String>(Vec::new())
             })
@@ -251,11 +243,11 @@ mod tests {
     async fn cache_keys_are_independent() {
         let cache = ProviderCache::new();
         cache
-            .insert_models(ProviderId::Codex, vec![model("codex")])
+            .insert_models("codex".into(), vec![model("codex")])
             .await;
 
         let fetched = cache
-            .models(ProviderId::OpenAI, || async {
+            .models("openai".into(), || async {
                 Ok::<_, String>(vec![model("openai")])
             })
             .await
