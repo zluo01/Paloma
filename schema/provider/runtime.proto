@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package scry.provider.runtime.v1;
+
+import "schema/provider/codec.proto";
+
+message ChatRequest {
+  string session_id = 1;
+  string instruction = 2;
+  string model = 3;
+  string effort = 4;
+  repeated ChatRequestMessage messages = 5;
+  repeated ToolDefinition tools = 6;
+}
+
+message ChatRequestMessage {
+  string provider_id = 1;
+  string backend_id = 2;
+  ConversationItem item = 3;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  // serialize json
+  string parameters = 3;
+}
+
+// all streaming error should populate within the error payload
+// should not utilize provider error for error population for [ChatRequest]
+message ChatResponse {
+  oneof payload {
+    TextDelta text_delta = 1;
+    string reasoning_delta = 2;
+    ConversationItem output_item = 3;
+    Done done = 4;
+    string error = 5;
+  }
+}
+
+message TextDelta {
+  string provider_id = 1;
+  string backend_id = 2;
+  string delta = 3;
+}
+
+message Done {}
+
+message HealthStatusRequest{}
+
+message HealthStatusResponse {
+  ProviderHealthStatus health_status = 1;
+}
+
+enum ProviderHealthStatus {
+  PROVIDER_HEALTH_STATUS_UNKNOWN = 0;
+  PROVIDER_HEALTH_STATUS_STARTING = 1;
+  PROVIDER_HEALTH_STATUS_RUNNING = 2;
+  PROVIDER_HEALTH_STATUS_UNHEALTHY = 3;
+}
+
+message ListModelsRequest{}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+}
+
+message Model {
+  string id = 1;
+  string name = 2;
+  string default_reasoning_effort = 3;
+  repeated string supported_reasoning_efforts = 4;
+}
+
+message BackendInitErrorRequest {}
+
+message BackendInitErrorResponse {
+  optional string error = 1;
+}
+
+message AuthUpdateRequest {
+  string backend_id = 1;
+  string refresh_token = 2;
+}
+
+message CancelChatRequest {
+  string session_id = 1;
+}
+
+message CancelChatResponse {}
+
+message BackendHealthStatusRequest{}
+
+message BackendHealthStatusResponse{
+  repeated ProviderHealthStatus status = 1;
+}

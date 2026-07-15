@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package scry.provider.runtime.v1;
+
+message ConversationItem {
+  oneof item {
+    UserPrompt user_prompt = 1;
+    ConversationMessage message = 2;
+    Reasoning reasoning = 3;
+    ToolCall tool_call = 4;
+    ToolResult tool_result = 5;
+    HostedTool hosted_tool = 6;
+    Unknown unknown = 7;
+  }
+}
+
+message UserPrompt {
+  string prompt = 1;
+}
+
+message ConversationMessage {
+  repeated MessageContentItem message = 1;
+  map<string, string> provider_meta = 2;
+}
+
+message Reasoning {
+  repeated SummaryItem reasoning = 1;
+  map<string, string> provider_meta = 2;
+}
+
+message ToolCall {
+  string call_id = 1;
+  string name = 2;
+  string arguments = 3;
+  map<string, string> provider_meta = 4;
+}
+
+message ToolResult {
+  string call_id = 1;
+  string name = 2;
+  string output = 3;
+}
+
+message HostedTool {
+  string function_type = 1;
+  optional string content = 2;
+  map<string, string> provider_meta = 3;
+}
+
+message Unknown {
+  map<string, string> provider_meta = 1;
+}
+
+message MessageContentItem {
+  string content = 1;
+  map<string, string> provider_meta = 2;
+}
+
+message SummaryItem {
+  string content = 1;
+  map<string, string> provider_meta = 2;
+}
+
+enum EncodeMode {
+  ENCODE_MODE_UNSPECIFIED = 0;
+  ENCODE_MODE_SAME_PROVIDER = 1;
+  ENCODE_MODE_CROSS_PROVIDER = 2;
+}

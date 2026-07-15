@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package scry.provider.runtime.v1;
+
+enum ProviderAuthMethod {
+  PROVIDER_AUTH_METHOD_UNKNOWN = 0;
+  PROVIDER_AUTH_METHOD_API_KEY = 1;
+  PROVIDER_AUTH_METHOD_DEVICE_CODE = 2;
+  PROVIDER_AUTH_METHOD_BROWSER_OAUTH = 3;
+}
+
+message ProviderAuth {
+  oneof payload {
+    string api_key = 1;
+    string refresh_token = 2;
+  }
+}
+
+message ConnectionPayload {
+  oneof payload {
+    DeviceCode device_code = 1;
+    BrowserRedirect browser_redirect = 2;
+    ManualInput manual_input = 3;
+  }
+}
+
+message DeviceCode {
+  string verification_url = 1;
+  string user_code = 2;
+  string transaction_payload = 3;
+}
+
+message BrowserRedirect {
+  string authorization_url = 1;
+}
+
+message ManualInput {
+  string api_key = 1;
+  optional string instructions_url = 2;
+}
+
+message InitConnectionRequest {}
+
+message InitConnectionResponse {
+  ConnectionPayload connection = 1;
+}
+
+message FinalizeConnectionRequest {
+  oneof input {
+    // device code auth passthrough data
+    string transaction_payload = 1;
+    // oauth callback data
+    string authorization_response = 2;
+    string api_key = 3;
+  }
+}
+
+message FinalizeConnectionResponse {
+  ProviderAuth auth = 1;
+}
+
+message CancelConnectionRequest {}
+
+message CancelConnectionResponse {}

@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package scry.provider.runtime.v1;
+
+import "schema/provider/connection.proto";
+import "schema/provider/runtime.proto";
+
+message RequestEvent {
+  uint64 event_id = 1;
+  optional string backend_id = 2;
+
+  oneof payload {
+    HandshakeRequest handshake_request = 3;
+    InitializeBackendsRequest initialize_backends_request = 4;
+    InitBackendRequest init_backend_request = 5;
+    RemoveBackendRequest remove_backend_request = 6;
+
+    InitConnectionRequest init_connection_request = 7;
+    FinalizeConnectionRequest finalize_connection_request = 8;
+    CancelConnectionRequest cancel_connection_request = 9;
+
+    ChatRequest chat_request = 10;
+    ListModelsRequest list_models_request = 11;
+    HealthStatusRequest health_status_request = 12;
+    BackendInitErrorRequest backend_init_error_request = 13;
+    CancelChatRequest cancel_chat_request = 14;
+    BackendHealthStatusRequest backend_health_status_request = 15;
+  }
+}
+
+message ResponseEvent {
+  uint64 event_id = 1;
+
+  oneof payload {
+    HandshakeResponse handshake_response = 2;
+    InitializeBackendsResponse initialize_backends_response = 3;
+    InitBackendResponse init_backend_response = 4;
+    RemoveBackendResponse remove_backend_response = 5;
+
+    // backend connection
+    InitConnectionResponse init_connection_response = 6;
+    FinalizeConnectionResponse finalize_connection_response = 7;
+    CancelConnectionResponse cancel_connection_response = 8;
+
+    // runtime
+    ChatResponse chat_response = 9;
+    ListModelsResponse list_models_response = 10;
+    HealthStatusResponse health_status_response = 11;
+    BackendInitErrorResponse backend_init_error_response = 12;
+    CancelChatResponse cancel_chat_response = 13;
+
+    // all unary requests (non chat streaming) error should populate through this response
+    ProviderError provider_error = 14;
+
+    // only plugin side request for updating oauth credential to db
+    AuthUpdateRequest auth_update_request = 15;
+
+    BackendHealthStatusResponse backend_health_status_response = 16;
+  }
+}
+
+message ProviderError {
+  string error = 1;
+}
+
+message HandshakeRequest {
+}
+
+message HandshakeResponse {
+  uint64 version = 1;
+  string provider_id = 2;
+  string description = 3;
+  repeated Backend backends = 4;
+}
+
+message Backend {
+  string backend_id = 1;
+  string description = 2;
+  optional bytes icon = 3;
+  ProviderAuthMethod auth_kind = 4;
+}
+
+message BackendAuth {
+  string backend_id = 1;
+  ProviderAuth auth = 2;
+}
+
+message InitializeBackendsRequest {
+  repeated BackendAuth auths = 1;
+}
+
+// never fail the initialize backends request,
+// instead all backend error should be populated through [BackendInitErrorResponse]
+message InitializeBackendsResponse {}
+
+message InitBackendRequest {
+  BackendAuth auth = 1;
+}
+
+message InitBackendResponse {}
+
+message RemoveBackendRequest {}
+
+message RemoveBackendResponse {}
