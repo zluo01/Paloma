@@ -1,41 +1,42 @@
 use std::sync::{
     Arc, RwLock,
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicI32, Ordering},
+};
+
+use log::error;
+use scry_provider_base::{Dispatcher, ProviderCache, ProviderClient, Result, cached_models};
+use scry_provider_protocol::v1::{
+    ChatRequest, Model, ProviderAuth, ProviderHealthStatus, provider_auth::Payload,
 };
 
 use super::shared::{
     ClaudeAuth, RESPONSES_URL, build_request_body, fetch_models, parse_stream_error,
     response_event_stream,
 };
-use crate::{
-    entity::{HealthStatus, ProviderId},
-    provider::{
-        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result, runtime::cached_models,
-    },
-    utils::ProviderCache,
-};
+use crate::constant::backend_id;
 
 pub struct AnthropicRuntime {
     request: reqwest::Client,
     api_key: String,
-    status: AtomicU8,
+    status: AtomicI32,
     provider_cache: Arc<ProviderCache>,
     error: RwLock<Option<String>>,
 }
 
 impl AnthropicRuntime {
     pub async fn new(
-        credential: &Auth,
+        credential: &ProviderAuth,
         request: reqwest::Client,
         provider_cache: Arc<ProviderCache>,
     ) -> Self {
-        let api_key = match credential {
-            Auth::ApiKey(api_key) => api_key.trim().to_string(),
-            Auth::OAuth { .. } => {
+        let api_key = match credential.payload.as_ref() {
+            Some(Payload::ApiKey(api_key)) => api_key.trim().to_string(),
+            Some(Payload::RefreshToken(_)) | None => {
                 return Self::unhealthy(
                     request,
                     provider_cache,
-                    "Anthropic API provider requires api_key credentials".into(),
+                    "Anthropic API backend requires API key credentials. This indicate a bug."
+                        .into(),
                 );
             },
         };
@@ -52,12 +53,12 @@ impl AnthropicRuntime {
         match fetch_models(&request, ClaudeAuth::ApiKey(&api_key)).await {
             Ok(models) => {
                 provider_cache
-                    .insert_models(ProviderId::Anthropic, models)
+                    .insert_models(backend_id::ANTHROPIC_API.into(), models)
                     .await;
                 Self {
                     request,
                     api_key,
-                    status: AtomicU8::new(HealthStatus::Running as u8),
+                    status: AtomicI32::new(ProviderHealthStatus::Running as i32),
                     provider_cache,
                     error: RwLock::new(None),
                 }
@@ -78,7 +79,7 @@ impl AnthropicRuntime {
         Self {
             request,
             api_key: String::new(),
-            status: AtomicU8::new(HealthStatus::Unhealthy as u8),
+            status: AtomicI32::new(ProviderHealthStatus::Unhealthy as i32),
             provider_cache,
             error: RwLock::new(Some(error_msg)),
         }
@@ -87,12 +88,12 @@ impl AnthropicRuntime {
 
 #[async_trait::async_trait]
 impl ProviderClient for AnthropicRuntime {
-    fn id(&self) -> ProviderId {
-        ProviderId::Anthropic
+    fn id(&self) -> String {
+        backend_id::ANTHROPIC_API.into()
     }
 
-    async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
-        let body = build_request_body(&request, ProviderId::Anthropic);
+    async fn chat(&self, request: ChatRequest, dispatcher: Dispatcher) -> Result<()> {
+        let body = build_request_body(&request, backend_id::ANTHROPIC_API.into());
 
         let response = self
             .request
@@ -108,18 +109,25 @@ impl ProviderClient for AnthropicRuntime {
             return Err(parse_stream_error(&body));
         }
 
-        Ok(response_event_stream(response, ProviderId::Anthropic))
+        response_event_stream(response, backend_id::ANTHROPIC_API.into(), dispatcher).await;
+        Ok(())
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(&self.provider_cache, ProviderId::Anthropic, || {
-            fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key))
-        })
+        cached_models(
+            &self.provider_cache,
+            backend_id::ANTHROPIC_API.into(),
+            || fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key)),
+        )
         .await
     }
 
-    fn health_statue(&self) -> HealthStatus {
-        HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    fn health_status(&self) -> ProviderHealthStatus {
+        let raw = self.status.load(Ordering::Acquire);
+        ProviderHealthStatus::try_from(raw).unwrap_or_else(|_| {
+            error!("unknown health status value {raw}. This indicates a bug.");
+            ProviderHealthStatus::Unhealthy
+        })
     }
 
     fn error(&self) -> Option<String> {

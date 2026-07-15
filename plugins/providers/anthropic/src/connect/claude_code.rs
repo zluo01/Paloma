@@ -1,12 +1,14 @@
 use std::sync::Mutex;
 
 use oauth2::PkceCodeChallenge;
+use scry_provider_base::{ProviderAuthenticator, ProviderError, Result};
+use scry_provider_protocol::v1::{
+    BrowserRedirect, ConnectionPayload, ProviderAuth, connection_payload,
+    finalize_connection_request, provider_auth,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    entity::ProviderId,
-    provider::{Auth, Connection, ProviderAuthenticator, ProviderError, Result},
-};
+use crate::constant::backend_id;
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const AUTH_URL: &str = "https://claude.ai/oauth/authorize";
@@ -35,11 +37,11 @@ impl ClaudeCodeConnector {
 
 #[async_trait::async_trait]
 impl ProviderAuthenticator for ClaudeCodeConnector {
-    fn id(&self) -> ProviderId {
-        ProviderId::ClaudeCode
+    fn id(&self) -> String {
+        backend_id::CLAUDE_CODE.into()
     }
 
-    async fn init_connection(&self) -> Result<Connection> {
+    async fn init_connection(&self) -> Result<ConnectionPayload> {
         let (code_challenge, code_verifier) = PkceCodeChallenge::new_random_sha256();
         let code_verifier = code_verifier.secret().to_string();
         let mut url = reqwest::Url::parse(AUTH_URL).map_err(|error| {
@@ -58,26 +60,32 @@ impl ProviderAuthenticator for ClaudeCodeConnector {
 
         *self.pending.lock().unwrap() = Some(PendingOAuth { code_verifier });
 
-        Ok(Connection::BrowserRedirect {
-            authorization_url: url.to_string(),
+        Ok(ConnectionPayload {
+            payload: Some(connection_payload::Payload::BrowserRedirect(
+                BrowserRedirect {
+                    authorization_url: url.to_string(),
+                },
+            )),
         })
     }
 
-    async fn finalize_connection(&self, payload: Connection) -> Result<Auth> {
-        let authorization_response = match payload {
-            Connection::BrowserRedirect { authorization_url } => authorization_url,
-            _ => {
-                return Err(ProviderError::InvalidConnection {
-                    expected: "BrowserRedirect",
-                });
-            },
+    async fn finalize_connection(
+        &self,
+        input: finalize_connection_request::Input,
+    ) -> Result<ProviderAuth> {
+        let finalize_connection_request::Input::AuthorizationResponse(authorization_response) =
+            input
+        else {
+            return Err(ProviderError::InvalidConnection {
+                expected: "AuthorizationResponse",
+            });
         };
         let pending = self.pending.lock().unwrap().clone().ok_or_else(|| {
             ProviderError::Other("Claude Code OAuth flow was not initialized".into())
         })?;
         let (code, state) = parse_authorization_response(&authorization_response)?;
 
-        let tokens: OAuthTokenResponse = self
+        let refresh_token = self
             .request
             .post(TOKEN_URL)
             .header("Content-Type", "application/json")
@@ -92,10 +100,8 @@ impl ProviderAuthenticator for ClaudeCodeConnector {
             .send()
             .await?
             .error_for_status()?
-            .json()
-            .await?;
-
-        let refresh_token = tokens
+            .json::<OAuthTokenResponse>()
+            .await?
             .refresh_token
             .filter(|token| !token.trim().is_empty())
             .ok_or_else(|| {
@@ -106,9 +112,8 @@ impl ProviderAuthenticator for ClaudeCodeConnector {
 
         *self.pending.lock().unwrap() = None;
 
-        Ok(Auth::OAuth {
-            refresh_token: Some(refresh_token),
-            expires_at: None,
+        Ok(ProviderAuth {
+            payload: Some(provider_auth::Payload::RefreshToken(refresh_token)),
         })
     }
 }

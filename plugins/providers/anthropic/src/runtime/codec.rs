@@ -1,18 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use log::warn;
-use serde_json::Value;
-
-use crate::{
-    provider::{
-        ConversationItem, ProviderError, Result,
-        codec::{
-            EncodeMode, MessageContentItem, ProviderDecoder, ProviderEncoder, ProviderMeta,
-            provider_meta, provider_meta_to_map, schema::SummaryItem,
-        },
-    },
-    utils::Element,
+use scry_provider_base::{
+    ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
+    provider_meta_to_map,
 };
+use scry_provider_protocol::v1::{
+    ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
+    SummaryItem, ToolCall, Unknown, conversation_item,
+};
+use scry_utils::Element;
+use serde_json::Value;
 
 pub struct ClaudeCodec;
 
@@ -58,7 +56,7 @@ impl ProviderEncoder for ClaudeCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Value {
-        let same_provider = matches!(encode_mode, EncodeMode::SameProviderReplay);
+        let same_provider = matches!(encode_mode, EncodeMode::SameProvider);
         let mut item = provider_meta_to_map(provider_meta, same_provider);
 
         item.insert("type".to_string(), Value::String("text".to_string()));
@@ -79,7 +77,7 @@ impl ProviderEncoder for ClaudeCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
-        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+        if !matches!(encode_mode, EncodeMode::SameProvider) {
             return None;
         }
 
@@ -108,7 +106,7 @@ impl ProviderEncoder for ClaudeCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Value {
-        let same_provider = matches!(encode_mode, EncodeMode::SameProviderReplay);
+        let same_provider = matches!(encode_mode, EncodeMode::SameProvider);
         let mut item = provider_meta_to_map(provider_meta, same_provider);
 
         item.insert("type".to_string(), Value::String("tool_use".to_string()));
@@ -149,7 +147,7 @@ impl ProviderEncoder for ClaudeCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
-        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+        if !matches!(encode_mode, EncodeMode::SameProvider) {
             return None;
         }
         let mut item = provider_meta_to_map(provider_meta, true);
@@ -176,7 +174,7 @@ impl ProviderEncoder for ClaudeCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
-        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+        if !matches!(encode_mode, EncodeMode::SameProvider) {
             return None;
         }
         let item = provider_meta_to_map(provider_meta, true);
@@ -217,13 +215,11 @@ impl ProviderDecoder for ClaudeCodec {
         match response_type {
             "text" => decode_message_item(&data),
             "thinking" => decode_reasoning_item(&data),
-            "redacted_thinking" => {
+            "redacted_thinking" | "web_search_tool_result" => {
                 let provider_meta = provider_meta(&data, &[]);
-                Ok(ConversationItem::Unknown { provider_meta })
-            },
-            "web_search_tool_result" => {
-                let provider_meta = provider_meta(&data, &[]);
-                Ok(ConversationItem::Unknown { provider_meta })
+                Ok(ConversationItem {
+                    item: Some(conversation_item::Item::Unknown(Unknown { provider_meta })),
+                })
             },
             "tool_use" => decode_function_call_item(&data),
             "server_tool_use" => decode_hosted_tool_item(&data),
@@ -245,15 +241,17 @@ fn decode_message_item(data: &Value) -> Result<ConversationItem> {
         .and_then(Value::as_str)
         .map(|t| MessageContentItem {
             content: t.to_string(),
-            provider_meta: BTreeMap::default(),
+            provider_meta: HashMap::new(),
         })
         .ok_or_else(|| ProviderError::Other("missing text field".into()))?;
 
     let provider_meta = provider_meta(data, &["type", "text"]);
 
-    Ok(ConversationItem::Message {
-        message: vec![message],
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::Message(ConversationMessage {
+            message: vec![message],
+            provider_meta,
+        })),
     })
 }
 
@@ -264,15 +262,17 @@ fn decode_reasoning_item(data: &Value) -> Result<ConversationItem> {
         .and_then(Value::as_str)
         .map(|t| SummaryItem {
             content: t.to_string(),
-            provider_meta: BTreeMap::default(),
+            provider_meta: HashMap::new(),
         })
         .ok_or_else(|| ProviderError::Other("missing thinking field".into()))?;
 
     let provider_meta = provider_meta(data, &["type", "thinking"]);
 
-    Ok(ConversationItem::Reasoning {
-        reasoning: vec![reasoning],
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::Reasoning(Reasoning {
+            reasoning: vec![reasoning],
+            provider_meta,
+        })),
     })
 }
 
@@ -288,18 +288,16 @@ fn decode_function_call_item(item: &Value) -> Result<ConversationItem> {
         .and_then(Value::as_str)
         .ok_or_else(|| ProviderError::Other("missing function call name".into()))?
         .to_string();
-    let arguments = item
-        .get("input")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ProviderError::Other("missing function call arguments".into()))?
-        .to_string();
+    let arguments = decode_input_arguments(item)?;
     let provider_meta = provider_meta(item, &["type", "id", "name", "input"]);
 
-    Ok(ConversationItem::ToolCall {
-        call_id,
-        name,
-        arguments,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::ToolCall(ToolCall {
+            call_id,
+            name,
+            arguments,
+            provider_meta,
+        })),
     })
 }
 
@@ -310,18 +308,27 @@ fn decode_hosted_tool_item(item: &Value) -> Result<ConversationItem> {
         .and_then(Value::as_str)
         .ok_or_else(|| ProviderError::Other("missing function call name".into()))?
         .to_string();
-    let arguments = item
-        .get("input")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ProviderError::Other("missing function call arguments".into()))?
-        .to_string();
+    let arguments = decode_input_arguments(item)?;
     let provider_meta = provider_meta(item, &["type", "name", "input"]);
 
-    Ok(ConversationItem::HostedTool {
-        function_type,
-        content: Some(arguments),
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::HostedTool(HostedTool {
+            function_type,
+            content: Some(arguments),
+            provider_meta,
+        })),
     })
+}
+
+/// properly handle input with zero arguments
+fn decode_input_arguments(item: &Value) -> Result<String> {
+    match item.get("input") {
+        Some(Value::String(input)) => Ok(input.clone()),
+        Some(input @ Value::Object(_)) => Ok(input.to_string()),
+        _ => Err(ProviderError::Other(
+            "missing function call arguments".into(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -366,14 +373,14 @@ mod encoder_tests {
             &[
                 MessageContentItem {
                     content: "Hello".to_string(),
-                    provider_meta: BTreeMap::default(),
+                    provider_meta: HashMap::default(),
                 },
                 MessageContentItem {
                     content: " world".to_string(),
-                    provider_meta: BTreeMap::default(),
+                    provider_meta: HashMap::default(),
                 },
             ],
-            &BTreeMap::default(),
+            &ProviderMeta::default(),
             EncodeMode::CrossProvider,
         );
 
@@ -397,10 +404,10 @@ mod encoder_tests {
             .encode_reasoning(
                 &[SummaryItem {
                     content: "I need to think".to_string(),
-                    provider_meta: BTreeMap::default(),
+                    provider_meta: HashMap::default(),
                 }],
-                &BTreeMap::default(),
-                EncodeMode::SameProviderReplay,
+                &ProviderMeta::default(),
+                EncodeMode::SameProvider,
             )
             .unwrap();
 
@@ -424,7 +431,7 @@ mod encoder_tests {
             "toolu_123",
             "get_weather",
             r#"{"location":"San Francisco"}"#,
-            &BTreeMap::default(),
+            &ProviderMeta::default(),
             EncodeMode::CrossProvider,
         );
 
@@ -477,8 +484,8 @@ mod encoder_tests {
             .encode_hosted_tool(
                 "web_search",
                 &content,
-                &BTreeMap::default(),
-                EncodeMode::SameProviderReplay,
+                &ProviderMeta::default(),
+                EncodeMode::SameProvider,
             )
             .unwrap();
 
@@ -540,12 +547,15 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::Message {
-                message: vec![MessageContentItem {
-                    content: "Okay, let's check the weather.".to_string(),
-                    provider_meta: BTreeMap::default(),
-                }],
-                provider_meta: BTreeMap::from([("citations".to_string(), serde_json::json!([]))]),
+            ConversationItem {
+                item: Some(conversation_item::Item::Message(ConversationMessage {
+                    message: vec![MessageContentItem {
+                        content: "Okay, let's check the weather.".to_string(),
+                        provider_meta: HashMap::default(),
+                    }],
+                    provider_meta: [("citations".to_string(), serde_json::json!([]).to_string())]
+                        .into(),
+                })),
             }
         );
     }
@@ -562,15 +572,18 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::Reasoning {
-                reasoning: vec![SummaryItem {
-                    content: "I need to check the weather".to_string(),
-                    provider_meta: BTreeMap::default(),
-                }],
-                provider_meta: BTreeMap::from([(
-                    "signature".to_string(),
-                    serde_json::json!("example_signature")
-                )]),
+            ConversationItem {
+                item: Some(conversation_item::Item::Reasoning(Reasoning {
+                    reasoning: vec![SummaryItem {
+                        content: "I need to check the weather".to_string(),
+                        provider_meta: HashMap::default(),
+                    }],
+                    provider_meta: [(
+                        "signature".to_string(),
+                        serde_json::json!("example_signature").to_string()
+                    )]
+                    .into(),
+                })),
             }
         );
     }
@@ -589,15 +602,63 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::ToolCall {
-                call_id: "toolu_01T1x1fJ34qAmk2tNTrN7Up6".to_string(),
-                name: "get_weather".to_string(),
-                arguments: r#"{"location": "San Francisco, CA"}"#.to_string(),
-                provider_meta: BTreeMap::from([(
-                    "extra".to_string(),
-                    serde_json::json!("preserve me")
-                )]),
+            ConversationItem {
+                item: Some(conversation_item::Item::ToolCall(ToolCall {
+                    call_id: "toolu_01T1x1fJ34qAmk2tNTrN7Up6".to_string(),
+                    name: "get_weather".to_string(),
+                    arguments: r#"{"location": "San Francisco, CA"}"#.to_string(),
+                    provider_meta: [(
+                        "extra".to_string(),
+                        serde_json::json!("preserve me").to_string()
+                    )]
+                    .into(),
+                })),
             }
+        );
+    }
+
+    /// A zero-argument tool call never receives an input_json_delta, so the
+    /// block still holds the `{}` object from content_block_start.
+    #[test]
+    fn decodes_zero_argument_tool_use_output_item() {
+        let item = ClaudeCodec
+            .decode_output_item(serde_json::json!({
+                "type": "tool_use",
+                "id": "toolu_01T1x1fJ34qAmk2tNTrN7Up6",
+                "name": "no_args",
+                "input": {}
+            }))
+            .unwrap();
+
+        assert_eq!(
+            item,
+            ConversationItem {
+                item: Some(conversation_item::Item::ToolCall(ToolCall {
+                    call_id: "toolu_01T1x1fJ34qAmk2tNTrN7Up6".to_string(),
+                    name: "no_args".to_string(),
+                    arguments: "{}".to_string(),
+                    provider_meta: HashMap::default(),
+                })),
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_empty_string_input_identically_to_object_input() {
+        let tool_use = |input: Value| {
+            ClaudeCodec
+                .decode_output_item(serde_json::json!({
+                    "type": "tool_use",
+                    "id": "toolu_01T1x1fJ34qAmk2tNTrN7Up6",
+                    "name": "no_args",
+                    "input": input
+                }))
+                .unwrap()
+        };
+
+        assert_eq!(
+            tool_use(serde_json::json!({})),
+            tool_use(serde_json::json!("{}"))
         );
     }
 
@@ -614,13 +675,16 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::HostedTool {
-                function_type: "web_search".to_string(),
-                content: Some(r#"{"query": "weather NYC today"}"#.to_string()),
-                provider_meta: BTreeMap::from([(
-                    "id".to_string(),
-                    serde_json::json!("srvtoolu_014hJH82Qum7Td6UV8gDXThB")
-                )]),
+            ConversationItem {
+                item: Some(conversation_item::Item::HostedTool(HostedTool {
+                    function_type: "web_search".to_string(),
+                    content: Some(r#"{"query": "weather NYC today"}"#.to_string()),
+                    provider_meta: [(
+                        "id".to_string(),
+                        serde_json::json!("srvtoolu_014hJH82Qum7Td6UV8gDXThB").to_string()
+                    )]
+                    .into(),
+                })),
             }
         );
     }
@@ -638,7 +702,7 @@ mod roundtrip_tests {
         });
         let item = ClaudeCodec.decode_output_item(raw.clone()).unwrap();
         let encoded = ClaudeCodec
-            .encode_conversation_item(&item, EncodeMode::SameProviderReplay)
+            .encode_conversation_item(&item, EncodeMode::SameProvider)
             .unwrap();
         assert_eq!(encoded["content"][0], raw);
     }
@@ -660,7 +724,7 @@ mod roundtrip_tests {
         });
         let item = ClaudeCodec.decode_output_item(raw.clone()).unwrap();
         let encoded = ClaudeCodec
-            .encode_conversation_item(&item, EncodeMode::SameProviderReplay)
+            .encode_conversation_item(&item, EncodeMode::SameProvider)
             .unwrap();
         assert_eq!(encoded["content"][0], raw);
     }
@@ -675,7 +739,7 @@ mod roundtrip_tests {
         });
         let item = ClaudeCodec.decode_output_item(raw).unwrap();
         let encoded = ClaudeCodec
-            .encode_conversation_item(&item, EncodeMode::SameProviderReplay)
+            .encode_conversation_item(&item, EncodeMode::SameProvider)
             .unwrap();
         assert_eq!(
             encoded["content"][0],

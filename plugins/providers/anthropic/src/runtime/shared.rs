@@ -1,16 +1,18 @@
 use eventsource_stream::{EventStreamError, Eventsource};
-use futures::{StreamExt, stream};
+use futures::StreamExt;
 use log::{error, warn};
+use scry_provider_base::{
+    Dispatcher, ENVIRONMENT_CONTEXT, ProviderDecoder, ProviderEncoder, ProviderError, Result,
+    SSE_IDLE_TIMEOUT,
+};
+use scry_provider_protocol::v1::{
+    ChatRequest, ConversationItem, Done, EncodeMode, Model, TextDelta, chat_response,
+};
 use serde_json::Value;
 
 use crate::{
-    ProviderId,
-    constants::{ENVIRONMENT_CONTEXT, INSTRUCTION},
-    provider::{
-        ChatEvent, ChatRequest, ChatStream, ConversationItem, Model, ProviderError, Result,
-        codec::{ClaudeCodec, EncodeMode, ProviderDecoder, ProviderEncoder},
-        runtime::SSE_IDLE_TIMEOUT,
-    },
+    constant::{PROVIDER_ID, backend_id},
+    runtime::codec::ClaudeCodec,
 };
 
 pub(super) const RESPONSES_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -22,16 +24,26 @@ const EFFORT_ORDER: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L3041-L3331
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L1776-L1799
 /// https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts#L1276-L1287
-pub(super) fn build_request_body(request: &ChatRequest, provider_id: ProviderId) -> Value {
+pub(super) fn build_request_body(request: &ChatRequest, backend_id: String) -> Value {
     let mut tools: Vec<Value> = request
         .tools
         .iter()
-        .map(|t| {
-            serde_json::json!({
+        .filter_map(|t| {
+            let parameters = match serde_json::from_str::<Value>(&t.parameters) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!(
+                        "tool {:?} has malformed parameters JSON ({e}); skipping tool.",
+                        t.name
+                    );
+                    return None;
+                },
+            };
+            Some(serde_json::json!({
                 "name": t.name,
                 "description": t.description,
-                "input_schema": t.parameters,
-            })
+                "input_schema": parameters,
+            }))
         })
         .collect();
 
@@ -44,25 +56,23 @@ pub(super) fn build_request_body(request: &ChatRequest, provider_id: ProviderId)
         .messages
         .iter()
         .filter_map(|e| {
-            let mode = if ProviderId::ClaudeCode == e.provider_id
-                || ProviderId::Anthropic == e.provider_id
-            {
-                EncodeMode::SameProviderReplay
+            let mode = if PROVIDER_ID == e.provider_id {
+                EncodeMode::SameProvider
             } else {
                 EncodeMode::CrossProvider
             };
-            ClaudeCodec.encode_conversation_item(&e.payload, mode)
+            ClaudeCodec.encode_conversation_item(e.item.as_ref()?, mode)
         })
         .collect();
 
     let mut system_prompt = vec![
         serde_json::json!({
             "type": "text",
-            "text": INSTRUCTION
+            "text": request.instruction
         }),
         ClaudeCodec.encode_env_context(&ENVIRONMENT_CONTEXT),
     ];
-    if provider_id == ProviderId::ClaudeCode {
+    if backend_id == backend_id::CLAUDE_CODE {
         system_prompt.insert(
             0,
             serde_json::json!({
@@ -94,105 +104,135 @@ enum BlockState {
     Ignored,
 }
 
-pub(super) fn response_event_stream(
+pub(super) async fn response_event_stream(
     response: reqwest::Response,
-    provider_id: ProviderId,
-) -> ChatStream {
-    let sse = response.bytes_stream().eventsource();
-    let stream = stream::unfold(Some((sse, None)), move |state| async move {
-        let (mut sse, mut placeholder) = state?;
-        loop {
-            let next = match tokio::time::timeout(SSE_IDLE_TIMEOUT, sse.next()).await {
-                Err(_) => {
-                    return Some((
-                        Err(ProviderError::Transport(format!(
-                            "SSE idle timeout: no activity for {SSE_IDLE_TIMEOUT:?}"
-                        ))),
-                        None,
-                    ));
-                },
-                Ok(None) => return None,
-                Ok(Some(frame)) => frame,
-            };
+    backend_id: String,
+    dispatcher: Dispatcher,
+) {
+    let mut sse = response.bytes_stream().eventsource();
+    let mut placeholder: Option<BlockState> = None;
+    loop {
+        let next = match tokio::time::timeout(SSE_IDLE_TIMEOUT, sse.next()).await {
+            Err(_) => {
+                dispatcher
+                    .send_chat_event(chat_response::Payload::Error(format!(
+                        "SSE idle timeout: no activity for {SSE_IDLE_TIMEOUT:?}"
+                    )))
+                    .await;
+                return;
+            },
+            Ok(None) => {
+                dispatcher
+                    .send_chat_event(chat_response::Payload::Error(
+                        "SSE stream ended without message_stop".into(),
+                    ))
+                    .await;
+                return;
+            },
+            Ok(Some(frame)) => frame,
+        };
 
-            match next {
-                Err(EventStreamError::Transport(e)) => {
-                    return Some((
-                        Err(ProviderError::Transport(format!(
-                            "SSE transport error: {e}"
-                        ))),
-                        None,
-                    ));
-                },
-                Err(e) => {
-                    return Some((
-                        Err(ProviderError::Other(format!("SSE parse error: {e}"))),
-                        None,
-                    ));
-                },
-                // https://docs.claude.com/en/docs/build-with-claude/streaming
-                Ok(frame) => match frame.event.as_str() {
-                    "message_start" => continue,
-                    "content_block_start" => {
-                        if placeholder.is_some() {
-                            error!(
-                                "unexpected placeholder value exists. This indicates a bug. {:?}",
-                                placeholder
-                            );
-                            return Some((
-                                Err(ProviderError::Other(
-                                    "invalid state during response parsing".into(),
-                                )),
-                                None,
-                            ));
-                        }
-
-                        match serde_json::from_str(&frame.data)
-                            .map_err(ProviderError::from)
-                            .and_then(|v| parse_content_start_event(&v))
-                        {
-                            Ok(item) => {
-                                placeholder = Some(item);
-                                continue;
-                            },
-                            Err(e) => return Some((Err(e), None)),
-                        }
-                    },
-                    "content_block_delta" => {
-                        return match serde_json::from_str(&frame.data)
-                            .map_err(ProviderError::from)
-                            .and_then(|v| parse_content_delta(&v, provider_id, &mut placeholder))
-                        {
-                            Ok(Some(event)) => Some((Ok(event), Some((sse, placeholder)))),
-                            Ok(None) => continue,
-                            Err(e) => Some((Err(e), None)),
-                        };
-                    },
-                    "content_block_stop" => {
-                        return match finalize_block_content(placeholder.take()) {
-                            Ok(Some(item)) => {
-                                Some((Ok(ChatEvent::OutputItem { item }), Some((sse, None))))
-                            },
-                            Ok(None) => continue,
-                            Err(e) => Some((Err(e), None)),
-                        };
-                    },
-                    "message_delta" => continue,
-                    "message_stop" => return Some((Ok(ChatEvent::Done), None)),
-                    "ping" => continue,
-                    "error" => return Some((Err(parse_stream_error(&frame.data)), None)),
-                    event => {
-                        warn!(
-                            "{provider_id:?} messages SSE: unknown event type {event:?}; skipping."
+        match next {
+            Err(EventStreamError::Transport(e)) => {
+                dispatcher
+                    .send_chat_event(chat_response::Payload::Error(format!(
+                        "SSE transport error: {e}"
+                    )))
+                    .await;
+                return;
+            },
+            Err(e) => {
+                dispatcher
+                    .send_chat_event(chat_response::Payload::Error(format!(
+                        "SSE parse error: {e}"
+                    )))
+                    .await;
+                return;
+            },
+            // https://docs.claude.com/en/docs/build-with-claude/streaming
+            Ok(frame) => match frame.event.as_str() {
+                "message_start" => continue,
+                "content_block_start" => {
+                    if placeholder.is_some() {
+                        error!(
+                            "unexpected placeholder value exists. This indicates a bug. {:?}",
+                            placeholder
                         );
-                        continue;
+                        dispatcher
+                            .send_chat_event(chat_response::Payload::Error(
+                                "invalid state during response parsing".into(),
+                            ))
+                            .await;
+                        return;
+                    }
+
+                    match serde_json::from_str(&frame.data)
+                        .map_err(ProviderError::from)
+                        .and_then(|v| parse_content_start_event(&v))
+                    {
+                        Ok(item) => placeholder = Some(item),
+                        Err(e) => {
+                            dispatcher
+                                .send_chat_event(chat_response::Payload::Error(e.to_string()))
+                                .await;
+                            return;
+                        },
+                    }
+                },
+                "content_block_delta" => {
+                    match serde_json::from_str(&frame.data)
+                        .map_err(ProviderError::from)
+                        .and_then(|v| parse_content_delta(&v, &backend_id, &mut placeholder))
+                    {
+                        Ok(Some(payload)) => {
+                            dispatcher.send_chat_event(payload).await;
+                        },
+                        Ok(None) => {},
+                        Err(e) => {
+                            dispatcher
+                                .send_chat_event(chat_response::Payload::Error(e.to_string()))
+                                .await;
+                            return;
+                        },
+                    }
+                },
+                "content_block_stop" => match finalize_block_content(placeholder.take()) {
+                    Ok(Some(item)) => {
+                        dispatcher
+                            .send_chat_event(chat_response::Payload::OutputItem(item))
+                            .await;
+                    },
+                    Ok(None) => {},
+                    Err(e) => {
+                        dispatcher
+                            .send_chat_event(chat_response::Payload::Error(e.to_string()))
+                            .await;
+                        return;
                     },
                 },
-            }
+                "message_delta" => continue,
+                "message_stop" => {
+                    dispatcher
+                        .send_chat_event(chat_response::Payload::Done(Done {}))
+                        .await;
+                    return;
+                },
+                "ping" => continue,
+                "error" => {
+                    dispatcher
+                        .send_chat_event(chat_response::Payload::Error(
+                            parse_stream_error(&frame.data).to_string(),
+                        ))
+                        .await;
+                    return;
+                },
+                event => {
+                    warn!("{backend_id} messages SSE: unknown event type {event:?}; skipping.");
+                    continue;
+                },
+            },
         }
-    });
-
-    Box::pin(stream)
+    }
 }
 
 fn parse_content_start_event(data: &Value) -> Result<BlockState> {
@@ -225,9 +265,9 @@ fn parse_content_start_event(data: &Value) -> Result<BlockState> {
 /// https://platform.claude.com/docs/en/build-with-claude/citations#streaming-support
 fn parse_content_delta(
     data: &Value,
-    provider_id: ProviderId,
+    backend_id: &str,
     placeholder: &mut Option<BlockState>,
-) -> Result<Option<ChatEvent>> {
+) -> Result<Option<chat_response::Payload>> {
     let placeholder = match placeholder {
         Some(BlockState::Ignored) => return Ok(None),
         Some(BlockState::Supported(value)) => value,
@@ -253,13 +293,19 @@ fn parse_content_delta(
             append_delta_field(placeholder, content, "text", "text")?;
             ClaudeCodec
                 .decode_output_text_delta(content.clone())
-                .map(|text| Some(ChatEvent::TextDelta { provider_id, text }))
+                .map(|delta| {
+                    Some(chat_response::Payload::TextDelta(TextDelta {
+                        provider_id: PROVIDER_ID.into(),
+                        backend_id: backend_id.to_string(),
+                        delta,
+                    }))
+                })
         },
         "thinking_delta" => {
             append_delta_field(placeholder, content, "thinking", "thinking")?;
             ClaudeCodec
                 .decode_reasoning_delta(content.clone())
-                .map(|text| Some(ChatEvent::ReasoningSummaryDelta { text }))
+                .map(|text| Some(chat_response::Payload::ReasoningDelta(text)))
         },
         "signature_delta" => {
             append_delta_field(placeholder, content, "signature", "signature")?;
@@ -463,18 +509,59 @@ fn parse_model_response(data: Value) -> Vec<Model> {
 
 #[cfg(test)]
 mod build_request_body_tests {
+    use scry_provider_protocol::v1::{
+        ChatRequestMessage, ConversationMessage, MessageContentItem, Reasoning, SummaryItem,
+        conversation_item::Item,
+    };
+
     use super::*;
 
-    #[test]
-    fn claude_code_prepends_claude_code_system_prompt() {
-        let request = ChatRequest {
+    fn request() -> ChatRequest {
+        ChatRequest {
+            session_id: "session".into(),
+            instruction: "example instruction".into(),
             model: "claude-sonnet-4-6".into(),
             effort: "medium".into(),
             messages: vec![],
             tools: vec![],
-        };
+        }
+    }
 
-        let body = build_request_body(&request, ProviderId::ClaudeCode);
+    fn reasoning_message(provider: &str, backend: &str) -> ChatRequestMessage {
+        ChatRequestMessage {
+            provider_id: provider.into(),
+            backend_id: backend.into(),
+            item: Some(ConversationItem {
+                item: Some(Item::Reasoning(Reasoning {
+                    reasoning: vec![SummaryItem {
+                        content: "ABC".into(),
+                        provider_meta: Default::default(),
+                    }],
+                    provider_meta: [("A".to_string(), serde_json::json!("B").to_string())].into(),
+                })),
+            }),
+        }
+    }
+
+    fn text_message(provider: &str, backend: &str) -> ChatRequestMessage {
+        ChatRequestMessage {
+            provider_id: provider.into(),
+            backend_id: backend.into(),
+            item: Some(ConversationItem {
+                item: Some(Item::Message(ConversationMessage {
+                    message: vec![MessageContentItem {
+                        content: "ABC".into(),
+                        provider_meta: Default::default(),
+                    }],
+                    provider_meta: [("A".to_string(), serde_json::json!("B").to_string())].into(),
+                })),
+            }),
+        }
+    }
+
+    #[test]
+    fn claude_code_prepends_claude_code_system_prompt() {
+        let body = build_request_body(&request(), backend_id::CLAUDE_CODE.into());
 
         assert_eq!(
             body.pointer("/system/0/text").and_then(Value::as_str),
@@ -482,28 +569,55 @@ mod build_request_body_tests {
         );
         assert_eq!(
             body.pointer("/system/1/text").and_then(Value::as_str),
-            Some(INSTRUCTION)
+            Some("example instruction")
         );
     }
 
     #[test]
     fn anthropic_does_not_prepend_claude_code_system_prompt() {
-        let request = ChatRequest {
-            model: "claude-sonnet-4-6".into(),
-            effort: "medium".into(),
-            messages: vec![],
-            tools: vec![],
-        };
-
-        let body = build_request_body(&request, ProviderId::Anthropic);
+        let body = build_request_body(&request(), backend_id::ANTHROPIC_API.into());
 
         assert_eq!(
             body.pointer("/system/0/text").and_then(Value::as_str),
-            Some(INSTRUCTION)
+            Some("example instruction")
         );
         assert_ne!(
             body.pointer("/system/0/text").and_then(Value::as_str),
             Some(CLAUDE_CODE_SYSTEM_PROMPT)
+        );
+    }
+
+    #[test]
+    fn replays_anthropic_family_metadata_and_drops_foreign_provider_blocks() {
+        let mut request = request();
+        request.messages = vec![
+            reasoning_message(PROVIDER_ID, backend_id::CLAUDE_CODE),
+            reasoning_message(PROVIDER_ID, backend_id::ANTHROPIC_API),
+            reasoning_message("OpenAI", "Codex"),
+            text_message("OpenAI", "Codex"),
+        ];
+
+        let body = build_request_body(&request, backend_id::CLAUDE_CODE.into());
+        let messages = body.get("messages").and_then(Value::as_array).unwrap();
+
+        assert_eq!(messages.len(), 3);
+        for message in &messages[..2] {
+            assert_eq!(
+                message.pointer("/content/0"),
+                Some(&serde_json::json!({
+                    "type": "thinking",
+                    "thinking": "ABC",
+                    "A": "B"
+                }))
+            );
+        }
+
+        assert_eq!(
+            messages[2].pointer("/content/0"),
+            Some(&serde_json::json!({
+                "type": "text",
+                "text": "ABC"
+            }))
         );
     }
 }
@@ -955,8 +1069,11 @@ mod parse_content_delta_tests {
         Some(parse_content_start_event(&json(data)).unwrap())
     }
 
-    fn apply_delta(placeholder: &mut Option<BlockState>, data: &str) -> Option<ChatEvent> {
-        parse_content_delta(&json(data), ProviderId::Anthropic, placeholder).unwrap()
+    fn apply_delta(
+        placeholder: &mut Option<BlockState>,
+        data: &str,
+    ) -> Option<chat_response::Payload> {
+        parse_content_delta(&json(data), backend_id::CLAUDE_CODE, placeholder).unwrap()
     }
 
     fn block_value(placeholder: Option<BlockState>) -> Value {
@@ -1003,7 +1120,7 @@ mod parse_content_delta_tests {
                     "value": "ignored"
                 }
             }),
-            ProviderId::Anthropic,
+            backend_id::CLAUDE_CODE,
             &mut placeholder,
         )
         .unwrap_err();
@@ -1047,11 +1164,10 @@ mod parse_content_delta_tests {
                 })
                 .to_string(),
             );
-            let Some(ChatEvent::TextDelta { provider_id, text }) = event else {
+            let Some(chat_response::Payload::TextDelta(text)) = event else {
                 panic!("expected text delta event");
             };
-            assert_eq!(provider_id, ProviderId::Anthropic);
-            rendered.push_str(&text);
+            rendered.push_str(&text.delta);
         }
 
         let block = block_value(placeholder);
@@ -1088,10 +1204,10 @@ mod parse_content_delta_tests {
             })
             .to_string(),
         );
-        let Some(ChatEvent::TextDelta { text, .. }) = text_event else {
+        let Some(chat_response::Payload::TextDelta(text)) = text_event else {
             panic!("expected text delta event");
         };
-        assert_eq!(text, "the grass is green");
+        assert_eq!(text.delta, "the grass is green");
 
         let citation = serde_json::json!({
             "type": "char_location",
@@ -1156,7 +1272,7 @@ mod parse_content_delta_tests {
                 })
                 .to_string(),
             );
-            let Some(ChatEvent::ReasoningSummaryDelta { text }) = event else {
+            let Some(chat_response::Payload::ReasoningDelta(text)) = event else {
                 panic!("expected reasoning summary delta event");
             };
             rendered.push_str(&text);
@@ -1277,6 +1393,8 @@ mod parse_content_delta_tests {
 
 #[cfg(test)]
 mod parse_stream_error_tests {
+    use scry_provider_base::ProviderError;
+
     use super::*;
 
     fn message(data: &str) -> String {

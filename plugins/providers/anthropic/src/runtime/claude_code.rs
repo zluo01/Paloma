@@ -1,12 +1,17 @@
-use std::{
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicU8, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicI32, Ordering},
 };
 
 use log::error;
+use scry_provider_base::{
+    Dispatcher, OAuthState, ProviderCache, ProviderClient, ProviderError, RefreshRequest, Result,
+    cached_models,
+};
+use scry_provider_protocol::v1::{
+    AuthUpdateRequest, ChatRequest, Model, ProviderAuth, ProviderHealthStatus, response_event,
+};
+use scry_utils::unix_now;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
@@ -14,15 +19,7 @@ use super::shared::{
     ClaudeAuth, RESPONSES_URL, build_request_body, fetch_models, parse_stream_error,
     response_event_stream,
 };
-use crate::{
-    db::{AuthKind, Storage},
-    entity::{HealthStatus, ProviderId},
-    provider::{
-        Auth, ChatRequest, ChatStream, Model, ProviderClient, Result,
-        runtime::{RefreshRequest, cached_models},
-    },
-    utils::{ProviderCache, unix_now},
-};
+use crate::constant::backend_id;
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
@@ -32,70 +29,59 @@ const CLAUDE_CODE_BETA_HEADER: &str =
 
 pub struct ClaudeRuntime {
     request: reqwest::Client,
-    storage: Storage,
     provider_cache: Arc<ProviderCache>,
-    token_state: RwLock<TokenState>,
+    token_state: RwLock<Option<TokenState>>,
     refresh_lock: Mutex<()>,
-    status: AtomicU8,
+    status: AtomicI32,
     error: RwLock<Option<String>>,
+    dispatcher: Dispatcher,
 }
 
 impl ClaudeRuntime {
     pub async fn new(
-        credential: &Auth,
+        credential: &ProviderAuth,
         request: reqwest::Client,
-        storage: Storage,
         provider_cache: Arc<ProviderCache>,
+        dispatcher: Dispatcher,
     ) -> Self {
-        let auth = match credential {
-            Auth::OAuth {
-                refresh_token: Some(_),
-                ..
-            } => credential.clone(),
-            Auth::OAuth {
-                refresh_token: None,
-                ..
-            } => {
+        let oauth = match OAuthState::try_from(credential) {
+            Ok(oauth) => oauth,
+            Err(e) => {
                 return Self::unhealthy(
                     request,
-                    storage,
                     provider_cache,
-                    "Claude credential is missing a refresh_token".into(),
-                );
-            },
-            Auth::ApiKey(_) => {
-                return Self::unhealthy(
-                    request,
-                    storage,
-                    provider_cache,
-                    "Claude does not support api_key credentials".into(),
+                    dispatcher,
+                    format!("Claude: {e}"),
                 );
             },
         };
 
-        match fetch_access_token(&request, &auth, &storage).await {
-            Ok((access_token, auth)) => {
+        match fetch_access_token(&request, &oauth, &dispatcher).await {
+            Ok((access_token, oauth)) => {
                 let warmup = provider_cache
-                    .models(ProviderId::Anthropic, || {
+                    .models(backend_id::ANTHROPIC_API.into(), || {
                         fetch_models(&request, ClaudeAuth::AccessToken(&access_token))
                     })
                     .await;
                 match warmup {
                     Ok(_) => Self {
                         request,
-                        token_state: RwLock::new(TokenState { auth, access_token }),
+                        token_state: RwLock::new(Some(TokenState {
+                            oauth,
+                            access_token,
+                        })),
                         refresh_lock: Mutex::new(()),
-                        storage,
                         provider_cache,
-                        status: AtomicU8::new(HealthStatus::Running as u8),
+                        status: AtomicI32::new(ProviderHealthStatus::Running as i32),
                         error: RwLock::new(None),
+                        dispatcher,
                     },
                     Err(e) => {
                         error!("fail to fetch models on initialization. {e}");
                         Self::unhealthy(
                             request,
-                            storage,
                             provider_cache,
+                            dispatcher,
                             format!("fail to connect to Claude Code: {e}"),
                         )
                     },
@@ -105,8 +91,8 @@ impl ClaudeRuntime {
                 error!("fail to refresh for access token on initialization. {e}");
                 Self::unhealthy(
                     request,
-                    storage,
                     provider_cache,
+                    dispatcher,
                     format!("fail to connect to Claude Code: {e}"),
                 )
             },
@@ -116,31 +102,25 @@ impl ClaudeRuntime {
     /// unhealthy constructor
     fn unhealthy(
         request: reqwest::Client,
-        storage: Storage,
         provider_cache: Arc<ProviderCache>,
+        dispatcher: Dispatcher,
         error_msg: String,
     ) -> Self {
         Self {
             request,
-            token_state: RwLock::new(TokenState {
-                auth: Auth::OAuth {
-                    refresh_token: None,
-                    expires_at: None,
-                },
-                access_token: String::new(),
-            }),
+            token_state: RwLock::new(None),
             refresh_lock: Mutex::new(()),
-            storage,
             provider_cache,
-            status: AtomicU8::new(HealthStatus::Unhealthy as u8),
+            status: AtomicI32::new(ProviderHealthStatus::Unhealthy as i32),
             error: RwLock::new(Some(error_msg)),
+            dispatcher,
         }
     }
 
     /// Flag the runtime unhealthy and record `error` for status reporting.
     fn mark_unhealthy(&self, error: String) {
         self.status
-            .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
+            .store(ProviderHealthStatus::Unhealthy as i32, Ordering::Release);
         *self.error.write().unwrap() = Some(error);
     }
 
@@ -158,47 +138,45 @@ impl ClaudeRuntime {
         }
 
         // Expired (or about to): rotate the token and cache the new pair.
-        let current_auth = self.token_state.read().unwrap().auth.clone();
-        let (new_tokens, auth) =
-            fetch_access_token(&self.request, &current_auth, &self.storage).await?;
-        *self.token_state.write().unwrap() = TokenState {
-            auth,
+        let current_oauth = self
+            .token_state
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|state| state.oauth.clone())
+            .ok_or_else(|| ProviderError::Other("no oauth credential loaded".into()))?;
+        let (new_tokens, oauth) =
+            fetch_access_token(&self.request, &current_oauth, &self.dispatcher).await?;
+        *self.token_state.write().unwrap() = Some(TokenState {
+            oauth,
             access_token: new_tokens.clone(),
-        };
+        });
         Ok(new_tokens)
     }
 
     fn cached_access_token(&self) -> Option<String> {
         let state = self.token_state.read().unwrap();
-        let valid_until = match state.auth {
-            Auth::OAuth {
-                expires_at: Some(expires_at),
-                ..
-            // 5-minute margin before the token actually expires.
-            } => expires_at.saturating_sub(Duration::from_mins(5).as_secs()),
-            _ => 0,
-        };
-        let now = unix_now();
-        if now <= valid_until {
-            return Some(state.access_token.clone());
-        }
-        None
+        let state = state.as_ref()?;
+        state
+            .oauth
+            .is_fresh(unix_now())
+            .then(|| state.access_token.clone())
     }
 }
 
 #[async_trait::async_trait]
 impl ProviderClient for ClaudeRuntime {
-    fn id(&self) -> ProviderId {
-        ProviderId::ClaudeCode
+    fn id(&self) -> String {
+        backend_id::CLAUDE_CODE.into()
     }
 
-    async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
+    async fn chat(&self, request: ChatRequest, dispatcher: Dispatcher) -> Result<()> {
         let token = self
             .refresh()
             .await
             .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
 
-        let body = build_request_body(&request, ProviderId::ClaudeCode);
+        let body = build_request_body(&request, backend_id::CLAUDE_CODE.into());
 
         let response = self
             .request
@@ -216,22 +194,31 @@ impl ProviderClient for ClaudeRuntime {
             return Err(parse_stream_error(&body));
         }
 
-        Ok(response_event_stream(response, ProviderId::ClaudeCode))
+        response_event_stream(response, backend_id::CLAUDE_CODE.into(), dispatcher).await;
+        Ok(())
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(&self.provider_cache, ProviderId::Anthropic, || async move {
-            let token = self
-                .refresh()
-                .await
-                .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
-            fetch_models(&self.request, ClaudeAuth::AccessToken(&token)).await
-        })
+        cached_models(
+            &self.provider_cache,
+            backend_id::ANTHROPIC_API.into(),
+            || async move {
+                let token = self
+                    .refresh()
+                    .await
+                    .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+                fetch_models(&self.request, ClaudeAuth::AccessToken(&token)).await
+            },
+        )
         .await
     }
 
-    fn health_statue(&self) -> HealthStatus {
-        HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    fn health_status(&self) -> ProviderHealthStatus {
+        let raw = self.status.load(Ordering::Acquire);
+        ProviderHealthStatus::try_from(raw).unwrap_or_else(|_| {
+            error!("unknown health status value {raw}. This indicates a bug.");
+            ProviderHealthStatus::Unhealthy
+        })
     }
 
     fn error(&self) -> Option<String> {
@@ -241,41 +228,46 @@ impl ProviderClient for ClaudeRuntime {
 
 async fn fetch_access_token(
     request: &reqwest::Client,
-    auth: &Auth,
-    storage: &Storage,
-) -> Result<(String, Auth)> {
+    oauth: &OAuthState,
+    dispatcher: &Dispatcher,
+) -> Result<(String, OAuthState)> {
     let response: RefreshResponse = request
         .post(TOKEN_URL)
-        .json(&RefreshRequest::new(auth, CLIENT_ID)?)
+        .json(&RefreshRequest::new(oauth, CLIENT_ID))
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
 
-    storage
-        .update_provider(
-            &ProviderId::ClaudeCode,
-            &AuthKind::Oauth,
-            &response.refresh_token,
-        )
-        .await?;
+    // defensively rare case that try to update but job get canceled
+    tokio::spawn({
+        let dispatcher = dispatcher.clone();
+        let refresh_token = response.refresh_token.clone();
+        async move {
+            dispatcher
+                .send(response_event::Payload::AuthUpdateRequest(
+                    AuthUpdateRequest {
+                        backend_id: backend_id::CLAUDE_CODE.into(),
+                        refresh_token,
+                    },
+                ))
+                .await;
+        }
+    });
 
     // get the epoch time current access token will expire
     let expires_at = unix_now() + response.expires_in;
 
     Ok((
         response.access_token,
-        Auth::OAuth {
-            refresh_token: Some(response.refresh_token),
-            expires_at: Some(expires_at),
-        },
+        OAuthState::rotated(response.refresh_token, expires_at),
     ))
 }
 
 #[derive(Clone)]
 struct TokenState {
-    auth: Auth,
+    oauth: OAuthState,
     access_token: String,
 }
 
