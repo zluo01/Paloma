@@ -152,3 +152,5 @@ Temporary Items
 
 # xcode generated bindings
 gui/macos/Scry/Scry/Generated/
+
+**/target/
