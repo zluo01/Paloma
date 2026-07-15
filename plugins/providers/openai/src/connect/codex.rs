@@ -1,11 +1,13 @@
 use std::time::Duration;
 
+use scry_provider_base::{ProviderAuthenticator, ProviderError, Result};
+use scry_provider_protocol::v1::{
+    ConnectionPayload, DeviceCode, ProviderAuth, connection_payload, finalize_connection_request,
+    provider_auth,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    entity::ProviderId,
-    provider::{Auth, Connection, ProviderAuthenticator, ProviderError, Result},
-};
+use crate::constant::backend_id;
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const USERCODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
@@ -75,11 +77,11 @@ impl CodexConnector {
 
 #[async_trait::async_trait]
 impl ProviderAuthenticator for CodexConnector {
-    fn id(&self) -> ProviderId {
-        ProviderId::Codex
+    fn id(&self) -> String {
+        backend_id::CODEX.into()
     }
 
-    async fn init_connection(&self) -> Result<Connection> {
+    async fn init_connection(&self) -> Result<ConnectionPayload> {
         let resp: UserCodeResponse = self
             .request
             .post(USERCODE_URL)
@@ -90,26 +92,26 @@ impl ProviderAuthenticator for CodexConnector {
             .json()
             .await?;
 
-        Ok(Connection::DeviceCode {
-            verification_uri: VERIFICATION_URI,
-            user_code: resp.user_code.clone(),
-            transaction_payload: serde_json::to_value(&resp)?,
+        Ok(ConnectionPayload {
+            payload: Some(connection_payload::Payload::DeviceCode(DeviceCode {
+                verification_url: VERIFICATION_URI.into(),
+                user_code: resp.user_code.clone(),
+                transaction_payload: serde_json::to_string(&resp)?,
+            })),
         })
     }
 
-    async fn finalize_connection(&self, payload: Connection) -> Result<Auth> {
-        let transactional_payload = match payload {
-            Connection::DeviceCode {
-                transaction_payload,
-                ..
-            } => transaction_payload,
-            _ => {
-                return Err(ProviderError::InvalidConnection {
-                    expected: "DeviceCode",
-                });
-            },
+    async fn finalize_connection(
+        &self,
+        input: finalize_connection_request::Input,
+    ) -> Result<ProviderAuth> {
+        let finalize_connection_request::Input::TransactionPayload(transaction_payload) = input
+        else {
+            return Err(ProviderError::InvalidConnection {
+                expected: "TransactionPayload",
+            });
         };
-        let transaction_payload: UserCodeResponse = serde_json::from_value(transactional_payload)?;
+        let transaction_payload: UserCodeResponse = serde_json::from_str(&transaction_payload)?;
 
         let interval_secs = transaction_payload
             .interval
@@ -122,10 +124,7 @@ impl ProviderAuthenticator for CodexConnector {
         // Past it, every poll returns an error, so the effective timeout is
         // the smaller of the server's remaining window and our defensive cap.
         let server_deadline = chrono::DateTime::parse_from_rfc3339(&transaction_payload.expires_at)
-            .map_err(|source| ProviderError::ParseTimestamp {
-                field: "expires_at",
-                source,
-            })?;
+            .map_err(|e| ProviderError::Other(format!("fail to parse expires_at: {e}")))?;
         let server_remaining = (server_deadline.with_timezone(&chrono::Utc) - chrono::Utc::now())
             .to_std()
             .unwrap_or(Duration::ZERO);
@@ -140,7 +139,7 @@ impl ProviderAuthenticator for CodexConnector {
             )
             .await?;
 
-        let tokens: OAuthTokenResponse = self
+        let refresh_token = self
             .request
             .post(TOKEN_EXCHANGE_URL)
             .form(&[
@@ -153,12 +152,16 @@ impl ProviderAuthenticator for CodexConnector {
             .send()
             .await?
             .error_for_status()?
-            .json()
-            .await?;
+            .json::<OAuthTokenResponse>()
+            .await?
+            .refresh_token
+            .filter(|token| !token.trim().is_empty())
+            .ok_or_else(|| {
+                ProviderError::Other("Codex OAuth response did not include a refresh_token".into())
+            })?;
 
-        Ok(Auth::OAuth {
-            refresh_token: tokens.refresh_token,
-            expires_at: None,
+        Ok(ProviderAuth {
+            payload: Some(provider_auth::Payload::RefreshToken(refresh_token)),
         })
     }
 }

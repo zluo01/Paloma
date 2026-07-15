@@ -1,29 +1,29 @@
 use std::{
     sync::{
         Arc, RwLock,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicI32, Ordering},
     },
     time::Duration,
 };
 
 use base64::Engine;
 use log::error;
+use scry_provider_base::{
+    Dispatcher, OAuthState, ProviderCache, ProviderClient, ProviderError, RefreshRequest, Result,
+    cached_models,
+};
+use scry_provider_protocol::v1::{
+    AuthUpdateRequest, ChatRequest, Model, ProviderAuth, ProviderHealthStatus, response_event,
+};
+use scry_utils::{attempt_with_retry, unix_now};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use super::shared::{
-    ModelsResponse, build_request_body, models_from_response, parse_stream_error,
-    response_event_stream,
+    MODELS_FETCH_TIMEOUT, ModelsResponse, build_request_body, models_from_response,
+    parse_stream_error, response_event_stream,
 };
-use crate::{
-    db::{AuthKind, Storage},
-    entity::{HealthStatus, ProviderId},
-    provider::{
-        Auth, ChatRequest, ChatStream, Model, ProviderClient, ProviderError, Result,
-        runtime::{RefreshRequest, cached_models},
-    },
-    utils::{ProviderCache, unix_now},
-};
+use crate::constant::backend_id;
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
@@ -37,51 +37,32 @@ const CLIENT_VERSION_FALLBACK: &str = "0.144.0";
 
 pub struct CodexRuntime {
     request: reqwest::Client,
-    storage: Storage,
     provider_cache: Arc<ProviderCache>,
-    token_state: RwLock<TokenState>,
+    token_state: RwLock<Option<TokenState>>,
     refresh_lock: Mutex<()>,
-    status: AtomicU8,
+    status: AtomicI32,
     error: RwLock<Option<String>>,
+    dispatcher: Dispatcher,
 }
 
 impl CodexRuntime {
     pub async fn new(
-        credential: &Auth,
+        credential: &ProviderAuth,
         request: reqwest::Client,
-        storage: Storage,
         provider_cache: Arc<ProviderCache>,
+        dispatcher: Dispatcher,
     ) -> Self {
-        let auth = match credential {
-            Auth::OAuth {
-                refresh_token: Some(_),
-                ..
-            } => credential.clone(),
-            Auth::OAuth {
-                refresh_token: None,
-                ..
-            } => {
-                return Self::unhealthy(
-                    request,
-                    storage,
-                    provider_cache,
-                    "Codex credential is missing a refresh_token".into(),
-                );
-            },
-            Auth::ApiKey(_) => {
-                return Self::unhealthy(
-                    request,
-                    storage,
-                    provider_cache,
-                    "Codex does not support api_key credentials".into(),
-                );
+        let oauth = match OAuthState::try_from(credential) {
+            Ok(oauth) => oauth,
+            Err(e) => {
+                return Self::unhealthy(request, provider_cache, dispatcher, format!("Codex: {e}"));
             },
         };
 
-        match fetch_access_token(&request, &auth, &storage).await {
-            Ok((access_token, auth)) => {
+        match fetch_access_token(&request, &oauth, &dispatcher).await {
+            Ok((access_token, oauth)) => {
                 let warmup = provider_cache
-                    .models(ProviderId::Codex, || async {
+                    .models(backend_id::CODEX.into(), || async {
                         let version = client_version(&provider_cache, &request).await;
                         fetch_models(&request, &access_token, &version).await
                     })
@@ -89,19 +70,22 @@ impl CodexRuntime {
                 match warmup {
                     Ok(_) => Self {
                         request,
-                        token_state: RwLock::new(TokenState { auth, access_token }),
+                        token_state: RwLock::new(Some(TokenState {
+                            oauth,
+                            access_token,
+                        })),
                         refresh_lock: Mutex::new(()),
-                        storage,
                         provider_cache,
-                        status: AtomicU8::new(HealthStatus::Running as u8),
+                        status: AtomicI32::new(ProviderHealthStatus::Running as i32),
                         error: RwLock::new(None),
+                        dispatcher,
                     },
                     Err(e) => {
                         error!("fail to fetch models on initialization. {e}");
                         Self::unhealthy(
                             request,
-                            storage,
                             provider_cache,
+                            dispatcher,
                             format!("fail to connect to codex: {e}"),
                         )
                     },
@@ -111,8 +95,8 @@ impl CodexRuntime {
                 error!("fail to refresh for access token on initialization. {e}");
                 Self::unhealthy(
                     request,
-                    storage,
                     provider_cache,
+                    dispatcher,
                     format!("fail to connect to codex: {e}"),
                 )
             },
@@ -122,34 +106,25 @@ impl CodexRuntime {
     /// unhealthy constructor
     fn unhealthy(
         request: reqwest::Client,
-        storage: Storage,
         provider_cache: Arc<ProviderCache>,
+        dispatcher: Dispatcher,
         error_msg: String,
     ) -> Self {
         Self {
             request,
-            token_state: RwLock::new(TokenState {
-                auth: Auth::OAuth {
-                    refresh_token: None,
-                    expires_at: None,
-                },
-                access_token: AccessToken {
-                    access_token: String::new(),
-                    chatgpt_account_id: String::new(),
-                },
-            }),
+            token_state: RwLock::new(None),
             refresh_lock: Mutex::new(()),
-            storage,
             provider_cache,
-            status: AtomicU8::new(HealthStatus::Unhealthy as u8),
+            status: AtomicI32::new(ProviderHealthStatus::Unhealthy as i32),
             error: RwLock::new(Some(error_msg)),
+            dispatcher,
         }
     }
 
     /// Flag the runtime unhealthy and record `error` for status reporting.
     fn mark_unhealthy(&self, error: String) {
         self.status
-            .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
+            .store(ProviderHealthStatus::Unhealthy as i32, Ordering::Release);
         *self.error.write().unwrap() = Some(error);
     }
 
@@ -167,54 +142,52 @@ impl CodexRuntime {
         }
 
         // Expired (or about to): rotate the token and cache the new pair.
-        let current_auth = self.token_state.read().unwrap().auth.clone();
-        let (new_tokens, auth) =
-            fetch_access_token(&self.request, &current_auth, &self.storage).await?;
-        *self.token_state.write().unwrap() = TokenState {
-            auth,
+        let current_oauth = self
+            .token_state
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|state| state.oauth.clone())
+            .ok_or_else(|| ProviderError::Other("no oauth credential loaded".into()))?;
+        let (new_tokens, oauth) =
+            fetch_access_token(&self.request, &current_oauth, &self.dispatcher).await?;
+        *self.token_state.write().unwrap() = Some(TokenState {
+            oauth,
             access_token: new_tokens.clone(),
-        };
+        });
         Ok(new_tokens)
     }
 
     fn cached_access_token(&self) -> Option<AccessToken> {
         let state = self.token_state.read().unwrap();
-        let valid_until = match state.auth {
-            Auth::OAuth {
-                expires_at: Some(expires_at),
-                ..
-            // 5-minute margin before the token actually expires.
-            } => expires_at.saturating_sub(Duration::from_mins(5).as_secs()),
-            _ => 0,
-        };
-        let now = unix_now();
-        if now <= valid_until {
-            return Some(state.access_token.clone());
-        }
-        None
+        let state = state.as_ref()?;
+        state
+            .oauth
+            .is_fresh(unix_now())
+            .then(|| state.access_token.clone())
     }
 }
 
 #[async_trait::async_trait]
 impl ProviderClient for CodexRuntime {
-    fn id(&self) -> ProviderId {
-        ProviderId::Codex
+    fn id(&self) -> String {
+        backend_id::CODEX.into()
     }
 
-    async fn chat(&self, request: ChatRequest) -> Result<ChatStream> {
+    async fn chat(&self, request: ChatRequest, dispatcher: Dispatcher) -> Result<()> {
         let token = self
             .refresh()
             .await
             .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
 
-        let body = build_request_body(&request, ProviderId::Codex);
+        let body = build_request_body(&request, backend_id::CODEX.into());
 
         let response = self
             .request
             .post(RESPONSES_URL)
             .bearer_auth(&token.access_token)
             .header("chatgpt-account-id", &token.chatgpt_account_id)
-            .header("originator", "srcy")
+            .header("originator", "scry")
             .header(reqwest::header::USER_AGENT, "scry-codex")
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
@@ -226,23 +199,32 @@ impl ProviderClient for CodexRuntime {
             return Err(parse_stream_error(&body));
         }
 
-        Ok(response_event_stream(response, ProviderId::Codex))
+        response_event_stream(response, backend_id::CODEX.into(), dispatcher).await;
+        Ok(())
     }
 
     async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(&self.provider_cache, ProviderId::Codex, || async move {
-            let version = client_version(&self.provider_cache, &self.request).await;
-            let token = self
-                .refresh()
-                .await
-                .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
-            fetch_models(&self.request, &token, &version).await
-        })
+        cached_models(
+            &self.provider_cache,
+            backend_id::CODEX.into(),
+            || async move {
+                let version = client_version(&self.provider_cache, &self.request).await;
+                let token = self
+                    .refresh()
+                    .await
+                    .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+                fetch_models(&self.request, &token, &version).await
+            },
+        )
         .await
     }
 
-    fn health_statue(&self) -> HealthStatus {
-        HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
+    fn health_status(&self) -> ProviderHealthStatus {
+        let raw = self.status.load(Ordering::Acquire);
+        ProviderHealthStatus::try_from(raw).unwrap_or_else(|_| {
+            error!("unknown health status value {raw}. This indicates a bug.");
+            ProviderHealthStatus::Unhealthy
+        })
     }
 
     fn error(&self) -> Option<String> {
@@ -252,30 +234,39 @@ impl ProviderClient for CodexRuntime {
 
 async fn fetch_access_token(
     request: &reqwest::Client,
-    auth: &Auth,
-    storage: &Storage,
-) -> Result<(AccessToken, Auth)> {
+    oauth: &OAuthState,
+    dispatcher: &Dispatcher,
+) -> Result<(AccessToken, OAuthState)> {
+    // Deliberately no timeout or retry: the exchange rotates the refresh token
+    // server-side, so aborting or replaying a possibly-executed request can
+    // orphan the rotated token. Waiting out the client's read timeout is safer.
     let response: RefreshResponse = request
         .post(TOKEN_URL)
-        .json(&RefreshRequest::new(auth, CLIENT_ID)?)
+        .json(&RefreshRequest::new(oauth, CLIENT_ID))
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
 
+    // defensively rare case that try to update but job get canceled
+    tokio::spawn({
+        let dispatcher = dispatcher.clone();
+        let refresh_token = response.refresh_token.clone();
+        async move {
+            dispatcher
+                .send(response_event::Payload::AuthUpdateRequest(
+                    AuthUpdateRequest {
+                        backend_id: backend_id::CODEX.into(),
+                        refresh_token,
+                    },
+                ))
+                .await;
+        }
+    });
+
     let chatgpt_account_id = extract_chatgpt_account_id(&response.id_token)
         .ok_or_else(|| ProviderError::Other("id_token missing chatgpt_account_id claim".into()))?;
-
-    // codex refresh token follows "rotate on use"
-    // so we need to proactively update the db whenever we refresh.
-    storage
-        .update_provider(
-            &ProviderId::Codex,
-            &AuthKind::Oauth,
-            &response.refresh_token,
-        )
-        .await?;
 
     // get the epoch time current access token will expire
     let expires_at = unix_now() + response.expires_in;
@@ -285,18 +276,12 @@ async fn fetch_access_token(
             access_token: response.access_token,
             chatgpt_account_id,
         },
-        Auth::OAuth {
-            refresh_token: Some(response.refresh_token),
-            expires_at: Some(expires_at),
-        },
+        OAuthState::rotated(response.refresh_token, expires_at),
     ))
 }
 
 /// Decode a JWT's middle segment (claims) and pull out
 /// `https://api.openai.com/auth.chatgpt_account_id`.
-///
-/// No signature verification: we received this token over our own TLS exchange
-/// with `auth.openai.com`, so the bytes can't have been tampered with in transit.
 fn extract_chatgpt_account_id(id_token: &str) -> Option<String> {
     let payload_b64 = id_token.split('.').nth(1)?;
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -313,26 +298,27 @@ async fn fetch_models(
     token: &AccessToken,
     client_version: &str,
 ) -> Result<Vec<Model>> {
-    let url = format!("{MODELS_URL}?client_version={client_version}");
-    let response: ModelsResponse = request
-        .get(&url)
-        .bearer_auth(&token.access_token)
-        .header("chatgpt-account-id", &token.chatgpt_account_id)
-        .header("OpenAI-Beta", "responses=experimental")
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let response: ModelsResponse = attempt_with_retry(
+        || async move {
+            Ok(request
+                .get(format!("{MODELS_URL}?client_version={client_version}"))
+                .bearer_auth(&token.access_token)
+                .header("chatgpt-account-id", &token.chatgpt_account_id)
+                .header("OpenAI-Beta", "responses=experimental")
+                .timeout(MODELS_FETCH_TIMEOUT)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?)
+        },
+        ProviderError::is_retryable,
+    )
+    .await?;
 
     Ok(models_from_response(response))
 }
 
-/// Codex CLI's own version, sent as `?client_version=` on `/backend-api/codex/models`.
-/// The backend gates per-model availability on this via `minimal_client_version`
-/// in each `ModelInfo`. Since we're impersonating Codex CLI, this must track
-/// what real Codex CLI publishes, not our own package version.
-///
 /// Construction in Codex (major.minor.patch from `CARGO_PKG_VERSION`):
 ///   <https://github.com/openai/codex/blob/main/codex-rs/models-manager/src/lib.rs#L19-L26>
 /// Query-param append:
@@ -375,7 +361,7 @@ async fn fetch_client_version(request: &reqwest::Client) -> Result<String> {
 /// from readers' perspective.
 #[derive(Clone)]
 struct TokenState {
-    auth: Auth,
+    oauth: OAuthState,
     access_token: AccessToken,
 }
 

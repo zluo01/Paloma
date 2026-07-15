@@ -1,19 +1,16 @@
 use std::collections::BTreeMap;
 
 use log::warn;
-use serde_json::Value;
-
-use crate::{
-    provider::{
-        ProviderError, Result,
-        codec::{
-            ConversationItem, MessageContentItem, ProviderDecoder, ProviderEncoder, ProviderMeta,
-            provider_meta, provider_meta_to_map,
-            schema::{EncodeMode, SummaryItem},
-        },
-    },
-    utils::Element,
+use scry_provider_base::{
+    ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
+    provider_meta_to_map,
 };
+use scry_provider_protocol::v1::{
+    ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
+    SummaryItem, ToolCall, conversation_item,
+};
+use scry_utils::Element;
+use serde_json::Value;
 
 pub struct CodexCodec;
 
@@ -45,7 +42,7 @@ impl ProviderEncoder for CodexCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Value {
-        let same_provider = matches!(encode_mode, EncodeMode::SameProviderReplay);
+        let same_provider = matches!(encode_mode, EncodeMode::SameProvider);
         let mut item = provider_meta_to_map(provider_meta, same_provider);
 
         item.insert("type".to_string(), Value::String("message".to_string()));
@@ -89,7 +86,7 @@ impl ProviderEncoder for CodexCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
-        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+        if !matches!(encode_mode, EncodeMode::SameProvider) {
             return None;
         }
         let mut item = provider_meta_to_map(provider_meta, true);
@@ -126,7 +123,7 @@ impl ProviderEncoder for CodexCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Value {
-        let same_provider = matches!(encode_mode, EncodeMode::SameProviderReplay);
+        let same_provider = matches!(encode_mode, EncodeMode::SameProvider);
         let mut item = provider_meta_to_map(provider_meta, same_provider);
 
         item.insert(
@@ -158,7 +155,7 @@ impl ProviderEncoder for CodexCodec {
         provider_meta: &ProviderMeta,
         encode_mode: EncodeMode,
     ) -> Option<Value> {
-        if !matches!(encode_mode, EncodeMode::SameProviderReplay) {
+        if !matches!(encode_mode, EncodeMode::SameProvider) {
             return None;
         }
         let mut item = provider_meta_to_map(provider_meta, true);
@@ -251,9 +248,11 @@ fn decode_message_item(item: &Value) -> Result<ConversationItem> {
         .unwrap_or_default();
     let provider_meta = provider_meta(item, &["type", "content"]);
 
-    Ok(ConversationItem::Message {
-        message,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::Message(ConversationMessage {
+            message,
+            provider_meta,
+        })),
     })
 }
 
@@ -277,9 +276,11 @@ fn decode_reasoning_item(item: &Value) -> Result<ConversationItem> {
         .unwrap_or_default();
     let provider_meta = provider_meta(item, &["type", "summary"]);
 
-    Ok(ConversationItem::Reasoning {
-        reasoning,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::Reasoning(Reasoning {
+            reasoning,
+            provider_meta,
+        })),
     })
 }
 
@@ -301,11 +302,13 @@ fn decode_function_call_item(item: &Value) -> Result<ConversationItem> {
         .to_string();
     let provider_meta = provider_meta(item, &["type", "call_id", "name", "arguments"]);
 
-    Ok(ConversationItem::ToolCall {
-        call_id,
-        name,
-        arguments,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::ToolCall(ToolCall {
+            call_id,
+            name,
+            arguments,
+            provider_meta,
+        })),
     })
 }
 
@@ -313,25 +316,31 @@ fn decode_web_search_call_item(item: &Value) -> Result<ConversationItem> {
     let content = item.get("action").map(Value::to_string);
     let provider_meta = provider_meta(item, &["type", "action"]);
 
-    Ok(ConversationItem::HostedTool {
-        function_type: "web_search_call".to_string(),
-        content,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::HostedTool(HostedTool {
+            function_type: "web_search_call".to_string(),
+            content,
+            provider_meta,
+        })),
     })
 }
 
 fn decode_hosted_tool_item(response_type: &str, item: &Value) -> Result<ConversationItem> {
     let provider_meta = provider_meta(item, &["type"]);
 
-    Ok(ConversationItem::HostedTool {
-        function_type: response_type.to_string(),
-        content: None,
-        provider_meta,
+    Ok(ConversationItem {
+        item: Some(conversation_item::Item::HostedTool(HostedTool {
+            function_type: response_type.to_string(),
+            content: None,
+            provider_meta,
+        })),
     })
 }
 
 #[cfg(test)]
 mod encoder_tests {
+    use scry_provider_protocol::v1::EncodeMode;
+
     use super::*;
 
     #[test]
@@ -384,18 +393,30 @@ mod encoder_tests {
             &[MessageContentItem {
                 content: "example output".to_string(),
                 provider_meta: [
-                    ("annotations".to_string(), serde_json::json!([])),
-                    ("type".to_string(), Value::String("output_text".to_string())),
+                    ("annotations".to_string(), serde_json::json!([]).to_string()),
+                    (
+                        "type".to_string(),
+                        Value::String("output_text".to_string()).to_string(),
+                    ),
                 ]
                 .into(),
             }],
             &[
-                ("id".to_string(), Value::String("msg_123".to_string())),
-                ("role".to_string(), Value::String("assistant".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("msg_123".to_string()).to_string(),
+                ),
+                (
+                    "role".to_string(),
+                    Value::String("assistant".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
             ]
             .into(),
-            EncodeMode::SameProviderReplay,
+            EncodeMode::SameProvider,
         );
 
         assert_eq!(
@@ -421,15 +442,28 @@ mod encoder_tests {
         let item = CodexCodec.encode_message(
             &[MessageContentItem {
                 content: "example refusal".to_string(),
-                provider_meta: [("type".to_string(), Value::String("refusal".to_string()))].into(),
+                provider_meta: [(
+                    "type".to_string(),
+                    Value::String("refusal".to_string()).to_string(),
+                )]
+                .into(),
             }],
             &[
-                ("id".to_string(), Value::String("msg_123".to_string())),
-                ("role".to_string(), Value::String("assistant".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("msg_123".to_string()).to_string(),
+                ),
+                (
+                    "role".to_string(),
+                    Value::String("assistant".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
             ]
             .into(),
-            EncodeMode::SameProviderReplay,
+            EncodeMode::SameProvider,
         );
 
         assert_eq!(
@@ -455,18 +489,30 @@ mod encoder_tests {
             &[MessageContentItem {
                 content: "example output".to_string(),
                 provider_meta: [
-                    ("annotations".to_string(), serde_json::json!([])),
-                    ("type".to_string(), Value::String("output_text".to_string())),
+                    ("annotations".to_string(), serde_json::json!([]).to_string()),
+                    (
+                        "type".to_string(),
+                        Value::String("output_text".to_string()).to_string(),
+                    ),
                 ]
                 .into(),
             }],
             &[
-                ("id".to_string(), Value::String("msg_123".to_string())),
-                ("role".to_string(), Value::String("assistant".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("msg_123".to_string()).to_string(),
+                ),
+                (
+                    "role".to_string(),
+                    Value::String("assistant".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
                 (
                     "random_other_provider".to_string(),
-                    Value::String("random_other_provider".to_string()),
+                    Value::String("random_other_provider".to_string()).to_string(),
                 ),
             ]
             .into(),
@@ -495,20 +541,23 @@ mod encoder_tests {
                 content: "example summary".to_string(),
                 provider_meta: [(
                     "type".to_string(),
-                    Value::String("summary_text".to_string()),
+                    Value::String("summary_text".to_string()).to_string(),
                 )]
                 .into(),
             }],
             &[
-                ("content".to_string(), serde_json::json!([])),
+                ("content".to_string(), serde_json::json!([]).to_string()),
                 (
                     "encrypted_content".to_string(),
-                    Value::String("encrypted_reasoning".to_string()),
+                    Value::String("encrypted_reasoning".to_string()).to_string(),
                 ),
-                ("id".to_string(), Value::String("rs_123".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("rs_123".to_string()).to_string(),
+                ),
             ]
             .into(),
-            EncodeMode::SameProviderReplay,
+            EncodeMode::SameProvider,
         );
 
         assert_eq!(
@@ -532,16 +581,19 @@ mod encoder_tests {
     fn encodes_cross_provider_reasoning() {
         let item = CodexCodec.encode_reasoning(
             &[SummaryItem {
-                content: "example summary".to_string(),
+                content: "example summary".into(),
                 provider_meta: [(
                     "type".to_string(),
-                    Value::String("summary_text".to_string()),
+                    Value::String("summary_text".to_string()).to_string(),
                 )]
                 .into(),
             }],
             &[
-                ("content".to_string(), serde_json::json!([])),
-                ("id".to_string(), Value::String("rs_123".to_string())),
+                ("content".to_string(), serde_json::json!([]).to_string()),
+                (
+                    "id".to_string(),
+                    Value::String("rs_123".to_string()).to_string(),
+                ),
             ]
             .into(),
             EncodeMode::CrossProvider,
@@ -557,11 +609,17 @@ mod encoder_tests {
             "example_tool",
             "{\"query\":\"example search\"}",
             &[
-                ("id".to_string(), Value::String("fc_123".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("fc_123".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
             ]
             .into(),
-            EncodeMode::SameProviderReplay,
+            EncodeMode::SameProvider,
         );
 
         assert_eq!(
@@ -584,8 +642,14 @@ mod encoder_tests {
             "example_tool",
             "{\"query\":\"example search\"}",
             &[
-                ("id".to_string(), Value::String("fc_123".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("fc_123".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
             ]
             .into(),
             EncodeMode::CrossProvider,
@@ -622,11 +686,17 @@ mod encoder_tests {
             "web_search_call",
             &Some(r#"{"queries":["example query"],"type":"search"}"#.to_string()),
             &[
-                ("id".to_string(), Value::String("ws_123".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("ws_123".to_string()).to_string(),
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string(),
+                ),
             ]
             .into(),
-            EncodeMode::SameProviderReplay,
+            EncodeMode::SameProvider,
         );
 
         assert_eq!(
@@ -649,8 +719,8 @@ mod encoder_tests {
             "web_search_call",
             &Some(r#"{"queries":["example query"],"type":"search"}"#.to_string()),
             &[
-                ("id".to_string(), Value::String("ws_123".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                ("id".to_string(), "ws_123".to_string()),
+                ("status".to_string(), "completed".to_string()),
             ]
             .into(),
             EncodeMode::CrossProvider,
@@ -742,28 +812,45 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::Message {
-                message: vec![
-                    MessageContentItem {
-                        content: "example output".to_string(),
-                        provider_meta: [
-                            ("annotations".to_string(), serde_json::json!([])),
-                            ("type".to_string(), Value::String("output_text".to_string())),
-                        ]
-                        .into(),
-                    },
-                    MessageContentItem {
-                        content: "example refusal".to_string(),
-                        provider_meta: [("type".to_string(), Value::String("refusal".to_string()))]
-                            .into(),
-                    },
-                ],
-                provider_meta: [
-                    ("id".to_string(), Value::String("msg_123".to_string())),
-                    ("role".to_string(), Value::String("assistant".to_string())),
-                    ("status".to_string(), Value::String("completed".to_string())),
-                ]
-                .into(),
+            ConversationItem {
+                item: Some(conversation_item::Item::Message(ConversationMessage {
+                    message: vec![
+                        MessageContentItem {
+                            content: "example output".to_string(),
+                            provider_meta: [
+                                ("annotations".to_string(), serde_json::json!([]).to_string()),
+                                (
+                                    "type".to_string(),
+                                    Value::String("output_text".to_string()).to_string()
+                                ),
+                            ]
+                            .into()
+                        },
+                        MessageContentItem {
+                            content: "example refusal".to_string(),
+                            provider_meta: [(
+                                "type".to_string(),
+                                Value::String("refusal".to_string()).to_string()
+                            )]
+                            .into()
+                        },
+                    ],
+                    provider_meta: [
+                        (
+                            "id".to_string(),
+                            Value::String("msg_123".to_string()).to_string()
+                        ),
+                        (
+                            "role".to_string(),
+                            Value::String("assistant".to_string()).to_string()
+                        ),
+                        (
+                            "status".to_string(),
+                            Value::String("completed".to_string()).to_string()
+                        ),
+                    ]
+                    .into()
+                })),
             }
         );
     }
@@ -791,34 +878,39 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::Reasoning {
-                reasoning: vec![
-                    SummaryItem {
-                        content: "first summary".to_string(),
-                        provider_meta: [(
-                            "type".to_string(),
-                            Value::String("summary_text".to_string())
-                        )]
-                        .into(),
-                    },
-                    SummaryItem {
-                        content: "second summary".to_string(),
-                        provider_meta: [(
-                            "type".to_string(),
-                            Value::String("summary_text".to_string())
-                        )]
-                        .into(),
-                    },
-                ],
-                provider_meta: [
-                    ("content".to_string(), serde_json::json!([])),
-                    (
-                        "encrypted_content".to_string(),
-                        Value::String("encrypted_reasoning".to_string())
-                    ),
-                    ("id".to_string(), Value::String("rs_123".to_string())),
-                ]
-                .into(),
+            ConversationItem {
+                item: Some(conversation_item::Item::Reasoning(Reasoning {
+                    reasoning: vec![
+                        SummaryItem {
+                            content: "first summary".to_string(),
+                            provider_meta: [(
+                                "type".to_string(),
+                                Value::String("summary_text".to_string()).to_string()
+                            )]
+                            .into()
+                        },
+                        SummaryItem {
+                            content: "second summary".to_string(),
+                            provider_meta: [(
+                                "type".to_string(),
+                                Value::String("summary_text".to_string()).to_string()
+                            )]
+                            .into()
+                        },
+                    ],
+                    provider_meta: [
+                        ("content".to_string(), serde_json::json!([]).to_string()),
+                        (
+                            "encrypted_content".to_string(),
+                            Value::String("encrypted_reasoning".to_string()).to_string()
+                        ),
+                        (
+                            "id".to_string(),
+                            Value::String("rs_123".to_string()).to_string()
+                        ),
+                    ]
+                    .into()
+                })),
             }
         );
     }
@@ -843,15 +935,23 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::ToolCall {
-                call_id: "call_123".to_string(),
-                name: "example_tool".to_string(),
-                arguments: "{\"query\":\"example search\"}".to_string(),
-                provider_meta: [
-                    ("id".to_string(), Value::String("fc_123".to_string())),
-                    ("status".to_string(), Value::String("completed".to_string())),
-                ]
-                .into(),
+            ConversationItem {
+                item: Some(conversation_item::Item::ToolCall(ToolCall {
+                    call_id: "call_123".to_string(),
+                    name: "example_tool".to_string(),
+                    arguments: "{\"query\":\"example search\"}".to_string(),
+                    provider_meta: [
+                        (
+                            "id".to_string(),
+                            Value::String("fc_123".to_string()).to_string()
+                        ),
+                        (
+                            "status".to_string(),
+                            Value::String("completed".to_string()).to_string()
+                        ),
+                    ]
+                    .into()
+                })),
             }
         );
     }
@@ -875,11 +975,11 @@ mod decoder_tests {
 
         let item = CodexCodec.decode_output_item(json(payload)).unwrap();
 
-        let ConversationItem::HostedTool {
+        let Some(conversation_item::Item::HostedTool(HostedTool {
             function_type,
             content,
             provider_meta,
-        } = item
+        })) = item.item
         else {
             panic!("expected hosted tool item");
         };
@@ -895,8 +995,14 @@ mod decoder_tests {
         assert_eq!(
             provider_meta,
             [
-                ("id".to_string(), Value::String("ws_123".to_string())),
-                ("status".to_string(), Value::String("completed".to_string())),
+                (
+                    "id".to_string(),
+                    Value::String("ws_123".to_string()).to_string()
+                ),
+                (
+                    "status".to_string(),
+                    Value::String("completed".to_string()).to_string()
+                ),
             ]
             .into()
         );
@@ -922,27 +1028,128 @@ mod decoder_tests {
 
         assert_eq!(
             item,
-            ConversationItem::HostedTool {
-                function_type: "custom_tool_call".to_string(),
-                content: None,
-                provider_meta: [
-                    ("call_id".to_string(), Value::String("call_123".to_string())),
-                    ("id".to_string(), Value::String("ctc_123".to_string())),
-                    (
-                        "input".to_string(),
-                        Value::String("example custom tool input".to_string())
-                    ),
-                    (
-                        "name".to_string(),
-                        Value::String("example_custom_tool".to_string())
-                    ),
-                    (
-                        "namespace".to_string(),
-                        Value::String("example_namespace".to_string())
-                    ),
-                ]
-                .into(),
+            ConversationItem {
+                item: Some(conversation_item::Item::HostedTool(HostedTool {
+                    function_type: "custom_tool_call".to_string(),
+                    content: None,
+                    provider_meta: [
+                        (
+                            "call_id".to_string(),
+                            Value::String("call_123".to_string()).to_string()
+                        ),
+                        (
+                            "id".to_string(),
+                            Value::String("ctc_123".to_string()).to_string()
+                        ),
+                        (
+                            "input".to_string(),
+                            Value::String("example custom tool input".to_string()).to_string()
+                        ),
+                        (
+                            "name".to_string(),
+                            Value::String("example_custom_tool".to_string()).to_string()
+                        ),
+                        (
+                            "namespace".to_string(),
+                            Value::String("example_namespace".to_string()).to_string()
+                        ),
+                    ]
+                    .into(),
+                })),
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod roundtrip_tests {
+    use super::*;
+
+    fn assert_roundtrip(item: Value) {
+        let decoded = CodexCodec
+            .decode_output_item(serde_json::json!({ "item": item }))
+            .unwrap();
+        let encoded = CodexCodec
+            .encode_conversation_item(&decoded, EncodeMode::SameProvider)
+            .expect("same-provider encode must yield an item");
+        assert_eq!(encoded, item);
+    }
+
+    #[test]
+    fn message_item_roundtrip() {
+        assert_roundtrip(serde_json::json!({
+            "id": "msg_123",
+            "status": "completed",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": "example output",
+                    "annotations": []
+                },
+                {
+                    "type": "refusal",
+                    "refusal": "example refusal"
+                }
+            ]
+        }));
+    }
+
+    #[test]
+    fn reasoning_item_roundtrip() {
+        assert_roundtrip(serde_json::json!({
+            "content": [],
+            "encrypted_content": "encrypted_reasoning",
+            "id": "rs_123",
+            "summary": [
+                {
+                    "type": "summary_text",
+                    "text": "first summary"
+                },
+                {
+                    "type": "summary_text",
+                    "text": "second summary"
+                }
+            ],
+            "type": "reasoning"
+        }));
+    }
+
+    #[test]
+    fn function_call_item_roundtrip() {
+        assert_roundtrip(serde_json::json!({
+            "arguments": "{\"query\":\"example search\"}",
+            "call_id": "call_123",
+            "id": "fc_123",
+            "name": "example_tool",
+            "status": "completed",
+            "type": "function_call"
+        }));
+    }
+
+    #[test]
+    fn web_search_call_item_roundtrip() {
+        assert_roundtrip(serde_json::json!({
+            "action": {
+                "queries": ["example query"],
+                "type": "search"
+            },
+            "id": "ws_123",
+            "status": "completed",
+            "type": "web_search_call"
+        }));
+    }
+
+    #[test]
+    fn unknown_item_roundtrip_as_hosted_tool() {
+        assert_roundtrip(serde_json::json!({
+            "call_id": "call_123",
+            "id": "ctc_123",
+            "input": "example custom tool input",
+            "name": "example_custom_tool",
+            "namespace": "example_namespace",
+            "type": "custom_tool_call"
+        }));
     }
 }

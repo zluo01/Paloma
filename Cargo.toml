@@ -1,6 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["core", "ffi", "gui/linux", "uniffi-bindgen"]
+members = [
+    "core",
+    "ffi",
+    "gui/linux",
+    "plugins/providers/anthropic",
+    "plugins/providers/openai",
+    "provider-base",
+    "provider-protocol",
+    "uniffi-bindgen",
+    "utils",
+]
 # skip the macos-only crates in bare cargo invocations
 default-members = ["core", "gui/linux"]
 
@@ -10,11 +20,30 @@ edition = "2024"
 rust-version = "1.93.0"
 
 [workspace.dependencies]
+async-trait = "0.1.89"
+backon = "1.6.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+dashmap = "6.2.1"
+env_logger = "0.11.11"
+eventsource-stream = "0.2.3"
 futures = "0.3.32"
 log = "0.4.33"
+oauth2 = "5.0.0"
+reqwest = { version = "0.13.4", default-features = false, features = [
+    "json",
+    "form",
+    "rustls",
+    "http2",
+    "stream",
+] }
+scry-provider-base = { path = "provider-base" }
+scry-provider-protocol = { path = "provider-protocol" }
+scry-utils = { path = "utils" }
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+thiserror = "2.0.18"
 tokio = { version = "1.52.3", default-features = false }
+tokio-util = { version = "0.7.18", features = ["codec"] }
 uniffi = "0.32.0"
 uuid = { version = "1.23.4", default-features = false }
 
