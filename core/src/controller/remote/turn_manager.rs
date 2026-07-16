@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use futures::StreamExt;
-use log::error;
+use log::{error, warn};
+use scry_provider_protocol::v1::{
+    ChatRequest, ChatRequestMessage, ConversationItem, Done, ToolResult, UserPrompt,
+    chat_response::Payload, conversation_item::Item,
+};
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -10,7 +14,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    constants::TURN_MANAGER_CHANNEL_CAPACITY,
+    constants::{INSTRUCTION, TURN_MANAGER_CHANNEL_CAPACITY},
     controller::{
         ProviderController, ProviderControllerError, SessionManagerError, ToolController,
         ToolControllerError,
@@ -20,9 +24,9 @@ use crate::{
             tool_controller::ToolCallPayload,
         },
     },
-    db::{HistoryEntry, Storage, StorageError},
-    entity::ProviderId,
-    provider::{ChatEvent, ChatRequest, ChatStream, ConversationItem, ProviderError},
+    db::{Storage, StorageError},
+    entity::ProviderBackendId,
+    provider::ChatStream,
 };
 
 pub struct TurnManager {
@@ -42,7 +46,7 @@ pub struct TurnManagerClient {
 }
 
 enum TurnState {
-    Running(JoinHandle<()>),
+    Running(JoinHandle<()>, ProviderBackendId),
     Cancelled,
     Done,
 }
@@ -52,14 +56,14 @@ enum TurnStepEvent {
     /// for starting a new turn
     Start {
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
         reply: oneshot::Sender<Result<()>>,
     },
     /// Self calling intermediate state, should never be called outside
     ToolCall {
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         tool_calls: Vec<ToolCallPayload>,
     },
     /// cancelling the call
@@ -111,20 +115,21 @@ impl TurnManager {
     async fn handle_event(&mut self, event: TurnStepEvent) -> Result<()> {
         match event {
             TurnStepEvent::Start {
-                provider_id,
+                provider_backend_id,
                 session_id,
                 prompt,
                 reply,
             } => {
-                self.start_chat(provider_id, session_id, prompt, reply)
+                self.start_chat(provider_backend_id, session_id, prompt, reply)
                     .await;
             },
             TurnStepEvent::ToolCall {
-                provider_id,
+                provider_backend_id,
                 session_id,
                 tool_calls,
             } => {
-                self.tool_call(provider_id, session_id, tool_calls).await;
+                self.tool_call(provider_backend_id, session_id, tool_calls)
+                    .await;
             },
             TurnStepEvent::Cancel { session_id, reply } => {
                 let _ = reply.send(self.abort_turn(session_id).await);
@@ -139,7 +144,7 @@ impl TurnManager {
 
     async fn start_chat(
         &mut self,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         session_id: Uuid,
         prompt: String,
         reply: oneshot::Sender<Result<()>>,
@@ -151,21 +156,20 @@ impl TurnManager {
         let permission_client = self.permission_workflow_client.clone();
         let event_tx = self.event_tx.clone();
         let tools = self.tool_controller.tool_schemas().await;
+        let backend = provider_backend_id.clone();
 
         let handle = tokio::spawn(async move {
-            let (messages, client, config) = match async {
-                let config = storage.prefer_model_config(&provider_id).await?;
-                let client = provider_controller.client(provider_id)?;
+            let (messages, config) = match async {
+                let config = storage.prefer_model_config(&provider_backend_id).await?;
                 let messages = construct_messages(
                     &storage,
                     &session_client,
-                    provider_id,
+                    provider_backend_id.clone(),
                     session_id,
                     Some(prompt),
                 )
                 .await?;
-
-                Ok::<_, TurnManagerError>((messages, client, config))
+                Ok::<_, TurnManagerError>((messages, config))
             }
             .await
             {
@@ -180,13 +184,19 @@ impl TurnManager {
                 },
             };
 
-            let stream = match client
-                .chat(ChatRequest {
-                    model: config.model,
-                    effort: config.effort,
-                    messages,
-                    tools,
-                })
+            let tool_definitions = tools.iter().map(|t| t.to_definition()).collect();
+            let stream = match provider_controller
+                .chat(
+                    provider_backend_id.clone(),
+                    ChatRequest {
+                        session_id: session_id.to_string(),
+                        instruction: INSTRUCTION.into(),
+                        model: config.model,
+                        effort: config.effort,
+                        messages,
+                        tools: tool_definitions,
+                    },
+                )
                 .await
             {
                 Ok(stream) => stream,
@@ -195,7 +205,7 @@ impl TurnManager {
                     let _ = session_client
                         .add_event(
                             session_id,
-                            provider_id,
+                            provider_backend_id,
                             SessionEvent::Err(error.to_string()),
                         )
                         .await;
@@ -210,25 +220,26 @@ impl TurnManager {
                 tool_controller,
                 &permission_client,
                 &event_tx,
-                provider_id,
+                provider_backend_id,
                 session_id,
             )
             .await;
         });
 
-        self.turn_map.insert(session_id, TurnState::Running(handle));
+        self.turn_map
+            .insert(session_id, TurnState::Running(handle, backend));
     }
 
     async fn tool_call(
         &mut self,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         session_id: Uuid,
         tool_calls: Vec<ToolCallPayload>,
     ) {
         // Continue only if the turn is not `Canceled`, `Done`, or a missing entry (session dropped/deleted)
         if !matches!(
             self.turn_map.get(&session_id).as_deref(),
-            Some(TurnState::Running(_))
+            Some(TurnState::Running(..))
         ) {
             return;
         }
@@ -240,6 +251,7 @@ impl TurnManager {
         let storage = self.storage.clone();
         let event_tx = self.event_tx.clone();
         let tools = tool_controller.tool_schemas().await;
+        let backend = provider_backend_id.clone();
 
         let handle = tokio::spawn(async move {
             // Run all tool calls concurrently.
@@ -259,14 +271,14 @@ impl TurnManager {
                 if let Err(err) = session_client
                     .add_event(
                         session_id,
-                        provider_id,
-                        SessionEvent::Chat(ChatEvent::OutputItem {
-                            item: ConversationItem::ToolResult {
+                        provider_backend_id.clone(),
+                        SessionEvent::Chat(Payload::OutputItem(ConversationItem {
+                            item: Some(Item::ToolResult(ToolResult {
                                 call_id,
                                 name,
                                 output,
-                            },
-                        }),
+                            })),
+                        })),
                     )
                     .await
                 {
@@ -275,20 +287,30 @@ impl TurnManager {
             }
 
             let stream = match async {
-                let config = storage.prefer_model_config(&provider_id).await?;
-                let client = provider_controller.client(provider_id)?;
+                let config = storage.prefer_model_config(&provider_backend_id).await?;
 
-                let messages =
-                    construct_messages(&storage, &session_client, provider_id, session_id, None)
-                        .await?;
+                let messages = construct_messages(
+                    &storage,
+                    &session_client,
+                    provider_backend_id.clone(),
+                    session_id,
+                    None,
+                )
+                .await?;
 
-                let stream = client
-                    .chat(ChatRequest {
-                        model: config.model,
-                        effort: config.effort,
-                        messages,
-                        tools,
-                    })
+                let tool_definitions = tools.iter().map(|t| t.to_definition()).collect();
+                let stream = provider_controller
+                    .chat(
+                        provider_backend_id.clone(),
+                        ChatRequest {
+                            session_id: session_id.to_string(),
+                            instruction: INSTRUCTION.into(),
+                            model: config.model,
+                            effort: config.effort,
+                            messages,
+                            tools: tool_definitions,
+                        },
+                    )
                     .await?;
 
                 Ok::<_, TurnManagerError>(stream)
@@ -299,7 +321,11 @@ impl TurnManager {
                 Err(err) => {
                     error!("turn {session_id}: chat request failed during tool call turn: {err}");
                     let _ = session_client
-                        .add_event(session_id, provider_id, SessionEvent::Err(err.to_string()))
+                        .add_event(
+                            session_id,
+                            provider_backend_id.clone(),
+                            SessionEvent::Err(err.to_string()),
+                        )
                         .await;
                     let _ = event_tx.send(TurnStepEvent::Done { session_id }).await;
                     return;
@@ -312,36 +338,57 @@ impl TurnManager {
                 tool_controller,
                 &permission_client,
                 &event_tx,
-                provider_id,
+                provider_backend_id,
                 session_id,
             )
             .await;
         });
 
-        self.turn_map.insert(session_id, TurnState::Running(handle));
+        self.turn_map
+            .insert(session_id, TurnState::Running(handle, backend));
     }
 
     async fn abort_turn(&mut self, session_id: Uuid) -> Result<bool> {
-        {
+        let provider_backend_id = {
             let Some(mut state) = self.turn_map.get_mut(&session_id) else {
                 return Ok(false);
             };
             match &*state {
-                TurnState::Running(handle) => {
+                TurnState::Running(handle, provider_backend_id) => {
                     handle.abort();
+                    let id = provider_backend_id.clone();
                     *state = TurnState::Cancelled;
+                    id
                 },
                 TurnState::Cancelled | TurnState::Done => return Ok(false),
             }
-        }
+        };
 
+        // best effort cancellation
+        if let Err(err) = self
+            .provider_controller
+            .cancel_chat(provider_backend_id, session_id)
+            .await
+        {
+            warn!("turn {session_id}: provider cancel_chat failed: {err}");
+        }
         self.tool_controller.cancel_session(session_id).await?;
         Ok(true)
     }
 
     async fn drop_turn(&mut self, session_id: Uuid) -> Result<()> {
-        if let Some((_, TurnState::Running(handle))) = self.turn_map.remove(&session_id) {
+        if let Some((_, TurnState::Running(handle, provider_backend_id))) =
+            self.turn_map.remove(&session_id)
+        {
             handle.abort();
+            // best effort cancellation
+            if let Err(err) = self
+                .provider_controller
+                .cancel_chat(provider_backend_id, session_id)
+                .await
+            {
+                warn!("turn {session_id}: provider cancel_chat failed: {err}");
+            }
             self.tool_controller.cancel_session(session_id).await?;
         }
         Ok(())
@@ -349,7 +396,7 @@ impl TurnManager {
 
     fn mark_step_done(&self, session_id: Uuid) {
         if let Some(mut state) = self.turn_map.get_mut(&session_id)
-            && matches!(*state, TurnState::Running(_))
+            && matches!(*state, TurnState::Running(..))
         {
             *state = TurnState::Done;
         }
@@ -363,7 +410,7 @@ async fn run_step(
     tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     event_tx: &mpsc::Sender<TurnStepEvent>,
-    provider_id: ProviderId,
+    provider_backend_id: ProviderBackendId,
     session_id: Uuid,
 ) {
     let (tool_calls, errored) = exhaust_events(
@@ -372,7 +419,7 @@ async fn run_step(
         tool_controller,
         permission_workflow_manager_client,
         session_id,
-        provider_id,
+        provider_backend_id.clone(),
     )
     .await;
 
@@ -382,7 +429,7 @@ async fn run_step(
         let _ = event_tx
             .send(TurnStepEvent::ToolCall {
                 session_id,
-                provider_id,
+                provider_backend_id,
                 tool_calls,
             })
             .await;
@@ -394,24 +441,36 @@ async fn run_step(
 async fn construct_messages(
     storage: &Storage,
     session_client: &SessionManagerClient,
-    provider_id: ProviderId,
+    provider_backend_id: ProviderBackendId,
     session_id: Uuid,
     prompt: Option<String>,
-) -> Result<Vec<HistoryEntry>> {
-    let mut messages = storage.get_history(&session_id.to_string()).await?;
+) -> Result<Vec<ChatRequestMessage>> {
+    let mut messages: Vec<ChatRequestMessage> = storage
+        .get_history(&session_id.to_string())
+        .await?
+        .into_iter()
+        .map(|row| ChatRequestMessage {
+            provider_id: row.provider_backend_id.provider_id,
+            backend_id: row.provider_backend_id.backend_id,
+            item: Some(row.payload),
+        })
+        .collect();
 
     if let Some(prompt) = prompt {
         session_client
             .add_event(
                 session_id,
-                provider_id,
+                provider_backend_id.clone(),
                 SessionEvent::UserPrompt(prompt.clone()),
             )
             .await?;
 
-        messages.push(HistoryEntry {
-            provider_id,
-            payload: ConversationItem::UserPrompt { prompt },
+        messages.push(ChatRequestMessage {
+            provider_id: provider_backend_id.provider_id,
+            backend_id: provider_backend_id.backend_id,
+            item: Some(ConversationItem {
+                item: Some(Item::UserPrompt(UserPrompt { prompt })),
+            }),
         });
     }
     Ok(messages)
@@ -423,29 +482,27 @@ async fn exhaust_events(
     tool_controller: Arc<ToolController>,
     permission_workflow_manager_client: &PermissionWorkflowManagerClient,
     session_id: Uuid,
-    provider_id: ProviderId,
+    provider_backend_id: ProviderBackendId,
 ) -> (Vec<ToolCallPayload>, bool) {
     let mut tool_calls: Vec<ToolCallPayload> = Vec::new();
     let mut errored = false;
     while let Some(event) = stream.next().await {
         let session_event = match event {
-            Ok(chat_event) => {
-                if let ChatEvent::OutputItem {
-                    item:
-                        ConversationItem::ToolCall {
-                            call_id,
-                            name,
-                            arguments,
-                            provider_meta: _,
-                        },
-                } = &chat_event
+            Payload::Error(message) => {
+                error!("chat stream error for session {session_id}: {message}");
+                errored = true;
+                SessionEvent::Err(message)
+            },
+            payload => {
+                if let Payload::OutputItem(conversation_item) = &payload
+                    && let Some(Item::ToolCall(tool_call)) = &conversation_item.item
                 {
-                    match tool_controller.retrieve_toolspec(name) {
+                    match tool_controller.retrieve_toolspec(&tool_call.name) {
                         // it should be ok to only log error here since later on, when actual tool call happens
                         // it will still fail with missing call_id, session_id or missing tool name.
                         // Then we can populate the error back to the LLM.
                         Some(toolspec) => {
-                            let command = match extract_args(toolspec, arguments) {
+                            let command = match extract_args(toolspec, &tool_call.arguments) {
                                 Disposition::Gated(command, _) => Some(command),
                                 Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
                                 Disposition::Passthrough => None,
@@ -453,7 +510,11 @@ async fn exhaust_events(
 
                             if let Some(command) = command
                                 && let Err(err) = permission_workflow_manager_client
-                                    .init_permission_workflow(session_id, call_id.clone(), command)
+                                    .init_permission_workflow(
+                                        session_id,
+                                        tool_call.call_id.clone(),
+                                        command,
+                                    )
                                     .await
                             {
                                 error!(
@@ -462,22 +523,16 @@ async fn exhaust_events(
                             }
                         },
                         None => {
-                            error!("fail to find function call name {}", name)
+                            error!("fail to find function call name {}", tool_call.name)
                         },
                     }
                     tool_calls.push(ToolCallPayload {
-                        call_id: call_id.to_string(),
-                        name: name.to_string(),
-                        arguments: arguments.to_string(),
+                        call_id: tool_call.call_id.clone(),
+                        name: tool_call.name.clone(),
+                        arguments: tool_call.arguments.clone(),
                     });
                 }
-                SessionEvent::Chat(chat_event)
-            },
-            Err(err) => {
-                let message = err.to_string();
-                error!("chat stream error for session {session_id}: {message}");
-                errored = true;
-                SessionEvent::Err(message)
+                SessionEvent::Chat(payload)
             },
         };
 
@@ -486,13 +541,13 @@ async fn exhaust_events(
         // in this case, we should not signal the session_manager on turn finished
         let (is_terminal, forward) = match &session_event {
             SessionEvent::Err(_) => (true, true),
-            SessionEvent::Chat(ChatEvent::Done) => (true, tool_calls.is_empty()),
+            SessionEvent::Chat(Payload::Done(Done {})) => (true, tool_calls.is_empty()),
             _ => (false, true),
         };
 
         if forward
             && let Err(err) = session_client
-                .add_event(session_id, provider_id, session_event)
+                .add_event(session_id, provider_backend_id.clone(), session_event)
                 .await
         {
             error!("failed to insert event for session {session_id}: {err}");
@@ -509,14 +564,14 @@ impl TurnManagerClient {
     pub async fn start_chat(
         &self,
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(TurnStepEvent::Start {
                 session_id,
-                provider_id,
+                provider_backend_id,
                 prompt,
                 reply: reply_tx,
             })
@@ -569,9 +624,6 @@ pub enum TurnManagerError {
 
     #[error(transparent)]
     Session(#[from] SessionManagerError),
-
-    #[error(transparent)]
-    Provider(#[from] ProviderError),
 
     #[error(transparent)]
     ToolController(#[from] ToolControllerError),

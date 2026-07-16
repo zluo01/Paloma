@@ -6,10 +6,9 @@ use uuid::Uuid;
 use crate::{
     capability::ProcessManager,
     controller::{
-        ConnectController, ConnectError, PermissionWorkflowManager, PluginConnectionController,
-        PluginConnectionError, ProviderController, ProviderControllerError, RemoteQuery,
-        RemoteQueryError, SearchQuery, SearchQueryInitError, SessionManager, SessionManagerError,
-        ToolController, TurnManager,
+        PermissionWorkflowManager, PluginConnectionController, PluginConnectionError,
+        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SearchQuery,
+        SearchQueryInitError, SessionManager, SessionManagerError, ToolController, TurnManager,
     },
     db::{Storage, StorageError},
     permission::PermissionController,
@@ -24,7 +23,12 @@ mod permission;
 mod provider;
 mod utils;
 
-pub use capability::{Action, ActionOutcome, IconRef, ImageFormat, Item};
+#[ctor::ctor(unsafe)]
+fn process_entry() {
+    provider::serve_plugin_and_exit_if_requested();
+}
+
+pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, ProviderStatus, QueryResponse,
@@ -32,23 +36,27 @@ pub use controller::{
 };
 pub use db::Permission;
 pub use entity::{
-    HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderId, Transport,
+    HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport,
 };
 pub use permission::{PermissionState, UserDecision};
-pub use provider::{Connection, Model};
+pub use scry_provider_protocol::v1::{
+    BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, ProviderAuthMethod,
+    connection_payload,
+};
 pub use utils::OAuthCallbackState;
 
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
     controller::ChatRenderStream,
+    provider::ProviderInfo,
 };
 
 pub struct AppContext {
     storage: Storage,
-    connect: ConnectController,
     search_query: SearchQuery,
     remote_query: RemoteQuery,
-    plugin: PluginConnectionController,
+    providers: Arc<ProviderController>,
+    plugins: PluginConnectionController,
 }
 
 impl AppContext {
@@ -61,21 +69,25 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (connect, remote_query, plugin) = Self::init_llm(storage.clone()).await?;
+        let (providers, remote_query, plugin) = Self::init_llm(storage.clone()).await?;
         let search_query = Self::init_search()?;
 
         Ok(Arc::new(Self {
             storage,
-            connect,
+            providers,
             search_query,
             remote_query,
-            plugin,
+            plugins: plugin,
         }))
     }
 
     async fn init_llm(
         storage: Storage,
-    ) -> Result<(ConnectController, RemoteQuery, PluginConnectionController)> {
+    ) -> Result<(
+        Arc<ProviderController>,
+        RemoteQuery,
+        PluginConnectionController,
+    )> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .read_timeout(Duration::from_secs(900))
@@ -87,13 +99,7 @@ impl AppContext {
             .http2_keep_alive_while_idle(true)
             .build()?;
 
-        let provider_controller =
-            Arc::new(ProviderController::new(storage.clone(), http.clone()).await?);
-        let connect = ConnectController::new(
-            storage.clone(),
-            Arc::clone(&provider_controller),
-            http.clone(),
-        );
+        let provider_controller = Arc::new(ProviderController::new(storage.clone()).await?);
 
         let permission_controller = PermissionController::new(storage.clone());
         let (mut permission_workflow_manager, permission_workflow_client) =
@@ -111,7 +117,11 @@ impl AppContext {
         )
         .await;
 
-        let plugin = PluginConnectionController::new(storage.clone(), Arc::clone(&tool_controller));
+        let plugin = PluginConnectionController::new(
+            storage.clone(),
+            Arc::clone(&tool_controller),
+            Arc::clone(&provider_controller),
+        );
 
         let (mut session_manager, session_manager_client) = SessionManager::new(
             storage.clone(),
@@ -136,7 +146,7 @@ impl AppContext {
             permission_workflow_client,
         );
 
-        Ok((connect, remote_query, plugin))
+        Ok((provider_controller, remote_query, plugin))
     }
 
     fn init_search() -> Result<SearchQuery> {
@@ -154,11 +164,11 @@ impl AppContext {
     pub async fn chat(
         &self,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     ) -> ChatRenderStream {
         self.remote_query
-            .chat(session_id, provider_id, prompt)
+            .chat(session_id, provider_backend_id, prompt)
             .await
     }
 
@@ -207,60 +217,82 @@ impl AppContext {
 
 /// model connections + config
 impl AppContext {
-    pub async fn init_connection(&self, provider_id: ProviderId) -> Result<Connection> {
-        Ok(self.connect.init(provider_id).await?)
+    pub async fn init_connection(
+        &self,
+        provider_backend_id: ProviderBackendId,
+    ) -> Result<ConnectionPayload> {
+        Ok(self.providers.init(provider_backend_id).await?)
     }
 
     pub async fn finalize_connection(
         &self,
-        provider_id: ProviderId,
-        payload: Connection,
+        provider_auth_method: ProviderAuthMethod,
+        provider_backend_id: ProviderBackendId,
+        payload: String,
     ) -> Result<()> {
-        Ok(self.connect.finalize(provider_id, payload).await?)
+        Ok(self
+            .providers
+            .finalize(provider_auth_method, provider_backend_id, payload)
+            .await?)
     }
 
-    pub async fn disconnect_connector(&self, provider_id: ProviderId) -> Result<()> {
-        Ok(self.connect.disconnect(provider_id).await?)
+    pub async fn cancel_connection(&self, provider_backend_id: ProviderBackendId) -> Result<()> {
+        Ok(self
+            .providers
+            .cancel_connection(provider_backend_id)
+            .await?)
+    }
+
+    pub async fn disconnect_connector(&self, provider_backend_id: ProviderBackendId) -> Result<()> {
+        Ok(self.providers.disconnect(provider_backend_id).await?)
     }
 
     pub async fn set_model_preference(
         &self,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         model: &str,
         effort: &str,
         as_default: bool,
     ) -> Result<()> {
         Ok(self
-            .connect
-            .set_preferred(provider_id, model, effort, as_default)
+            .providers
+            .set_preferred(provider_backend_id, model, effort, as_default)
             .await?)
     }
 
-    pub async fn prefer_model(&self) -> Result<Option<ProviderId>> {
-        Ok(self.connect.prefer_provider().await?)
+    pub async fn prefer_model(&self) -> Result<Option<ProviderBackendId>> {
+        Ok(self.providers.prefer_provider().await?)
     }
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
-        Ok(self.connect.available_connectors().await?)
+        Ok(self.providers.available_connectors().await?)
     }
 
     pub async fn connectors_health_level(&self) -> HealthLevel {
-        self.connect.health_level().await
+        self.providers.health_level().await
     }
 }
 
 /// plugins + mcps
 impl AppContext {
     pub async fn plugins_health_level(&self) -> HealthLevel {
-        self.plugin.health_level().await
+        self.plugins.health_level().await
+    }
+
+    pub async fn list_provider_plugins(&self) -> Vec<ProviderInfo> {
+        self.providers.available_providers()
     }
 
     pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {
-        Ok(self.plugin.list_mcps().await?)
+        Ok(self.plugins.list_mcps().await?)
+    }
+
+    pub async fn add_provider_plugin(&self, config: Plugin) -> Result<()> {
+        Ok(self.providers.add_provider(&config).await?)
     }
 
     pub async fn init_mcp_connection(&self, config: Plugin) -> Result<Option<OAuthCallbackState>> {
-        Ok(self.plugin.init_mcp_connection(config).await?)
+        Ok(self.plugins.init_mcp_connection(config).await?)
     }
 
     pub async fn finalize_mcp_connection(
@@ -268,19 +300,19 @@ impl AppContext {
         config: Plugin,
         state: Option<OAuthCallbackState>,
     ) -> Result<()> {
-        Ok(self.plugin.finalize_mcp_connection(config, state).await?)
+        Ok(self.plugins.finalize_mcp_connection(config, state).await?)
     }
 
     pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {
-        Ok(self.plugin.update_plugin(plugin_type, plugin).await?)
+        Ok(self.plugins.update_plugin(plugin_type, plugin).await?)
     }
 
     pub async fn remove_plugin(&self, plugin_type: PluginType, name: &str) -> Result<()> {
-        Ok(self.plugin.remove_plugin(plugin_type, name).await?)
+        Ok(self.plugins.remove_plugin(plugin_type, name).await?)
     }
 
     pub async fn toggle_plugin(&self, name: &str, disabled: bool) -> Result<()> {
-        Ok(self.plugin.toggle_plugin(name, disabled).await?)
+        Ok(self.plugins.toggle_plugin(name, disabled).await?)
     }
 }
 
@@ -300,9 +332,6 @@ pub enum AppError {
 
     #[error(transparent)]
     RemoteQuery(#[from] RemoteQueryError),
-
-    #[error(transparent)]
-    Connect(#[from] ConnectError),
 
     #[error(transparent)]
     PluginConnection(#[from] PluginConnectionError),

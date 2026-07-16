@@ -8,7 +8,9 @@ mod turn_manager;
 pub use permission_workflow_manager::{
     PermissionWorkflowError, PermissionWorkflowManager, PermissionWorkflowManagerClient,
 };
-pub use provider_controller::{ProviderController, ProviderControllerError, ProviderStatus};
+pub use provider_controller::{
+    Connector, ConnectorConnection, ProviderController, ProviderControllerError, ProviderStatus,
+};
 pub use remote_query::{ChatRenderStream, RemoteQuery, RemoteQueryError};
 pub use session_manager::{SessionEvent, SessionListItem, SessionManager, SessionManagerError};
 pub use tool_controller::{ToolController, ToolControllerError};
