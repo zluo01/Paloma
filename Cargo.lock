@@ -617,6 +617,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a394189d59f9befacce833f337f7b1eca5e9a91221bcdd4d28e0114d96e597b3"
+dependencies = [
+ "link-section",
+ "linktime-proc-macro",
+]
+
+[[package]]
 name = "ctutils"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2082,6 +2092,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "link-section"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e333fe507b738576d6da5bb3f1a7d7a1c80307ed9ef31624c057d844c19c93e9"
+
+[[package]]
+name = "linktime-proc-macro"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c7b0a3383c2a1002d11349c92c85a666a5fb679e96c79d782cf0dbe557fd6ee"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3302,7 +3324,7 @@ name = "scry-core"
 version = "0.0.1"
 dependencies = [
  "async-trait",
- "chrono",
+ "ctor",
  "dashmap",
  "exmex",
  "freedesktop-desktop-entry",
@@ -3325,6 +3347,8 @@ dependencies = [
  "reqwest 0.13.4",
  "rmcp",
  "schemars",
+ "scry-provider-anthropic",
+ "scry-provider-openai",
  "scry-provider-protocol",
  "scry-utils",
  "serde",
@@ -3410,6 +3434,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -3438,6 +3463,8 @@ dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "serde",
+ "serde_json",
  "tokio-util",
 ]
 

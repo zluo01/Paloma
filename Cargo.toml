@@ -36,7 +36,9 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "http2",
     "stream",
 ] }
+scry-provider-anthropic = { path = "plugins/providers/anthropic" }
 scry-provider-base = { path = "provider-base" }
+scry-provider-openai = { path = "plugins/providers/openai" }
 scry-provider-protocol = { path = "provider-protocol" }
 scry-utils = { path = "utils" }
 serde = { version = "1.0.228", features = ["derive"] }
