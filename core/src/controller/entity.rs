@@ -1,4 +1,4 @@
-use crate::{ProviderId, capability::Item, permission::UserDecision};
+use crate::{capability::Item, entity::ProviderBackendId, permission::UserDecision};
 
 #[derive(Clone, Debug)]
 pub enum RenderEvent {
@@ -30,7 +30,7 @@ pub enum ChatRenderEvent {
         text: String,
     },
     TextDelta {
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         text: String,
     },
     ReasoningDelta {

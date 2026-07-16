@@ -1,40 +1,18 @@
 use std::{collections::HashMap, fmt};
 
+use scry_provider_protocol::v1::ProviderHealthStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, sqlx::Type)]
-#[sqlx(rename_all = "snake_case")]
-pub enum ProviderId {
-    Codex,
-    ClaudeCode,
-    OpenAI,
-    Anthropic,
+#[derive(Clone, PartialEq, Eq, Hash, Debug, FromRow, Serialize, Deserialize)]
+pub struct ProviderBackendId {
+    pub provider_id: String,
+    pub backend_id: String,
 }
 
-impl fmt::Display for ProviderId {
+impl fmt::Display for ProviderBackendId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            ProviderId::Codex => "Codex",
-            ProviderId::ClaudeCode => "Claude Code",
-            ProviderId::OpenAI => "OpenAI",
-            ProviderId::Anthropic => "Anthropic",
-        };
-        f.write_str(name)
-    }
-}
-
-impl std::str::FromStr for ProviderId {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Codex" => Ok(ProviderId::Codex),
-            "Claude Code" => Ok(ProviderId::ClaudeCode),
-            "OpenAI" => Ok(ProviderId::OpenAI),
-            "Anthropic" => Ok(ProviderId::Anthropic),
-            _ => Err(()),
-        }
+        write!(f, "{} - {}", self.provider_id, self.backend_id)
     }
 }
 
@@ -42,6 +20,7 @@ impl std::str::FromStr for ProviderId {
 #[sqlx(rename_all = "snake_case")]
 pub enum PluginType {
     Native,
+    Provider,
     Mcp,
 }
 
@@ -86,6 +65,19 @@ impl HealthStatus {
             0 => HealthStatus::Starting,
             1 => HealthStatus::Running,
             _ => HealthStatus::Unhealthy,
+        }
+    }
+}
+
+impl From<ProviderHealthStatus> for HealthStatus {
+    fn from(status: ProviderHealthStatus) -> Self {
+        match status {
+            ProviderHealthStatus::Starting => HealthStatus::Starting,
+            ProviderHealthStatus::Running => HealthStatus::Running,
+            // fail-safe: an unknown state is treated as unhealthy
+            ProviderHealthStatus::Unknown | ProviderHealthStatus::Unhealthy => {
+                HealthStatus::Unhealthy
+            },
         }
     }
 }

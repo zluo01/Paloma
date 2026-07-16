@@ -1,3 +1,4 @@
+use scry_provider_protocol::v1::ToolDefinition;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -32,16 +33,7 @@ pub enum ActionOutcome {
 pub enum IconRef {
     Name(String),
     Path(String),
-    Embedded { format: ImageFormat, data: Vec<u8> },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ImageFormat {
-    Png,
-    Jpeg,
-    Svg,
-    Webp,
-    Gif,
+    Embedded(Vec<u8>),
 }
 
 pub trait Capability: Send + Sync + 'static {
@@ -109,6 +101,16 @@ pub struct ToolSchema {
     pub parameters: Value,
 }
 
+impl ToolSchema {
+    pub(crate) fn to_definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            parameters: self.parameters.to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ToolResult {
     Text(String),
@@ -123,7 +125,7 @@ pub enum ToolResult {
 pub trait DynTool: Send + Sync {
     async fn specs(&self) -> Result<Vec<ToolSpec>, String>;
 
-    fn health_statue(&self) -> HealthStatus;
+    fn health_status(&self) -> HealthStatus;
 
     fn description(&self) -> &str {
         ""
@@ -153,7 +155,7 @@ where
 
     /// for all local tool, default is running
     /// remote or extension should override it
-    fn health_statue(&self) -> HealthStatus {
+    fn health_status(&self) -> HealthStatus {
         HealthStatus::Running
     }
 
@@ -177,7 +179,7 @@ impl DynTool for Placeholder {
         Ok(Vec::new())
     }
 
-    fn health_statue(&self) -> HealthStatus {
+    fn health_status(&self) -> HealthStatus {
         HealthStatus::Starting
     }
 

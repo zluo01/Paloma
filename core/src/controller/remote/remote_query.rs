@@ -12,7 +12,7 @@ use crate::{
             turn_manager::{TurnManagerClient, TurnManagerError},
         },
     },
-    entity::ProviderId,
+    entity::ProviderBackendId,
     permission::{PermissionState, UserDecision},
 };
 
@@ -52,11 +52,11 @@ impl RemoteQuery {
     pub async fn chat(
         &self,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     ) -> ChatRenderStream {
         match self
-            .start_chat_stream(session_id, provider_id, prompt.clone())
+            .start_chat_stream(session_id, provider_backend_id, prompt.clone())
             .await
         {
             Ok(stream) => stream,
@@ -67,7 +67,7 @@ impl RemoteQuery {
     async fn start_chat_stream(
         &self,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     ) -> std::result::Result<ChatRenderStream, ChatStreamError> {
         let (session_id, is_new_session) = self
@@ -87,7 +87,7 @@ impl RemoteQuery {
                 .await?;
 
             self.turn_manager_client
-                .start_chat(session_id, provider_id, prompt)
+                .start_chat(session_id, provider_backend_id, prompt)
                 .await?;
 
             Ok::<_, RemoteQueryError>(rx)

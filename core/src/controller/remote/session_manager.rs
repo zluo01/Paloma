@@ -4,6 +4,9 @@ use std::{
 };
 
 use log::error;
+use scry_provider_protocol::v1::{
+    ConversationItem, UserPrompt, chat_response, conversation_item::Item,
+};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
@@ -16,8 +19,7 @@ use crate::{
         remote::PermissionWorkflowManagerClient,
     },
     db::{Session as StorageSession, Storage, StorageError},
-    entity::ProviderId,
-    provider::{ChatEvent, ConversationItem},
+    entity::ProviderBackendId,
     utils::Gated,
 };
 
@@ -45,7 +47,7 @@ enum SessionStreamingEvent {
     },
     AddEvent {
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         payload: SessionEvent,
         reply: oneshot::Sender<Result<()>>,
     },
@@ -66,7 +68,7 @@ enum SessionStreamingEvent {
 #[derive(Debug)]
 pub enum SessionEvent {
     UserPrompt(String),
-    Chat(ChatEvent),
+    Chat(chat_response::Payload),
     Err(String),
 }
 
@@ -155,11 +157,14 @@ impl SessionManager {
             },
             SessionStreamingEvent::AddEvent {
                 session_id,
-                provider_id,
+                provider_backend_id,
                 payload,
                 reply,
             } => {
-                let _ = reply.send(self.add_event(session_id, provider_id, payload).await);
+                let _ = reply.send(
+                    self.add_event(session_id, provider_backend_id, payload)
+                        .await,
+                );
             },
             SessionStreamingEvent::AvailableSessions { reply } => {
                 let result = self
@@ -204,7 +209,7 @@ impl SessionManager {
                 self.sessions.insert(id, Session::default());
                 Ok((id, true))
             },
-            Err(StorageError::Duplicate(_)) => {
+            Err(StorageError::DuplicateSession(_)) => {
                 match self.sessions.entry(id) {
                     Entry::Occupied(_) => {},
                     Entry::Vacant(vacant) => {
@@ -220,7 +225,7 @@ impl SessionManager {
     async fn add_event(
         &mut self,
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         payload: SessionEvent,
     ) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&session_id) else {
@@ -235,10 +240,12 @@ impl SessionManager {
         }
 
         let entry = match &payload {
-            SessionEvent::UserPrompt(prompt) => Some(ConversationItem::UserPrompt {
-                prompt: prompt.clone(),
+            SessionEvent::UserPrompt(prompt) => Some(ConversationItem {
+                item: Some(Item::UserPrompt(UserPrompt {
+                    prompt: prompt.clone(),
+                })),
             }),
-            SessionEvent::Chat(ChatEvent::OutputItem { item }) => Some(item.clone()),
+            SessionEvent::Chat(chat_response::Payload::OutputItem(item)) => Some(item.clone()),
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
         };
         let errored = matches!(&payload, SessionEvent::Err(_));
@@ -246,7 +253,7 @@ impl SessionManager {
         // Persist history items before publishing them to subscribers.
         if let Some(item) = entry {
             self.storage
-                .insert_history(&session_id.to_string(), &provider_id, &item)
+                .insert_history(&session_id.to_string(), &provider_backend_id, &item)
                 .await?;
         }
 
@@ -340,8 +347,8 @@ impl SessionManager {
             .restore_history(&session_id.to_string())
             .await?
         {
-            let render = match entry.payload {
-                ConversationItem::UserPrompt { prompt } => {
+            let render = match entry.payload.item {
+                Some(Item::UserPrompt(UserPrompt { prompt })) => {
                     match SessionEvent::UserPrompt(prompt)
                         .to_render_event(
                             &self.permission_workflow_client,
@@ -354,11 +361,9 @@ impl SessionManager {
                         None => continue,
                     }
                 },
-                ConversationItem::Message {
-                    message,
-                    provider_meta: _,
-                } => {
-                    let parts: Vec<String> = message.iter().map(|c| c.content.clone()).collect();
+                Some(Item::Message(message)) => {
+                    let parts: Vec<String> =
+                        message.message.iter().map(|c| c.content.clone()).collect();
                     if parts.is_empty() {
                         error!(
                             "OutputItem (type=message) yielded no text from value: {:?}",
@@ -368,22 +373,17 @@ impl SessionManager {
                     }
                     RenderEvent::Chat(ChatRenderEvent::TextDelta {
                         text: parts.join("\n"),
-                        provider_id: entry.provider_id,
+                        provider_backend_id: entry.provider_backend_id,
                     })
                 },
-                ConversationItem::ToolCall {
-                    call_id,
-                    name,
-                    arguments,
-                    provider_meta: _,
-                } => {
+                Some(Item::ToolCall(tool_call)) => {
                     match tool_call_render(
                         &self.permission_workflow_client,
                         self.tool_controller.clone(),
                         session_id,
-                        &call_id,
-                        &name,
-                        &arguments,
+                        &tool_call.call_id,
+                        &tool_call.name,
+                        &tool_call.arguments,
                         entry.finished,
                     )
                     .await
@@ -392,11 +392,10 @@ impl SessionManager {
                         None => continue,
                     }
                 },
-                ConversationItem::HostedTool {
-                    function_type,
-                    content,
-                    provider_meta: _,
-                } => match hosted_tool_render(&function_type, content.as_deref().unwrap_or("")) {
+                Some(Item::HostedTool(hosted_tool)) => match hosted_tool_render(
+                    &hosted_tool.function_type,
+                    hosted_tool.content.as_deref().unwrap_or(""),
+                ) {
                     None => continue,
                     Some(r) => r,
                 },
@@ -462,49 +461,49 @@ impl SessionEvent {
         session_id: Uuid,
     ) -> Option<RenderEvent> {
         match self {
-            SessionEvent::Chat(ChatEvent::TextDelta { provider_id, text }) => {
+            SessionEvent::Chat(chat_response::Payload::TextDelta(text_delta)) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                    text: text.clone(),
-                    provider_id: *provider_id,
+                    text: text_delta.delta.clone(),
+                    provider_backend_id: ProviderBackendId {
+                        provider_id: text_delta.provider_id.clone(),
+                        backend_id: text_delta.backend_id.clone(),
+                    },
                 }))
             },
-            SessionEvent::Chat(ChatEvent::ReasoningSummaryDelta { text }) => {
+            SessionEvent::Chat(chat_response::Payload::ReasoningDelta(text)) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::ReasoningDelta {
                     text: text.clone(),
                 }))
             },
-            SessionEvent::Chat(ChatEvent::Done) => Some(RenderEvent::Done),
-            SessionEvent::Err(message) => Some(RenderEvent::Error {
-                message: message.clone(),
-            }),
+            SessionEvent::Chat(chat_response::Payload::Done(_)) => Some(RenderEvent::Done),
+            SessionEvent::Err(message)
+            | SessionEvent::Chat(chat_response::Payload::Error(message)) => {
+                Some(RenderEvent::Error {
+                    message: message.clone(),
+                })
+            },
             SessionEvent::UserPrompt(prompt) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt {
                     text: prompt.clone(),
                 }))
             },
-            SessionEvent::Chat(ChatEvent::OutputItem { item }) => match item {
-                ConversationItem::ToolCall {
-                    call_id,
-                    name,
-                    arguments,
-                    provider_meta: _,
-                } => {
+            SessionEvent::Chat(chat_response::Payload::OutputItem(item)) => match &item.item {
+                Some(Item::ToolCall(tool_call)) => {
                     tool_call_render(
                         permission_workflow_manager_client,
                         tool_controller,
                         session_id,
-                        call_id,
-                        name,
-                        arguments,
+                        &tool_call.call_id,
+                        &tool_call.name,
+                        &tool_call.arguments,
                         false,
                     )
                     .await
                 },
-                ConversationItem::HostedTool {
-                    function_type,
-                    content,
-                    provider_meta: _,
-                } => hosted_tool_render(function_type, content.as_deref().unwrap_or("")),
+                Some(Item::HostedTool(hosted_tool)) => hosted_tool_render(
+                    &hosted_tool.function_type,
+                    hosted_tool.content.as_deref().unwrap_or(""),
+                ),
                 _ => None,
             },
         }
@@ -597,14 +596,14 @@ impl SessionManagerClient {
     pub async fn add_event(
         &self,
         session_id: Uuid,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         payload: SessionEvent,
     ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
             .send(SessionStreamingEvent::AddEvent {
                 session_id,
-                provider_id,
+                provider_backend_id,
                 payload,
                 reply: reply_tx,
             })
@@ -691,12 +690,12 @@ impl SessionManagerClient {
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Chat(ChatEvent::OutputItem { .. }) => {},
-            SessionEvent::Chat(ChatEvent::Done) => {
+            SessionEvent::Chat(chat_response::Payload::OutputItem(_)) => {},
+            SessionEvent::Chat(chat_response::Payload::Done(_)) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Done
             },
-            SessionEvent::Err(_message) => {
+            SessionEvent::Err(_) | SessionEvent::Chat(chat_response::Payload::Error(_)) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Error
             },
@@ -705,7 +704,7 @@ impl Session {
                 self.terminal = TerminalState::Running;
             },
             event @ SessionEvent::Chat(
-                ChatEvent::TextDelta { .. } | ChatEvent::ReasoningSummaryDelta { .. },
+                chat_response::Payload::TextDelta(_) | chat_response::Payload::ReasoningDelta(_),
             ) => {
                 self.delta.push(event);
             },
@@ -714,6 +713,9 @@ impl Session {
 }
 
 async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
+    // cleanup history first so emptied sessions never return by all_sessions
+    storage.recover_history().await?;
+
     let mut sessions: HashMap<Uuid, Session> = HashMap::new();
 
     for session in storage.all_sessions().await? {
@@ -737,9 +739,6 @@ async fn restore_sessions(storage: &Storage) -> Result<HashMap<Uuid, Session>> {
             },
         );
     }
-
-    // cleanup history
-    storage.recover_history().await?;
 
     Ok(sessions)
 }

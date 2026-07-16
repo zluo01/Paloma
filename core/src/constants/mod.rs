@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::LazyLock};
+use std::{path::PathBuf, sync::LazyLock};
 
 pub(crate) const APP_NAME: &str = "scry";
 pub(crate) const DATABASE_FILE: &str = "main.db";
@@ -21,9 +21,6 @@ pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 /// cleaned by the process — relies on the system tmp lifecycle.
 pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp").join(APP_NAME));
 
-pub static ENVIRONMENT_CONTEXT: LazyLock<BTreeMap<&'static str, String>> =
-    LazyLock::new(build_environment_context);
-
 /// Static system prompt sent as the `instructions` field on every LLM call.
 /// Describes role, tool contract, and behavioral rules.
 ///
@@ -32,16 +29,3 @@ pub static ENVIRONMENT_CONTEXT: LazyLock<BTreeMap<&'static str, String>> =
 /// turn — the instruction tells the model *how* to behave, the context tells
 /// it *where* it is running (os, arch, shell, home).
 pub const INSTRUCTION: &str = include_str!("instruction.md");
-
-fn build_environment_context() -> BTreeMap<&'static str, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
-    let home = std::env::var("HOME").unwrap_or_else(|_| "unknown".into());
-
-    BTreeMap::from([
-        ("os", std::env::consts::OS.to_string()),
-        ("os_family", std::env::consts::FAMILY.to_string()),
-        ("arch", std::env::consts::ARCH.to_string()),
-        ("home", home),
-        ("shell", shell),
-    ])
-}

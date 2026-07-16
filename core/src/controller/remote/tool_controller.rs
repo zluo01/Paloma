@@ -15,7 +15,7 @@ use crate::{
     },
     controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
-    entity::{HealthStatus, Plugin},
+    entity::{HealthStatus, Plugin, PluginType},
     permission::PermissionState,
 };
 
@@ -57,10 +57,13 @@ impl ToolController {
         }
         handlers.insert(Shell::NAME.to_string(), shell);
 
-        let plugins = storage.all_mcp_plugins().await.unwrap_or_else(|e| {
-            error!("failed to load mcp plugins: {e}");
-            Vec::new()
-        });
+        let plugins = storage
+            .plugins_by_type(PluginType::Mcp)
+            .await
+            .unwrap_or_else(|e| {
+                error!("failed to load mcp plugins: {e}");
+                Vec::new()
+            });
 
         let controller = Arc::new(Self {
             handlers,
@@ -126,7 +129,7 @@ impl ToolController {
         let running: HashSet<String> = self
             .handlers
             .iter()
-            .filter(|e| e.health_statue() == HealthStatus::Running)
+            .filter(|e| e.health_status() == HealthStatus::Running)
             .map(|e| e.key().clone())
             .collect();
 
@@ -154,7 +157,7 @@ impl ToolController {
                     entry.key().clone(),
                     ToolStatus {
                         description: entry.value().description().to_string(),
-                        status: entry.value().health_statue(),
+                        status: entry.value().health_status(),
                         error: entry.value().error().map(str::to_string),
                     },
                 )
@@ -168,7 +171,7 @@ impl ToolController {
         let (tool, specs) =
             McpTool::new(config, self.request_client.clone(), self.storage.clone()).await;
         // fail to init
-        if tool.health_statue() != HealthStatus::Running {
+        if tool.health_status() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {
                 reason: tool.error().map(str::to_string),
             });
@@ -199,13 +202,11 @@ impl ToolController {
         let (tool, specs) =
             McpTool::new(config, self.request_client.clone(), self.storage.clone()).await;
         // fail to init
-        if tool.health_statue() != HealthStatus::Running {
+        if tool.health_status() != HealthStatus::Running {
             return Err(ToolControllerError::FailToInitialize {
                 reason: tool.error().map(str::to_string),
             });
         }
-
-        self.handlers.remove(&name);
 
         {
             let mut current = self.tool_specs.write().unwrap();

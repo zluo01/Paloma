@@ -160,7 +160,7 @@ impl DynTool for McpTool {
         }
     }
 
-    fn health_statue(&self) -> HealthStatus {
+    fn health_status(&self) -> HealthStatus {
         HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 

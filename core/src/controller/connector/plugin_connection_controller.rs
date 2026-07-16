@@ -3,7 +3,9 @@ use std::sync::Arc;
 use log::error;
 
 use crate::{
-    controller::{ToolController, ToolControllerError},
+    controller::{
+        ProviderController, ProviderControllerError, ToolController, ToolControllerError,
+    },
     db::{Storage, StorageError},
     entity::{HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType},
     utils::{OAuthCallbackState, OAuthError, finalize_oauth_connection, init_oauth_connection},
@@ -20,13 +22,19 @@ pub struct McpServer {
 pub struct PluginConnectionController {
     storage: Storage,
     tool_controller: Arc<ToolController>,
+    provider_controller: Arc<ProviderController>,
 }
 
 impl PluginConnectionController {
-    pub fn new(storage: Storage, tool_controller: Arc<ToolController>) -> Self {
+    pub fn new(
+        storage: Storage,
+        tool_controller: Arc<ToolController>,
+        provider_controller: Arc<ProviderController>,
+    ) -> Self {
         Self {
             storage,
             tool_controller,
+            provider_controller,
         }
     }
 
@@ -54,7 +62,7 @@ impl PluginConnectionController {
     /// list all configured MCP servers
     pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {
         let status = self.tool_controller.get_tools_status().await;
-        let plugins = self.storage.all_mcp_plugins().await?;
+        let plugins = self.storage.plugins_by_type(PluginType::Mcp).await?;
         Ok(plugins
             .into_iter()
             .filter_map(|config| {
@@ -127,6 +135,7 @@ impl PluginConnectionController {
         match plugin_type {
             PluginType::Native => error!("Not yet implemented."),
             PluginType::Mcp => self.tool_controller.deregister_tool(name).await?,
+            PluginType::Provider => self.provider_controller.remove_provider(name).await?,
         }
         Ok(())
     }
@@ -135,6 +144,7 @@ impl PluginConnectionController {
         match plugin_type {
             PluginType::Native => error!("Not yet implemented."),
             PluginType::Mcp => self.tool_controller.update_tool(&plugin).await?,
+            PluginType::Provider => self.provider_controller.update_provider(&plugin).await?,
         }
         Ok(())
     }
@@ -149,6 +159,9 @@ impl PluginConnectionController {
 pub enum PluginConnectionError {
     #[error(transparent)]
     ToolController(#[from] ToolControllerError),
+
+    #[error(transparent)]
+    ProviderController(#[from] ProviderControllerError),
 
     #[error(transparent)]
     Storage(#[from] StorageError),
