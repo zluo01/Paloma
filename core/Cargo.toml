@@ -6,12 +6,9 @@ rust-version = { workspace = true }
 publish = false
 
 [dependencies]
-async-trait = "0.1.89"
-backon = "1.6.0"
-base64 = { version = "0.22.1", default-features = false, features = ["std"] }
-chrono = { workspace = true, features = ["serde"] }
-dashmap = "6.2.1"
-eventsource-stream = "0.2.3"
+async-trait = { workspace = true }
+ctor = "1.0.9"
+dashmap = { workspace = true }
 exmex = "0.21.0"
 futures = { workspace = true }
 ignore = "0.4.27"
@@ -20,7 +17,7 @@ mime_guess = "2.0.5"
 notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
-oauth2 = "5.0.0"
+oauth2 = { workspace = true }
 open = "5.3.6"
 rayon = "1.12.0"
 regex = "1.12.4"
@@ -38,11 +35,15 @@ rmcp = { version = "2.1.0", default-features = false, features = [
     "transport-streamable-http-client-reqwest",
 ] }
 schemars = "1.2.1"
-serde = { version = "1.0.228", features = ["derive"] }
+scry-provider-anthropic = { workspace = true }
+scry-provider-openai = { workspace = true }
+scry-provider-protocol = { workspace = true }
+scry-utils = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = "0.11.0"
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite", "json"] }
-thiserror = "2.0.18"
+thiserror = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
     "io-util",

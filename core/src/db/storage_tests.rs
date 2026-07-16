@@ -1,8 +1,10 @@
+use std::sync::LazyLock;
+
+use scry_provider_protocol::v1::{self, conversation_item::Item};
 use serde_json::json;
 use sqlx::Row;
 
 use super::*;
-use crate::provider::ConversationItem;
 
 async fn fresh_storage() -> Storage {
     let pool = SqlitePoolOptions::new()
@@ -17,13 +19,26 @@ fn uuid(value: &str) -> Uuid {
     Uuid::parse_str(value).unwrap()
 }
 
+static CODEX: LazyLock<ProviderBackendId> = LazyLock::new(|| ProviderBackendId {
+    provider_id: "openai".into(),
+    backend_id: "codex".into(),
+});
+static OPENAI: LazyLock<ProviderBackendId> = LazyLock::new(|| ProviderBackendId {
+    provider_id: "openai".into(),
+    backend_id: "openai".into(),
+});
+static ANTHROPIC: LazyLock<ProviderBackendId> = LazyLock::new(|| ProviderBackendId {
+    provider_id: "anthropic".into(),
+    backend_id: "anthropic".into(),
+});
+
 mod storage {
     use super::*;
 
     #[tokio::test]
     async fn new_creates_database() {
         let storage = fresh_storage().await;
-        let providers = storage.connected_providers().await.expect("providers");
+        let providers = storage.connected_backends().await.expect("providers");
         assert!(providers.is_empty(), "expected empty, got {providers:?}");
     }
 
@@ -45,8 +60,8 @@ mod storage {
         .await
         .expect("first open");
         first
-            .insert_provider(
-                &ProviderId::Codex,
+            .insert_backend(
+                &CODEX,
                 &AuthKind::ApiKey,
                 "sk-1",
                 "claude-sonnet-4-5",
@@ -66,7 +81,7 @@ mod storage {
         )
         .await
         .expect("second open");
-        let providers = second.connected_providers().await.expect("providers");
+        let providers = second.connected_backends().await.expect("providers");
         assert_eq!(providers.len(), 1);
 
         drop(keepalive);
@@ -80,8 +95,8 @@ mod providers {
     async fn insert_provider_writes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
+            .insert_backend(
+                &CODEX,
                 &AuthKind::ApiKey,
                 "sk-abc",
                 "claude-sonnet-4-5",
@@ -91,14 +106,17 @@ mod providers {
             .expect("insert");
 
         let row = sqlx::query(
-            "SELECT provider_id, auth_kind, secret FROM provider_credentials WHERE provider_id = ?",
+            "SELECT provider_id, backend_id, auth_kind, secret FROM backend_credentials
+             WHERE provider_id = ? AND backend_id = ?",
         )
+        .bind("openai")
         .bind("codex")
         .fetch_one(storage.pool())
         .await
         .unwrap();
 
-        assert_eq!(row.get::<String, _>("provider_id"), "codex");
+        assert_eq!(row.get::<String, _>("provider_id"), "openai");
+        assert_eq!(row.get::<String, _>("backend_id"), "codex");
         assert_eq!(row.get::<String, _>("auth_kind"), "api_key");
         assert_eq!(row.get::<String, _>("secret"), "sk-abc");
     }
@@ -107,30 +125,18 @@ mod providers {
     async fn insert_provider_duplicate_returns_duplicate_error() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok-1",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok-1", "gpt-5", "medium")
             .await
             .expect("first insert");
 
         let err = storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok-2",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok-2", "gpt-5", "medium")
             .await
             .expect_err("second insert must fail");
 
         assert!(
-            matches!(err, StorageError::Duplicate(ref id) if id == &ProviderId::Codex.to_string()),
-            "expected Duplicate(\"codex\"), got {err:?}",
+            matches!(err, StorageError::DuplicateBackend(ref id) if id == &*CODEX),
+            "expected DuplicateBackend(\"codex\"), got {err:?}",
         );
     }
 
@@ -138,26 +144,23 @@ mod providers {
     async fn update_provider_changes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "old-token",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "old-token", "gpt-5", "medium")
             .await
             .unwrap();
 
         storage
-            .update_provider(&ProviderId::Codex, &AuthKind::Oauth, "new-token")
+            .update_backend(&CODEX, &AuthKind::Oauth, "new-token")
             .await
             .expect("update");
 
-        let row = sqlx::query("SELECT secret FROM provider_credentials WHERE provider_id = ?")
-            .bind("codex")
-            .fetch_one(storage.pool())
-            .await
-            .unwrap();
+        let row = sqlx::query(
+            "SELECT secret FROM backend_credentials WHERE provider_id = ? AND backend_id = ?",
+        )
+        .bind("openai")
+        .bind("codex")
+        .fetch_one(storage.pool())
+        .await
+        .unwrap();
         assert_eq!(row.get::<String, _>("secret"), "new-token");
     }
 
@@ -165,13 +168,13 @@ mod providers {
     async fn update_provider_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
         let err = storage
-            .update_provider(&ProviderId::Codex, &AuthKind::ApiKey, "x")
+            .update_backend(&CODEX, &AuthKind::ApiKey, "x")
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Codex.to_string()),
-            "expected NotFound(\"codex\"), got {err:?}",
+            matches!(err, StorageError::NotFoundBackend(ref id) if id == &*CODEX),
+            "expected NotFoundBackend(\"codex\"), got {err:?}",
         );
     }
 
@@ -179,24 +182,20 @@ mod providers {
     async fn update_preferences_changes_model_and_effort_only() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
         storage
-            .update_preferences(&ProviderId::Codex, "gpt-5-mini", "high")
+            .update_preferences(&CODEX, "gpt-5-mini", "high")
             .await
             .expect("update prefs");
 
         let row = sqlx::query(
-            "SELECT secret, model, effort FROM provider_credentials WHERE provider_id = ?",
+            "SELECT secret, model, effort FROM backend_credentials
+             WHERE provider_id = ? AND backend_id = ?",
         )
+        .bind("openai")
         .bind("codex")
         .fetch_one(storage.pool())
         .await
@@ -213,13 +212,13 @@ mod providers {
     async fn update_preferences_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
         let err = storage
-            .update_preferences(&ProviderId::Codex, "gpt-5", "medium")
+            .update_preferences(&CODEX, "gpt-5", "medium")
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Codex.to_string()),
-            "expected NotFound(\"codex\"), got {err:?}",
+            matches!(err, StorageError::NotFoundBackend(ref id) if id == &*CODEX),
+            "expected NotFoundBackend(\"codex\"), got {err:?}",
         );
     }
 
@@ -227,8 +226,8 @@ mod providers {
     async fn delete_provider_removes_row() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
+            .insert_backend(
+                &CODEX,
                 &AuthKind::ApiKey,
                 "x",
                 "claude-sonnet-4-5",
@@ -237,26 +236,67 @@ mod providers {
             .await
             .unwrap();
 
-        storage
-            .delete_provider(&ProviderId::Codex)
-            .await
-            .expect("delete");
+        storage.delete_backend(&CODEX).await.expect("delete");
 
-        let providers = storage.connected_providers().await.expect("providers");
+        let providers = storage.connected_backends().await.expect("providers");
         assert!(providers.is_empty(), "expected empty, got {providers:?}");
+    }
+
+    #[tokio::test]
+    async fn deleting_provider_plugin_purges_its_credentials() {
+        let storage = fresh_storage().await;
+        storage
+            .insert_plugin(
+                "openai",
+                PluginType::Provider,
+                Transport::Local,
+                300,
+                &HashMap::new(),
+                &PluginArgs::Local {
+                    command: "scry".into(),
+                    args: vec![],
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        for id in [&*CODEX, &*OPENAI, &*ANTHROPIC] {
+            storage
+                .insert_backend(id, &AuthKind::ApiKey, "x", "model", "medium")
+                .await
+                .unwrap();
+        }
+
+        storage
+            .delete_plugin("openai")
+            .await
+            .expect("delete plugin");
+
+        let remaining: Vec<ProviderBackendId> = storage
+            .connected_backends()
+            .await
+            .expect("providers")
+            .into_iter()
+            .map(|p| p.id)
+            .collect();
+        assert_eq!(remaining, vec![ANTHROPIC.clone()]);
+        // the trigger-driven purge must also reassign the preference away from
+        // the deleted provider's backends
+        assert_eq!(preferred_ids(&storage).await, vec![ANTHROPIC.clone()]);
+        assert_eq!(
+            storage.preferred_provider_backend_id().await.unwrap(),
+            Some(ANTHROPIC.clone())
+        );
     }
 
     #[tokio::test]
     async fn delete_provider_nonexistent_returns_not_found() {
         let storage = fresh_storage().await;
-        let err = storage
-            .delete_provider(&ProviderId::Codex)
-            .await
-            .expect_err("must fail");
+        let err = storage.delete_backend(&CODEX).await.expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id ==&ProviderId::Codex.to_string()),
-            "expected NotFound(\"codex\"), got {err:?}",
+            matches!(err, StorageError::NotFoundBackend(ref id) if id == &*CODEX),
+            "expected NotFoundBackend(\"codex\"), got {err:?}",
         );
     }
 
@@ -264,45 +304,33 @@ mod providers {
     async fn delete_provider_nonexistent_keeps_current_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5", "medium")
             .await
             .unwrap();
 
         let err = storage
-            .delete_provider(&ProviderId::Anthropic)
+            .delete_backend(&ANTHROPIC)
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::Anthropic.to_string()),
-            "expected NotFound(\"anthropic\"), got {err:?}",
+            matches!(err, StorageError::NotFoundBackend(ref id) if id == &*ANTHROPIC),
+            "expected NotFoundBackend(\"anthropic\"), got {err:?}",
         );
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
 
-        let providers = storage.connected_providers().await.expect("providers");
+        let providers = storage.connected_backends().await.expect("providers");
         assert_eq!(providers.len(), 2);
     }
 
     #[tokio::test]
     async fn connected_providers_returns_empty_when_no_rows() {
         let storage = fresh_storage().await;
-        let rows = storage.connected_providers().await.expect("query");
+        let rows = storage.connected_backends().await.expect("query");
         assert!(rows.is_empty(), "expected empty, got {rows:?}");
     }
 
@@ -310,36 +338,30 @@ mod providers {
     async fn connected_providers_returns_all_inserted_ids() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
-        let ids: Vec<ProviderId> = storage
-            .connected_providers()
+        let ids: Vec<ProviderBackendId> = storage
+            .connected_backends()
             .await
             .expect("query")
             .into_iter()
-            .map(|p| p.provider_id)
+            .map(|p| p.id)
             .collect();
-        assert_eq!(ids, vec![ProviderId::Codex]);
+        assert_eq!(ids, vec![CODEX.clone()]);
     }
 
     /// The providers currently flagged preferred — at most one under the
     /// insert / `set_preferred_provider_config` invariant.
-    async fn preferred_ids(storage: &Storage) -> Vec<ProviderId> {
+    async fn preferred_ids(storage: &Storage) -> Vec<ProviderBackendId> {
         storage
-            .connected_providers()
+            .connected_backends()
             .await
             .expect("connected providers")
             .into_iter()
             .filter(|p| p.preferred)
-            .map(|p| p.provider_id)
+            .map(|p| p.id)
             .collect()
     }
 
@@ -347,81 +369,51 @@ mod providers {
     async fn insert_provider_first_is_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
     }
 
     #[tokio::test]
     async fn insert_provider_later_is_not_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5", "medium")
             .await
             .unwrap();
 
         // First connect stays preferred; a later one does not steal it.
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
     }
 
     #[tokio::test]
     async fn set_preferred_provider_config_updates_config_and_preference() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5-mini",
-                "low",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5-mini", "low")
             .await
             .unwrap();
 
         storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high", true)
+            .set_preferred_provider_backend_config(&OPENAI, "gpt-5.1", "high", true)
             .await
             .expect("set preferred");
 
         // Exactly one preferred, and it switched to the target.
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+        assert_eq!(preferred_ids(&storage).await, vec![OPENAI.clone()]);
 
         let config = storage
-            .prefer_model_config(&ProviderId::OpenAI)
+            .prefer_model_config(&OPENAI)
             .await
             .expect("openai config");
         assert_eq!(config.model, "gpt-5.1");
@@ -432,35 +424,23 @@ mod providers {
     async fn set_preferred_provider_config_without_default_updates_config_only() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5-mini",
-                "low",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5-mini", "low")
             .await
             .unwrap();
 
         storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5.1", "high", false)
+            .set_preferred_provider_backend_config(&OPENAI, "gpt-5.1", "high", false)
             .await
             .expect("update config");
 
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
 
         let config = storage
-            .prefer_model_config(&ProviderId::OpenAI)
+            .prefer_model_config(&OPENAI)
             .await
             .expect("openai config");
         assert_eq!(config.model, "gpt-5.1");
@@ -471,29 +451,23 @@ mod providers {
     async fn set_preferred_provider_config_nonexistent_keeps_current_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
         let err = storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high", true)
+            .set_preferred_provider_backend_config(&OPENAI, "gpt-5-mini", "high", true)
             .await
             .expect_err("must fail");
 
         assert!(
-            matches!(err, StorageError::NotFound(ref id) if id == &ProviderId::OpenAI.to_string()),
-            "expected NotFound(\"openai\"), got {err:?}",
+            matches!(err, StorageError::NotFoundBackend(ref id) if id == &*OPENAI),
+            "expected NotFoundBackend(\"openai\"), got {err:?}",
         );
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
 
         let config = storage
-            .prefer_model_config(&ProviderId::Codex)
+            .prefer_model_config(&CODEX)
             .await
             .expect("codex config");
         assert_eq!(config.model, "gpt-5");
@@ -504,151 +478,100 @@ mod providers {
     async fn preferred_provider_returns_current_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5-mini",
-                "high",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5-mini", "high")
             .await
             .unwrap();
 
         storage
-            .set_preferred_provider_config(&ProviderId::OpenAI, "gpt-5-mini", "high", true)
+            .set_preferred_provider_backend_config(&OPENAI, "gpt-5-mini", "high", true)
             .await
             .expect("set preferred");
 
         let provider_id = storage
-            .preferred_provider_id()
+            .preferred_provider_backend_id()
             .await
             .expect("preferred provider");
-        assert_eq!(provider_id, Some(ProviderId::OpenAI));
+        assert_eq!(provider_id, Some(OPENAI.clone()));
     }
 
     #[tokio::test]
     async fn delete_preferred_provider_promotes_survivor() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5", "medium")
             .await
             .unwrap();
 
         storage
-            .delete_provider(&ProviderId::Codex)
+            .delete_backend(&CODEX)
             .await
             .expect("delete preferred");
 
         // The lone survivor should inherit the preference.
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+        assert_eq!(preferred_ids(&storage).await, vec![OPENAI.clone()]);
     }
 
     #[tokio::test]
     async fn delete_preferred_keeps_one_preferred_among_survivors() {
         let storage = fresh_storage().await;
-        for id in [ProviderId::Codex, ProviderId::OpenAI, ProviderId::Anthropic] {
+        for id in [CODEX.clone(), OPENAI.clone(), ANTHROPIC.clone()] {
             storage
-                .insert_provider(&id, &AuthKind::ApiKey, "sk", "model", "medium")
+                .insert_backend(&id, &AuthKind::ApiKey, "sk", "model", "medium")
                 .await
                 .unwrap();
         }
 
         storage
-            .delete_provider(&ProviderId::Codex)
+            .delete_backend(&CODEX)
             .await
             .expect("delete preferred");
 
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+        assert_eq!(preferred_ids(&storage).await, vec![OPENAI.clone()]);
     }
 
     #[tokio::test]
     async fn delete_non_preferred_provider_keeps_current_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5", "medium")
             .await
             .unwrap();
 
         storage
-            .delete_provider(&ProviderId::OpenAI)
+            .delete_backend(&OPENAI)
             .await
             .expect("delete non-preferred");
 
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::Codex]);
+        assert_eq!(preferred_ids(&storage).await, vec![CODEX.clone()]);
     }
 
     #[tokio::test]
     async fn connect_into_empty_is_preferred() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
-        storage
-            .delete_provider(&ProviderId::Codex)
-            .await
-            .expect("delete last");
+        storage.delete_backend(&CODEX).await.expect("delete last");
 
         storage
-            .insert_provider(
-                &ProviderId::OpenAI,
-                &AuthKind::ApiKey,
-                "sk",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&OPENAI, &AuthKind::ApiKey, "sk", "gpt-5", "medium")
             .await
             .unwrap();
 
-        assert_eq!(preferred_ids(&storage).await, vec![ProviderId::OpenAI]);
+        assert_eq!(preferred_ids(&storage).await, vec![OPENAI.clone()]);
     }
 }
 
@@ -657,17 +580,9 @@ mod sessions {
 
     #[tokio::test]
     async fn search_sessions_matches_prompts_and_messages() {
-        use crate::provider::MessageContentItem;
-
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -681,9 +596,11 @@ mod sessions {
         storage
             .insert_history(
                 &prompted.to_string(),
-                &ProviderId::Codex,
-                &ConversationItem::UserPrompt {
-                    prompt: "deploy the staging cluster".into(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::UserPrompt(v1::UserPrompt {
+                        prompt: "deploy the staging cluster".into(),
+                    })),
                 },
             )
             .await
@@ -691,13 +608,15 @@ mod sessions {
         storage
             .insert_history(
                 &answered.to_string(),
-                &ProviderId::Codex,
-                &ConversationItem::Message {
-                    message: vec![MessageContentItem {
-                        content: "Kubernetes upgrade notes".into(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::Message(v1::ConversationMessage {
+                        message: vec![v1::MessageContentItem {
+                            content: "Kubernetes upgrade notes".into(),
+                            provider_meta: Default::default(),
+                        }],
                         provider_meta: Default::default(),
-                    }],
-                    provider_meta: Default::default(),
+                    })),
                 },
             )
             .await
@@ -705,9 +624,11 @@ mod sessions {
         storage
             .insert_history(
                 &unrelated.to_string(),
-                &ProviderId::Codex,
-                &ConversationItem::UserPrompt {
-                    prompt: "something else".into(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::UserPrompt(v1::UserPrompt {
+                        prompt: "something else".into(),
+                    })),
                 },
             )
             .await
@@ -729,13 +650,7 @@ mod sessions {
     async fn create_session_persists_title_and_defaults() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -757,13 +672,7 @@ mod sessions {
     async fn all_sessions_orders_by_last_update_latest_first() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -805,13 +714,7 @@ mod sessions {
     async fn inserting_user_prompt_history_touches_session() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -828,9 +731,11 @@ mod sessions {
         storage
             .insert_history(
                 &session_id.to_string(),
-                &ProviderId::Codex,
-                &ConversationItem::UserPrompt {
-                    prompt: "hello".into(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::UserPrompt(v1::UserPrompt {
+                        prompt: "hello".into(),
+                    })),
                 },
             )
             .await
@@ -850,13 +755,7 @@ mod sessions {
     async fn inserting_non_prompt_history_preserves_session_timestamp() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -872,10 +771,9 @@ mod sessions {
         storage
             .insert_history(
                 &session_id.to_string(),
-                &ProviderId::Codex,
-                &ConversationItem::Message {
-                    message: vec![],
-                    provider_meta: Default::default(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::Message(v1::ConversationMessage::default())),
                 },
             )
             .await
@@ -893,13 +791,7 @@ mod sessions {
     async fn delete_session_cascades_to_history() {
         let storage = fresh_storage().await;
         storage
-            .insert_provider(
-                &ProviderId::Codex,
-                &AuthKind::Oauth,
-                "tok",
-                "gpt-5",
-                "medium",
-            )
+            .insert_backend(&CODEX, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
 
@@ -913,10 +805,9 @@ mod sessions {
         storage
             .insert_history(
                 &session_id,
-                &ProviderId::Codex,
-                &ConversationItem::Message {
-                    message: vec![],
-                    provider_meta: Default::default(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::Message(v1::ConversationMessage::default())),
                 },
             )
             .await
@@ -924,10 +815,9 @@ mod sessions {
         storage
             .insert_history(
                 &session_id,
-                &ProviderId::Codex,
-                &ConversationItem::Reasoning {
-                    reasoning: vec![],
-                    provider_meta: Default::default(),
+                &CODEX,
+                &ConversationItem {
+                    item: Some(Item::Reasoning(v1::Reasoning::default())),
                 },
             )
             .await
@@ -970,7 +860,7 @@ mod history {
 
         for item in &items {
             storage
-                .insert_history(&session_id.to_string(), &ProviderId::Codex, item)
+                .insert_history(&session_id.to_string(), &CODEX, item)
                 .await
                 .unwrap();
         }
@@ -985,15 +875,36 @@ mod history {
         assert!(
             history
                 .iter()
-                .all(|entry| entry.provider_id == ProviderId::Codex)
+                .all(|entry| entry.provider_backend_id.backend_id == CODEX.backend_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn insert_history_writes_stored_json_shape() {
+        let storage = fresh_storage().await;
+        seed_provider(&storage).await;
+        let id = uuid("019e1234-5678-7000-8000-0000000000ab");
+        seed_session(&storage, id, &[user()]).await;
+
+        // The payload column keeps the pre-protocol JSON shape the SQL queries
+        // and existing rows rely on.
+        let row = sqlx::query("SELECT payload_type, payload FROM history WHERE session_id = ?")
+            .bind(id.to_string())
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("payload_type"), "user_prompt");
+        assert_eq!(
+            row.get::<String, _>("payload"),
+            r#"{"kind":"user_prompt","prompt":"example prompt"}"#
         );
     }
 
     #[tokio::test]
     async fn history_preserves_provider_id_per_row() {
         let storage = fresh_storage().await;
-        seed_provider_id(&storage, &ProviderId::Codex).await;
-        seed_provider_id(&storage, &ProviderId::OpenAI).await;
+        seed_provider_id(&storage, &CODEX).await;
+        seed_provider_id(&storage, &ANTHROPIC).await;
 
         let session_id = uuid("019e1234-5678-7000-8000-000000000006");
         storage
@@ -1004,11 +915,11 @@ mod history {
         let user = user();
         let message = assistant_message();
         storage
-            .insert_history(&session_id.to_string(), &ProviderId::Codex, &user)
+            .insert_history(&session_id.to_string(), &CODEX, &user)
             .await
             .unwrap();
         storage
-            .insert_history(&session_id.to_string(), &ProviderId::OpenAI, &message)
+            .insert_history(&session_id.to_string(), &ANTHROPIC, &message)
             .await
             .unwrap();
 
@@ -1017,9 +928,9 @@ mod history {
         assert_eq!(
             history
                 .iter()
-                .map(|entry| entry.provider_id)
+                .map(|entry| entry.provider_backend_id.clone())
                 .collect::<Vec<_>>(),
-            vec![ProviderId::Codex, ProviderId::OpenAI]
+            vec![CODEX.clone(), ANTHROPIC.clone()]
         );
         assert_eq!(
             history
@@ -1066,7 +977,7 @@ mod history {
     async fn restore_history_excludes_tool_results_and_marks_finished_tool_calls() {
         let storage = fresh_storage().await;
         seed_provider(&storage).await;
-        seed_provider_id(&storage, &ProviderId::OpenAI).await;
+        seed_provider_id(&storage, &OPENAI).await;
         let session_id = uuid("019e1234-5678-7000-8000-000000000009");
         let pending_tool_call = function_call_with("pending_call");
         let finished_tool_call = function_call_with("finished_call");
@@ -1078,13 +989,13 @@ mod history {
             .await
             .unwrap();
         for (provider_id, item) in [
-            (ProviderId::Codex, user()),
-            (ProviderId::OpenAI, pending_tool_call.clone()),
-            (ProviderId::Codex, reasoning()),
-            (ProviderId::OpenAI, finished_tool_call.clone()),
-            (ProviderId::OpenAI, tool_result),
-            (ProviderId::Codex, hosted_tool.clone()),
-            (ProviderId::OpenAI, message.clone()),
+            (CODEX.clone(), user()),
+            (OPENAI.clone(), pending_tool_call.clone()),
+            (CODEX.clone(), reasoning()),
+            (OPENAI.clone(), finished_tool_call.clone()),
+            (OPENAI.clone(), tool_result),
+            (CODEX.clone(), hosted_tool.clone()),
+            (OPENAI.clone(), message.clone()),
         ] {
             storage
                 .insert_history(&session_id.to_string(), &provider_id, &item)
@@ -1121,15 +1032,15 @@ mod history {
         assert_eq!(
             restored
                 .iter()
-                .map(|entry| entry.provider_id)
+                .map(|entry| entry.provider_backend_id.clone())
                 .collect::<Vec<_>>(),
             vec![
-                ProviderId::Codex,
-                ProviderId::OpenAI,
-                ProviderId::Codex,
-                ProviderId::OpenAI,
-                ProviderId::Codex,
-                ProviderId::OpenAI,
+                CODEX.clone(),
+                OPENAI.clone(),
+                CODEX.clone(),
+                OPENAI.clone(),
+                CODEX.clone(),
+                OPENAI.clone(),
             ]
         );
     }
@@ -1137,12 +1048,12 @@ mod history {
     // ---- history ----
 
     async fn seed_provider(storage: &Storage) {
-        seed_provider_id(storage, &ProviderId::Codex).await;
+        seed_provider_id(storage, &CODEX).await;
     }
 
-    async fn seed_provider_id(storage: &Storage, provider_id: &ProviderId) {
+    async fn seed_provider_id(storage: &Storage, provider_id: &ProviderBackendId) {
         storage
-            .insert_provider(provider_id, &AuthKind::Oauth, "tok", "gpt-5", "medium")
+            .insert_backend(provider_id, &AuthKind::Oauth, "tok", "gpt-5", "medium")
             .await
             .unwrap();
     }
@@ -1219,7 +1130,7 @@ mod history {
         storage.create_new_session(id, "s").await.unwrap();
         for item in items {
             storage
-                .insert_history(&id.to_string(), &ProviderId::Codex, item)
+                .insert_history(&id.to_string(), &CODEX, item)
                 .await
                 .unwrap();
         }
@@ -1230,22 +1141,22 @@ mod history {
     }
 
     fn user() -> ConversationItem {
-        ConversationItem::UserPrompt {
-            prompt: "example prompt".to_string(),
+        ConversationItem {
+            item: Some(Item::UserPrompt(v1::UserPrompt {
+                prompt: "example prompt".to_string(),
+            })),
         }
     }
 
     fn assistant_message() -> ConversationItem {
-        ConversationItem::Message {
-            message: vec![],
-            provider_meta: Default::default(),
+        ConversationItem {
+            item: Some(Item::Message(v1::ConversationMessage::default())),
         }
     }
 
     fn reasoning() -> ConversationItem {
-        ConversationItem::Reasoning {
-            reasoning: vec![],
-            provider_meta: Default::default(),
+        ConversationItem {
+            item: Some(Item::Reasoning(v1::Reasoning::default())),
         }
     }
 
@@ -1254,36 +1165,43 @@ mod history {
     }
 
     fn function_call_with(call_id: &str) -> ConversationItem {
-        ConversationItem::ToolCall {
-            call_id: call_id.to_string(),
-            name: "example_tool".to_string(),
-            arguments: "{}".to_string(),
-            provider_meta: Default::default(),
+        ConversationItem {
+            item: Some(Item::ToolCall(v1::ToolCall {
+                call_id: call_id.to_string(),
+                name: "example_tool".to_string(),
+                arguments: "{}".to_string(),
+                provider_meta: Default::default(),
+            })),
         }
     }
 
     fn tool_result_with(call_id: &str) -> ConversationItem {
-        ConversationItem::ToolResult {
-            call_id: call_id.to_string(),
-            name: "example_tool".to_string(),
-            output: "ok".to_string(),
+        ConversationItem {
+            item: Some(Item::ToolResult(v1::ToolResult {
+                call_id: call_id.to_string(),
+                name: "example_tool".to_string(),
+                output: "ok".to_string(),
+            })),
         }
     }
 
     fn hosted_tool() -> ConversationItem {
-        ConversationItem::HostedTool {
-            function_type: "web_search_call".to_string(),
-            content: Some("searched docs".to_string()),
-            provider_meta: Default::default(),
+        ConversationItem {
+            item: Some(Item::HostedTool(v1::HostedTool {
+                function_type: "web_search_call".to_string(),
+                content: Some("searched docs".to_string()),
+                provider_meta: Default::default(),
+            })),
         }
     }
 
     async fn insert_invalid_history_payload(storage: &Storage, session_id: &str) {
         sqlx::query(
-            "INSERT INTO history (session_id, provider_id, payload_type, payload)
-         VALUES (?, ?, ?, ?)",
+            "INSERT INTO history (session_id, provider_id, backend_id, payload_type, payload)
+         VALUES (?, ?, ?, ?, ?)",
         )
         .bind(session_id)
+        .bind("openai")
         .bind("codex")
         .bind("message")
         .bind(r#"{"kind":"unknown"}"#)
@@ -1317,8 +1235,10 @@ mod history {
         let history = storage.get_history(&id.to_string()).await.unwrap();
         assert_eq!(history.len(), 2);
         assert!(matches!(
-            &history.last().unwrap().payload,
-            ConversationItem::Message { .. }
+            history.last().unwrap().payload,
+            ConversationItem {
+                item: Some(Item::Message(_))
+            }
         ));
     }
 
@@ -1344,6 +1264,8 @@ mod history {
         storage.recover_history().await.unwrap();
 
         assert_eq!(history_len(&storage, id).await, 0);
+        let sessions = storage.all_sessions().await.unwrap();
+        assert!(sessions.iter().all(|s| s.session_id != id.to_string()));
     }
 
     #[tokio::test]
@@ -1468,8 +1390,10 @@ mod history {
         let history = storage.get_history(&id.to_string()).await.unwrap();
         assert_eq!(history.len(), 2);
         assert!(matches!(
-            &history.last().unwrap().payload,
-            ConversationItem::Message { .. }
+            history.last().unwrap().payload,
+            ConversationItem {
+                item: Some(Item::Message(_))
+            }
         ));
     }
 
@@ -1688,7 +1612,7 @@ mod permissions {
         let storage = fresh_storage().await;
         let err = storage.delete_permission("cargo build").await.unwrap_err();
 
-        assert!(matches!(err, StorageError::NotFound(ref id) if id == "cargo build"));
+        assert!(matches!(err, StorageError::NotFoundPermission(ref id) if id == "cargo build"));
     }
 }
 

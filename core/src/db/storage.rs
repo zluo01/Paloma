@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use scry_provider_protocol::v1::ConversationItem;
 use serde_json::Value;
 use sqlx::{
     Pool, Sqlite,
@@ -14,10 +15,9 @@ use uuid::Uuid;
 use super::{AuthKind, queries};
 use crate::{
     db::entity::{
-        ConnectedProvider, HistoryEntry, Permission, PreferModelConfig, RestoreEntry, Session,
+        ConnectedBackend, HistoryEntry, Permission, PreferModelConfig, RestoreEntry, Session,
     },
-    entity::{Plugin, PluginArgs, PluginType, ProviderId, Transport},
-    provider::ConversationItem,
+    entity::{Plugin, PluginArgs, PluginType, ProviderBackendId, Transport},
 };
 
 #[derive(Clone)]
@@ -41,16 +41,17 @@ impl Storage {
         &self.pool
     }
 
-    pub async fn insert_provider(
+    pub async fn insert_backend(
         &self,
-        provider_id: &ProviderId,
+        provider_backend_id: &ProviderBackendId,
         auth_kind: &AuthKind,
         secret: &str,
         model: &str,
         effort: &str,
     ) -> Result<()> {
-        sqlx::query(queries::INSERT_PROVIDER_QUERY)
-            .bind(provider_id)
+        sqlx::query(queries::INSERT_BACKEND_QUERY)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .bind(auth_kind)
             .bind(secret)
             .bind(model)
@@ -59,71 +60,75 @@ impl Storage {
             .await
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
-                    StorageError::Duplicate(provider_id.to_string())
+                    StorageError::DuplicateBackend(provider_backend_id.clone())
                 },
                 _ => e.into(),
             })?;
         Ok(())
     }
 
-    pub async fn update_provider(
+    pub async fn update_backend(
         &self,
-        provider_id: &ProviderId,
+        provider_backend_id: &ProviderBackendId,
         auth_kind: &AuthKind,
         secret: &str,
     ) -> Result<()> {
-        let result = sqlx::query(queries::UPDATE_PROVIDER_QUERY)
+        let result = sqlx::query(queries::UPDATE_BACKEND_QUERY)
             .bind(auth_kind)
             .bind(secret)
-            .bind(provider_id)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFoundBackend(provider_backend_id.clone()));
         }
         Ok(())
     }
 
     pub async fn update_preferences(
         &self,
-        provider_id: &ProviderId,
+        provider_backend_id: &ProviderBackendId,
         model: &str,
         effort: &str,
     ) -> Result<()> {
-        let result = sqlx::query(queries::UPDATE_PROVIDER_PREFERENCES_QUERY)
+        let result = sqlx::query(queries::UPDATE_BACKEND_PREFERENCES_QUERY)
             .bind(model)
             .bind(effort)
-            .bind(provider_id)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFoundBackend(provider_backend_id.clone()));
         }
         Ok(())
     }
 
-    pub async fn set_preferred_provider_config(
+    pub async fn set_preferred_provider_backend_config(
         &self,
-        provider_id: &ProviderId,
+        provider_backend_id: &ProviderBackendId,
         model: &str,
         effort: &str,
         as_default: bool,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
-        let result = sqlx::query(queries::UPDATE_PROVIDER_PREFERENCES_QUERY)
+        let result = sqlx::query(queries::UPDATE_BACKEND_PREFERENCES_QUERY)
             .bind(model)
             .bind(effort)
-            .bind(provider_id)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .execute(&mut *tx)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFoundBackend(provider_backend_id.clone()));
         }
 
         if as_default {
             sqlx::query(queries::SET_PREFERRED_QUERY)
-                .bind(provider_id)
+                .bind(provider_backend_id.provider_id.as_str())
+                .bind(provider_backend_id.backend_id.as_str())
                 .execute(&mut *tx)
                 .await?;
         }
@@ -132,13 +137,14 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn delete_provider(&self, provider_id: &ProviderId) -> Result<()> {
-        let result = sqlx::query(queries::DELETE_PROVIDER_QUERY)
-            .bind(provider_id)
+    pub async fn delete_backend(&self, provider_backend_id: &ProviderBackendId) -> Result<()> {
+        let result = sqlx::query(queries::DELETE_BACKEND_QUERY)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(provider_id.to_string()));
+            return Err(StorageError::NotFoundBackend(provider_backend_id.clone()));
         }
         Ok(())
     }
@@ -151,7 +157,7 @@ impl Storage {
             .await
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
-                    StorageError::Duplicate(session_id.to_string())
+                    StorageError::DuplicateSession(session_id.to_string())
                 },
                 _ => e.into(),
             })?;
@@ -187,31 +193,36 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(session_id.to_string()));
+            return Err(StorageError::NotFoundSession(session_id.to_string()));
         }
         Ok(())
     }
 
-    pub async fn connected_providers(&self) -> Result<Vec<ConnectedProvider>> {
-        let providers = sqlx::query_as::<_, ConnectedProvider>(queries::CONNECTED_PROVIDERS_QUERY)
+    pub async fn connected_backends(&self) -> Result<Vec<ConnectedBackend>> {
+        let providers = sqlx::query_as::<_, ConnectedBackend>(queries::CONNECTED_BACKENDS_QUERY)
             .fetch_all(&self.pool)
             .await?;
         Ok(providers)
     }
 
-    pub async fn preferred_provider_id(&self) -> Result<Option<ProviderId>> {
-        sqlx::query_scalar(queries::PREFERRED_PROVIDER_QUERY)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(Into::into)
+    pub async fn preferred_provider_backend_id(&self) -> Result<Option<ProviderBackendId>> {
+        Ok(
+            sqlx::query_as::<_, ProviderBackendId>(queries::PREFERRED_BACKEND_QUERY)
+                .fetch_optional(&self.pool)
+                .await?,
+        )
     }
 
-    pub async fn prefer_model_config(&self, provider_id: &ProviderId) -> Result<PreferModelConfig> {
+    pub async fn prefer_model_config(
+        &self,
+        provider_backend_id: &ProviderBackendId,
+    ) -> Result<PreferModelConfig> {
         sqlx::query_as::<_, PreferModelConfig>(queries::PREFER_MODEL_CONFIG_QUERY)
-            .bind(provider_id)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .fetch_optional(&self.pool)
             .await?
-            .ok_or_else(|| StorageError::NotFound(provider_id.to_string()))
+            .ok_or_else(|| StorageError::NotFoundBackend(provider_backend_id.clone()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -237,7 +248,7 @@ impl Storage {
             .await
             .map_err(|e| match &e {
                 sqlx::Error::Database(db) if db.is_unique_violation() => {
-                    StorageError::Duplicate(name.to_string())
+                    StorageError::DuplicatePlugin(name.to_string())
                 },
                 _ => e.into(),
             })?;
@@ -261,7 +272,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(name.to_string()));
+            return Err(StorageError::NotFoundPlugin(name.to_string()));
         }
         Ok(())
     }
@@ -277,13 +288,14 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(name.to_string()));
+            return Err(StorageError::NotFoundPlugin(name.to_string()));
         }
         Ok(())
     }
 
-    pub async fn all_mcp_plugins(&self) -> Result<Vec<Plugin>> {
-        let plugins = sqlx::query_as::<_, Plugin>(queries::GET_ALL_MCP_QUERY)
+    pub async fn plugins_by_type(&self, plugin_type: PluginType) -> Result<Vec<Plugin>> {
+        let plugins = sqlx::query_as::<_, Plugin>(queries::GET_PLUGINS_BY_TYPE_QUERY)
+            .bind(plugin_type)
             .fetch_all(&self.pool)
             .await?;
         Ok(plugins)
@@ -304,7 +316,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(name.to_string()));
+            return Err(StorageError::NotFoundPlugin(name.to_string()));
         }
         Ok(())
     }
@@ -316,7 +328,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(name.to_string()));
+            return Err(StorageError::NotFoundPlugin(name.to_string()));
         }
         Ok(())
     }
@@ -359,7 +371,7 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(prefix.to_string()));
+            return Err(StorageError::NotFoundPermission(prefix.to_string()));
         }
         Ok(())
     }
@@ -367,12 +379,13 @@ impl Storage {
     pub async fn insert_history(
         &self,
         session_id: &str,
-        provider_id: &ProviderId,
+        provider_backend_id: &ProviderBackendId,
         payload: &ConversationItem,
     ) -> Result<()> {
         sqlx::query(queries::INSERT_HISTORY)
             .bind(session_id)
-            .bind(provider_id)
+            .bind(provider_backend_id.provider_id.as_str())
+            .bind(provider_backend_id.backend_id.as_str())
             .bind(payload.payload_type())
             .bind(serde_json::to_string(payload)?)
             .execute(&self.pool)
@@ -381,12 +394,10 @@ impl Storage {
     }
 
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>> {
-        let entries = sqlx::query_as::<_, HistoryEntry>(queries::GET_HISTORY)
+        Ok(sqlx::query_as::<_, HistoryEntry>(queries::GET_HISTORY)
             .bind(session_id)
             .fetch_all(&self.pool)
-            .await?;
-
-        Ok(entries)
+            .await?)
     }
 
     pub async fn restore_history(&self, session_id: &str) -> Result<Vec<RestoreEntry>> {
@@ -402,7 +413,12 @@ impl Storage {
     /// session whose newest history item isn't an assistant message, drop
     /// everything back to (and including) the last user prompt.
     pub async fn recover_history(&self) -> Result<()> {
-        sqlx::query(queries::RECOVER).execute(&self.pool).await?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(queries::RECOVER).execute(&mut *tx).await?;
+        sqlx::query(queries::DELETE_ALL_EMPTY_SESSIONS)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -452,11 +468,26 @@ pub enum StorageError {
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("provider {0} not found")]
-    NotFound(String),
+    #[error("backend {0} not found")]
+    NotFoundBackend(ProviderBackendId),
 
-    #[error("provider {0} already exists")]
-    Duplicate(String),
+    #[error("session {0} not found")]
+    NotFoundSession(String),
+
+    #[error("plugin {0} not found")]
+    NotFoundPlugin(String),
+
+    #[error("permission {0} not found")]
+    NotFoundPermission(String),
+
+    #[error("backend {0} already exists")]
+    DuplicateBackend(ProviderBackendId),
+
+    #[error("session {0} already exists")]
+    DuplicateSession(String),
+
+    #[error("plugin {0} already exists")]
+    DuplicatePlugin(String),
 }
 
 type Result<T> = std::result::Result<T, StorageError>;

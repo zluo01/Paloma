@@ -1,18 +1,17 @@
 pub const INIT_TABLE_QUERY: &str = include_str!("queries/init_table.sql");
 
-pub const INSERT_PROVIDER_QUERY: &str = include_str!("queries/providers/insert_provider.sql");
+pub const INSERT_BACKEND_QUERY: &str = include_str!("queries/backends/insert_backend.sql");
 
-pub const UPDATE_PROVIDER_QUERY: &str = include_str!("queries/providers/update_provider.sql");
+pub const UPDATE_BACKEND_QUERY: &str = include_str!("queries/backends/update_backend.sql");
 
-pub const UPDATE_PROVIDER_PREFERENCES_QUERY: &str =
-    include_str!("queries/providers/update_provider_preferences.sql");
+pub const UPDATE_BACKEND_PREFERENCES_QUERY: &str =
+    include_str!("queries/backends/update_backend_preferences.sql");
 
-pub const DELETE_PROVIDER_QUERY: &str = include_str!("queries/providers/delete_provider.sql");
+pub const DELETE_BACKEND_QUERY: &str = include_str!("queries/backends/delete_backend.sql");
 
-pub const CONNECTED_PROVIDERS_QUERY: &str =
-    include_str!("queries/providers/connected_providers.sql");
+pub const CONNECTED_BACKENDS_QUERY: &str = include_str!("queries/backends/connected_backends.sql");
 
-pub const PREFERRED_PROVIDER_QUERY: &str = include_str!("queries/providers/preferred_provider.sql");
+pub const PREFERRED_BACKEND_QUERY: &str = include_str!("queries/backends/preferred_backend.sql");
 
 pub const CREATE_NEW_SESSION_QUERY: &str = include_str!("queries/sessions/create_new_session.sql");
 
@@ -23,9 +22,9 @@ pub const SEARCH_SESSIONS_QUERY: &str = include_str!("queries/sessions/search_se
 pub const DELETE_SESSION_QUERY: &str = include_str!("queries/sessions/delete_session.sql");
 
 pub const PREFER_MODEL_CONFIG_QUERY: &str =
-    include_str!("queries/providers/prefer_model_config.sql");
+    include_str!("queries/backends/prefer_model_config.sql");
 
-pub const SET_PREFERRED_QUERY: &str = include_str!("queries/providers/set_preferred.sql");
+pub const SET_PREFERRED_QUERY: &str = include_str!("queries/backends/set_preferred.sql");
 
 pub const MATCH_PERMISSION_QUERY: &str = include_str!("queries/permissions/match_permission.sql");
 
@@ -47,9 +46,12 @@ pub const ROLLBACK: &str = include_str!("queries/history/rollback_history.sql");
 
 pub const DELETE_EMPTY_SESSION: &str = include_str!("queries/sessions/delete_empty_session.sql");
 
+pub const DELETE_ALL_EMPTY_SESSIONS: &str =
+    include_str!("queries/sessions/delete_all_empty_sessions.sql");
+
 pub const INSERT_PLUGIN_QUERY: &str = include_str!("queries/plugins/insert_plugin.sql");
 
-pub const GET_ALL_MCP_QUERY: &str = include_str!("queries/plugins/get_all_mcp.sql");
+pub const GET_PLUGINS_BY_TYPE_QUERY: &str = include_str!("queries/plugins/get_plugins_by_type.sql");
 
 pub const GET_PLUGIN_CREDENTIAL_QUERY: &str =
     include_str!("queries/plugins/get_plugin_credential.sql");

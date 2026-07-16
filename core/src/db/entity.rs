@@ -1,6 +1,7 @@
+use scry_provider_protocol::v1::ConversationItem;
 use sqlx::FromRow;
 
-use crate::{entity::ProviderId, provider::ConversationItem};
+use crate::entity::ProviderBackendId;
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
@@ -10,8 +11,9 @@ pub enum AuthKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub struct ConnectedProvider {
-    pub provider_id: ProviderId,
+pub struct ConnectedBackend {
+    #[sqlx(flatten)]
+    pub id: ProviderBackendId,
     pub auth_kind: AuthKind,
     pub secret: String,
     pub model: String,
@@ -41,14 +43,16 @@ pub struct Permission {
 
 #[derive(Clone, Debug, FromRow)]
 pub struct HistoryEntry {
-    pub provider_id: ProviderId,
+    #[sqlx(flatten)]
+    pub provider_backend_id: ProviderBackendId,
     #[sqlx(json)]
     pub payload: ConversationItem,
 }
 
 #[derive(Debug, FromRow)]
 pub struct RestoreEntry {
-    pub provider_id: ProviderId,
+    #[sqlx(flatten)]
+    pub provider_backend_id: ProviderBackendId,
     #[sqlx(json)]
     pub payload: ConversationItem,
     pub finished: bool,

@@ -1,46 +1,56 @@
-CREATE TABLE IF NOT EXISTS provider_credentials
+CREATE TABLE IF NOT EXISTS backend_credentials
 (
-    provider_id TEXT PRIMARY KEY NOT NULL,
-    auth_kind   TEXT             NOT NULL CHECK (auth_kind IN ('api_key', 'oauth')),
-    secret      TEXT             NOT NULL,
-    model       TEXT             NOT NULL,
-    effort      TEXT             NOT NULL
+    provider_id TEXT NOT NULL,
+    backend_id  TEXT NOT NULL,
+    auth_kind   TEXT NOT NULL CHECK (auth_kind IN ('api_key', 'oauth')),
+    secret      TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    effort      TEXT NOT NULL,
+    PRIMARY KEY (provider_id, backend_id)
 );
 
 CREATE TABLE IF NOT EXISTS settings
 (
-    id                 INTEGER PRIMARY KEY CHECK (id = 0),
-    preferred_provider TEXT
-        REFERENCES provider_credentials (provider_id)
-            ON DELETE SET NULL
+    id                    INTEGER PRIMARY KEY CHECK (id = 0),
+    preferred_provider_id TEXT,
+    preferred_backend_id  TEXT,
+    FOREIGN KEY (preferred_provider_id, preferred_backend_id)
+        REFERENCES backend_credentials (provider_id, backend_id)
+        ON DELETE SET NULL
 );
 
 INSERT OR IGNORE INTO settings (id)
 VALUES (0);
 
 -- set preferred on first insert when no preferred is set
-CREATE TRIGGER IF NOT EXISTS settings_prefer_first_provider
+CREATE TRIGGER IF NOT EXISTS settings_prefer_first_backend
     AFTER INSERT
-    ON provider_credentials
-    WHEN (SELECT preferred_provider
+    ON backend_credentials
+    WHEN (SELECT preferred_provider_id
           FROM settings) IS NULL
 BEGIN
-    UPDATE settings SET preferred_provider = NEW.provider_id WHERE id = 0;
+    UPDATE settings
+    SET preferred_provider_id = NEW.provider_id,
+        preferred_backend_id  = NEW.backend_id
+    WHERE id = 0;
 END;
 
 -- auto set preferred on preferred deletion
 CREATE TRIGGER IF NOT EXISTS settings_reassign_preferred_on_delete
     BEFORE DELETE
-    ON provider_credentials
-    WHEN OLD.provider_id = (SELECT preferred_provider
+    ON backend_credentials
+    WHEN OLD.provider_id = (SELECT preferred_provider_id
                             FROM settings)
+        AND OLD.backend_id = (SELECT preferred_backend_id
+                              FROM settings)
 BEGIN
     UPDATE settings
-    SET preferred_provider = (SELECT provider_id
-                              FROM provider_credentials
-                              WHERE provider_id <> OLD.provider_id
-                              ORDER BY rowid
-                              LIMIT 1)
+    SET (preferred_provider_id, preferred_backend_id) =
+            (SELECT provider_id, backend_id
+             FROM backend_credentials
+             WHERE NOT (provider_id = OLD.provider_id AND backend_id = OLD.backend_id)
+             ORDER BY rowid
+             LIMIT 1)
     WHERE id = 0;
 END;
 
@@ -66,6 +76,7 @@ CREATE TABLE IF NOT EXISTS history
             ON DELETE CASCADE,
     timestamp    INTEGER NOT NULL DEFAULT (unixepoch()),
     provider_id  TEXT    NOT NULL,
+    backend_id   TEXT    NOT NULL,
     payload_type TEXT    NOT NULL,
     payload      TEXT    NOT NULL
 );
@@ -85,7 +96,7 @@ END;
 CREATE TABLE IF NOT EXISTS plugins
 (
     name        TEXT PRIMARY KEY NOT NULL,
-    plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('native', 'mcp')),
+    plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('native', 'provider', 'mcp')),
     transport   TEXT             NOT NULL CHECK (transport IN ('local', 'http')),
     timeout     INTEGER          NOT NULL DEFAULT 300 CHECK (timeout > 0),
     disabled    INTEGER          NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
@@ -93,6 +104,18 @@ CREATE TABLE IF NOT EXISTS plugins
     args        TEXT             NOT NULL,
     credential  TEXT,
     creation    INTEGER          NOT NULL DEFAULT (unixepoch()),
-    -- Native plugins run in-process; only mcp plugins may go over http.
-    CHECK (NOT (plugin_type = 'native' AND transport = 'http'))
+    -- Native plugins and provider plugins run in-process
+    -- only mcp plugins may go over http.
+    CHECK (plugin_type = 'mcp' OR transport = 'local')
 );
+
+-- deleting a provider plugin removes every credential stored for its backends
+CREATE TRIGGER IF NOT EXISTS plugins_delete_backend_credentials
+    AFTER DELETE
+    ON plugins
+    WHEN OLD.plugin_type = 'provider'
+BEGIN
+    DELETE
+    FROM backend_credentials
+    WHERE provider_id = OLD.name;
+END;
