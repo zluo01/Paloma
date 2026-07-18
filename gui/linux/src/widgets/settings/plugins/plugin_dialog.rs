@@ -13,9 +13,9 @@ use libadwaita::{
     Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, SpinRow, SwitchRow, ToolbarView,
     prelude::*,
 };
-use scry_core::{Plugin, PluginArgs, Transport};
+use scry_core::{Plugin, PluginArgs, PluginType, Transport};
 
-use crate::widgets::settings::plugins::model::Msg;
+use crate::widgets::settings::plugins::model::{GeneralPluginMsg, Msg};
 
 #[derive(Default, PartialEq)]
 enum Kind {
@@ -25,15 +25,11 @@ enum Kind {
 }
 
 pub(super) struct PluginDialog {
-    dialog: Dialog,
-    banner: Banner,
-    form: ListBox,
-    add: Button,
-    cancel: Button,
+    frame: DialogFrame,
 }
 
 impl PluginDialog {
-    pub(super) fn new(
+    pub(super) fn new_mcp_dialog(
         plugin: Option<Plugin>,
         taken: HashSet<String>,
         dispatcher: mpsc::UnboundedSender<Msg>,
@@ -46,28 +42,24 @@ impl PluginDialog {
         let disabled = plugin.as_ref().is_some_and(|p| p.disabled);
         let remote = initial.kind == Kind::Remote;
 
+        let frame = DialogFrame::new(
+            if editing {
+                "Edit MCP Server"
+            } else {
+                "Add MCP Server"
+            },
+            editing,
+        );
+
         // [name, command, args / url, env]
         let status = Rc::new(Cell::new(if editing {
             [true; 4]
         } else {
             [false, false, false, true]
         }));
-
-        let cancel = Button::builder().label("Cancel").build();
-        {
-            let dispatcher = dispatcher.clone();
-            cancel.connect_clicked(move |_| {
-                let _ = dispatcher.unbounded_send(Msg::McpDialogCancelled);
-            });
-        }
-        let add = Button::builder()
-            .label(if editing { "Save" } else { "Add" })
-            .sensitive(editing)
-            .css_classes(["suggested-action"])
-            .build();
         let update_status = {
             let status = status.clone();
-            let add = add.clone();
+            let add = frame.submit_button().clone();
             move |index: usize, ok: bool| {
                 let mut slots = status.get();
                 slots[index] = ok;
@@ -75,16 +67,6 @@ impl PluginDialog {
                 add.set_sensitive(slots == [true; 4]);
             }
         };
-
-        let header = HeaderBar::builder()
-            .show_start_title_buttons(false)
-            .show_end_title_buttons(false)
-            .build();
-        header.pack_start(&cancel);
-        header.pack_end(&add);
-
-        let banner = Banner::builder().button_label("Dismiss").build();
-        banner.connect_button_clicked(|banner| banner.set_revealed(false));
 
         let name = EntryRow::builder()
             .title("Name")
@@ -174,45 +156,18 @@ impl PluginDialog {
         advanced.add_row(&timeout);
         advanced.add_row(&env);
 
-        let form = ListBox::builder()
-            .selection_mode(SelectionMode::None)
-            .margin_top(12)
-            .margin_bottom(24)
-            .margin_start(24)
-            .margin_end(24)
-            .css_classes(["boxed-list"])
-            .build();
-        form.append(&name);
-        form.append(&kind);
-        form.append(&command);
-        form.append(&args);
-        form.append(&url);
-        form.append(&requires_auth);
-        form.append(&advanced);
-
-        let content = GtkBox::new(Orientation::Vertical, 0);
-        content.append(&banner);
-        content.append(&form);
-
-        let view = ToolbarView::builder().content(&content).build();
-        view.add_top_bar(&header);
-
-        let dialog = Dialog::builder()
-            .title(if editing { "Edit Plugin" } else { "Add Plugin" })
-            .content_width(440)
-            .child(&view)
-            .build();
+        frame.append(&name);
+        frame.append(&kind);
+        frame.append(&command);
+        frame.append(&args);
+        frame.append(&url);
+        frame.append(&requires_auth);
+        frame.append(&advanced);
 
         // Submit reads the widgets at click time and reports through the
-        // page's event loop. The form locks until the verdict arrives:
-        // `show_error` unlocks on failure, success closes the dialog.
+        // page's event loop.
         {
             let dispatcher = dispatcher.clone();
-            let banner = banner.clone();
-            let form = form.clone();
-            let cancel = cancel.clone();
-            // Weak: the closure lives on a child of the dialog.
-            let dialog = dialog.downgrade();
             let name = name.clone();
             let kind = kind.clone();
             let command = command.clone();
@@ -221,14 +176,7 @@ impl PluginDialog {
             let requires_auth = requires_auth.clone();
             let timeout = timeout.clone();
             let env = env.clone();
-            add.connect_clicked(move |add| {
-                add.set_sensitive(false);
-                cancel.set_sensitive(false);
-                form.set_sensitive(false);
-                banner.set_revealed(false);
-                if let Some(dialog) = dialog.upgrade() {
-                    dialog.set_can_close(false);
-                }
+            frame.connect_submit(move || {
                 let data = FormData {
                     name: name.text().into(),
                     kind: if kind.selected() == 1 {
@@ -243,15 +191,172 @@ impl PluginDialog {
                     timeout: timeout.value() as u32,
                     env: env.text().into(),
                 };
-                let _ = dispatcher.unbounded_send(Msg::McpDialogSubmitted {
-                    config: data.to_plugin(disabled),
-                    editing,
-                });
+                let _ = dispatcher.unbounded_send(Msg::General(
+                    GeneralPluginMsg::PluginDialogSubmitted {
+                        plugin_type: PluginType::Mcp,
+                        config: data.to_plugin(disabled),
+                        editing,
+                    },
+                ));
             });
         }
-        dialog.connect_closed(move |_| {
-            let _ = dispatcher.unbounded_send(Msg::McpDialogCancelled);
+        frame.connect_cancel(move || {
+            let _ =
+                dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::PluginDialogCancelled));
         });
+
+        Self { frame }
+    }
+
+    pub(super) fn new_provider_dialog(
+        plugin: Option<Plugin>,
+        dispatcher: mpsc::UnboundedSender<Msg>,
+    ) -> Self {
+        let initial = plugin
+            .as_ref()
+            .map(FormData::from_plugin)
+            .unwrap_or_default();
+        let editing = plugin.is_some();
+
+        let frame = DialogFrame::new(
+            if editing {
+                "Edit Provider"
+            } else {
+                "Add Provider"
+            },
+            editing,
+        );
+
+        // [command, args, env]
+        let status = Rc::new(Cell::new([!initial.command.is_empty(), true, true]));
+        let update_status = {
+            let status = status.clone();
+            let add = frame.submit_button().clone();
+            move |index: usize, ok: bool| {
+                let mut slots = status.get();
+                slots[index] = ok;
+                status.set(slots);
+                add.set_sensitive(slots == [true; 3]);
+            }
+        };
+        let command = EntryRow::builder()
+            .title("Command")
+            .text(&initial.command)
+            .build();
+        validate(&command, 0, true, update_status.clone(), |_| None);
+        let args = EntryRow::builder()
+            .title("Arguments (JSON array)")
+            .tooltip_text(r#"e.g. ["--port", "8080"]"#)
+            .text(&initial.args)
+            .build();
+        // A provider binary may take no arguments, so the field is optional.
+        validate(&args, 1, false, update_status.clone(), validate_args);
+
+        let env = EntryRow::builder()
+            .title("Environment variables (JSON)")
+            .tooltip_text(r#"e.g. {"API_KEY": "secret"}"#)
+            .text(&initial.env)
+            .build();
+        validate(&env, 2, false, update_status, validate_env);
+        let advanced = ExpanderRow::builder()
+            .title("Advanced")
+            .subtitle("Optional")
+            .build();
+        advanced.add_row(&env);
+
+        frame.append(&command);
+        frame.append(&args);
+        frame.append(&advanced);
+
+        {
+            let dispatcher = dispatcher.clone();
+            let command = command.clone();
+            let args = args.clone();
+            let env = env.clone();
+            frame.connect_submit(move || {
+                let data = FormData::provider(
+                    command.text().into(),
+                    args.text().into(),
+                    env.text().into(),
+                );
+                let _ = dispatcher.unbounded_send(Msg::General(
+                    GeneralPluginMsg::PluginDialogSubmitted {
+                        plugin_type: PluginType::Provider,
+                        config: data.to_plugin(false),
+                        editing,
+                    },
+                ));
+            });
+        }
+        frame.connect_cancel(move || {
+            let _ =
+                dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::PluginDialogCancelled));
+        });
+
+        Self { frame }
+    }
+
+    pub(super) fn show(&self, parent: &impl IsA<gtk4::Widget>) {
+        self.frame.show(parent);
+    }
+
+    pub(super) fn hide(&self) {
+        self.frame.hide();
+    }
+
+    pub(super) fn show_error(&self, error_msg: &str) {
+        self.frame.show_error(error_msg);
+    }
+}
+
+pub(super) struct DialogFrame {
+    dialog: Dialog,
+    banner: Banner,
+    form: ListBox,
+    add: Button,
+    cancel: Button,
+}
+
+impl DialogFrame {
+    pub(super) fn new(title: &str, editing: bool) -> Self {
+        let cancel = Button::builder().label("Cancel").build();
+        let add = Button::builder()
+            .label(if editing { "Save" } else { "Add" })
+            .sensitive(editing)
+            .css_classes(["suggested-action"])
+            .build();
+
+        let header = HeaderBar::builder()
+            .show_start_title_buttons(false)
+            .show_end_title_buttons(false)
+            .build();
+        header.pack_start(&cancel);
+        header.pack_end(&add);
+
+        let banner = Banner::builder().button_label("Dismiss").build();
+        banner.connect_button_clicked(|banner| banner.set_revealed(false));
+
+        let form = ListBox::builder()
+            .selection_mode(SelectionMode::None)
+            .margin_top(12)
+            .margin_bottom(24)
+            .margin_start(24)
+            .margin_end(24)
+            .css_classes(["boxed-list"])
+            .build();
+
+        let content = GtkBox::new(Orientation::Vertical, 0);
+        content.append(&banner);
+        content.append(&form);
+
+        let view = ToolbarView::builder().content(&content).build();
+        view.add_top_bar(&header);
+
+        let dialog = Dialog::builder()
+            .title(title)
+            .content_width(440)
+            .child(&view)
+            .build();
 
         Self {
             dialog,
@@ -260,6 +365,41 @@ impl PluginDialog {
             add,
             cancel,
         }
+    }
+
+    pub(super) fn submit_button(&self) -> &Button {
+        &self.add
+    }
+
+    pub(super) fn append(&self, row: &impl IsA<gtk4::Widget>) {
+        self.form.append(row);
+    }
+
+    pub(super) fn connect_submit(&self, submit: impl Fn() + 'static) {
+        let banner = self.banner.clone();
+        let form = self.form.clone();
+        let cancel = self.cancel.clone();
+        // Weak: the closure lives on a child of the dialog.
+        let dialog = self.dialog.downgrade();
+        self.add.connect_clicked(move |add| {
+            add.set_sensitive(false);
+            cancel.set_sensitive(false);
+            form.set_sensitive(false);
+            banner.set_revealed(false);
+            if let Some(dialog) = dialog.upgrade() {
+                dialog.set_can_close(false);
+            }
+            submit();
+        });
+    }
+
+    pub(super) fn connect_cancel(&self, cancel: impl Fn() + 'static) {
+        let cancel = Rc::new(cancel);
+        {
+            let cancel = cancel.clone();
+            self.cancel.connect_clicked(move |_| cancel());
+        }
+        self.dialog.connect_closed(move |_| cancel());
     }
 
     pub(super) fn show(&self, parent: &impl IsA<gtk4::Widget>) {
@@ -368,6 +508,19 @@ impl Default for FormData {
 }
 
 impl FormData {
+    fn provider(command: String, args: String, env: String) -> Self {
+        Self {
+            name: String::new(),
+            kind: Kind::default(),
+            command,
+            args,
+            url: String::new(),
+            requires_auth: false,
+            timeout: 300,
+            env,
+        }
+    }
+
     fn from_plugin(initial: &Plugin) -> Self {
         let mut form = Self {
             name: initial.name.clone(),

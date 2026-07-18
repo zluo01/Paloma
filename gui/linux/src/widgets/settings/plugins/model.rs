@@ -1,46 +1,59 @@
 use std::collections::HashSet;
 
-use scry_core::{AppError, McpServer, OAuthCallbackState, Plugin};
+use scry_core::{AppError, McpServer, OAuthCallbackState, Plugin, PluginType, ProviderInfo};
 
 #[derive(Default)]
 pub(super) struct State {
+    pub(super) providers: Vec<ProviderInfo>,
     pub(super) servers: Vec<McpServer>,
-    pub(super) names: HashSet<String>,
 }
 
 pub(super) enum Msg {
+    General(GeneralPluginMsg),
+    McpPlugin(McpPluginMsg),
+    ProviderLoaded(Result<Vec<ProviderInfo>, AppError>),
     McpServersLoaded(Result<Vec<McpServer>, AppError>),
-    AddMcpClicked,
-    EditMcpClicked(String),
-    McpDialogSubmitted {
+    McpToggleChanged(String, bool),
+    McpToggleFinished(Result<(), AppError>),
+}
+
+pub(super) enum GeneralPluginMsg {
+    EditPluginClicked(PluginType, String),
+    RemovePluginClicked(PluginType, String),
+    RemovePluginFinished(PluginType, Result<(), AppError>),
+    AddPluginClicked(PluginType),
+    PluginDialogSubmitted {
+        plugin_type: PluginType,
         config: Plugin,
         editing: bool,
     },
-    McpDialogCancelled,
+    PluginSaveFinished(PluginType, Result<(), AppError>),
+    PluginDialogCancelled,
+}
+
+pub(super) enum McpPluginMsg {
     McpInitFinished {
         config: Plugin,
         // Boxed: the oauth state dwarfs every other variant.
         result: Result<Option<Box<OAuthCallbackState>>, AppError>,
     },
-    McpSaveFinished(Result<(), AppError>),
     OauthDialogClosed,
-    RemoveMcpClicked(String),
-    RemoveMcpFinished(Result<(), AppError>),
-    McpToggleChanged(String, bool),
-    McpToggleFinished(Result<(), AppError>),
 }
 
 pub(super) enum Command {
-    RenderMcpServers,
+    LoadProviderPlugins,
     LoadMcpServers,
+    RenderProviderPlugins,
+    RenderMcpServers,
     SaveMcpToggle(String, bool),
-    RemoveMcp(String),
-    OpenMcpDialog {
+    RemovePlugin(PluginType, String),
+    OpenPluginDialog {
+        plugin_type: PluginType,
         config: Option<Plugin>,
         taken: HashSet<String>,
     },
-    SaveMcp(Plugin),
-    UpdateMcp(Plugin),
+    SavePlugin(PluginType, Plugin),
+    UpdatePlugin(PluginType, Plugin),
     OpenOauthDialog(String),
     FinalizeMcp {
         config: Plugin,
@@ -48,8 +61,8 @@ pub(super) enum Command {
     },
     CloseOauthDialog,
     AbortMcpConnection,
-    CloseMcpDialog,
-    ShowMcpDialogError(String),
+    ClosePluginDialog,
+    ShowPluginDialogError(String),
     ShowErrorDialog(String),
     LogWarning(String),
 }
@@ -57,79 +70,37 @@ pub(super) enum Command {
 impl State {
     /// Plugin page workflow:
     ///
-    /// - Page refresh: `McpServersLoaded -> RenderMcpServers`.
-    /// - Add/edit/save plugin: `AddMcpClicked` / `EditMcpClicked -> OpenMcpDialog -> ReloadMcpServersRequested -> LoadMcpServers`.
-    /// - Dialog submit: `McpDialogSubmitted -> SaveMcp` (add) or `UpdateMcp` (edit).
-    /// - Add flow: `SaveMcp` inits the connection, then
-    ///   `McpInitFinished(Ok) -> [OpenOauthDialog ->] FinalizeMcp -> McpSaveFinished`.
-    /// - Successful save: `McpSaveFinished(Ok) -> CloseOauthDialog -> CloseMcpDialog -> LoadMcpServers`.
-    /// - Failed init or save: `McpInitFinished(Err)` / `McpSaveFinished(Err) -> ShowMcpDialogError`.
-    /// - Cancelled authorization: `OauthDialogClosed -> AbortMcpConnection -> ShowMcpDialogError`.
-    /// - Dialog cancel: `McpDialogCancelled -> CloseMcpDialog`.
-    /// - Remove button: `RemoveMcpClicked -> RemoveMcp -> RemoveMcpFinished`.
+    /// - Page refresh: `McpServersLoaded -> RenderMcpServers` and `ProviderLoaded -> RenderProviderPlugins`.
+    /// - Add/edit plugin: `General(AddPluginClicked)` / `General(EditPluginClicked) -> OpenPluginDialog`.
+    /// - Dialog submit: `General(PluginDialogSubmitted) -> SavePlugin` (add) or `UpdatePlugin` (edit).
+    /// - Mcp add: `SavePlugin(Mcp) -> McpPlugin(McpInitFinished(Ok)) -> [OpenOauthDialog ->] FinalizeMcp -> PluginSaveFinished`.
+    /// - Provider add: `SavePlugin(Provider) -> PluginSaveFinished`.
+    /// - Successful save: `PluginSaveFinished(Ok) -> [CloseOauthDialog ->] ClosePluginDialog -> LoadMcpServers`/`LoadProviderPlugins`.
+    /// - Failed init or save: `McpPlugin(McpInitFinished(Err))` / `PluginSaveFinished(Err) -> ShowPluginDialogError`.
+    /// - Canceled authorization: `McpPlugin(OauthDialogClosed) -> AbortMcpConnection -> ShowPluginDialogError`.
+    /// - Dialog cancel: `General(PluginDialogCancelled) -> ClosePluginDialog`.
     /// - Enable switch: `McpToggleChanged -> SaveMcpToggle -> McpToggleFinished`.
     /// - Failed toggle: `McpToggleFinished(Err) -> LoadMcpServers -> ShowErrorDialog`.
+    /// - Remove button: `General(RemovePluginClicked) -> RemovePlugin -> RemovePluginFinished(Ok) -> LoadMcpServers`/`LoadProviderPlugins`.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
+            Msg::General(msg) => self.handle_general(msg),
+            Msg::McpPlugin(msg) => self.handle_mcp_connect(msg),
+            Msg::ProviderLoaded(result) => match result {
+                Ok(providers) => {
+                    self.providers = providers;
+                    vec![Command::RenderProviderPlugins]
+                },
+                Err(e) => vec![Command::LogWarning(format!(
+                    "failed to load providers: {e}"
+                ))],
+            },
             Msg::McpServersLoaded(result) => match result {
                 Ok(servers) => {
-                    self.names = servers.iter().map(|s| s.config.name.clone()).collect();
                     self.servers = servers;
                     vec![Command::RenderMcpServers]
                 },
                 Err(e) => vec![Command::LogWarning(format!("list_mcps failed: {e}"))],
-            },
-            Msg::AddMcpClicked => vec![Command::OpenMcpDialog {
-                config: None,
-                taken: self.names.clone(),
-            }],
-            Msg::EditMcpClicked(name) => match self.config(&name) {
-                Some(config) => vec![Command::OpenMcpDialog {
-                    config: Some(config),
-                    taken: self.names.clone(),
-                }],
-                None => vec![Command::LogWarning(format!(
-                    "edit requested for unknown plugin: {name}"
-                ))],
-            },
-            Msg::McpDialogSubmitted { config, editing } => {
-                if editing {
-                    vec![Command::UpdateMcp(config)]
-                } else {
-                    vec![Command::SaveMcp(config)]
-                }
-            },
-            Msg::McpDialogCancelled => vec![Command::CloseMcpDialog],
-            Msg::McpInitFinished { config, result } => match result {
-                Ok(state) => {
-                    let mut commands = Vec::new();
-                    if let Some(state) = &state {
-                        commands.push(Command::OpenOauthDialog(state.auth_url().to_string()));
-                    }
-                    commands.push(Command::FinalizeMcp { config, state });
-                    commands
-                },
-                Err(e) => vec![Command::ShowMcpDialogError(format!("{e}"))],
-            },
-            Msg::McpSaveFinished(result) => match result {
-                Ok(()) => vec![
-                    Command::CloseOauthDialog,
-                    Command::CloseMcpDialog,
-                    Command::LoadMcpServers,
-                ],
-                Err(e) => vec![
-                    Command::CloseOauthDialog,
-                    Command::ShowMcpDialogError(format!("{e}")),
-                ],
-            },
-            Msg::OauthDialogClosed => vec![
-                Command::AbortMcpConnection,
-                Command::ShowMcpDialogError("The authorization was cancelled.".into()),
-            ],
-            Msg::RemoveMcpClicked(name) => vec![Command::RemoveMcp(name)],
-            Msg::RemoveMcpFinished(result) => match result {
-                Ok(()) => vec![Command::LoadMcpServers],
-                Err(e) => vec![Command::ShowErrorDialog(format!("{e}"))],
             },
             Msg::McpToggleChanged(name, enabled) => {
                 self.set_enabled(&name, enabled);
@@ -145,17 +116,118 @@ impl State {
         }
     }
 
-    fn config(&self, name: &str) -> Option<Plugin> {
+    fn handle_general(&mut self, msg: GeneralPluginMsg) -> Vec<Command> {
+        match msg {
+            GeneralPluginMsg::EditPluginClicked(plugin_type, name) => {
+                match self.config(&plugin_type, &name) {
+                    Some(config) => vec![Command::OpenPluginDialog {
+                        plugin_type,
+                        config: Some(config),
+                        taken: self.taken_names(),
+                    }],
+                    None => vec![Command::LogWarning(format!(
+                        "edit requested for unknown plugin: {name}"
+                    ))],
+                }
+            },
+            GeneralPluginMsg::RemovePluginClicked(plugin_type, name) => {
+                vec![Command::RemovePlugin(plugin_type, name)]
+            },
+            GeneralPluginMsg::RemovePluginFinished(plugin_type, result) => match result {
+                Ok(()) => reload_list(&plugin_type).into_iter().collect(),
+                Err(e) => vec![Command::ShowErrorDialog(format!("{e}"))],
+            },
+            GeneralPluginMsg::AddPluginClicked(plugin_type) => vec![Command::OpenPluginDialog {
+                plugin_type,
+                config: None,
+                taken: self.taken_names(),
+            }],
+            GeneralPluginMsg::PluginSaveFinished(plugin_type, result) => {
+                let mut commands = Vec::new();
+                // Only the MCP flow can have the OAuth popup open.
+                if plugin_type == PluginType::Mcp {
+                    commands.push(Command::CloseOauthDialog);
+                }
+                match result {
+                    Ok(()) => {
+                        commands.push(Command::ClosePluginDialog);
+                        commands.extend(reload_list(&plugin_type));
+                    },
+                    Err(e) => commands.push(Command::ShowPluginDialogError(format!("{e}"))),
+                }
+                commands
+            },
+            GeneralPluginMsg::PluginDialogCancelled => vec![Command::ClosePluginDialog],
+            GeneralPluginMsg::PluginDialogSubmitted {
+                plugin_type,
+                config,
+                editing,
+            } => {
+                if editing {
+                    vec![Command::UpdatePlugin(plugin_type, config)]
+                } else {
+                    vec![Command::SavePlugin(plugin_type, config)]
+                }
+            },
+        }
+    }
+
+    fn handle_mcp_connect(&mut self, msg: McpPluginMsg) -> Vec<Command> {
+        match msg {
+            McpPluginMsg::McpInitFinished { config, result } => match result {
+                Ok(state) => {
+                    let mut commands = Vec::new();
+                    if let Some(state) = &state {
+                        commands.push(Command::OpenOauthDialog(state.auth_url().to_string()));
+                    }
+                    commands.push(Command::FinalizeMcp { config, state });
+                    commands
+                },
+                Err(e) => vec![Command::ShowPluginDialogError(format!("{e}"))],
+            },
+            McpPluginMsg::OauthDialogClosed => vec![
+                Command::AbortMcpConnection,
+                Command::ShowPluginDialogError("The authorization was cancelled.".into()),
+            ],
+        }
+    }
+
+    fn taken_names(&self) -> HashSet<String> {
         self.servers
             .iter()
-            .find(|s| s.config.name == name)
-            .map(|s| s.config.clone())
+            .map(|s| s.config.name.clone())
+            .chain(self.providers.iter().map(|p| p.name.clone()))
+            .collect()
+    }
+
+    fn config(&self, plugin_type: &PluginType, name: &str) -> Option<Plugin> {
+        match plugin_type {
+            PluginType::Mcp => self
+                .servers
+                .iter()
+                .find(|s| s.config.name == name)
+                .map(|s| s.config.clone()),
+            PluginType::Provider => self
+                .providers
+                .iter()
+                .find(|p| p.name == name)
+                .and_then(|p| p.config.clone()),
+            PluginType::Native => None,
+        }
     }
 
     fn set_enabled(&mut self, name: &str, enabled: bool) {
         if let Some(server) = self.servers.iter_mut().find(|s| s.config.name == name) {
             server.config.disabled = !enabled;
         }
+    }
+}
+
+fn reload_list(plugin_type: &PluginType) -> Option<Command> {
+    match plugin_type {
+        PluginType::Provider => Some(Command::LoadProviderPlugins),
+        PluginType::Mcp => Some(Command::LoadMcpServers),
+        PluginType::Native => None,
     }
 }
 
@@ -188,6 +260,26 @@ mod tests {
         }
     }
 
+    fn provider(name: &str) -> ProviderInfo {
+        ProviderInfo {
+            name: name.into(),
+            description: String::new(),
+            status: HealthStatus::Running,
+            error: None,
+            config: Some(Plugin {
+                name: name.into(),
+                transport: Transport::Local,
+                timeout: 300,
+                disabled: false,
+                env: Default::default(),
+                args: PluginArgs::Local {
+                    command: "provider-bin".into(),
+                    args: Vec::new(),
+                },
+            }),
+        }
+    }
+
     /// Walk the model through a completed page load.
     fn loaded(state: &mut State, servers: Vec<McpServer>) {
         let cmds = state.update(Msg::McpServersLoaded(Ok(servers)));
@@ -197,11 +289,12 @@ mod tests {
     /// Submit a new config through the open add dialog, returning the config
     /// the save executor would receive.
     fn submitted(state: &mut State, name: &str) -> Plugin {
-        let mut cmds = state.update(Msg::McpDialogSubmitted {
+        let mut cmds = state.update(Msg::General(GeneralPluginMsg::PluginDialogSubmitted {
+            plugin_type: PluginType::Mcp,
             config: server(name, false).config,
             editing: false,
-        });
-        let Some(Command::SaveMcp(config)) = cmds.pop() else {
+        }));
+        let Some(Command::SavePlugin(PluginType::Mcp, config)) = cmds.pop() else {
             panic!("submit did not request a save");
         };
         assert!(cmds.is_empty());
@@ -213,7 +306,7 @@ mod tests {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", false)]);
         assert_eq!(state.servers.len(), 1);
-        assert!(state.names.contains("fs"));
+        assert!(state.taken_names().contains("fs"));
     }
 
     #[test]
@@ -232,30 +325,39 @@ mod tests {
         loaded(&mut state, vec![server("existing", false)]);
 
         // The add dialog opens knowing every listed name.
-        let cmds = state.update(Msg::AddMcpClicked);
+        let cmds = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Mcp,
+        )));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::OpenMcpDialog { config: None, taken }] if taken.contains("existing")
+            [Command::OpenPluginDialog {
+                plugin_type: PluginType::Mcp,
+                config: None,
+                taken,
+            }] if taken.contains("existing")
         ));
 
         // Submit inits the connection; no authorization step follows.
         let config = submitted(&mut state, "fs");
-        let cmds = state.update(Msg::McpInitFinished {
+        let cmds = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
             config,
             result: Ok(None),
-        });
+        }));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::FinalizeMcp { config, state: None }] if config.name == "fs"
+            [Command::FinalizeMcp { config, .. }] if config.name == "fs"
         ));
 
         // A finished save closes both dialogs and reloads the list.
-        let cmds = state.update(Msg::McpSaveFinished(Ok(())));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+            PluginType::Mcp,
+            Ok(()),
+        )));
         assert!(matches!(
             cmds.as_slice(),
             [
                 Command::CloseOauthDialog,
-                Command::CloseMcpDialog,
+                Command::ClosePluginDialog,
                 Command::LoadMcpServers
             ]
         ));
@@ -263,20 +365,25 @@ mod tests {
             &mut state,
             vec![server("existing", false), server("fs", false)],
         );
-        assert!(state.names.contains("fs"));
+        assert!(state.taken_names().contains("fs"));
     }
 
     #[test]
     fn add_workflow_init_failure_reports_and_allows_a_retry() {
         let mut state = State::default();
-        let _ = state.update(Msg::AddMcpClicked);
+        let _ = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Mcp,
+        )));
 
         let config = submitted(&mut state, "fs");
-        let cmds = state.update(Msg::McpInitFinished {
+        let cmds = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
             config,
             result: Err(error("refused")),
-        });
-        assert!(matches!(cmds.as_slice(), [Command::ShowMcpDialogError(_)]));
+        }));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::ShowPluginDialogError(_)]
+        ));
 
         // The dialog stays open with the failure, so a resubmit works.
         submitted(&mut state, "fs");
@@ -285,30 +392,40 @@ mod tests {
     #[test]
     fn add_workflow_finalize_failure_reports_and_closes_the_popup() {
         let mut state = State::default();
-        let _ = state.update(Msg::AddMcpClicked);
+        let _ = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Mcp,
+        )));
         let config = submitted(&mut state, "fs");
-        let _ = state.update(Msg::McpInitFinished {
+        let _ = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
             config,
             result: Ok(None),
-        });
+        }));
 
-        let cmds = state.update(Msg::McpSaveFinished(Err(error("refused"))));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+            PluginType::Mcp,
+            Err(error("refused")),
+        )));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::CloseOauthDialog, Command::ShowMcpDialogError(_)]
+            [Command::CloseOauthDialog, Command::ShowPluginDialogError(_)]
         ));
     }
 
     #[test]
     fn add_workflow_cancelled_authorization_aborts_and_reports() {
         let mut state = State::default();
-        let _ = state.update(Msg::AddMcpClicked);
+        let _ = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Mcp,
+        )));
         let _ = submitted(&mut state, "fs");
 
-        let cmds = state.update(Msg::OauthDialogClosed);
+        let cmds = state.update(Msg::McpPlugin(McpPluginMsg::OauthDialogClosed));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::AbortMcpConnection, Command::ShowMcpDialogError(_)]
+            [
+                Command::AbortMcpConnection,
+                Command::ShowPluginDialogError(_)
+            ]
         ));
 
         // The dialog unlocked with the banner, so a resubmit works.
@@ -320,8 +437,12 @@ mod tests {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", true)]);
 
-        let mut cmds = state.update(Msg::EditMcpClicked("fs".into()));
-        let Some(Command::OpenMcpDialog {
+        let mut cmds = state.update(Msg::General(GeneralPluginMsg::EditPluginClicked(
+            PluginType::Mcp,
+            "fs".into(),
+        )));
+        let Some(Command::OpenPluginDialog {
+            plugin_type: PluginType::Mcp,
             config: Some(config),
             taken,
         }) = cmds.pop()
@@ -330,21 +451,25 @@ mod tests {
         };
         assert!(taken.contains("fs"));
 
-        let cmds = state.update(Msg::McpDialogSubmitted {
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginDialogSubmitted {
+            plugin_type: PluginType::Mcp,
             config,
             editing: true,
-        });
+        }));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::UpdateMcp(config)] if config.name == "fs" && config.disabled
+            [Command::UpdatePlugin(PluginType::Mcp, config)] if config.name == "fs" && config.disabled
         ));
 
-        let cmds = state.update(Msg::McpSaveFinished(Ok(())));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+            PluginType::Mcp,
+            Ok(()),
+        )));
         assert!(matches!(
             cmds.as_slice(),
             [
                 Command::CloseOauthDialog,
-                Command::CloseMcpDialog,
+                Command::ClosePluginDialog,
                 Command::LoadMcpServers
             ]
         ));
@@ -353,16 +478,96 @@ mod tests {
     #[test]
     fn edit_workflow_for_an_unknown_server_warns() {
         let mut state = State::default();
-        let cmds = state.update(Msg::EditMcpClicked("ghost".into()));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::EditPluginClicked(
+            PluginType::Mcp,
+            "ghost".into(),
+        )));
         assert!(matches!(cmds.as_slice(), [Command::LogWarning(_)]));
     }
 
     #[test]
     fn dialog_cancel_closes_the_dialog() {
         let mut state = State::default();
-        let _ = state.update(Msg::AddMcpClicked);
-        let cmds = state.update(Msg::McpDialogCancelled);
-        assert!(matches!(cmds.as_slice(), [Command::CloseMcpDialog]));
+        let _ = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Mcp,
+        )));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginDialogCancelled));
+        assert!(matches!(cmds.as_slice(), [Command::ClosePluginDialog]));
+    }
+
+    #[test]
+    fn provider_add_workflow_saves_and_reloads() {
+        let mut state = State::default();
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Provider,
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::OpenPluginDialog {
+                plugin_type: PluginType::Provider,
+                config: None,
+                ..
+            }]
+        ));
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginDialogSubmitted {
+            plugin_type: PluginType::Provider,
+            config: provider("openai").config.unwrap(),
+            editing: false,
+        }));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::SavePlugin(PluginType::Provider, _)]
+        ));
+
+        // A provider save is single-phase: no oauth dialog to close, and only
+        // the provider list reloads.
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+            PluginType::Provider,
+            Ok(()),
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::ClosePluginDialog, Command::LoadProviderPlugins]
+        ));
+    }
+
+    #[test]
+    fn provider_save_failure_shows_the_dialog_error() {
+        let mut state = State::default();
+        let _ = state.update(Msg::General(GeneralPluginMsg::AddPluginClicked(
+            PluginType::Provider,
+        )));
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+            PluginType::Provider,
+            Err(error("handshake refused")),
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::ShowPluginDialogError(_)]
+        ));
+    }
+
+    #[test]
+    fn provider_edit_workflow_opens_the_dialog() {
+        let mut state = State::default();
+        let cmds = state.update(Msg::ProviderLoaded(Ok(vec![provider("openai")])));
+        assert!(matches!(cmds.as_slice(), [Command::RenderProviderPlugins]));
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::EditPluginClicked(
+            PluginType::Provider,
+            "openai".into(),
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::OpenPluginDialog {
+                plugin_type: PluginType::Provider,
+                config: Some(config),
+                taken,
+            }] if config.name == "openai" && taken.contains("openai")
+        ));
     }
 
     #[test]
@@ -370,22 +575,44 @@ mod tests {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", false)]);
 
-        let cmds = state.update(Msg::RemoveMcpClicked("fs".into()));
-        assert!(matches!(cmds.as_slice(), [Command::RemoveMcp(name)] if name == "fs"));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::RemovePluginClicked(
+            PluginType::Mcp,
+            "fs".into(),
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::RemovePlugin(PluginType::Mcp, name)] if name == "fs"
+        ));
 
-        let cmds = state.update(Msg::RemoveMcpFinished(Ok(())));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::RemovePluginFinished(
+            PluginType::Mcp,
+            Ok(()),
+        )));
         assert!(matches!(cmds.as_slice(), [Command::LoadMcpServers]));
+
+        // A removed provider reloads only the provider list.
+        let cmds = state.update(Msg::General(GeneralPluginMsg::RemovePluginFinished(
+            PluginType::Provider,
+            Ok(()),
+        )));
+        assert!(matches!(cmds.as_slice(), [Command::LoadProviderPlugins]));
         loaded(&mut state, vec![]);
-        assert!(!state.names.contains("fs"));
+        assert!(!state.taken_names().contains("fs"));
     }
 
     #[test]
     fn remove_workflow_failure_shows_the_page_error() {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", false)]);
-        let _ = state.update(Msg::RemoveMcpClicked("fs".into()));
+        let _ = state.update(Msg::General(GeneralPluginMsg::RemovePluginClicked(
+            PluginType::Mcp,
+            "fs".into(),
+        )));
 
-        let cmds = state.update(Msg::RemoveMcpFinished(Err(error("busy"))));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::RemovePluginFinished(
+            PluginType::Mcp,
+            Err(error("busy")),
+        )));
         assert!(matches!(cmds.as_slice(), [Command::ShowErrorDialog(_)]));
     }
 

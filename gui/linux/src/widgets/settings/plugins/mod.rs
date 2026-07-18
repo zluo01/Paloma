@@ -4,13 +4,14 @@ mod plugin_dialog;
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, glib, prelude::*};
+use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, Widget, glib, prelude::*};
 use libadwaita::{
     ActionRow, ApplicationWindow, ButtonRow, Dialog, ExpanderRow, HeaderBar, PreferencesGroup,
     PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
 };
 use scry_core::{
     AppContext, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginArgs, PluginType,
+    ProviderInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -18,14 +19,19 @@ use self::model::{Command, Msg, State};
 use crate::{
     helper::Clear,
     runtime::tokio_runtime,
-    widgets::settings::helper::{launch_url, show_error_dialog, unhealthy_icon},
+    widgets::settings::{
+        helper::{launch_url, show_error_dialog, unhealthy_icon},
+        plugins::model::{GeneralPluginMsg, McpPluginMsg},
+    },
 };
 
 pub(crate) struct PluginsPage {
     view: PreferencesPage,
+    provider_view: PreferencesGroup,
     mcp_view: PreferencesGroup,
+    add_provider: ButtonRow,
     add_mcp: ButtonRow,
-    mcp_dialog: RefCell<Option<plugin_dialog::PluginDialog>>,
+    dialog: RefCell<Option<plugin_dialog::PluginDialog>>,
     oauth_dialog: RefCell<Option<(Dialog, glib::SignalHandlerId)>>,
     connection_flow: RefCell<Option<JoinHandle<()>>>,
     app_context: Arc<AppContext>,
@@ -50,6 +56,12 @@ impl PluginsPage {
                 .build(),
         );
 
+        let provider_view = PreferencesGroup::builder().title("Providers").build();
+        let add_provider = ButtonRow::builder()
+            .title("Add Provider Plugin…")
+            .start_icon_name("list-add-symbolic")
+            .build();
+
         let mcp_view = PreferencesGroup::builder().title("MCP Servers").build();
         let add_mcp = ButtonRow::builder()
             .title("Add MCP Server…")
@@ -57,20 +69,36 @@ impl PluginsPage {
             .build();
 
         view.add(&plugins);
+        view.add(&provider_view);
         view.add(&mcp_view);
 
         let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
 
-        let add_mcp_dispatcher = dispatcher.clone();
-        add_mcp.connect_activated(move |_| {
-            let _ = add_mcp_dispatcher.unbounded_send(Msg::AddMcpClicked);
+        add_provider.connect_activated({
+            let dispatcher = dispatcher.clone();
+            move |_| {
+                let _ = dispatcher.unbounded_send(Msg::General(
+                    GeneralPluginMsg::AddPluginClicked(PluginType::Provider),
+                ));
+            }
+        });
+
+        add_mcp.connect_activated({
+            let dispatcher = dispatcher.clone();
+            move |_| {
+                let _ = dispatcher.unbounded_send(Msg::General(
+                    GeneralPluginMsg::AddPluginClicked(PluginType::Mcp),
+                ));
+            }
         });
 
         let plugin_page = Rc::new(Self {
             view,
+            provider_view,
             mcp_view,
+            add_provider,
             add_mcp,
-            mcp_dialog: RefCell::new(None),
+            dialog: RefCell::new(None),
             oauth_dialog: RefCell::new(None),
             connection_flow: RefCell::new(None),
             app_context,
@@ -100,30 +128,54 @@ impl PluginsPage {
     }
 
     pub(crate) fn refresh(&self) {
-        let app_context = self.app_context.clone();
-        let dispatcher = self.dispatcher.clone();
-        drop(tokio_runtime().spawn(async move {
-            let result = app_context.list_mcps().await;
-            let _ = dispatcher.unbounded_send(Msg::McpServersLoaded(result));
+        self.refresh_mcp_servers();
+        self.refresh_providers();
+    }
+
+    fn refresh_providers(&self) {
+        drop(tokio_runtime().spawn({
+            let app_context = self.app_context.clone();
+            let dispatcher = self.dispatcher.clone();
+            async move {
+                let result = app_context.list_provider_plugins().await;
+                let _ = dispatcher.unbounded_send(Msg::ProviderLoaded(result));
+            }
+        }));
+    }
+
+    fn refresh_mcp_servers(&self) {
+        drop(tokio_runtime().spawn({
+            let app_context = self.app_context.clone();
+            let dispatcher = self.dispatcher.clone();
+            async move {
+                let result = app_context.list_mcps().await;
+                let _ = dispatcher.unbounded_send(Msg::McpServersLoaded(result));
+            }
         }));
     }
 
     fn run(&self, command: Command) {
         match command {
             Command::RenderMcpServers => self.render_mcp_servers(),
-            Command::LoadMcpServers => self.refresh(),
+            Command::RenderProviderPlugins => self.render_provider_plugins(),
+            Command::LoadProviderPlugins => self.refresh_providers(),
+            Command::LoadMcpServers => self.refresh_mcp_servers(),
             Command::SaveMcpToggle(name, enabled) => self.save_mcp_toggle(name, enabled),
-            Command::RemoveMcp(name) => self.remove_mcp(name),
-            Command::OpenMcpDialog { config, taken } => self.open_mcp_dialog(config, taken),
-            Command::SaveMcp(config) => self.init_mcp_connection(config),
-            Command::UpdateMcp(config) => self.update_mcp(config),
-            Command::ShowMcpDialogError(error_msg) => {
-                if let Some(dialog) = self.mcp_dialog.borrow().as_ref() {
+            Command::RemovePlugin(plugin_type, name) => self.remove_plugin(plugin_type, name),
+            Command::OpenPluginDialog {
+                plugin_type,
+                config,
+                taken,
+            } => self.open_plugin_dialog(plugin_type, config, taken),
+            Command::SavePlugin(plugin_type, config) => self.save_plugin(plugin_type, config),
+            Command::UpdatePlugin(plugin_type, config) => self.update_plugin(plugin_type, config),
+            Command::ShowPluginDialogError(error_msg) => {
+                if let Some(dialog) = self.dialog.borrow().as_ref() {
                     dialog.show_error(&error_msg);
                 }
             },
-            Command::CloseMcpDialog => {
-                if let Some(dialog) = self.mcp_dialog.borrow_mut().take() {
+            Command::ClosePluginDialog => {
+                if let Some(dialog) = self.dialog.borrow_mut().take() {
                     dialog.hide();
                 }
             },
@@ -170,6 +222,26 @@ impl PluginsPage {
         }));
     }
 
+    fn save_plugin(&self, plugin_type: PluginType, config: Plugin) {
+        match plugin_type {
+            PluginType::Native => {},
+            PluginType::Provider => {
+                let app_context = self.app_context.clone();
+                let dispatcher = self.dispatcher.clone();
+                let flow = tokio_runtime().spawn(async move {
+                    let result = app_context.add_provider_plugin(config).await;
+                    let _ = dispatcher.unbounded_send(Msg::General(
+                        GeneralPluginMsg::PluginSaveFinished(PluginType::Provider, result),
+                    ));
+                });
+                if let Some(old) = self.connection_flow.borrow_mut().replace(flow) {
+                    old.abort();
+                }
+            },
+            PluginType::Mcp => self.init_mcp_connection(config),
+        }
+    }
+
     fn init_mcp_connection(&self, config: Plugin) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
@@ -178,16 +250,10 @@ impl PluginsPage {
                 .init_mcp_connection(config.clone())
                 .await
                 .map(|state| state.map(Box::new));
-            let _ = dispatcher.unbounded_send(Msg::McpInitFinished { config, result });
-        }));
-    }
-
-    fn update_mcp(&self, config: Plugin) {
-        let app_context = self.app_context.clone();
-        let dispatcher = self.dispatcher.clone();
-        drop(tokio_runtime().spawn(async move {
-            let result = app_context.update_plugin(PluginType::Mcp, config).await;
-            let _ = dispatcher.unbounded_send(Msg::McpSaveFinished(result));
+            let _ = dispatcher.unbounded_send(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
+                config,
+                result,
+            }));
         }));
     }
 
@@ -198,30 +264,68 @@ impl PluginsPage {
             let result = app_context
                 .finalize_mcp_connection(config, state.map(|state| *state))
                 .await;
-            let _ = dispatcher.unbounded_send(Msg::McpSaveFinished(result));
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+                PluginType::Mcp,
+                result,
+            )));
         });
         if let Some(old) = self.connection_flow.borrow_mut().replace(flow) {
             old.abort();
         }
     }
 
-    fn remove_mcp(&self, name: String) {
+    fn update_plugin(&self, plugin_type: PluginType, config: Plugin) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
-            let result = app_context.remove_plugin(PluginType::Mcp, &name).await;
-            let _ = dispatcher.unbounded_send(Msg::RemoveMcpFinished(result));
+            let result = app_context.update_plugin(plugin_type.clone(), config).await;
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::PluginSaveFinished(
+                plugin_type,
+                result,
+            )));
+        }));
+    }
+
+    fn remove_plugin(&self, plugin_type: PluginType, name: String) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(tokio_runtime().spawn(async move {
+            let result = app_context.remove_plugin(plugin_type.clone(), &name).await;
+            let _ = dispatcher.unbounded_send(Msg::General(
+                GeneralPluginMsg::RemovePluginFinished(plugin_type, result),
+            ));
         }));
     }
 
     /// Open the plugin dialog: `None` adds a new server, `Some` edits it.
-    fn open_mcp_dialog(&self, config: Option<Plugin>, taken: HashSet<String>) {
+    fn open_plugin_dialog(
+        &self,
+        plugin_type: PluginType,
+        config: Option<Plugin>,
+        taken: HashSet<String>,
+    ) {
         let Some(window) = self.window.upgrade() else {
             return;
         };
-        let dialog = plugin_dialog::PluginDialog::new(config, taken, self.dispatcher.clone());
-        dialog.show(&window);
-        self.mcp_dialog.replace(Some(dialog));
+
+        // no need for option when native is implemented
+        let dialog = match plugin_type {
+            PluginType::Native => None,
+            PluginType::Provider => Some(plugin_dialog::PluginDialog::new_provider_dialog(
+                config,
+                self.dispatcher.clone(),
+            )),
+            PluginType::Mcp => Some(plugin_dialog::PluginDialog::new_mcp_dialog(
+                config,
+                taken,
+                self.dispatcher.clone(),
+            )),
+        };
+
+        if let Some(dialog) = dialog {
+            dialog.show(&window);
+            self.dialog.replace(Some(dialog));
+        }
     }
 
     fn render_mcp_servers(&self) {
@@ -234,38 +338,49 @@ impl PluginsPage {
         self.mcp_view.add(&self.add_mcp);
     }
 
+    fn render_provider_plugins(&self) {
+        self.provider_view.clear();
+        let providers = self.model.borrow().providers.clone();
+        for provider in &providers {
+            self.provider_view.add(&self.plugin_row(provider));
+        }
+        self.provider_view.add(&self.add_provider);
+    }
+
+    fn plugin_row(&self, provider: &ProviderInfo) -> Widget {
+        let actions = plugin_actions(provider.status, provider.error.as_deref(), None);
+
+        let Some(config) = &provider.config else {
+            let row = ActionRow::builder()
+                .title(&provider.name)
+                .subtitle(&provider.description)
+                .build();
+            row.add_suffix(&actions);
+            return row.upcast();
+        };
+
+        let row = actionable_row(
+            &provider.name,
+            &provider.description,
+            provider_config_props(config),
+        );
+        actions.append(&self.edit_button(PluginType::Provider, &provider.name));
+        actions.append(&self.remove_button(PluginType::Provider, &provider.name));
+        row.add_suffix(&actions);
+        row.upcast()
+    }
+
     fn mcp_row(&self, server: &McpServer) -> ExpanderRow {
         let config = &server.config;
-        let row = ExpanderRow::builder()
-            .title(&config.name)
-            .subtitle(&server.description)
-            .build();
+        let row = actionable_row(&config.name, &server.description, config_props(config));
 
-        for (title, value) in config_props(config) {
-            if value.is_empty() {
-                continue;
-            }
-            row.add_row(
-                &ActionRow::builder()
-                    .title(title)
-                    .subtitle(&value)
-                    .css_classes(["property"])
-                    .build(),
-            );
-        }
-
-        let actions = GtkBox::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(6)
-            .valign(Align::Center)
-            .build();
-        match server.status {
-            HealthStatus::Running => actions.append(&self.toggle_switch(config)),
-            HealthStatus::Unhealthy => actions.append(&unhealthy_icon(server.error.as_deref())),
-            HealthStatus::Starting => actions.append(&starting_spinner()),
-        }
-        actions.append(&self.edit_button(config));
-        actions.append(&self.remove_button(config));
+        let actions = plugin_actions(
+            server.status,
+            server.error.as_deref(),
+            Some(self.toggle_switch(config).upcast()),
+        );
+        actions.append(&self.edit_button(PluginType::Mcp, &config.name));
+        actions.append(&self.remove_button(PluginType::Mcp, &config.name));
         row.add_suffix(&actions);
         row
     }
@@ -286,7 +401,7 @@ impl PluginsPage {
         switch
     }
 
-    fn edit_button(&self, config: &Plugin) -> Button {
+    fn edit_button(&self, plugin_type: PluginType, name: &str) -> Button {
         let button = Button::builder()
             .icon_name("document-edit-symbolic")
             .tooltip_text("Edit plugin")
@@ -295,14 +410,17 @@ impl PluginsPage {
             .build();
 
         let dispatcher = self.dispatcher.clone();
-        let name = config.name.clone();
+        let name = name.to_owned();
         button.connect_clicked(move |_| {
-            let _ = dispatcher.unbounded_send(Msg::EditMcpClicked(name.clone()));
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::EditPluginClicked(
+                plugin_type.clone(),
+                name.clone(),
+            )));
         });
         button
     }
 
-    fn remove_button(&self, config: &Plugin) -> Button {
+    fn remove_button(&self, plugin_type: PluginType, name: &str) -> Button {
         let button = Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text("Remove plugin")
@@ -311,12 +429,53 @@ impl PluginsPage {
             .build();
 
         let dispatcher = self.dispatcher.clone();
-        let name = config.name.clone();
+        let name = name.to_owned();
         button.connect_clicked(move |_| {
-            let _ = dispatcher.unbounded_send(Msg::RemoveMcpClicked(name.clone()));
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::RemovePluginClicked(
+                plugin_type.clone(),
+                name.clone(),
+            )));
         });
         button
     }
+}
+
+fn actionable_row(title: &str, subtitle: &str, props: Vec<(&'static str, String)>) -> ExpanderRow {
+    let row = ExpanderRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .build();
+    for (title, value) in props {
+        if value.is_empty() {
+            continue;
+        }
+        row.add_row(
+            &ActionRow::builder()
+                .title(title)
+                .subtitle(&value)
+                .css_classes(["property"])
+                .build(),
+        );
+    }
+    row
+}
+
+fn plugin_actions(status: HealthStatus, error: Option<&str>, running: Option<Widget>) -> GtkBox {
+    let actions = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .valign(Align::Center)
+        .build();
+    match status {
+        HealthStatus::Running => {
+            if let Some(running) = running {
+                actions.append(&running);
+            }
+        },
+        HealthStatus::Unhealthy => actions.append(&unhealthy_icon(error)),
+        HealthStatus::Starting => actions.append(&starting_spinner()),
+    }
+    actions
 }
 
 fn starting_spinner() -> Spinner {
@@ -330,7 +489,7 @@ fn starting_spinner() -> Spinner {
 /// authorization; the page closes it once the connection settles, using the
 /// returned handler id to disconnect that report first.
 fn open_oauth_dialog(
-    parent: &impl IsA<gtk4::Widget>,
+    parent: &impl IsA<Widget>,
     auth_url: &str,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> (Dialog, glib::SignalHandlerId) {
@@ -362,7 +521,7 @@ fn open_oauth_dialog(
         .child(&view)
         .build();
     let closed = dialog.connect_closed(move |_| {
-        let _ = dispatcher.unbounded_send(Msg::OauthDialogClosed);
+        let _ = dispatcher.unbounded_send(Msg::McpPlugin(McpPluginMsg::OauthDialogClosed));
     });
     dialog.present(Some(parent));
     (dialog, closed)
@@ -385,10 +544,24 @@ fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {
         ],
     };
     props.push(("Timeout", format!("{}s", config.timeout)));
+    push_env_prop(&mut props, config);
+    props
+}
+
+fn provider_config_props(config: &Plugin) -> Vec<(&'static str, String)> {
+    let mut props = Vec::new();
+    if let PluginArgs::Local { command, args } = &config.args {
+        props.push(("Command", command.clone()));
+        props.push(("Arguments", serde_json::to_string(args).unwrap_or_default()));
+    }
+    push_env_prop(&mut props, config);
+    props
+}
+
+fn push_env_prop(props: &mut Vec<(&'static str, String)>, config: &Plugin) {
     if !config.env.is_empty() {
         let mut env: Vec<String> = config.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         env.sort();
         props.push(("Environment", env.join("\n")));
     }
-    props
 }
