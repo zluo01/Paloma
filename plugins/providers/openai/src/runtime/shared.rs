@@ -285,6 +285,7 @@ pub(super) async fn response_event_stream(
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#response.incomplete
 /// https://developers.openai.com/api/reference/resources/responses/streaming-events#error
 /// https://developers.openai.com/api/reference/resources/realtime/server-events#error
+/// {"detail":"The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}
 pub(super) fn parse_stream_error(data: &str) -> ProviderError {
     let msg = serde_json::from_str::<Value>(data)
         .ok()
@@ -303,6 +304,7 @@ pub(super) fn parse_stream_error(data: &str) -> ProviderError {
                         .map(str::to_string)
                 })
                 .or_else(|| v.get("message").and_then(Value::as_str).map(str::to_string))
+                .or_else(|| v.get("detail").and_then(Value::as_str).map(str::to_string))
         })
         .unwrap_or_else(|| format!("response failed: {data}"));
     ProviderError::Other(msg)
@@ -521,6 +523,15 @@ mod parse_stream_error_tests {
         assert_eq!(
             message(data),
             "You exceeded your current quota, please check your plan and billing details."
+        );
+    }
+
+    #[test]
+    fn detail_body_extracts_detail_message() {
+        let data = r#"{"detail":"The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}"#;
+        assert_eq!(
+            message(data),
+            "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
         );
     }
 
