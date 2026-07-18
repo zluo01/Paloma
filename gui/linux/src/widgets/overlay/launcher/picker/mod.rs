@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gtk4::{Align, MenuButton, PopoverMenu, PopoverMenuFlags, gio, glib, prelude::*};
 use log::error;
-use scry_core::{AppContext, Connector, HealthStatus, ProviderId};
+use scry_core::{AppContext, Connector, HealthStatus, ProviderBackendId};
 
 use crate::runtime;
 
@@ -10,9 +10,9 @@ const GROUP: &str = "picker";
 const SELECT_ACTION: &str = "picker.select";
 const DISABLED_ACTION: &str = "picker.disabled";
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Selection<'a> {
-    provider: ProviderId,
+    provider_backend_id: ProviderBackendId,
     model_id: &'a str,
     model_name: &'a str,
     effort: &'a str,
@@ -77,7 +77,7 @@ impl ModelPicker {
             else {
                 return;
             };
-            let Ok(provider_id) = provider.parse::<ProviderId>() else {
+            let Ok(provider_id) = serde_json::from_str::<ProviderBackendId>(&provider) else {
                 error!("unknown provider string {}, this indicate a bug.", provider);
                 return;
             };
@@ -111,7 +111,9 @@ impl ModelPicker {
                 continue;
             }
 
-            let current = selection.filter(|s| s.provider == connector.id);
+            let current = selection
+                .as_ref()
+                .filter(|s| s.provider_backend_id == connector.id);
 
             let models = gio::Menu::new();
             for model in &conn.status.models {
@@ -121,7 +123,7 @@ impl ModelPicker {
 
                 let efforts = gio::Menu::new();
                 for effort in &model.supported_reasoning_efforts {
-                    efforts.append_item(&effort_item(connector.id, &model.id, effort));
+                    efforts.append_item(&effort_item(connector.id.clone(), &model.id, effort));
                 }
 
                 let is_current_model = current.is_some_and(|s| s.model_id == model.id);
@@ -157,7 +159,7 @@ impl ModelPicker {
 
         self.select_action.set_state(
             &(
-                selection.provider.to_string(),
+                serde_json::to_string(&selection.provider_backend_id).expect("serializable id"),
                 selection.model_id,
                 selection.effort,
             )
@@ -195,7 +197,7 @@ fn current_selection(connectors: &[Connector]) -> Option<Selection<'_>> {
             .supported_reasoning_efforts
             .contains(&conn.prefer_effort)
             .then_some(Selection {
-                provider: connector.id,
+                provider_backend_id: connector.id.clone(),
                 model_id: &model.id,
                 model_name: &model.name,
                 effort: &conn.prefer_effort,
@@ -229,9 +231,14 @@ fn dropdown_popover() -> PopoverMenu {
     popover
 }
 
-fn effort_item(provider: ProviderId, model: &str, effort: &str) -> gio::MenuItem {
+fn effort_item(provider: ProviderBackendId, model: &str, effort: &str) -> gio::MenuItem {
     let item = gio::MenuItem::new(Some(effort), None);
-    let target = (provider.to_string(), model, effort).to_variant();
+    let target = (
+        serde_json::to_string(&provider).expect("serializable id"),
+        model,
+        effort,
+    )
+        .to_variant();
     item.set_action_and_target_value(Some(SELECT_ACTION), Some(&target));
     item
 }

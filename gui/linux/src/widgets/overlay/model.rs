@@ -1,4 +1,4 @@
-use scry_core::{Action, AppError, ProviderId, RenderEvent, SearchRenderEvent};
+use scry_core::{Action, AppError, ProviderBackendId, RenderEvent, SearchRenderEvent};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -97,7 +97,7 @@ pub(super) enum ChatMsg {
     PromptPrepared {
         turn_id: u64,
         prompt: String,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
     },
     RequestStarted {
         turn_id: u64,
@@ -144,7 +144,7 @@ pub(super) enum Command {
     SendChat {
         turn_id: u64,
         session_id: Option<Uuid>,
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     },
     RenderChatEvent {
@@ -273,7 +273,7 @@ impl Model {
             ChatMsg::PromptPrepared {
                 turn_id,
                 prompt,
-                provider_id,
+                provider_backend_id,
             } => {
                 if !self.chat_status.is_current(turn_id) {
                     return vec![];
@@ -286,7 +286,7 @@ impl Model {
                     Command::SendChat {
                         turn_id,
                         session_id: self.current_session,
-                        provider_id,
+                        provider_backend_id,
                         prompt,
                     },
                 ]
@@ -419,9 +419,16 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{ChatRenderEvent, ProviderId, QueryResponse, RenderEvent};
+    use scry_core::{ChatRenderEvent, ProviderBackendId, QueryResponse, RenderEvent};
 
     use super::*;
+
+    fn codex() -> ProviderBackendId {
+        ProviderBackendId {
+            provider_id: "openai".into(),
+            backend_id: "codex".into(),
+        }
+    }
 
     fn assert_chat_running(model: &Model, turn_id: u64) {
         assert!(matches!(model.chat_status.phase, ChatPhase::Running));
@@ -448,14 +455,14 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: prompt.into(),
-            provider_id: ProviderId::Codex,
+            provider_backend_id: codex(),
         }));
         let [
             Command::ShowChatView,
             Command::SendChat {
                 turn_id: sent_turn_id,
                 session_id,
-                provider_id,
+                provider_backend_id,
                 prompt: sent_prompt,
             },
         ] = commands.as_slice()
@@ -464,7 +471,7 @@ mod tests {
         };
         assert_eq!(*sent_turn_id, turn_id);
         assert_eq!(*session_id, model.current_session);
-        assert_eq!(*provider_id, ProviderId::Codex);
+        assert_eq!(*provider_backend_id, codex());
         assert_eq!(sent_prompt, prompt);
         assert!(matches!(model.mode, Mode::Chat));
         assert_chat_running(model, turn_id);
@@ -715,14 +722,14 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
-            provider_id: ProviderId::Codex,
+            provider_backend_id: codex(),
         }));
         let [
             Command::ShowChatView,
             Command::SendChat {
                 turn_id: sent_turn_id,
                 session_id,
-                provider_id,
+                provider_backend_id,
                 prompt,
             },
         ] = commands.as_slice()
@@ -731,7 +738,7 @@ mod tests {
         };
         assert_eq!(*sent_turn_id, turn_id);
         assert_eq!(*session_id, None);
-        assert_eq!(*provider_id, ProviderId::Codex);
+        assert_eq!(*provider_backend_id, codex());
         assert_eq!(prompt, "hello");
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, None);
@@ -809,7 +816,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                provider_id: ProviderId::Codex,
+                provider_backend_id: codex(),
                 text: "late".into(),
             }),
         }));
@@ -867,7 +874,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
-            provider_id: ProviderId::Codex,
+            provider_backend_id: codex(),
         }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Session));
@@ -934,7 +941,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id: stale_turn_id,
             prompt: "hello".into(),
-            provider_id: ProviderId::Codex,
+            provider_backend_id: codex(),
         }));
         assert!(commands.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
@@ -953,7 +960,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id: stale_turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                provider_id: ProviderId::Codex,
+                provider_backend_id: codex(),
                 text: "stale".into(),
             }),
         }));
@@ -1034,7 +1041,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
             turn_id,
             event: RenderEvent::Chat(ChatRenderEvent::TextDelta {
-                provider_id: ProviderId::Codex,
+                provider_backend_id: codex(),
                 text: "still streaming".into(),
             }),
         }));

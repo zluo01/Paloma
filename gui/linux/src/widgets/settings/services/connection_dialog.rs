@@ -8,7 +8,7 @@ use libadwaita::{
     Dialog, EntryRow, HeaderBar, PasswordEntryRow, PreferencesGroup, Spinner, ToolbarView,
     prelude::*,
 };
-use scry_core::{Connection, ProviderId};
+use scry_core::{ProviderAuthMethod, ProviderBackendId};
 
 use crate::widgets::settings::{helper::launch_url, services::model::Msg};
 
@@ -22,7 +22,10 @@ pub(super) struct ConnectionDialog {
 }
 
 impl ConnectionDialog {
-    pub(super) fn new(provider_id: ProviderId, dispatcher: mpsc::UnboundedSender<Msg>) -> Self {
+    pub(super) fn new(
+        provider_backend_id: ProviderBackendId,
+        dispatcher: mpsc::UnboundedSender<Msg>,
+    ) -> Self {
         let stack = Stack::builder()
             .vexpand(true)
             .transition_type(StackTransitionType::Crossfade)
@@ -33,7 +36,7 @@ impl ConnectionDialog {
         toolbar.set_content(Some(&stack));
 
         let dialog = Dialog::builder()
-            .title(format!("Connect — {provider_id}"))
+            .title(format!("Connect — {provider_backend_id}"))
             .content_width(420)
             .content_height(360)
             .child(&toolbar)
@@ -65,23 +68,37 @@ impl ConnectionDialog {
         self.set_visible(&loading_view);
     }
 
-    pub(super) fn show_challenge(&self, verification_uri: &'static str, user_code: &str) {
+    pub(super) fn show_challenge(&self, verification_uri: &str, user_code: &str) {
         let challenge_view = challenge_page(verification_uri, user_code);
         self.set_visible(&challenge_view);
         launch_url(verification_uri);
     }
 
-    pub(super) fn show_manual(&self, provider_id: ProviderId, instructions_url: Option<String>) {
-        let (manual_view, key_entry) =
-            manual_page(provider_id, instructions_url, self.dispatcher.clone());
+    pub(super) fn show_manual(
+        &self,
+        provider_backend_id: ProviderBackendId,
+        instructions_url: Option<String>,
+    ) {
+        let (manual_view, key_entry) = manual_page(
+            provider_backend_id,
+            instructions_url,
+            self.dispatcher.clone(),
+        );
         self.set_visible(&manual_view);
         key_entry.grab_focus();
     }
 
-    pub(super) fn show_oauth(&self, provider_id: ProviderId, authorization_url: String) {
+    pub(super) fn show_oauth(
+        &self,
+        provider_backend_id: ProviderBackendId,
+        authorization_url: String,
+    ) {
         launch_url(&authorization_url);
-        let (oauth_view, code_entry) =
-            oauth_page(provider_id, authorization_url, self.dispatcher.clone());
+        let (oauth_view, code_entry) = oauth_page(
+            provider_backend_id,
+            authorization_url,
+            self.dispatcher.clone(),
+        );
         self.set_visible(&oauth_view);
         code_entry.grab_focus();
     }
@@ -129,7 +146,7 @@ fn loading_page() -> GtkBox {
     body
 }
 
-fn challenge_page(verification_uri: &'static str, user_code: &str) -> GtkBox {
+fn challenge_page(verification_uri: &str, user_code: &str) -> GtkBox {
     let body = page(true);
     body.append(&heading("Enter this code in your browser"));
 
@@ -163,8 +180,9 @@ fn challenge_page(verification_uri: &'static str, user_code: &str) -> GtkBox {
         .halign(Align::Center)
         .css_classes(["pill"])
         .build();
+    let verification_uri = verification_uri.to_string();
     open.connect_clicked(move |_| {
-        launch_url(verification_uri);
+        launch_url(&verification_uri);
     });
     body.append(&open);
 
@@ -173,7 +191,7 @@ fn challenge_page(verification_uri: &'static str, user_code: &str) -> GtkBox {
 }
 
 fn manual_page(
-    provider_id: ProviderId,
+    provider_backend_id: ProviderBackendId,
     instructions_url: Option<String>,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> (GtkBox, PasswordEntryRow) {
@@ -195,46 +213,19 @@ fn manual_page(
         body.append(&instructions);
     }
 
-    let connect = Button::builder()
-        .label("Connect")
-        .halign(Align::Center)
-        .sensitive(false)
-        .css_classes(["pill", "suggested-action"])
-        .build();
-
-    let submit: Rc<dyn Fn()> = {
-        let entry = key_entry.clone();
-        Rc::new(move || {
-            let api_key = entry.text().trim().to_string();
-            if api_key.is_empty() {
-                return;
-            }
-            let connection = Connection::ManualInput {
-                api_key,
-                instructions_url: instructions_url.clone(),
-            };
-            let _ = dispatcher.unbounded_send(Msg::ConnectionSubmitted {
-                provider_id,
-                connection,
-            });
-        })
-    };
-    let on_click = submit.clone();
-    connect.connect_clicked(move |_| on_click());
-    key_entry.connect_entry_activated(move |_| submit());
+    let connect = submit_button(
+        key_entry.upcast_ref(),
+        ProviderAuthMethod::ApiKey,
+        provider_backend_id,
+        dispatcher,
+    );
     body.append(&connect);
-
-    // Enable Connect only with a non-empty key.
-    let button = connect.clone();
-    key_entry.connect_changed(move |entry| {
-        button.set_sensitive(!entry.text().trim().is_empty());
-    });
 
     (body, key_entry)
 }
 
 fn oauth_page(
-    provider_id: ProviderId,
+    provider_backend_id: ProviderBackendId,
     authorization_url: String,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> (GtkBox, EntryRow) {
@@ -258,37 +249,13 @@ fn oauth_page(
     open.connect_clicked(move |_| launch_url(&authorization_url));
     body.append(&open);
 
-    let connect = Button::builder()
-        .label("Connect")
-        .halign(Align::Center)
-        .sensitive(false)
-        .css_classes(["pill", "suggested-action"])
-        .build();
-
-    let submit: Rc<dyn Fn()> = {
-        let entry = browser_entry.clone();
-        Rc::new(move || {
-            let authorization_url = entry.text().trim().to_string();
-            if authorization_url.is_empty() {
-                return;
-            }
-            let connection = Connection::BrowserRedirect { authorization_url };
-            let _ = dispatcher.unbounded_send(Msg::ConnectionSubmitted {
-                provider_id,
-                connection,
-            });
-        })
-    };
-    let on_click = submit.clone();
-    connect.connect_clicked(move |_| on_click());
-    browser_entry.connect_entry_activated(move |_| submit());
+    let connect = submit_button(
+        &browser_entry,
+        ProviderAuthMethod::BrowserOauth,
+        provider_backend_id,
+        dispatcher,
+    );
     body.append(&connect);
-
-    // Enable Connect only with a non-empty code.
-    let button = connect.clone();
-    browser_entry.connect_changed(move |entry| {
-        button.set_sensitive(!entry.text().trim().is_empty());
-    });
 
     (body, browser_entry)
 }
@@ -328,6 +295,45 @@ fn error_page(message: &str, dispatcher: mpsc::UnboundedSender<Msg>) -> GtkBox {
     body.append(&close);
 
     body
+}
+
+fn submit_button(
+    entry: &EntryRow,
+    provider_auth_method: ProviderAuthMethod,
+    provider_backend_id: ProviderBackendId,
+    dispatcher: mpsc::UnboundedSender<Msg>,
+) -> Button {
+    let connect = Button::builder()
+        .label("Connect")
+        .halign(Align::Center)
+        .sensitive(false)
+        .css_classes(["pill", "suggested-action"])
+        .build();
+
+    let submit: Rc<dyn Fn()> = {
+        let entry = entry.clone();
+        Rc::new(move || {
+            let payload = entry.text().trim().to_string();
+            if payload.is_empty() {
+                return;
+            }
+            let _ = dispatcher.unbounded_send(Msg::ConnectionSubmitted {
+                provider_auth_method,
+                provider_backend_id: provider_backend_id.clone(),
+                payload,
+            });
+        })
+    };
+    let on_click = submit.clone();
+    connect.connect_clicked(move |_| on_click());
+    entry.connect_entry_activated(move |_| submit());
+
+    let button = connect.clone();
+    entry.connect_changed(move |entry| {
+        button.set_sensitive(!entry.text().trim().is_empty());
+    });
+
+    connect
 }
 
 /// Vertically centered page body; `margins` applies the inset shared by the

@@ -15,7 +15,7 @@ ashpd = { version = "0.13.12", default-features = false, features = [
     "tokio",
     "global_shortcuts",
 ] }
-env_logger = "0.11.11"
+env_logger = { workspace = true }
 futures = { workspace = true }
 gtk4 = { version = "0.11.4", default-features = false, features = ["v4_22"] }
 gtk4-layer-shell = "0.8.0"

@@ -23,7 +23,8 @@ mod results;
 mod window;
 
 use scry_core::{
-    Action, ActionOutcome, AppContext, ChatRenderEvent, ProviderId, RenderEvent, SearchRenderEvent,
+    Action, ActionOutcome, AppContext, ChatRenderEvent, ProviderBackendId, RenderEvent,
+    SearchRenderEvent,
 };
 
 use crate::{
@@ -229,9 +230,9 @@ impl Overlay {
             Command::SendChat {
                 turn_id,
                 session_id,
-                provider_id,
+                provider_backend_id,
                 prompt,
-            } => self.send_chat(turn_id, session_id, provider_id, prompt),
+            } => self.send_chat(turn_id, session_id, provider_backend_id, prompt),
             Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
             Command::RenderChatEvent { event } => self.render_chat_event(event),
             Command::ShowChatView => self.show_chat_view(),
@@ -428,11 +429,11 @@ impl Overlay {
         drop(runtime::tokio_runtime().spawn(async move {
             let result = app_context.prefer_model().await;
             match result {
-                Ok(Some(provider_id)) => {
+                Ok(Some(provider_backend_id)) => {
                     let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptPrepared {
                         turn_id,
                         prompt,
-                        provider_id,
+                        provider_backend_id,
                     }));
                 },
                 Ok(None) => {
@@ -453,13 +454,15 @@ impl Overlay {
         &self,
         turn_id: u64,
         session_id: Option<Uuid>,
-        provider: ProviderId,
+        provider_backend_id: ProviderBackendId,
         prompt: String,
     ) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
-            let mut chat_render_stream = app_context.chat(session_id, provider, prompt).await;
+            let mut chat_render_stream = app_context
+                .chat(session_id, provider_backend_id, prompt)
+                .await;
             let session_id = chat_render_stream.session_id;
             let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::RequestStarted {
                 turn_id,
@@ -486,8 +489,11 @@ impl Overlay {
             RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }) => {
                 self.chat.append_user_prompt(&text);
             },
-            RenderEvent::Chat(ChatRenderEvent::TextDelta { text, provider_id }) => {
-                self.chat.append_text(&text, provider_id);
+            RenderEvent::Chat(ChatRenderEvent::TextDelta {
+                text,
+                provider_backend_id,
+            }) => {
+                self.chat.append_text(&text, provider_backend_id);
             },
             RenderEvent::Chat(ChatRenderEvent::ReasoningDelta { text }) => {
                 self.chat.append_reasoning(&text);

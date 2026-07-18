@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, TextView, Widget, prelude::*};
 use log::error;
-use scry_core::{AppContext, PermissionState, ProviderId, UserDecision};
+use scry_core::{AppContext, PermissionState, ProviderBackendId, UserDecision};
 
 use crate::{helper::Clear, runtime};
 
@@ -101,7 +101,7 @@ impl ChatView {
         *self.prev_section.borrow_mut() = Some(Section::ToolCall(()));
     }
 
-    pub(crate) fn append_text(&self, text: &str, provider_id: ProviderId) {
+    pub(crate) fn append_text(&self, text: &str, provider_backend_id: ProviderBackendId) {
         let mut slot = self.prev_section.borrow_mut();
         if let Some(Section::Assistant(assistant)) = slot.as_ref() {
             assistant.append(text);
@@ -110,7 +110,7 @@ impl ChatView {
         if let Some(prev) = slot.as_ref() {
             prev.complete();
         }
-        let assistant = AssistantSection::new(provider_id);
+        let assistant = AssistantSection::new(provider_backend_id);
         self.turns.append(assistant.widget());
         assistant.append(text);
         *slot = Some(Section::Assistant(assistant));

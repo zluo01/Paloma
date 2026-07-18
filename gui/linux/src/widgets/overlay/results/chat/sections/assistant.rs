@@ -8,7 +8,7 @@ use gtk4::{
     Box as GtkBox, Button, Label, Orientation,
     prelude::{BoxExt, ButtonExt, WidgetExt},
 };
-use scry_core::ProviderId;
+use scry_core::ProviderBackendId;
 
 use crate::widgets::overlay::results::chat::{
     helper::new_section,
@@ -28,14 +28,14 @@ pub(crate) struct AssistantSection {
 }
 
 impl AssistantSection {
-    pub(crate) fn new(provider_id: ProviderId) -> Self {
+    pub(crate) fn new(provider_backend_id: ProviderBackendId) -> Self {
         let source = Rc::new(RefCell::new(String::new()));
         let markdown_view = MarkdownView::new();
 
         let view = new_section(None, ASSISTANT_CLASS);
         let header = GtkBox::new(Orientation::Horizontal, 8);
         let role = Label::builder()
-            .label(provider_id.to_string())
+            .label(provider_backend_id.to_string())
             .xalign(0.0)
             .hexpand(true)
             .css_classes(["scry-chat-role"])

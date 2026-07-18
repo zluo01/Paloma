@@ -19,7 +19,9 @@ use libadwaita::{
     glib::{Bytes, WeakRef},
     prelude::*,
 };
-use scry_core::{AppContext, Connection, ConnectorConnection, HealthStatus, ProviderId};
+use scry_core::{
+    AppContext, ConnectorConnection, HealthStatus, IconRef, ProviderAuthMethod, ProviderBackendId,
+};
 use tokio::task::JoinHandle;
 
 use self::model::{Command, Model, Msg};
@@ -33,47 +35,6 @@ use crate::{
 };
 
 pub(super) const CSS: &str = include_str!("style.css");
-
-struct Provider {
-    id: ProviderId,
-    description: &'static str,
-    logo: &'static [u8],
-}
-
-const PROVIDERS: &[Provider] = &[
-    Provider {
-        id: ProviderId::Anthropic,
-        description: "Claude models via the Anthropic API",
-        logo: include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/icons/providers/claude.svg"
-        )),
-    },
-    Provider {
-        id: ProviderId::ClaudeCode,
-        description: "Claude models with your Claude subscription",
-        logo: include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/icons/providers/claude.svg"
-        )),
-    },
-    Provider {
-        id: ProviderId::Codex,
-        description: "OpenAI models with your ChatGPT subscription",
-        logo: include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/icons/providers/openai.svg"
-        )),
-    },
-    Provider {
-        id: ProviderId::OpenAI,
-        description: "OpenAI models via the OpenAI API",
-        logo: include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/icons/providers/openai.svg"
-        )),
-    },
-];
 
 pub(crate) struct ServicesPage {
     view: PreferencesPage,
@@ -134,7 +95,7 @@ impl ServicesPage {
         }));
     }
 
-    fn persist_preference(&self, id: ProviderId, model: String, effort: String) {
+    fn persist_preference(&self, id: ProviderBackendId, model: String, effort: String) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
@@ -145,7 +106,7 @@ impl ServicesPage {
         }));
     }
 
-    fn show_disconnect_confirmation(&self, id: ProviderId) {
+    fn show_disconnect_confirmation(&self, id: ProviderBackendId) {
         let Some(window) = self.window.upgrade() else {
             return;
         };
@@ -160,7 +121,7 @@ impl ServicesPage {
 
         let dispatcher = self.dispatcher.clone();
         dialog.connect_response(Some("disconnect"), move |_, _| {
-            let _ = dispatcher.unbounded_send(Msg::DisconnectConfirmed(id));
+            let _ = dispatcher.unbounded_send(Msg::DisconnectConfirmed(id.clone()));
         });
         dialog.present(Some(&window));
     }
@@ -170,16 +131,21 @@ impl ServicesPage {
         self.available_group.clear();
 
         let connectors = self.model.borrow().connectors.clone();
-        for provider in PROVIDERS {
-            let connection = connectors
-                .iter()
-                .find(|connector| connector.id == provider.id)
-                .and_then(|connector| connector.connection.as_ref());
-            match connection {
-                Some(conn) => self
-                    .connected_group
-                    .add(&self.connected_row(provider, conn)),
-                None => self.available_group.add(&self.available_row(provider)),
+        for connector in connectors {
+            let id = connector.id;
+            let backend_description = connector.description;
+            let icon = connector.icon;
+            match connector.connection {
+                Some(conn) => self.connected_group.add(&self.connected_row(
+                    &id,
+                    &backend_description,
+                    icon,
+                    &conn,
+                )),
+                None => {
+                    self.available_group
+                        .add(&self.available_row(&id, &backend_description, icon))
+                },
             }
         }
 
@@ -193,24 +159,36 @@ impl ServicesPage {
         }
     }
 
-    fn available_row(&self, provider: &'static Provider) -> ActionRow {
+    fn available_row(
+        &self,
+        provider_backend_id: &ProviderBackendId,
+        backend_description: &str,
+        icon: Option<IconRef>,
+    ) -> ActionRow {
         let row = ActionRow::builder()
-            .title(provider.id.to_string())
-            .subtitle(provider.description)
+            .title(provider_backend_id.to_string())
+            .subtitle(backend_description)
             .build();
-        row.add_prefix(&logo(provider));
-        row.add_suffix(&self.connect_button(provider));
+        row.add_prefix(&logo(icon));
+        row.add_suffix(&self.connect_button(provider_backend_id));
         row
     }
 
     fn connected_row(
         &self,
-        provider: &'static Provider,
+        provider_backend_id: &ProviderBackendId,
+        backend_description: &str,
+        icon: Option<IconRef>,
         conn: &ConnectorConnection,
     ) -> ExpanderRow {
         let row = ExpanderRow::new();
-        row.add_prefix(&provider_identity(provider, conn.status.status));
-        let accessible_label = format!("{} — {}", provider.id, provider.description);
+        row.add_prefix(&provider_identity(
+            provider_backend_id,
+            backend_description,
+            icon,
+            conn.status.status,
+        ));
+        let accessible_label = format!("{provider_backend_id} — {backend_description}");
         row.update_property(&[AccessibleProperty::Label(&accessible_label)]);
 
         let actions = GtkBox::builder()
@@ -221,7 +199,7 @@ impl ServicesPage {
 
         match conn.status.status {
             HealthStatus::Running if !conn.status.models.is_empty() => {
-                self.add_picker_rows(provider.id, &row, conn);
+                self.add_picker_rows(provider_backend_id, &row, conn);
             },
             HealthStatus::Unhealthy => {
                 row.set_enable_expansion(false);
@@ -232,12 +210,12 @@ impl ServicesPage {
             },
         }
 
-        actions.append(&self.disconnect_button(provider));
+        actions.append(&self.disconnect_button(provider_backend_id));
         row.add_suffix(&actions);
         row
     }
 
-    fn connect_button(&self, provider: &'static Provider) -> Button {
+    fn connect_button(&self, provider_backend_id: &ProviderBackendId) -> Button {
         let button = Button::builder()
             .label("Connect")
             .valign(Align::Center)
@@ -245,13 +223,14 @@ impl ServicesPage {
             .build();
 
         let dispatcher = self.dispatcher.clone();
+        let provider_backend_id = provider_backend_id.clone();
         button.connect_clicked(move |_| {
-            let _ = dispatcher.unbounded_send(Msg::ConnectClicked(provider.id));
+            let _ = dispatcher.unbounded_send(Msg::ConnectClicked(provider_backend_id.clone()));
         });
         button
     }
 
-    fn disconnect_button(&self, provider: &'static Provider) -> Button {
+    fn disconnect_button(&self, provider_backend_id: &ProviderBackendId) -> Button {
         let button = Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text("Disconnect")
@@ -260,13 +239,19 @@ impl ServicesPage {
             .build();
 
         let dispatcher = self.dispatcher.clone();
+        let provider_backend_id = provider_backend_id.clone();
         button.connect_clicked(move |_| {
-            let _ = dispatcher.unbounded_send(Msg::DisconnectClicked(provider.id));
+            let _ = dispatcher.unbounded_send(Msg::DisconnectClicked(provider_backend_id.clone()));
         });
         button
     }
 
-    fn add_picker_rows(&self, id: ProviderId, row: &ExpanderRow, conn: &ConnectorConnection) {
+    fn add_picker_rows(
+        &self,
+        provider_backend_id: &ProviderBackendId,
+        row: &ExpanderRow,
+        conn: &ConnectorConnection,
+    ) {
         let models = Rc::new(conn.status.models.clone());
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
@@ -306,6 +291,7 @@ impl ServicesPage {
         let models_for_effort = models.clone();
         let suppress_effort_notify_for_effort = suppress_effort_notify.clone();
         let model_row_weak = model_row.downgrade();
+        let provider_backend_id_for_effort = provider_backend_id.clone();
         effort_row.connect_selected_notify(move |row| {
             if suppress_effort_notify_for_effort.get() {
                 return;
@@ -323,7 +309,7 @@ impl ServicesPage {
                 return;
             };
             let _ = dispatcher.unbounded_send(Msg::PreferenceChanged {
-                id,
+                provider_backend_id: provider_backend_id_for_effort.clone(),
                 model: model.id.clone(),
                 effort: effort.clone(),
             });
@@ -331,6 +317,7 @@ impl ServicesPage {
 
         let dispatcher = self.dispatcher.clone();
         let effort_row_weak = effort_row.downgrade();
+        let provider_backend_id = provider_backend_id.clone();
         model_row.connect_selected_notify(move |row| {
             let Some(effort_row) = effort_row_weak.upgrade() else {
                 return;
@@ -357,7 +344,7 @@ impl ServicesPage {
             suppress_effort_notify.set(false);
 
             let _ = dispatcher.unbounded_send(Msg::PreferenceChanged {
-                id,
+                provider_backend_id: provider_backend_id.clone(),
                 model: model.id.clone(),
                 effort: model.default_reasoning_effort.clone(),
             });
@@ -375,9 +362,11 @@ impl ServicesPage {
             Command::FetchConnectors => self.refresh(),
             Command::ShowDisconnectConfirmation(id) => self.show_disconnect_confirmation(id),
             Command::DisconnectProvider(id) => self.disconnect_provider(id),
-            Command::PersistPreference { id, model, effort } => {
-                self.persist_preference(id, model, effort)
-            },
+            Command::PersistPreference {
+                provider_backend_id,
+                model,
+                effort,
+            } => self.persist_preference(provider_backend_id, model, effort),
             Command::Warn(message) => log::warn!("{message}"),
             Command::ShowErrorDialog(message) => {
                 if let Some(window) = self.window.upgrade() {
@@ -398,20 +387,25 @@ impl ServicesPage {
                 verification_uri,
                 user_code,
             } => {
-                self.with_dialog(|dialog| dialog.show_challenge(verification_uri, &user_code));
+                self.with_dialog(|dialog| dialog.show_challenge(&verification_uri, &user_code));
             },
             Command::ShowManualInput {
-                provider_id,
+                provider_backend_id,
                 instructions_url,
-            } => self.with_dialog(|dialog| dialog.show_manual(provider_id, instructions_url)),
+            } => {
+                self.with_dialog(|dialog| dialog.show_manual(provider_backend_id, instructions_url))
+            },
             Command::ShowOauth {
-                provider_id,
+                provider_backend_id,
                 authorization_url,
-            } => self.with_dialog(|dialog| dialog.show_oauth(provider_id, authorization_url)),
+            } => {
+                self.with_dialog(|dialog| dialog.show_oauth(provider_backend_id, authorization_url))
+            },
             Command::FinalizeConnection {
-                provider_id,
-                connection,
-            } => self.finalize_connection(provider_id, connection),
+                provider_auth_method,
+                provider_backend_id,
+                payload,
+            } => self.finalize_connection(provider_auth_method, provider_backend_id, payload),
             Command::ShowSuccess => self.with_dialog(|dialog| dialog.show_success()),
             Command::ShowError(error_msg) => {
                 self.with_dialog(|dialog| dialog.show_error(&error_msg))
@@ -443,33 +437,45 @@ impl ServicesPage {
         }
     }
 
-    fn disconnect_provider(&self, id: ProviderId) {
+    fn disconnect_provider(&self, provider_backend_id: ProviderBackendId) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
-            let result = app_context.disconnect_connector(id).await;
-            let _ = dispatcher.unbounded_send(Msg::DisconnectFinished(id, result));
+            let result = app_context
+                .disconnect_connector(provider_backend_id.clone())
+                .await;
+            let _ = dispatcher.unbounded_send(Msg::DisconnectFinished(provider_backend_id, result));
         }));
     }
 
-    fn init_connection(&self, provider_id: ProviderId) {
-        let app_context = self.app_context.clone();
-        let dispatcher = self.dispatcher.clone();
-        self.track_flow(tokio_runtime().spawn(async move {
-            let result = app_context.init_connection(provider_id).await;
-            let _ = dispatcher.unbounded_send(Msg::InitFinished(provider_id, result));
-        }));
-    }
-
-    fn finalize_connection(&self, provider_id: ProviderId, connection: Connection) {
+    fn init_connection(&self, provider_backend_id: ProviderBackendId) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         self.track_flow(tokio_runtime().spawn(async move {
             let result = app_context
-                .finalize_connection(provider_id, connection)
+                .init_connection(provider_backend_id.clone())
+                .await;
+            let _ = dispatcher.unbounded_send(Msg::InitFinished(provider_backend_id, result));
+        }));
+    }
+
+    fn finalize_connection(
+        &self,
+        provider_auth_method: ProviderAuthMethod,
+        provider_backend_id: ProviderBackendId,
+        payload: String,
+    ) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        self.track_flow(tokio_runtime().spawn(async move {
+            let response = app_context
+                .finalize_connection(provider_auth_method, provider_backend_id.clone(), payload)
                 .await
                 .map(|_| ());
-            let _ = dispatcher.unbounded_send(Msg::FinalizeFinished(provider_id, result));
+            let _ = dispatcher.unbounded_send(Msg::FinalizeFinished {
+                provider_backend_id,
+                response,
+            });
         }));
     }
 }
@@ -483,21 +489,35 @@ fn build_view() -> (PreferencesPage, PreferencesGroup, PreferencesGroup) {
     (view, connected, available)
 }
 
-fn logo(provider: &Provider) -> Image {
-    let image = match Texture::from_bytes(&Bytes::from_static(provider.logo)) {
-        Ok(texture) => Image::from_paintable(Some(&texture)),
-        Err(e) => {
-            log::warn!("failed to load {} logo: {e}", provider.id);
-            Image::from_icon_name("application-x-executable-symbolic")
+fn logo(icon: Option<IconRef>) -> Image {
+    let image = match icon {
+        Some(IconRef::Embedded(data)) => match Texture::from_bytes(&Bytes::from_owned(data)) {
+            Ok(texture) => Image::from_paintable(Some(&texture)),
+            Err(e) => {
+                log::warn!("failed to load embedded logo: {e}");
+                fallback_logo()
+            },
         },
+        Some(IconRef::Path(path)) => Image::from_file(path),
+        Some(IconRef::Name(name)) => Image::from_icon_name(&name),
+        None => fallback_logo(),
     };
     image.set_pixel_size(40);
     image
 }
 
-fn provider_identity(provider: &Provider, status: HealthStatus) -> GtkBox {
+fn fallback_logo() -> Image {
+    Image::from_icon_name("application-x-executable-symbolic")
+}
+
+fn provider_identity(
+    provider_backend_id: &ProviderBackendId,
+    backend_description: &str,
+    icon: Option<IconRef>,
+    status: HealthStatus,
+) -> GtkBox {
     let title = Label::builder()
-        .label(provider.id.to_string())
+        .label(provider_backend_id.to_string())
         .xalign(0.0)
         .valign(Align::Center)
         .build();
@@ -522,7 +542,7 @@ fn provider_identity(provider: &Provider, status: HealthStatus) -> GtkBox {
     title_row.append(&dot);
 
     let subtitle = Label::builder()
-        .label(provider.description)
+        .label(backend_description)
         .xalign(0.0)
         .build();
     subtitle.add_css_class("subtitle");
@@ -541,7 +561,7 @@ fn provider_identity(provider: &Provider, status: HealthStatus) -> GtkBox {
         .valign(Align::Center)
         .hexpand(true)
         .build();
-    identity.append(&logo(provider));
+    identity.append(&logo(icon));
     identity.append(&labels);
     identity
 }

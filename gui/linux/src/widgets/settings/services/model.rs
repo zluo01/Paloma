@@ -1,30 +1,37 @@
-use scry_core::{AppError, Connection, Connector, ProviderId};
+use scry_core::{
+    AppError, ConnectionPayload, Connector, ProviderAuthMethod, ProviderBackendId,
+    connection_payload,
+};
 
 #[derive(Default)]
 pub(super) struct Model {
     pub(super) connectors: Vec<Connector>,
-    pub(super) connecting: Option<ProviderId>,
+    pub(super) connecting: Option<ProviderBackendId>,
 }
 
 pub(super) enum Msg {
     ConnectorsFetched(Result<Vec<Connector>, AppError>),
-    DisconnectClicked(ProviderId),
-    DisconnectConfirmed(ProviderId),
-    DisconnectFinished(ProviderId, Result<(), AppError>),
+    DisconnectClicked(ProviderBackendId),
+    DisconnectConfirmed(ProviderBackendId),
+    DisconnectFinished(ProviderBackendId, Result<(), AppError>),
     PreferenceChanged {
-        id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         model: String,
         effort: String,
     },
     PreferenceSaveFinished(Result<(), AppError>),
     // dialog
-    ConnectClicked(ProviderId),
-    InitFinished(ProviderId, Result<Connection, AppError>),
+    ConnectClicked(ProviderBackendId),
+    InitFinished(ProviderBackendId, Result<ConnectionPayload, AppError>),
     ConnectionSubmitted {
-        provider_id: ProviderId,
-        connection: Connection,
+        provider_auth_method: ProviderAuthMethod,
+        provider_backend_id: ProviderBackendId,
+        payload: String,
     },
-    FinalizeFinished(ProviderId, Result<(), AppError>),
+    FinalizeFinished {
+        provider_backend_id: ProviderBackendId,
+        response: Result<(), AppError>,
+    },
     CloseDialogClicked,
     DialogClosed,
 }
@@ -32,36 +39,37 @@ pub(super) enum Msg {
 pub(super) enum Command {
     Render,
     FetchConnectors,
-    ShowDisconnectConfirmation(ProviderId),
-    DisconnectProvider(ProviderId),
+    ShowDisconnectConfirmation(ProviderBackendId),
+    DisconnectProvider(ProviderBackendId),
     PersistPreference {
-        id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         model: String,
         effort: String,
     },
     Warn(String),
     ShowErrorDialog(String),
     // dialog
-    InitConnection(ProviderId),
-    ShowConnectionDialog(ProviderId),
+    InitConnection(ProviderBackendId),
+    ShowConnectionDialog(ProviderBackendId),
     ShowLoading,
     ShowChallenge {
-        verification_uri: &'static str,
+        verification_uri: String,
         user_code: String,
     },
     ShowManualInput {
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         instructions_url: Option<String>,
     },
     ShowOauth {
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         authorization_url: String,
     },
     ShowError(String),
     ShowSuccess,
     FinalizeConnection {
-        provider_id: ProviderId,
-        connection: Connection,
+        provider_auth_method: ProviderAuthMethod,
+        provider_backend_id: ProviderBackendId,
+        payload: String,
     },
     CloseConnectionDialog,
     DropConnectionDialog,
@@ -106,8 +114,16 @@ impl Model {
                     "Disconnecting {id} failed: {e}"
                 ))],
             },
-            Msg::PreferenceChanged { id, model, effort } => {
-                vec![Command::PersistPreference { id, model, effort }]
+            Msg::PreferenceChanged {
+                provider_backend_id,
+                model,
+                effort,
+            } => {
+                vec![Command::PersistPreference {
+                    provider_backend_id,
+                    model,
+                    effort,
+                }]
             },
             Msg::PreferenceSaveFinished(result) => match result {
                 Ok(()) => vec![],
@@ -120,83 +136,89 @@ impl Model {
                 if self.connecting.is_some() {
                     return vec![];
                 }
-                self.connecting = Some(id);
+                self.connecting = Some(id.clone());
                 vec![
-                    Command::ShowConnectionDialog(id),
+                    Command::ShowConnectionDialog(id.clone()),
                     Command::InitConnection(id),
                 ]
             },
-            Msg::InitFinished(provider_id, result) => {
-                if self.connecting != Some(provider_id) {
+            Msg::InitFinished(provider_backend_id, result) => {
+                if self.connecting.as_ref() != Some(&provider_backend_id) {
                     return match result {
                         Ok(_) => vec![],
                         Err(e) => vec![Command::Warn(format!(
-                            "stale connect failure for {provider_id}: {e}"
+                            "stale connect failure for {provider_backend_id}: {e}"
                         ))],
                     };
                 }
                 match result {
-                    Ok(Connection::DeviceCode {
-                        verification_uri,
-                        user_code,
-                        transaction_payload,
+                    Ok(ConnectionPayload {
+                        payload: Some(connection_payload::Payload::DeviceCode(device_code)),
                     }) => vec![
                         Command::ShowChallenge {
-                            verification_uri,
-                            user_code: user_code.clone(),
+                            verification_uri: device_code.verification_url.clone(),
+                            user_code: device_code.user_code.clone(),
                         },
                         Command::FinalizeConnection {
-                            provider_id,
-                            connection: Connection::DeviceCode {
-                                verification_uri,
-                                user_code,
-                                transaction_payload,
-                            },
+                            provider_auth_method: ProviderAuthMethod::DeviceCode,
+                            provider_backend_id,
+                            payload: device_code.transaction_payload,
                         },
                     ],
-                    Ok(Connection::ManualInput {
-                        instructions_url, ..
+                    Ok(ConnectionPayload {
+                        payload: Some(connection_payload::Payload::ManualInput(manual_input)),
                     }) => vec![Command::ShowManualInput {
-                        provider_id,
-                        instructions_url,
+                        provider_backend_id,
+                        instructions_url: manual_input.instructions_url,
                     }],
-                    Ok(Connection::BrowserRedirect { authorization_url }) => {
+                    Ok(ConnectionPayload {
+                        payload: Some(connection_payload::Payload::BrowserRedirect(redirect)),
+                    }) => {
                         vec![Command::ShowOauth {
-                            provider_id,
-                            authorization_url,
+                            provider_backend_id,
+                            authorization_url: redirect.authorization_url,
                         }]
                     },
+                    // should not happen, this indicates a bug.
+                    Ok(ConnectionPayload { payload: None }) => vec![Command::ShowError(
+                        "Provider returned an empty connection payload.".to_string(),
+                    )],
                     Err(e) => vec![Command::ShowError(e.to_string())],
                 }
             },
             Msg::ConnectionSubmitted {
-                provider_id,
-                connection,
+                provider_auth_method,
+                provider_backend_id,
+                payload,
             } => {
-                if self.connecting != Some(provider_id) {
+                if self.connecting.as_ref() != Some(&provider_backend_id) {
                     return vec![];
                 }
                 vec![
                     Command::ShowLoading,
                     Command::FinalizeConnection {
-                        provider_id,
-                        connection,
+                        provider_auth_method,
+                        provider_backend_id,
+                        payload,
                     },
                 ]
             },
-            Msg::FinalizeFinished(provider_id, result) => {
-                if self.connecting == Some(provider_id) {
-                    match result {
+            Msg::FinalizeFinished {
+                provider_backend_id,
+                response,
+            } => {
+                if self.connecting.as_ref() == Some(&provider_backend_id) {
+                    match response {
                         Ok(()) => vec![Command::ShowSuccess, Command::FetchConnectors],
                         Err(e) => vec![Command::ShowError(e.to_string())],
                     }
                 } else {
-                    match result {
+                    match response {
                         // The backend finished after the dialog moved on; the
                         // connection exists either way, so still refresh.
                         Ok(()) => vec![Command::FetchConnectors],
                         Err(e) => vec![Command::Warn(format!(
-                            "stale connect failure for {provider_id}: {e}"
+                            "stale connect failure for {provider_backend_id}: {e}"
                         ))],
                     }
                 }
@@ -212,7 +234,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::Value;
+    use scry_core::{BrowserRedirect, DeviceCode, ManualInput};
 
     use super::*;
 
@@ -220,30 +242,67 @@ mod tests {
         std::io::Error::other(message).into()
     }
 
-    fn disconnected(id: ProviderId) -> Connector {
+    fn codex() -> ProviderBackendId {
+        ProviderBackendId {
+            provider_id: "OpenAI".into(),
+            backend_id: "Codex".into(),
+        }
+    }
+
+    fn openai() -> ProviderBackendId {
+        ProviderBackendId {
+            provider_id: "OpenAI".into(),
+            backend_id: "OpenAI API".into(),
+        }
+    }
+
+    fn anthropic() -> ProviderBackendId {
+        ProviderBackendId {
+            provider_id: "Anthropic".into(),
+            backend_id: "Anthropic API".into(),
+        }
+    }
+
+    fn disconnected(id: ProviderBackendId) -> Connector {
         Connector {
             id,
+            description: String::new(),
+            icon: None,
             connection: None,
         }
     }
 
-    fn device_code() -> Connection {
-        Connection::DeviceCode {
-            verification_uri: "https://example.com/device",
-            user_code: "ABCD-1234".into(),
-            transaction_payload: Value::Null,
+    fn device_code() -> ConnectionPayload {
+        ConnectionPayload {
+            payload: Some(connection_payload::Payload::DeviceCode(DeviceCode {
+                verification_url: "https://example.com/device".into(),
+                user_code: "ABCD-1234".into(),
+                transaction_payload: "txn-1".into(),
+            })),
         }
     }
 
-    fn manual_input(instructions_url: Option<&str>) -> Connection {
-        Connection::ManualInput {
-            api_key: String::new(),
-            instructions_url: instructions_url.map(str::to_string),
+    fn manual_input(instructions_url: Option<&str>) -> ConnectionPayload {
+        ConnectionPayload {
+            payload: Some(connection_payload::Payload::ManualInput(ManualInput {
+                api_key: String::new(),
+                instructions_url: instructions_url.map(str::to_string),
+            })),
+        }
+    }
+
+    fn browser_redirect(authorization_url: &str) -> ConnectionPayload {
+        ConnectionPayload {
+            payload: Some(connection_payload::Payload::BrowserRedirect(
+                BrowserRedirect {
+                    authorization_url: authorization_url.into(),
+                },
+            )),
         }
     }
 
     /// Walk the model to the state where `id`'s connection dialog is open.
-    fn connecting(id: ProviderId) -> Model {
+    fn connecting(id: ProviderBackendId) -> Model {
         let mut model = Model::default();
         let cmds = model.update(Msg::ConnectClicked(id));
         assert!(matches!(
@@ -256,9 +315,7 @@ mod tests {
     #[test]
     fn refresh_workflow_renders_fetched_connectors() {
         let mut model = Model::default();
-        let cmds = model.update(Msg::ConnectorsFetched(Ok(vec![disconnected(
-            ProviderId::Codex,
-        )])));
+        let cmds = model.update(Msg::ConnectorsFetched(Ok(vec![disconnected(codex())])));
 
         assert!(matches!(cmds.as_slice(), [Command::Render]));
         assert_eq!(model.connectors.len(), 1);
@@ -278,19 +335,19 @@ mod tests {
     fn disconnect_workflow_confirms_disconnects_and_refreshes() {
         let mut model = Model::default();
 
-        let cmds = model.update(Msg::DisconnectClicked(ProviderId::Codex));
+        let cmds = model.update(Msg::DisconnectClicked(codex()));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::ShowDisconnectConfirmation(ProviderId::Codex)]
+            [Command::ShowDisconnectConfirmation(id)] if *id == codex()
         ));
 
-        let cmds = model.update(Msg::DisconnectConfirmed(ProviderId::Codex));
+        let cmds = model.update(Msg::DisconnectConfirmed(codex()));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::DisconnectProvider(ProviderId::Codex)]
+            [Command::DisconnectProvider(id)] if *id == codex()
         ));
 
-        let cmds = model.update(Msg::DisconnectFinished(ProviderId::Codex, Ok(())));
+        let cmds = model.update(Msg::DisconnectFinished(codex(), Ok(())));
         assert!(matches!(cmds.as_slice(), [Command::FetchConnectors]));
 
         let cmds = model.update(Msg::ConnectorsFetched(Ok(vec![])));
@@ -300,35 +357,32 @@ mod tests {
     #[test]
     fn disconnect_workflow_failure_shows_an_error_dialog() {
         let mut model = Model::default();
-        let _ = model.update(Msg::DisconnectClicked(ProviderId::Codex));
-        let _ = model.update(Msg::DisconnectConfirmed(ProviderId::Codex));
+        let _ = model.update(Msg::DisconnectClicked(codex()));
+        let _ = model.update(Msg::DisconnectConfirmed(codex()));
 
-        let cmds = model.update(Msg::DisconnectFinished(
-            ProviderId::Codex,
-            Err(error("nope")),
-        ));
+        let cmds = model.update(Msg::DisconnectFinished(codex(), Err(error("nope"))));
         assert!(matches!(cmds.as_slice(), [Command::ShowErrorDialog(_)]));
     }
 
     #[test]
     fn preference_workflow_persists_silently() {
         let mut model = Model {
-            connectors: vec![disconnected(ProviderId::Codex)],
+            connectors: vec![disconnected(codex())],
             ..Model::default()
         };
 
         let cmds = model.update(Msg::PreferenceChanged {
-            id: ProviderId::Codex,
+            provider_backend_id: codex(),
             model: "new".into(),
             effort: "high".into(),
         });
         assert!(matches!(
             cmds.as_slice(),
             [Command::PersistPreference {
-                id: ProviderId::Codex,
+                provider_backend_id,
                 model,
                 effort,
-            }] if model == "new" && effort == "high"
+            }] if *provider_backend_id == codex() && model == "new" && effort == "high"
         ));
         assert!(model.connectors[0].connection.is_none());
 
@@ -339,7 +393,7 @@ mod tests {
     fn preference_workflow_failure_warns_and_reloads() {
         let mut model = Model::default();
         let _ = model.update(Msg::PreferenceChanged {
-            id: ProviderId::Codex,
+            provider_backend_id: codex(),
             model: "new".into(),
             effort: "high".into(),
         });
@@ -354,48 +408,50 @@ mod tests {
     #[test]
     fn connect_click_opens_the_dialog_and_inits_connection() {
         let mut model = Model::default();
-        let cmds = model.update(Msg::ConnectClicked(ProviderId::Codex));
+        let cmds = model.update(Msg::ConnectClicked(codex()));
         assert!(matches!(
             cmds.as_slice(),
             [
-                Command::ShowConnectionDialog(ProviderId::Codex),
-                Command::InitConnection(ProviderId::Codex)
-            ]
+                Command::ShowConnectionDialog(dialog_id),
+                Command::InitConnection(init_id)
+            ] if *dialog_id == codex() && *init_id == codex()
         ));
-        assert_eq!(model.connecting, Some(ProviderId::Codex));
+        assert_eq!(model.connecting, Some(codex()));
     }
 
     #[test]
     fn connect_click_is_ignored_while_a_dialog_is_open() {
-        let mut model = connecting(ProviderId::Codex);
-        assert!(
-            model
-                .update(Msg::ConnectClicked(ProviderId::OpenAI))
-                .is_empty()
-        );
-        assert_eq!(model.connecting, Some(ProviderId::Codex));
+        let mut model = connecting(codex());
+        assert!(model.update(Msg::ConnectClicked(openai())).is_empty());
+        assert_eq!(model.connecting, Some(codex()));
     }
 
     #[test]
     fn device_code_workflow_shows_challenge_finalizes_and_closes() {
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
 
         // Init returned a device-code challenge: the code is shown and the
         // finalize wait starts immediately.
-        let cmds = model.update(Msg::InitFinished(ProviderId::Codex, Ok(device_code())));
+        let cmds = model.update(Msg::InitFinished(codex(), Ok(device_code())));
         assert!(matches!(
             cmds.as_slice(),
             [
                 Command::ShowChallenge { user_code, .. },
                 Command::FinalizeConnection {
-                    provider_id: ProviderId::Codex,
-                    connection: Connection::DeviceCode { .. },
+                    provider_auth_method: ProviderAuthMethod::DeviceCode,
+                    provider_backend_id,
+                    payload,
                 }
             ] if user_code == "ABCD-1234"
+                && *provider_backend_id == codex()
+                && payload == "txn-1"
         ));
 
         // Browser approval resolves the finalize.
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Codex, Ok(())));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: codex(),
+            response: Ok(()),
+        });
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowSuccess, Command::FetchConnectors]
@@ -409,39 +465,41 @@ mod tests {
 
     #[test]
     fn manual_key_workflow_submits_and_succeeds() {
-        let mut model = connecting(ProviderId::Anthropic);
+        let mut model = connecting(anthropic());
 
         let cmds = model.update(Msg::InitFinished(
-            ProviderId::Anthropic,
+            anthropic(),
             Ok(manual_input(Some("https://example.com/keys"))),
         ));
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowManualInput {
-                provider_id: ProviderId::Anthropic,
+                provider_backend_id,
                 instructions_url: Some(_),
-            }]
+            }] if *provider_backend_id == anthropic()
         ));
 
         let cmds = model.update(Msg::ConnectionSubmitted {
-            provider_id: ProviderId::Anthropic,
-            connection: Connection::ManualInput {
-                api_key: "key".into(),
-                instructions_url: None,
-            },
+            provider_auth_method: ProviderAuthMethod::ApiKey,
+            provider_backend_id: anthropic(),
+            payload: "key".into(),
         });
         assert!(matches!(
             cmds.as_slice(),
             [
                 Command::ShowLoading,
                 Command::FinalizeConnection {
-                    provider_id: ProviderId::Anthropic,
-                    ..
+                    provider_auth_method: ProviderAuthMethod::ApiKey,
+                    provider_backend_id,
+                    payload,
                 }
-            ]
+            ] if *provider_backend_id == anthropic() && payload == "key"
         ));
 
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Anthropic, Ok(())));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: anthropic(),
+            response: Ok(()),
+        });
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowSuccess, Command::FetchConnectors]
@@ -454,34 +512,34 @@ mod tests {
 
     #[test]
     fn oauth_workflow_submits_the_pasted_code() {
-        let mut model = connecting(ProviderId::Anthropic);
+        let mut model = connecting(anthropic());
 
         let cmds = model.update(Msg::InitFinished(
-            ProviderId::Anthropic,
-            Ok(Connection::BrowserRedirect {
-                authorization_url: "https://example.com/auth".into(),
-            }),
+            anthropic(),
+            Ok(browser_redirect("https://example.com/auth")),
         ));
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowOauth {
-                provider_id: ProviderId::Anthropic,
+                provider_backend_id,
                 ..
-            }]
+            }] if *provider_backend_id == anthropic()
         ));
 
         let cmds = model.update(Msg::ConnectionSubmitted {
-            provider_id: ProviderId::Anthropic,
-            connection: Connection::BrowserRedirect {
-                authorization_url: "pasted-code".into(),
-            },
+            provider_auth_method: ProviderAuthMethod::BrowserOauth,
+            provider_backend_id: anthropic(),
+            payload: "pasted-code".into(),
         });
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowLoading, Command::FinalizeConnection { .. }]
         ));
 
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Anthropic, Ok(())));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: anthropic(),
+            response: Ok(()),
+        });
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowSuccess, Command::FetchConnectors]
@@ -490,9 +548,9 @@ mod tests {
 
     #[test]
     fn failed_init_shows_the_error_page_until_closed() {
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
 
-        let cmds = model.update(Msg::InitFinished(ProviderId::Codex, Err(error("offline"))));
+        let cmds = model.update(Msg::InitFinished(codex(), Err(error("offline"))));
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowError(message)] if message == "offline"
@@ -509,24 +567,30 @@ mod tests {
     }
 
     #[test]
-    fn failed_finalize_shows_the_error_page() {
-        let mut model = connecting(ProviderId::Anthropic);
-        let _ = model.update(Msg::InitFinished(
-            ProviderId::Anthropic,
-            Ok(manual_input(None)),
+    fn empty_init_payload_shows_the_error_page() {
+        let mut model = connecting(codex());
+
+        let cmds = model.update(Msg::InitFinished(
+            codex(),
+            Ok(ConnectionPayload { payload: None }),
         ));
+        assert!(matches!(cmds.as_slice(), [Command::ShowError(_)]));
+    }
+
+    #[test]
+    fn failed_finalize_shows_the_error_page() {
+        let mut model = connecting(anthropic());
+        let _ = model.update(Msg::InitFinished(anthropic(), Ok(manual_input(None))));
         let _ = model.update(Msg::ConnectionSubmitted {
-            provider_id: ProviderId::Anthropic,
-            connection: Connection::ManualInput {
-                api_key: "key".into(),
-                instructions_url: None,
-            },
+            provider_auth_method: ProviderAuthMethod::ApiKey,
+            provider_backend_id: anthropic(),
+            payload: "key".into(),
         });
 
-        let cmds = model.update(Msg::FinalizeFinished(
-            ProviderId::Anthropic,
-            Err(error("bad key")),
-        ));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: anthropic(),
+            response: Err(error("bad key")),
+        });
         assert!(matches!(
             cmds.as_slice(),
             [Command::ShowError(message)] if message == "bad key"
@@ -535,22 +599,21 @@ mod tests {
 
     #[test]
     fn abandoned_flow_drops_stale_init_results_and_submits() {
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
         // Esc while still loading.
         let _ = model.update(Msg::DialogClosed);
 
         assert!(
             model
-                .update(Msg::InitFinished(ProviderId::Codex, Ok(device_code())))
+                .update(Msg::InitFinished(codex(), Ok(device_code())))
                 .is_empty()
         );
         assert!(
             model
                 .update(Msg::ConnectionSubmitted {
-                    provider_id: ProviderId::Codex,
-                    connection: Connection::BrowserRedirect {
-                        authorization_url: "pasted-code".into(),
-                    },
+                    provider_auth_method: ProviderAuthMethod::BrowserOauth,
+                    provider_backend_id: codex(),
+                    payload: "pasted-code".into(),
                 })
                 .is_empty()
         );
@@ -558,47 +621,56 @@ mod tests {
 
     #[test]
     fn abandoned_flow_warns_on_stale_failures() {
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
         let _ = model.update(Msg::DialogClosed);
 
-        let cmds = model.update(Msg::InitFinished(ProviderId::Codex, Err(error("boom"))));
+        let cmds = model.update(Msg::InitFinished(codex(), Err(error("boom"))));
         assert!(matches!(cmds.as_slice(), [Command::Warn(_)]));
 
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Codex, Err(error("boom"))));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: codex(),
+            response: Err(error("boom")),
+        });
         assert!(matches!(cmds.as_slice(), [Command::Warn(_)]));
     }
 
     #[test]
     fn abandoned_flow_success_still_refreshes_the_page() {
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
         let _ = model.update(Msg::DialogClosed);
 
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Codex, Ok(())));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: codex(),
+            response: Ok(()),
+        });
         assert!(matches!(cmds.as_slice(), [Command::FetchConnectors]));
     }
 
     #[test]
     fn results_from_a_previous_flow_cannot_touch_the_next_session() {
         // Codex flow abandoned mid-finalize, Anthropic flow opened right after.
-        let mut model = connecting(ProviderId::Codex);
+        let mut model = connecting(codex());
         let _ = model.update(Msg::DialogClosed);
-        let cmds = model.update(Msg::ConnectClicked(ProviderId::Anthropic));
+        let cmds = model.update(Msg::ConnectClicked(anthropic()));
         assert!(matches!(
             cmds.as_slice(),
             [
-                Command::ShowConnectionDialog(ProviderId::Anthropic),
-                Command::InitConnection(ProviderId::Anthropic)
-            ]
+                Command::ShowConnectionDialog(dialog_id),
+                Command::InitConnection(init_id)
+            ] if *dialog_id == anthropic() && *init_id == anthropic()
         ));
 
         // Codex's late results must not repaint Anthropic's dialog.
         assert!(
             model
-                .update(Msg::InitFinished(ProviderId::Codex, Ok(device_code())))
+                .update(Msg::InitFinished(codex(), Ok(device_code())))
                 .is_empty()
         );
-        let cmds = model.update(Msg::FinalizeFinished(ProviderId::Codex, Ok(())));
+        let cmds = model.update(Msg::FinalizeFinished {
+            provider_backend_id: codex(),
+            response: Ok(()),
+        });
         assert!(matches!(cmds.as_slice(), [Command::FetchConnectors]));
-        assert_eq!(model.connecting, Some(ProviderId::Anthropic));
+        assert_eq!(model.connecting, Some(anthropic()));
     }
 }
