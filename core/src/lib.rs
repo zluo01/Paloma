@@ -39,6 +39,7 @@ pub use entity::{
     HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport,
 };
 pub use permission::{PermissionState, UserDecision};
+pub use provider::ProviderInfo;
 pub use scry_provider_protocol::v1::{
     BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, ProviderAuthMethod,
     connection_payload,
@@ -48,7 +49,6 @@ pub use utils::OAuthCallbackState;
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
     controller::ChatRenderStream,
-    provider::ProviderInfo,
 };
 
 pub struct AppContext {
@@ -279,8 +279,8 @@ impl AppContext {
         self.plugins.health_level().await
     }
 
-    pub async fn list_provider_plugins(&self) -> Vec<ProviderInfo> {
-        self.providers.available_providers()
+    pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>> {
+        Ok(self.providers.available_providers().await?)
     }
 
     pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {

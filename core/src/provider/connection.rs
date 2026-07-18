@@ -2,7 +2,7 @@ use std::{
     io::Error,
     process::Stdio,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
@@ -57,6 +57,7 @@ enum Pending {
 pub struct ProviderPlugin {
     next_event_id: AtomicU64,
     health_status: Arc<AtomicU8>,
+    error: Arc<OnceLock<String>>,
     pending: Arc<DashMap<u64, Pending>>,
     writer: mpsc::Sender<RequestEvent>,
     child: Mutex<Child>,
@@ -69,20 +70,19 @@ impl ProviderPlugin {
         let stdout = child.stdout.take().expect("stdout piped");
 
         let health_status = Arc::new(AtomicU8::new(HealthStatus::Starting as u8));
+        let error: Arc<OnceLock<String>> = Arc::default();
 
         // request dispatch
         let (writer, mut writer_rx) =
             mpsc::channel::<RequestEvent>(PROVIDER_REQUEST_CHANNEL_CAPACITY);
         let health = Arc::clone(&health_status);
+        let write_error = Arc::clone(&error);
         tokio::spawn(async move {
             let mut output = FramedWrite::new(stdin, length_delimited_codec());
             while let Some(request) = writer_rx.recv().await {
-                if output
-                    .send(Bytes::from(request.encode_to_vec()))
-                    .await
-                    .is_err()
-                {
+                if let Err(e) = output.send(Bytes::from(request.encode_to_vec())).await {
                     // pipe closed: child is gone
+                    let _ = write_error.set(format!("plugin stopped accepting requests: {e}"));
                     health.store(HealthStatus::Unhealthy as u8, Ordering::SeqCst);
                     break;
                 }
@@ -93,6 +93,7 @@ impl ProviderPlugin {
         let pending: Arc<DashMap<u64, Pending>> = Arc::new(DashMap::new());
         let routes = Arc::clone(&pending);
         let health = Arc::clone(&health_status);
+        let read_error = Arc::clone(&error);
         let name = plugin.name.clone();
         tokio::spawn(async move {
             let mut input = FramedRead::new(stdout, length_delimited_codec());
@@ -115,6 +116,7 @@ impl ProviderPlugin {
                 handle_response(&name, &routes, &storage, response.event_id, payload).await;
             }
             // EOF: child died.
+            let _ = read_error.set("plugin process exited".to_string());
             health.store(HealthStatus::Unhealthy as u8, Ordering::SeqCst);
             routes.clear();
         });
@@ -122,6 +124,7 @@ impl ProviderPlugin {
         Ok(Arc::new(Self {
             next_event_id: AtomicU64::default(),
             health_status,
+            error,
             pending,
             writer,
             child: Mutex::new(child),
@@ -130,6 +133,10 @@ impl ProviderPlugin {
 
     pub fn health(&self) -> HealthStatus {
         HealthStatus::from_u8(self.health_status.load(Ordering::Relaxed))
+    }
+
+    pub fn plugin_error(&self) -> Option<String> {
+        self.error.get().cloned()
     }
 
     // explicitly shutdown function

@@ -442,15 +442,32 @@ impl ProviderController {
         Ok(statuses)
     }
 
-    pub fn available_providers(&self) -> Vec<ProviderInfo> {
-        self.handlers
-            .iter()
-            .map(|entry| ProviderInfo {
-                name: entry.key().clone(),
-                description: entry.value().description.clone(),
-                status: entry.value().connection.health(),
+    pub async fn available_providers(&self) -> Result<Vec<ProviderInfo>> {
+        let plugins = self.storage.plugins_by_type(PluginType::Provider).await?;
+        Ok([&*ANTHROPIC_PLUGIN, &*OPENAI_PLUGIN]
+            .into_iter()
+            .map(|builtin| (builtin.name.clone(), None))
+            .chain(
+                plugins
+                    .into_iter()
+                    .map(|config| (config.name.clone(), Some(config))),
+            )
+            .filter_map(|(name, config)| {
+                let Some(handler) = self.handlers.get(&name) else {
+                    error!(
+                        "no live provider status for plugin {name}; This indicates a bug. Skipping"
+                    );
+                    return None;
+                };
+                Some(ProviderInfo {
+                    name,
+                    description: handler.description.clone(),
+                    status: handler.connection.health(),
+                    error: handler.connection.plugin_error(),
+                    config,
+                })
             })
-            .collect()
+            .collect())
     }
 }
 

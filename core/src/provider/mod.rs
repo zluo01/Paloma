@@ -14,10 +14,14 @@ pub(crate) const PLUGIN_OPENAI: &str = "OpenAI";
 
 const PROVIDER_PLUGIN_FLAG: &str = "--provider-plugin";
 
+#[derive(Clone)]
 pub struct ProviderInfo {
     pub name: String,
     pub description: String,
     pub status: HealthStatus,
+    pub error: Option<String>,
+    /// `None` for built-in providers, which have no user-editable config.
+    pub config: Option<Plugin>,
 }
 
 pub(crate) fn serve_plugin_and_exit_if_requested() {
