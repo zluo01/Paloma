@@ -1,5 +1,5 @@
 use gtk4::{
-    Box as GtkBox, Button, Label, Orientation, Separator,
+    Box as GtkBox, Button, Label, Orientation, Separator, pango,
     prelude::{BoxExt, WidgetExt},
 };
 use scry_core::{PermissionState, UserDecision};
@@ -100,11 +100,19 @@ fn decision_button_group(user_decisions: &[UserDecision]) -> (GtkBox, Vec<ToolCa
 }
 
 fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
+    let text = decision_label(user_decision);
+    let label = Label::builder()
+        .label(&text)
+        .ellipsize(pango::EllipsizeMode::Middle)
+        .build();
     let button = Button::builder()
-        .label(decision_label(user_decision))
+        .child(&label)
         .can_focus(false)
         .focusable(false)
         .build();
+    if matches!(user_decision, UserDecision::Allow { .. }) {
+        button.set_tooltip_text(Some(&text));
+    }
     button.add_css_class("scry-chat-decision");
     match user_decision {
         UserDecision::AllowOnce { .. } => {
