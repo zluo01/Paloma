@@ -9,22 +9,48 @@ import Observation
 @MainActor
 @Observable
 final class PluginModel {
+    private(set) var providers: [ProviderInfo] = []
     private(set) var mcps: [McpServer] = []
 
     func refresh() {
+        refreshProviderPlugins()
+        refreshMcpServers()
+    }
+
+    func refreshProviderPlugins() {
+        CoreClient.shared.load({ try await $0.listProviderPlugins() }, or: "failed to refresh provider plugins", category: "plugins") {
+            self.providers = $0
+        }
+    }
+
+    func refreshMcpServers() {
         CoreClient.shared.load({ try await $0.listMcps() }, or: "failed to refresh MCP servers", category: "plugins") {
             self.mcps = $0
         }
     }
 
     func isPluginNameTaken(_ name: String) -> Bool {
-        mcps.contains { $0.config.name == name }
+        mcps.contains { $0.config.name == name } || providers.contains { $0.name == name }
     }
 
-    func updatePlugin(_ config: Plugin) async -> Result<Void, Error> {
+    func updatePlugin(_ pluginType: PluginType, _ config: Plugin) async -> Result<Void, Error> {
         await CoreClient.shared.withApp { app in
-            try await app.updatePlugin(pluginType: .mcp, plugin: config)
-            refresh()
+            try await app.updatePlugin(pluginType: pluginType, plugin: config)
+            switch pluginType {
+            case .native:
+                break
+            case .provider:
+                refreshProviderPlugins()
+            case .mcp:
+                refreshMcpServers()
+            }
+        }
+    }
+
+    func addProviderPlugin(_ config: Plugin) async -> Result<Void, Error> {
+        await CoreClient.shared.withApp { app in
+            try await app.addProviderPlugin(config: config)
+            refreshProviderPlugins()
         }
     }
 
@@ -37,7 +63,7 @@ final class PluginModel {
     func finalizeMcpConnection(_ config: Plugin, session: McpOauthSession?) async -> Result<Void, Error> {
         await CoreClient.shared.withApp { app in
             try await app.finalizeMcpConnection(config: config, session: session)
-            refresh()
+            refreshMcpServers()
         }
     }
 
@@ -50,10 +76,17 @@ final class PluginModel {
         }
     }
 
-    func removeMcp(_ name: String) async -> Result<Void, Error> {
+    func removePlugin(_ pluginType: PluginType, _ name: String) async -> Result<Void, Error> {
         await CoreClient.shared.withApp { app in
-            try await app.removePlugin(pluginType: .mcp, name: name)
-            mcps.removeAll { $0.config.name == name }
+            try await app.removePlugin(pluginType: pluginType, name: name)
+            switch pluginType {
+            case .native:
+                break
+            case .provider:
+                providers.removeAll { $0.name == name }
+            case .mcp:
+                mcps.removeAll { $0.config.name == name }
+            }
         }
     }
 }

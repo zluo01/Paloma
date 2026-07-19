@@ -22,7 +22,7 @@ struct ModelPickerView: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "cpu")
+                Image(systemName: "brain")
                     .font(.system(size: 10))
                 Text(title)
                     .font(.caption)

@@ -1,12 +1,12 @@
 //
-//  PluginRowView.swift
+//  McpRowView.swift
 //  Scry
 //
 //
 
 import SwiftUI
 
-struct PluginRowView: View {
+struct McpRowView: View {
     let server: McpServer
     let onEdit: () -> Void
     let onToggle: (_ disabled: Bool) -> Void
@@ -14,33 +14,16 @@ struct PluginRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            statusIcon
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.config.name)
-                if !server.description.isEmpty {
-                    Text(server.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(server.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
             Spacer()
 
-            if server.status == .running {
-                Toggle(
-                    "",
-                    isOn: .init(
-                        get: { !server.config.disabled },
-                        set: { enabled in
-                            onToggle(!enabled)
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .labelsHidden()
-            }
-
+            statusIcon
             Button(action: onEdit) {
                 Image(systemName: "pencil")
             }
@@ -60,13 +43,24 @@ struct PluginRowView: View {
     private var statusIcon: some View {
         switch server.status {
         case .running:
-            Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(.green)
+            Toggle(
+                "",
+                isOn: .init(
+                    get: { !server.config.disabled },
+                    set: { enabled in
+                        onToggle(!enabled)
+                    }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
         case .starting:
             ProgressView().controlSize(.mini)
         case .unhealthy:
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
                 .foregroundStyle(.red)
+                .padding(5)
                 .help(server.error ?? "unknown error")
         }
     }

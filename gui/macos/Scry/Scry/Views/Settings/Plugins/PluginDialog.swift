@@ -16,10 +16,7 @@ struct PluginDialog: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PluginDialogHeader(
-                title: state.originalName == nil ? "Add MCP Server" : "Edit MCP Server",
-                subtitle: "Connect a Model Context Protocol server."
-            )
+            PluginDialogHeader(pluginType: state.pluginType, editing: state.originalName != nil)
             fields
             buttons
                 .padding(.top)
@@ -28,10 +25,7 @@ struct PluginDialog: View {
         .frame(maxWidth: 480)
         .sheet(item: $oauthSession) { session in
             VStack(alignment: .leading, spacing: 16) {
-                PluginDialogHeader(
-                    title: "Waiting for Authorization",
-                    subtitle: "Approve the connection in your browser to finish adding this server."
-                )
+                McpAuthorizationHeader()
                 if let url = URL(string: session.authUrl()) {
                     Link(destination: url) {
                         Label("Open the authorization page", systemImage: "arrow.up.forward.square")
@@ -62,78 +56,119 @@ struct PluginDialog: View {
 
     private var fields: some View {
         Form {
-            LabeledContent("Name") {
-                TextField("Name", text: $state.name)
-                    .labelsHidden()
-                    .disabled(state.originalName != nil || submitting)
-                    .validationFlag(nameError)
-            }
-            .padding(.bottom, 6)
-            Picker("Type", selection: $state.isRemote) {
-                Text("Local command").tag(false)
-                Text("Remote server").tag(true)
-            }
-            .padding(.bottom, 6)
-            .pickerStyle(.segmented)
-            .disabled(submitting)
-
-            if state.isRemote {
-                LabeledContent("URL") {
-                    TextField("URL", text: $state.url, prompt: Text("https://example.com/mcp"))
-                        .labelsHidden()
-                        .disabled(submitting)
-                        .validationFlag(urlError)
-                }
-                .padding(.bottom, 6)
-                LabeledContent("") {
-                    Toggle("Requires authentication", isOn: $state.requiresAuth)
-                        .disabled(submitting)
-                }.padding(.bottom, 3)
-            } else {
-                TextField("Command", text: $state.command, prompt: Text("npx"))
-                    .fontDesign(.monospaced)
-                    .padding(.bottom, 6)
-                    .disabled(submitting)
-                LabeledContent("Arguments") {
-                    captioned("A JSON array of strings.") {
-                        TextField(
-                            "Arguments", text: $state.argsJson,
-                            prompt: Text("[\"--flag\", \"value\"]")
-                        )
-                        .labelsHidden()
-                        .fontDesign(.monospaced)
-                        .disabled(submitting)
-                        .validationFlag(argsError)
-                    }
-                }
-            }
-            Divider()
-                .padding(.bottom, 6)
-                .padding(.top, 3)
-            LabeledContent("Timeout") {
-                HStack(spacing: 6) {
-                    TextField("Timeout", value: $state.timeout, format: .number)
-                        .labelsHidden()
-                        .frame(width: 70)
-                        .disabled(submitting)
-                        .validationFlag(timeoutError)
-                    Text("seconds")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            LabeledContent("Environment") {
-                captioned("A JSON object of strings.") {
-                    TextField("Environment", text: $state.envJson, prompt: Text("{\"KEY\": \"value\"}"))
-                        .labelsHidden()
-                        .fontDesign(.monospaced)
-                        .disabled(submitting)
-                        .validationFlag(envError)
-                }
+            switch state.pluginType {
+            case .native:
+                EmptyView()
+            case .provider:
+                providerFormView
+            case .mcp:
+                mcpFormView
             }
         }
         .padding()
         .formStyle(.columns)
         .textFieldStyle(.roundedBorder)
+    }
+
+    @ViewBuilder
+    private var mcpFormView: some View {
+        LabeledContent("Name") {
+            TextField("Name", text: $state.name)
+                .labelsHidden()
+                .disabled(state.originalName != nil || submitting)
+                .validationFlag(nameError)
+        }
+        .padding(.bottom, 6)
+        Picker("Type", selection: $state.isRemote) {
+            Text("Local command").tag(false)
+            Text("Remote server").tag(true)
+        }
+        .padding(.bottom, 6)
+        .pickerStyle(.segmented)
+        .disabled(submitting)
+
+        if state.isRemote {
+            LabeledContent("URL") {
+                TextField("URL", text: $state.url, prompt: Text("https://example.com/mcp"))
+                    .labelsHidden()
+                    .disabled(submitting)
+                    .validationFlag(urlError)
+            }
+            .padding(.bottom, 6)
+            LabeledContent("") {
+                Toggle("Requires authentication", isOn: $state.requiresAuth)
+                    .disabled(submitting)
+            }.padding(.bottom, 3)
+        } else {
+            TextField("Command", text: $state.command, prompt: Text("npx"))
+                .fontDesign(.monospaced)
+                .padding(.bottom, 6)
+                .disabled(submitting)
+            LabeledContent("Arguments") {
+                captioned("A JSON array of strings.") {
+                    TextField(
+                        "Arguments", text: $state.argsJson,
+                        prompt: Text("[\"--flag\", \"value\"]")
+                    )
+                    .labelsHidden()
+                    .fontDesign(.monospaced)
+                    .disabled(submitting)
+                    .validationFlag(argsError)
+                }
+            }
+        }
+        Divider()
+            .padding(.bottom, 6)
+            .padding(.top, 3)
+        LabeledContent("Timeout") {
+            HStack(spacing: 6) {
+                TextField("Timeout", value: $state.timeout, format: .number)
+                    .labelsHidden()
+                    .frame(width: 70)
+                    .disabled(submitting)
+                    .validationFlag(timeoutError)
+                Text("seconds")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        LabeledContent("Environment") {
+            captioned("A JSON object of strings.") {
+                TextField("Environment", text: $state.envJson, prompt: Text("{\"KEY\": \"value\"}"))
+                    .labelsHidden()
+                    .fontDesign(.monospaced)
+                    .disabled(submitting)
+                    .validationFlag(envError)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var providerFormView: some View {
+        TextField("Command", text: $state.command, prompt: Text("/path/to/provider"))
+            .fontDesign(.monospaced)
+            .padding(.bottom, 6)
+            .disabled(submitting)
+        LabeledContent("Arguments") {
+            captioned("Optional. A JSON array of strings.") {
+                TextField(
+                    "Arguments", text: $state.argsJson,
+                    prompt: Text("[\"--log-level\", \"info\"]")
+                )
+                .labelsHidden()
+                .fontDesign(.monospaced)
+                .disabled(submitting)
+                .validationFlag(argsError)
+            }
+        }
+        LabeledContent("Environment") {
+            captioned("Optional. A JSON object of strings.") {
+                TextField("Environment", text: $state.envJson, prompt: Text("{\"API_KEY\": \"secret\"}"))
+                    .labelsHidden()
+                    .fontDesign(.monospaced)
+                    .disabled(submitting)
+                    .validationFlag(envError)
+            }
+        }
     }
 
     private var buttons: some View {
@@ -166,9 +201,11 @@ struct PluginDialog: View {
 
     private var parsedArgs: [String]? {
         let text = state.argsJson.trimmingCharacters(in: .whitespaces)
-        guard let args = try? JSONDecoder().decode([String].self, from: Data(text.utf8)),
-              !args.isEmpty
-        else { return nil }
+        guard let args = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) else { return nil }
+        // A provider binary may take no arguments; MCP servers always need them.
+        if state.pluginType == .mcp, args.isEmpty {
+            return nil
+        }
         return args
     }
 
@@ -180,7 +217,10 @@ struct PluginDialog: View {
 
     private var argsError: String? {
         guard !state.argsJson.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        return parsedArgs == nil ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]." : nil
+        guard parsedArgs == nil else { return nil }
+        return state.pluginType == .mcp
+            ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]."
+            : "Must be a JSON array like [\"--log-level\", \"info\"]."
     }
 
     private var urlError: String? {
@@ -203,6 +243,11 @@ struct PluginDialog: View {
     }
 
     private var canSubmit: Bool {
+        if state.pluginType == .provider {
+            return !state.command.trimmingCharacters(in: .whitespaces).isEmpty
+                && argsError == nil
+                && envError == nil
+        }
         let requiredFilled = if state.isRemote {
             !state.url.trimmingCharacters(in: .whitespaces).isEmpty
         } else {
@@ -217,52 +262,82 @@ struct PluginDialog: View {
             && timeoutError == nil
     }
 
-    /// canSubmit gates the button; the guards only protect the invariant.
     private func submit() {
-        guard let env = parsedEnv else { return }
-
-        let args: PluginArgs
-        if state.isRemote {
-            args = .remote(url: state.url.trimmingCharacters(in: .whitespaces), requiresAuth: state.requiresAuth)
-        } else {
-            guard let parsed = parsedArgs else { return }
-            args = .local(
-                command: state.command.trimmingCharacters(in: .whitespaces),
-                args: parsed
-            )
-        }
-
-        let plugin = Plugin(
-            name: state.name.trimmingCharacters(in: .whitespaces),
-            transport: state.isRemote ? .http : .local,
-            timeout: UInt32(state.timeout),
-            disabled: state.disabled,
-            env: env,
-            args: args
-        )
+        guard let plugin = constructPlugin() else { return }
 
         operationError = nil
         submitting = true
         if state.originalName != nil {
-            OperationError.run("Failed to Update MCP Server", into: $operationError) {
-                await model.updatePlugin(plugin)
+            OperationError.run("Failed to Update \(state.pluginType.label)", into: $operationError) {
+                await model.updatePlugin(state.pluginType, plugin)
             } onSuccess: {
                 onClose()
             } onFailure: {
                 submitting = false
             }
         } else {
-            OperationError.run("Failed to Add MCP Server", into: $operationError) {
-                await model.initMcpConnection(plugin)
-            } onSuccess: { session in
-                oauthSession = session
-                if let session {
-                    openUrl(session.authUrl())
+            if state.pluginType == .mcp {
+                OperationError.run("Failed to Add MCP Server", into: $operationError) {
+                    await model.initMcpConnection(plugin)
+                } onSuccess: { session in
+                    oauthSession = session
+                    if let session {
+                        openUrl(session.authUrl())
+                    }
+                    finalizeConnection(plugin, session: session)
+                } onFailure: {
+                    submitting = false
                 }
-                finalizeConnection(plugin, session: session)
-            } onFailure: {
-                submitting = false
+            } else {
+                OperationError.run("Failed to Add Provider", into: $operationError) {
+                    await model.addProviderPlugin(plugin)
+                } onSuccess: {
+                    onClose()
+                } onFailure: {
+                    submitting = false
+                }
             }
+        }
+    }
+
+    /// canSubmit gates the button; the guards only protect the invariant.
+    private func constructPlugin() -> Plugin? {
+        guard let env = parsedEnv else { return nil }
+        switch state.pluginType {
+        case .native:
+            // Unreachable: the native form is empty, so canSubmit never enables.
+            fatalError("native plugins cannot be configured")
+        case .provider:
+            return Plugin(
+                name: "",
+                transport: .local,
+                timeout: 0,
+                disabled: false,
+                env: env,
+                args: .local(
+                    command: state.command.trimmingCharacters(in: .whitespaces),
+                    args: parsedArgs ?? []
+                )
+            )
+        case .mcp:
+            let args: PluginArgs
+            if state.isRemote {
+                args = .remote(url: state.url.trimmingCharacters(in: .whitespaces), requiresAuth: state.requiresAuth)
+            } else {
+                guard let parsed = parsedArgs else { return nil }
+                args = .local(
+                    command: state.command.trimmingCharacters(in: .whitespaces),
+                    args: parsed
+                )
+            }
+            return Plugin(
+                name: state.name.trimmingCharacters(in: .whitespaces),
+                transport: state.isRemote ? .http : .local,
+                timeout: UInt32(state.timeout),
+                disabled: state.disabled,
+                env: env,
+                args: args
+            )
         }
     }
 
@@ -284,6 +359,26 @@ struct PluginDialog: View {
     }
 }
 
+private struct McpAuthorizationHeader: View {
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image("MCPLogo")
+                .resizable()
+                .scaledToFit()
+                .padding(4)
+                .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Waiting for Authorization")
+                    .font(.headline)
+                Text("Approve the connection in your browser to finish adding this server.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 struct PluginDialogState: Identifiable {
     var id: String {
         originalName ?? "new-plugin"
@@ -291,6 +386,7 @@ struct PluginDialogState: Identifiable {
 
     /// Set when editing an existing plugin.
     let originalName: String?
+    let pluginType: PluginType
     var name = ""
     var isRemote = false
     var command = ""
@@ -301,12 +397,14 @@ struct PluginDialogState: Identifiable {
     var envJson = "{}"
     var disabled = false
 
-    init() {
+    init(_ pluginType: PluginType) {
         originalName = nil
+        self.pluginType = pluginType
     }
 
-    init(editing plugin: Plugin) {
+    init(_ pluginType: PluginType, editing plugin: Plugin) {
         originalName = plugin.name
+        self.pluginType = pluginType
         name = plugin.name
         timeout = Int(plugin.timeout)
         envJson = Self.json(plugin.env)

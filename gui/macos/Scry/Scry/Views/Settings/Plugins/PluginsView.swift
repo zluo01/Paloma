@@ -19,13 +19,38 @@ struct PluginsView: View {
                 Text("Plugins")
             }
             Section {
+                ForEach(model.providers, id: \.name) { provider in
+                    ProviderRowView(provider: provider) {
+                        if provider.config != nil {
+                            dialog = PluginDialogState(.provider, editing: provider.config!)
+                        }
+                    } onDelete: {
+                        OperationError.run("Failed to Remove Provider", into: $operationError) {
+                            await model.removePlugin(.provider, provider.name)
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Providers")
+                    Spacer()
+                    Button {
+                        dialog = PluginDialogState(.provider)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.ghostIcon)
+                    .help("Add a Provider")
+                }
+            }
+            Section {
                 if model.mcps.isEmpty {
                     Text("No MCP servers configured.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.mcps, id: \.config.name) { server in
-                    PluginRowView(server: server) {
-                        dialog = PluginDialogState(editing: server.config)
+                    McpRowView(server: server) {
+                        dialog = PluginDialogState(.mcp, editing: server.config)
                     } onToggle: { disabled in
                         OperationError.run(
                             disabled ? "Failed to Disable MCP Server" : "Failed to Enable MCP Server",
@@ -35,16 +60,16 @@ struct PluginsView: View {
                         }
                     } onDelete: {
                         OperationError.run("Failed to Remove MCP Server", into: $operationError) {
-                            await model.removeMcp(server.config.name)
+                            await model.removePlugin(.mcp, server.config.name)
                         }
                     }
                 }
             } header: {
                 HStack {
-                    Text("MCP servers")
+                    Text("MCP Servers")
                     Spacer()
                     Button {
-                        dialog = PluginDialogState()
+                        dialog = PluginDialogState(.mcp)
                     } label: {
                         Image(systemName: "plus")
                     }
