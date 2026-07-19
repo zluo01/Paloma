@@ -41,7 +41,7 @@ pub use entity::{
 pub use permission::{PermissionState, UserDecision};
 pub use provider::ProviderInfo;
 pub use scry_provider_protocol::v1::{
-    BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, ProviderAuthMethod,
+    BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, Model, ProviderAuthMethod,
     connection_payload,
 };
 pub use utils::OAuthCallbackState;

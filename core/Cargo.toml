@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 async-trait = { workspace = true }
-ctor = "1.0.9"
+ctor = { version = "1.0.9", default-features = false, features = ["proc_macro", "std"] }
 dashmap = { workspace = true }
 exmex = "0.21.0"
 futures = { workspace = true }
