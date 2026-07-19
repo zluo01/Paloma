@@ -21,7 +21,7 @@ struct ModelPickerView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "brain")
                     .font(.system(size: 10))
                 Text(title)
