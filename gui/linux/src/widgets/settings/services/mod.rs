@@ -8,10 +8,7 @@ use std::{
 };
 
 use futures::channel::mpsc;
-use gtk4::{
-    Align, Box as GtkBox, Button, Image, Label, Orientation, StringList,
-    accessible::Property as AccessibleProperty, glib,
-};
+use gtk4::{Align, Box as GtkBox, Button, Image, Orientation, StringList, glib};
 use libadwaita::{
     ActionRow, AlertDialog, ApplicationWindow, ComboRow, ExpanderRow, PreferencesGroup,
     PreferencesPage, ResponseAppearance,
@@ -181,15 +178,11 @@ impl ServicesPage {
         icon: Option<IconRef>,
         conn: &ConnectorConnection,
     ) -> ExpanderRow {
-        let row = ExpanderRow::new();
-        row.add_prefix(&provider_identity(
-            provider_backend_id,
-            backend_description,
-            icon,
-            conn.status.status,
-        ));
-        let accessible_label = format!("{provider_backend_id} — {backend_description}");
-        row.update_property(&[AccessibleProperty::Label(&accessible_label)]);
+        let row = ExpanderRow::builder()
+            .title(provider_backend_id.to_string())
+            .subtitle(backend_description)
+            .build();
+        row.add_prefix(&logo(icon));
 
         let actions = GtkBox::builder()
             .orientation(Orientation::Horizontal)
@@ -508,60 +501,4 @@ fn logo(icon: Option<IconRef>) -> Image {
 
 fn fallback_logo() -> Image {
     Image::from_icon_name("application-x-executable-symbolic")
-}
-
-fn provider_identity(
-    provider_backend_id: &ProviderBackendId,
-    backend_description: &str,
-    icon: Option<IconRef>,
-    status: HealthStatus,
-) -> GtkBox {
-    let title = Label::builder()
-        .label(provider_backend_id.to_string())
-        .xalign(0.0)
-        .valign(Align::Center)
-        .build();
-    title.add_css_class("scry-service-title");
-
-    let dot_class = match status {
-        HealthStatus::Starting => "scry-status-degraded",
-        HealthStatus::Running => "scry-status-healthy",
-        HealthStatus::Unhealthy => "scry-status-down",
-    };
-    let dot = GtkBox::builder()
-        .valign(Align::Center)
-        .css_classes(["scry-status-dot", "scry-service-status-dot", dot_class])
-        .build();
-
-    let title_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(6)
-        .valign(Align::Center)
-        .build();
-    title_row.append(&title);
-    title_row.append(&dot);
-
-    let subtitle = Label::builder()
-        .label(backend_description)
-        .xalign(0.0)
-        .build();
-    subtitle.add_css_class("subtitle");
-
-    let labels = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(2)
-        .hexpand(true)
-        .build();
-    labels.append(&title_row);
-    labels.append(&subtitle);
-
-    let identity = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(12)
-        .valign(Align::Center)
-        .hexpand(true)
-        .build();
-    identity.append(&logo(icon));
-    identity.append(&labels);
-    identity
 }
