@@ -50,7 +50,7 @@ final class ChatModel {
 
         chatTask = Task {
             let result = await CoreClient.shared.withApp { app in
-                guard let provider = try await app.preferModel() else {
+                guard let providerBackendId = try await app.preferModel() else {
                     if isCurrent(turn) {
                         chatStatus = .failed("No model selected. Connect a provider first.")
                     }
@@ -59,7 +59,7 @@ final class ChatModel {
                 guard isCurrent(turn) else { return }
                 let chat = try await app.chat(
                     sessionId: sessionId,
-                    providerId: provider,
+                    providerBackendId: providerBackendId,
                     prompt: prompt
                 )
                 guard isCurrent(turn) else { return }
@@ -211,14 +211,14 @@ final class ChatModel {
         switch event {
         case let .userPrompt(text):
             transcript.append(.user(id: nextSectionId(), text: text))
-        case let .textDelta(providerId, text):
-            if case let .assistant(id, provider, existing) = transcript.last,
-               provider == providerId
+        case let .textDelta(providerBackendId, text):
+            if case let .assistant(id, current, existing) = transcript.last,
+               current == providerBackendId
             {
                 transcript[transcript.count - 1] =
-                    .assistant(id: id, provider: provider, text: existing + text)
+                    .assistant(id: id, providerBackendId: providerBackendId, text: existing + text)
             } else {
-                transcript.append(.assistant(id: nextSectionId(), provider: providerId, text: text))
+                transcript.append(.assistant(id: nextSectionId(), providerBackendId: providerBackendId, text: text))
             }
         case let .reasoningDelta(text):
             if case let .reasoning(id, existing) = transcript.last {

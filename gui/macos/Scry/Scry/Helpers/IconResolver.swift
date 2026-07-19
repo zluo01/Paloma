@@ -34,7 +34,7 @@ enum IconResolver {
             return .image(image)
         case let .name(name):
             return .system(symbols[name] ?? mimeSymbol(name))
-        case let .embedded(_, data):
+        case let .embedded(data):
             if let image = NSImage(data: Data(data)) {
                 return .image(image)
             }

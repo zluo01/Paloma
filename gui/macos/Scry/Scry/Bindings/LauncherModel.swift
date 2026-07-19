@@ -26,9 +26,9 @@ final class LauncherModel {
                 async let pluginsLevel = app.pluginsHealthLevel()
                 async let availableList = app.availableConnectors()
 
-                let health = (try? await connectorsLevel) ?? .inactive
-                let plugins = (try? await pluginsLevel) ?? .inactive
-                let available = (try? await availableList) ?? []
+                let health = await (try? connectorsLevel) ?? .inactive
+                let plugins = await (try? pluginsLevel) ?? .inactive
+                let available = await (try? availableList) ?? []
                 let connection = available
                     .first { $0.connection?.preferred == true }?
                     .connection

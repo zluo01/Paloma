@@ -24,7 +24,7 @@ struct ErrorBannerView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 3)
         .task(id: error.id) {
-            guard (try? await Task.sleep(for: .seconds(4))) != nil else { return }
+            guard await (try? Task.sleep(for: .seconds(4))) != nil else { return }
             onDismiss()
         }
     }

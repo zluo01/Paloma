@@ -10,7 +10,7 @@ enum ServiceConnectionPhase {
     /// init_connection in flight.
     case loading
     /// otp challenge
-    case challenge(verificationUrl: String, userCode: String, transactionPayloadJson: String)
+    case challenge(verificationUrl: String, userCode: String, transactionPayload: String)
     /// api key
     case manual(instructionsUrl: String?)
     /// oauth pkce
@@ -18,18 +18,14 @@ enum ServiceConnectionPhase {
     case success
     case failed(String)
 
-    func connection(input: String = "") -> Connection? {
+    func finalizePayload(input: String = "") -> (ProviderAuthMethod, String)? {
         switch self {
-        case let .challenge(verificationUrl, userCode, transactionPayloadJson):
-            .deviceCode(
-                verificationUri: verificationUrl,
-                userCode: userCode,
-                transactionPayloadJson: transactionPayloadJson
-            )
-        case let .manual(instructionsUrl):
-            .manualInput(apiKey: input, instructionsUrl: instructionsUrl)
+        case let .challenge(_, _, transactionPayload):
+            (.deviceCode, transactionPayload)
+        case .manual:
+            (.apiKey, input)
         case .oauth:
-            .browserRedirect(authorizationUrl: input)
+            (.browserOauth, input)
         case .loading, .success, .failed:
             nil
         }
@@ -55,18 +51,18 @@ final class ServiceModel {
         services.filter { $0.connection == nil }
     }
 
-    func initConnection(_ provider: ProviderId) async -> ServiceConnectionPhase {
+    func initConnection(_ providerBackendId: ProviderBackendId) async -> ServiceConnectionPhase {
         let result = await CoreClient.shared.withApp { app in
-            try await app.initConnection(providerId: provider)
+            try await app.initConnection(providerBackendId: providerBackendId)
         }
         switch result {
         case let .success(connection):
             switch connection {
-            case let .manualInput(_, instructionsUrl):
+            case let .manualInput(instructionsUrl):
                 return .manual(instructionsUrl: instructionsUrl)
-            case let .deviceCode(uri, code, transactionPayloadJson):
-                openUrl(uri)
-                return .challenge(verificationUrl: uri, userCode: code, transactionPayloadJson: transactionPayloadJson)
+            case let .deviceCode(url, code, transactionPayload):
+                openUrl(url)
+                return .challenge(verificationUrl: url, userCode: code, transactionPayload: transactionPayload)
             case let .browserRedirect(url):
                 openUrl(url)
                 return .oauth(authorizationUrl: url)
@@ -76,9 +72,9 @@ final class ServiceModel {
         }
     }
 
-    func finalizeConnection(_ provider: ProviderId, payload: Connection) async -> ServiceConnectionPhase {
+    func finalizeConnection(_ providerAuthMethod: ProviderAuthMethod, _ providerBackendId: ProviderBackendId, _ payload: String) async -> ServiceConnectionPhase {
         let result = await CoreClient.shared.withApp { app in
-            try await app.finalizeConnection(providerId: provider, payload: payload)
+            try await app.finalizeConnection(providerAuthMethod: providerAuthMethod, providerBackendId: providerBackendId, payload: payload)
         }
         switch result {
         case .success:
@@ -89,20 +85,20 @@ final class ServiceModel {
         }
     }
 
-    func cancelConnection() {
-        CoreClient.shared.app?.cancelConnection()
+    func cancelConnection(_ providerBackendId: ProviderBackendId) {
+        CoreClient.shared.load({ try await $0.cancelConnection(providerBackendId: providerBackendId) }, or: "failed to cancel connection", category: "services") { _ in }
     }
 
-    func disconnect(_ provider: ProviderId) async -> Result<Void, Error> {
+    func disconnect(_ providerBackendId: ProviderBackendId) async -> Result<Void, Error> {
         await CoreClient.shared.withApp { app in
-            try await app.disconnectConnector(providerId: provider)
+            try await app.disconnectConnector(providerBackendId: providerBackendId)
             refresh()
         }
     }
 
-    func setPreference(_ provider: ProviderId, model: String, effort: String) async -> Result<Void, Error> {
-        let result = await CoreClient.shared.setModelPreference(provider, model: model, effort: effort, setDefault: false)
-        if case .success = result, let index = services.firstIndex(where: { $0.id == provider }) {
+    func setPreference(_ providerBackendId: ProviderBackendId, model: String, effort: String) async -> Result<Void, Error> {
+        let result = await CoreClient.shared.setModelPreference(providerBackendId, model: model, effort: effort, setDefault: false)
+        if case .success = result, let index = services.firstIndex(where: { $0.id == providerBackendId }) {
             services[index].connection?.preferModel = model
             services[index].connection?.preferEffort = effort
         }

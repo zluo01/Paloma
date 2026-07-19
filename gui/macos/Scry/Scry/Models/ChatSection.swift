@@ -6,7 +6,7 @@
 
 enum ChatSection: Identifiable {
     case user(id: Int, text: String)
-    case assistant(id: Int, provider: ProviderId, text: String)
+    case assistant(id: Int, providerBackendId: ProviderBackendId, text: String)
     case reasoning(id: Int, text: String)
     case tool(ToolCallState)
 

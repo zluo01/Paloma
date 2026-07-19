@@ -8,7 +8,7 @@ import SwiftUI
 struct ServicesView: View {
     let model: ServiceModel
     @State private var operationError: OperationError?
-    @State private var connectingProvider: ProviderId?
+    @State private var connectingProvider: ProviderBackendId?
 
     var body: some View {
         Form {
@@ -36,9 +36,7 @@ struct ServicesView: View {
                 }
                 ForEach(model.available, id: \.id) { connector in
                     HStack(spacing: 12) {
-                        Image(nsImage: connector.id.logo)
-                            .resizable()
-                            .frame(width: 26, height: 26)
+                        IconView(icon: connector.icon)
                         Text(connector.id.label)
                         Spacer()
                         Button("Connect") {
@@ -49,8 +47,8 @@ struct ServicesView: View {
             }
         }
         .formStyle(.grouped)
-        .sheet(item: $connectingProvider) { provider in
-            ServiceConnectionDialog(model: model, provider: provider) {
+        .sheet(item: $connectingProvider) { providerBackendId in
+            ServiceConnectionDialog(model: model, providerBackendId: providerBackendId) {
                 connectingProvider = nil
             }
         }

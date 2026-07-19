@@ -11,7 +11,7 @@ struct ModelPickerView: View {
     let connectors: [Connector]
     let preferredModel: String?
     let preferredEffort: String?
-    let onSelect: (ProviderId, String, String) -> Void
+    let onSelect: (ProviderBackendId, String, String) -> Void
 
     var body: some View {
         Menu {
@@ -54,22 +54,22 @@ struct ModelPickerView: View {
         connectors.contains { $0.connection != nil }
     }
 
-    private func providerMenu(_ provider: ProviderId, _ connection: ConnectorConnection) -> some View {
+    private func providerMenu(_ providerBackendId: ProviderBackendId, _ connection: ConnectorConnection) -> some View {
         Menu {
             ForEach(connection.status.models, id: \.id) { item in
-                modelMenu(provider, connection, item)
+                modelMenu(providerBackendId, connection, item)
             }
         } label: {
-            menuLabel(provider.label, checked: connection.preferred)
+            menuLabel(providerBackendId.label, checked: connection.preferred)
         }
     }
 
     @ViewBuilder
-    private func modelMenu(_ provider: ProviderId, _ connection: ConnectorConnection, _ item: Model) -> some View {
+    private func modelMenu(_ providerBackendId: ProviderBackendId, _ connection: ConnectorConnection, _ item: Model) -> some View {
         let isCurrentModel = connection.preferred && connection.preferModel == item.id
         if item.supportedReasoningEfforts.isEmpty {
             Button {
-                onSelect(provider, item.id, item.defaultReasoningEffort)
+                onSelect(providerBackendId, item.id, item.defaultReasoningEffort)
             } label: {
                 menuLabel(item.name, checked: isCurrentModel)
             }
@@ -77,7 +77,7 @@ struct ModelPickerView: View {
             Menu {
                 ForEach(item.supportedReasoningEfforts, id: \.self) { effort in
                     Button {
-                        onSelect(provider, item.id, effort)
+                        onSelect(providerBackendId, item.id, effort)
                     } label: {
                         menuLabel(effort, checked: isCurrentModel && connection.preferEffort == effort)
                     }

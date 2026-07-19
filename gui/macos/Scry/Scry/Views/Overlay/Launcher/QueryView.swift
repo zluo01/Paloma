@@ -29,7 +29,7 @@ struct QueryView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.secondary)
@@ -39,7 +39,7 @@ struct QueryView: View {
                 .focused($focused)
                 .task(id: query) {
                     if !query.isEmpty {
-                        guard (try? await Task.sleep(for: .milliseconds(150))) != nil else { return }
+                        guard await (try? Task.sleep(for: .milliseconds(150))) != nil else { return }
                     }
                     onSearch(query)
                 }

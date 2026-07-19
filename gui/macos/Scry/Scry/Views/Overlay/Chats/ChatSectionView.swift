@@ -21,9 +21,9 @@ struct ChatSectionView: View {
                     .padding(.vertical, 7)
                     .background(.selection, in: RoundedRectangle(cornerRadius: 12))
             }
-        case let .assistant(_, provider, text):
+        case let .assistant(_, providerBackendId, text):
             VStack(alignment: .leading, spacing: 3) {
-                Text(provider.label)
+                Text(providerBackendId.label)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                 MessageText(text: text)

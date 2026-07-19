@@ -11,7 +11,7 @@ struct FooterView: View {
     let mode: OverlayMode
     let onOpenSettings: () -> Void
     let onOpenSession: () -> Void
-    let onSelectModel: (ProviderId, String, String) -> Void
+    let onSelectModel: (ProviderBackendId, String, String) -> Void
 
     private var hints: String {
         switch mode {

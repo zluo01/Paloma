@@ -8,20 +8,20 @@ import SwiftUI
 
 struct ServiceConnectionDialog: View {
     let model: ServiceModel
-    let provider: ProviderId
+    let providerBackendId: ProviderBackendId
     let onClose: () -> Void
     @State private var key = ""
     @State private var phase: ServiceConnectionPhase = .loading
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Connect \(provider.label)")
+            Text("Connect \(providerBackendId.label)")
                 .font(.headline)
             content
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) {
-                    model.cancelConnection()
+                    model.cancelConnection(providerBackendId)
                     onClose()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -35,11 +35,11 @@ struct ServiceConnectionDialog: View {
         .padding(20)
         .frame(width: 420)
         .task {
-            phase = await model.initConnection(provider)
+            phase = await model.initConnection(providerBackendId)
             // challenge should trigger finalization automatically
             if case .challenge = phase {
-                guard let payload = phase.connection() else { return }
-                phase = await model.finalizeConnection(provider, payload: payload)
+                guard let (method, payload) = phase.finalizePayload() else { return }
+                phase = await model.finalizeConnection(method, providerBackendId, payload)
             }
         }
     }
@@ -53,13 +53,13 @@ struct ServiceConnectionDialog: View {
     }
 
     private func submit() {
-        guard let payload = phase.connection(input: key.trimmingCharacters(in: .whitespaces)) else {
+        guard let (method, payload) = phase.finalizePayload(input: key.trimmingCharacters(in: .whitespaces)) else {
             return
         }
         // Back to the loading page while finalize runs
         phase = .loading
         Task {
-            phase = await model.finalizeConnection(provider, payload: payload)
+            phase = await model.finalizeConnection(method, providerBackendId, payload)
         }
     }
 
