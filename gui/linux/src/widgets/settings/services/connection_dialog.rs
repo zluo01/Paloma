@@ -44,7 +44,7 @@ impl ConnectionDialog {
 
         let tx = dispatcher.clone();
         dialog.connect_closed(move |_| {
-            let _ = tx.unbounded_send(Msg::DialogClosed);
+            let _ = tx.unbounded_send(Msg::DialogClosed(provider_backend_id.clone()));
         });
 
         Self {

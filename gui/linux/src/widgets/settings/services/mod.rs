@@ -404,12 +404,13 @@ impl ServicesPage {
                 self.with_dialog(|dialog| dialog.show_error(&error_msg))
             },
             Command::CloseConnectionDialog => self.with_dialog(|dialog| dialog.close()),
-            Command::DropConnectionDialog => {
+            Command::DropConnectionDialog(provider_backend_id) => {
                 *self.connection_dialog.borrow_mut() = None;
                 // Cancel the abandoned flow at its next await point; anything
                 // it already sent is filtered by the model's provider guard.
                 if let Some(flow) = self.connection_flow.borrow_mut().take() {
                     flow.abort();
+                    self.cancel_connection(provider_backend_id);
                 }
             },
         }
@@ -428,6 +429,15 @@ impl ServicesPage {
         if let Some(old) = self.connection_flow.borrow_mut().replace(handle) {
             old.abort();
         }
+    }
+
+    fn cancel_connection(&self, provider_backend_id: ProviderBackendId) {
+        let app_context = self.app_context.clone();
+        drop(tokio_runtime().spawn(async move {
+            if let Err(e) = app_context.cancel_connection(provider_backend_id).await {
+                log::warn!("failed to cancel connection: {e}");
+            }
+        }));
     }
 
     fn disconnect_provider(&self, provider_backend_id: ProviderBackendId) {

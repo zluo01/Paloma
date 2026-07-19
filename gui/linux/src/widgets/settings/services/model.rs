@@ -33,7 +33,7 @@ pub(super) enum Msg {
         response: Result<(), AppError>,
     },
     CloseDialogClicked,
-    DialogClosed,
+    DialogClosed(ProviderBackendId),
 }
 
 pub(super) enum Command {
@@ -72,7 +72,7 @@ pub(super) enum Command {
         payload: String,
     },
     CloseConnectionDialog,
-    DropConnectionDialog,
+    DropConnectionDialog(ProviderBackendId),
 }
 
 impl Model {
@@ -224,9 +224,9 @@ impl Model {
                 }
             },
             Msg::CloseDialogClicked => vec![Command::CloseConnectionDialog],
-            Msg::DialogClosed => {
+            Msg::DialogClosed(provider_backend_id) => {
                 self.connecting = None;
-                vec![Command::DropConnectionDialog]
+                vec![Command::DropConnectionDialog(provider_backend_id)]
             },
         }
     }
@@ -458,8 +458,11 @@ mod tests {
         ));
 
         // The auto-close reports back and frees the flow.
-        let cmds = model.update(Msg::DialogClosed);
-        assert!(matches!(cmds.as_slice(), [Command::DropConnectionDialog]));
+        let cmds = model.update(Msg::DialogClosed(codex()));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::DropConnectionDialog(id)] if *id == codex()
+        ));
         assert!(model.connecting.is_none());
     }
 
@@ -505,8 +508,11 @@ mod tests {
             [Command::ShowSuccess, Command::FetchConnectors]
         ));
 
-        let cmds = model.update(Msg::DialogClosed);
-        assert!(matches!(cmds.as_slice(), [Command::DropConnectionDialog]));
+        let cmds = model.update(Msg::DialogClosed(anthropic()));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::DropConnectionDialog(id)] if *id == anthropic()
+        ));
         assert!(model.connecting.is_none());
     }
 
@@ -561,8 +567,11 @@ mod tests {
         let cmds = model.update(Msg::CloseDialogClicked);
         assert!(matches!(cmds.as_slice(), [Command::CloseConnectionDialog]));
 
-        let cmds = model.update(Msg::DialogClosed);
-        assert!(matches!(cmds.as_slice(), [Command::DropConnectionDialog]));
+        let cmds = model.update(Msg::DialogClosed(codex()));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::DropConnectionDialog(id)] if *id == codex()
+        ));
         assert!(model.connecting.is_none());
     }
 
@@ -601,7 +610,7 @@ mod tests {
     fn abandoned_flow_drops_stale_init_results_and_submits() {
         let mut model = connecting(codex());
         // Esc while still loading.
-        let _ = model.update(Msg::DialogClosed);
+        let _ = model.update(Msg::DialogClosed(codex()));
 
         assert!(
             model
@@ -622,7 +631,7 @@ mod tests {
     #[test]
     fn abandoned_flow_warns_on_stale_failures() {
         let mut model = connecting(codex());
-        let _ = model.update(Msg::DialogClosed);
+        let _ = model.update(Msg::DialogClosed(codex()));
 
         let cmds = model.update(Msg::InitFinished(codex(), Err(error("boom"))));
         assert!(matches!(cmds.as_slice(), [Command::Warn(_)]));
@@ -637,7 +646,7 @@ mod tests {
     #[test]
     fn abandoned_flow_success_still_refreshes_the_page() {
         let mut model = connecting(codex());
-        let _ = model.update(Msg::DialogClosed);
+        let _ = model.update(Msg::DialogClosed(codex()));
 
         let cmds = model.update(Msg::FinalizeFinished {
             provider_backend_id: codex(),
@@ -650,7 +659,7 @@ mod tests {
     fn results_from_a_previous_flow_cannot_touch_the_next_session() {
         // Codex flow abandoned mid-finalize, Anthropic flow opened right after.
         let mut model = connecting(codex());
-        let _ = model.update(Msg::DialogClosed);
+        let _ = model.update(Msg::DialogClosed(codex()));
         let cmds = model.update(Msg::ConnectClicked(anthropic()));
         assert!(matches!(
             cmds.as_slice(),
