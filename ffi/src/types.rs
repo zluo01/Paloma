@@ -10,9 +10,10 @@
 use std::collections::HashMap;
 
 pub use scry_core::{
-    Action, ActionOutcome, Connector, ConnectorConnection, HealthLevel, HealthStatus, ImageFormat,
-    McpServer, Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderId,
-    ProviderStatus, SessionListItem, Transport, UserDecision,
+    Action, ActionOutcome, Connector, ConnectorConnection, HealthLevel, HealthStatus, IconRef,
+    Item, McpServer, Model, Permission, PermissionState, Plugin, PluginArgs, PluginType,
+    ProviderAuthMethod, ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem,
+    Transport, UserDecision,
 };
 use uuid::Uuid;
 
@@ -25,12 +26,18 @@ uniffi::custom_type!(Uuid, String, {
     try_lift: |value| Ok(Uuid::parse_str(&value)?),
 });
 
+#[uniffi::remote(Record)]
+pub struct ProviderBackendId {
+    pub provider_id: String,
+    pub backend_id: String,
+}
+
 #[uniffi::remote(Enum)]
-pub enum ProviderId {
-    Codex,
-    ClaudeCode,
-    OpenAI,
-    Anthropic,
+pub enum ProviderAuthMethod {
+    Unknown,
+    ApiKey,
+    DeviceCode,
+    BrowserOauth,
 }
 
 #[uniffi::remote(Enum)]
@@ -51,6 +58,7 @@ pub enum HealthLevel {
 #[uniffi::remote(Enum)]
 pub enum PluginType {
     Native,
+    Provider,
     Mcp,
 }
 
@@ -82,6 +90,15 @@ pub struct McpServer {
     pub description: String,
     pub status: HealthStatus,
     pub error: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ProviderInfo {
+    pub name: String,
+    pub description: String,
+    pub status: HealthStatus,
+    pub error: Option<String>,
+    pub config: Option<Plugin>,
 }
 
 #[uniffi::remote(Record)]
@@ -143,12 +160,18 @@ pub enum ActionOutcome {
 }
 
 #[uniffi::remote(Enum)]
-pub enum ImageFormat {
-    Png,
-    Jpeg,
-    Svg,
-    Webp,
-    Gif,
+pub enum IconRef {
+    Name(String),
+    Path(String),
+    Embedded(Vec<u8>),
+}
+
+#[uniffi::remote(Record)]
+pub struct Item {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub icon: Option<IconRef>,
+    pub actions: Vec<Action>,
 }
 
 #[uniffi::remote(Record)]
@@ -176,121 +199,48 @@ pub struct ConnectorConnection {
 
 #[uniffi::remote(Record)]
 pub struct Connector {
-    pub id: ProviderId,
+    pub id: ProviderBackendId,
+    pub description: String,
+    pub icon: Option<IconRef>,
     pub connection: Option<ConnectorConnection>,
 }
 
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum Connection {
-    /// User opens a URL and types a code into the page. The whole value must
-    /// be passed back to `finalize_connection` unchanged.
     DeviceCode {
-        verification_uri: String,
+        verification_url: String,
         user_code: String,
-        transaction_payload_json: String,
+        transaction_payload: String,
     },
-    /// User opens the URL; the browser redirects back to a local callback.
-    /// Pass the same value back to `finalize_connection` to complete it.
-    BrowserRedirect { authorization_url: String },
-    /// User pastes an API key; construct this with the entered key and pass
-    /// it to `finalize_connection`.
+    BrowserRedirect {
+        authorization_url: String,
+    },
     ManualInput {
-        api_key: String,
         instructions_url: Option<String>,
     },
 }
 
-impl From<scry_core::Connection> for Connection {
-    fn from(value: scry_core::Connection) -> Self {
-        match value {
-            scry_core::Connection::DeviceCode {
-                verification_uri,
-                user_code,
-                transaction_payload,
-            } => Self::DeviceCode {
-                verification_uri: verification_uri.to_owned(),
-                user_code,
-                transaction_payload_json: transaction_payload.to_string(),
-            },
-            scry_core::Connection::BrowserRedirect { authorization_url } => {
-                Self::BrowserRedirect { authorization_url }
-            },
-            scry_core::Connection::ManualInput {
-                api_key,
-                instructions_url,
-            } => Self::ManualInput {
-                api_key,
-                instructions_url,
-            },
-        }
-    }
-}
-
-impl TryFrom<Connection> for scry_core::Connection {
+impl TryFrom<scry_core::ConnectionPayload> for Connection {
     type Error = ScryError;
 
-    fn try_from(value: Connection) -> Result<Self, Self::Error> {
-        match value {
-            Connection::DeviceCode {
-                verification_uri,
-                user_code,
-                transaction_payload_json,
-            } => Ok(Self::DeviceCode {
-                // Core models this as &'static str because providers hard-code
-                // it; after the FFI round-trip it is runtime data, so leak it.
-                // Bounded: a few bytes once per device-code finalize.
-                verification_uri: Box::leak(verification_uri.into_boxed_str()),
-                user_code,
-                transaction_payload: serde_json::from_str(&transaction_payload_json).map_err(
-                    |e| ScryError::new(format!("invalid device-code transaction payload: {e}")),
-                )?,
+    fn try_from(value: scry_core::ConnectionPayload) -> Result<Self, Self::Error> {
+        use scry_core::connection_payload::Payload;
+        match value.payload {
+            Some(Payload::DeviceCode(device_code)) => Ok(Self::DeviceCode {
+                verification_url: device_code.verification_url,
+                user_code: device_code.user_code,
+                transaction_payload: device_code.transaction_payload,
             }),
-            Connection::BrowserRedirect { authorization_url } => {
-                Ok(Self::BrowserRedirect { authorization_url })
-            },
-            Connection::ManualInput {
-                api_key,
-                instructions_url,
-            } => Ok(Self::ManualInput {
-                api_key,
-                instructions_url,
+            Some(Payload::BrowserRedirect(redirect)) => Ok(Self::BrowserRedirect {
+                authorization_url: redirect.authorization_url,
             }),
-        }
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Enum)]
-pub enum IconRef {
-    Name { name: String },
-    Path { path: String },
-    Embedded { format: ImageFormat, data: Vec<u8> },
-}
-
-impl From<scry_core::IconRef> for IconRef {
-    fn from(value: scry_core::IconRef) -> Self {
-        match value {
-            scry_core::IconRef::Name(name) => Self::Name { name },
-            scry_core::IconRef::Path(path) => Self::Path { path },
-            scry_core::IconRef::Embedded { format, data } => Self::Embedded { format, data },
-        }
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct Item {
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub icon: Option<IconRef>,
-    pub actions: Vec<Action>,
-}
-
-impl From<scry_core::Item> for Item {
-    fn from(value: scry_core::Item) -> Self {
-        Self {
-            title: value.title,
-            subtitle: value.subtitle,
-            icon: value.icon.map(Into::into),
-            actions: value.actions,
+            Some(Payload::ManualInput(manual_input)) => Ok(Self::ManualInput {
+                instructions_url: manual_input.instructions_url,
+            }),
+            // should not happen, this indicates a provider plugin bug.
+            None => Err(ScryError::new(
+                "provider returned an empty connection payload",
+            )),
         }
     }
 }
@@ -317,7 +267,7 @@ impl From<scry_core::SearchRenderEvent> for SearchRenderEvent {
                 response: QueryResponse {
                     id: response.id.to_owned(),
                     name: response.name,
-                    items: response.items.into_iter().map(Into::into).collect(),
+                    items: response.items,
                 },
             },
         }
@@ -330,7 +280,7 @@ pub enum ChatRenderEvent {
         text: String,
     },
     TextDelta {
-        provider_id: ProviderId,
+        provider_backend_id: ProviderBackendId,
         text: String,
     },
     ReasoningDelta {
@@ -348,8 +298,12 @@ impl From<scry_core::ChatRenderEvent> for ChatRenderEvent {
     fn from(value: scry_core::ChatRenderEvent) -> Self {
         match value {
             scry_core::ChatRenderEvent::UserPrompt { text } => Self::UserPrompt { text },
-            scry_core::ChatRenderEvent::TextDelta { provider_id, text } => {
-                Self::TextDelta { provider_id, text }
+            scry_core::ChatRenderEvent::TextDelta {
+                provider_backend_id,
+                text,
+            } => Self::TextDelta {
+                provider_backend_id,
+                text,
             },
             scry_core::ChatRenderEvent::ReasoningDelta { text } => Self::ReasoningDelta { text },
             scry_core::ChatRenderEvent::ToolCall {
