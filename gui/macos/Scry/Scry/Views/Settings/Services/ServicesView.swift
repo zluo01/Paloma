@@ -37,7 +37,12 @@ struct ServicesView: View {
                 ForEach(model.available, id: \.id) { connector in
                     HStack(spacing: 12) {
                         IconView(icon: connector.icon)
-                        Text(connector.id.label)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(connector.id.label)
+                            Text(connector.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Button("Connect") {
                             connectingProvider = connector.id

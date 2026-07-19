@@ -46,8 +46,8 @@ struct ServiceRowView: View {
     @ViewBuilder
     private var statusText: some View {
         switch connection?.status.status {
-        case .running:
-            Text("Connected").font(.caption).foregroundStyle(.green)
+        case .running, nil:
+            Text(connector.description).font(.caption).foregroundStyle(.secondary)
         case .unhealthy:
             Text(connection?.status.error ?? "Connection error")
                 .font(.caption)
@@ -55,8 +55,6 @@ struct ServiceRowView: View {
                 .lineLimit(2)
         case .starting:
             Text("Connecting…").font(.caption).foregroundStyle(.secondary)
-        case nil:
-            EmptyView()
         }
     }
 
