@@ -1,3 +1,4 @@
+use log::error;
 use scry_provider_protocol::v1::ToolDefinition;
 use serde_json::Value;
 use uuid::Uuid;
@@ -73,6 +74,8 @@ pub trait Tool: Capability {
         args: Self::Args,
     ) -> Result<ToolResult, String>;
 
+    async fn cancel_session(&self, session_id: Uuid);
+
     fn specs(&self) -> Vec<ToolSpec> {
         vec![ToolSpec {
             name: Self::NAME.into(),
@@ -142,6 +145,8 @@ pub trait DynTool: Send + Sync {
         call_id: String,
         args: Value,
     ) -> Result<ToolResult, String>;
+
+    async fn cancel_session(&self, session_id: Uuid);
 }
 
 #[async_trait::async_trait]
@@ -169,6 +174,10 @@ where
         let parsed: T::Args = serde_json::from_value(args).map_err(|e| e.to_string())?;
         Tool::invoke(self, session_id, call_id, parsed).await
     }
+
+    async fn cancel_session(&self, session_id: Uuid) {
+        Tool::cancel_session(self, session_id).await
+    }
 }
 
 pub struct Placeholder;
@@ -191,5 +200,9 @@ impl DynTool for Placeholder {
         _args: Value,
     ) -> Result<ToolResult, String> {
         Err("tool is still starting".to_string())
+    }
+
+    async fn cancel_session(&self, _session_id: Uuid) {
+        error!("placeholder tool get cancel during startup. This indicates a bug.")
     }
 }

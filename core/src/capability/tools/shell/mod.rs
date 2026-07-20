@@ -1,10 +1,8 @@
-mod process_manager;
+mod process_controller;
 
 use std::path::PathBuf;
 
-pub use process_manager::{
-    ProcessExecRequest, ProcessManager, ProcessManagerClient, ProcessManagerError,
-};
+use process_controller::{ProcessController, ProcessExecRequest};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -49,17 +47,18 @@ pub struct ShellArgs {
     /// mechanics. Examples:
     ///   "Lists installed Firefox packages"
     ///   "Compiles the workspace in release mode"
-    ///   "Searches the codebase for TODO comments"
     pub description: String,
 }
 
 pub struct Shell {
-    client: ProcessManagerClient,
+    process_controller: ProcessController,
 }
 
 impl Shell {
-    pub fn new(client: ProcessManagerClient) -> Self {
-        Self { client }
+    pub fn new() -> Self {
+        Self {
+            process_controller: ProcessController::new(),
+        }
     }
 }
 
@@ -103,7 +102,14 @@ impl Tool for Shell {
             cwd: workdir,
         };
 
-        self.client.exec(request).await.map_err(|e| e.to_string())
+        self.process_controller
+            .exec(request)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn cancel_session(&self, session_id: Uuid) {
+        self.process_controller.cancel_session(session_id)
     }
 }
 
@@ -130,13 +136,7 @@ fn resolve_workdir(workdir: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{process_manager::ProcessManager, *};
-
-    fn spawn_shell() -> Shell {
-        let (mut pm, client) = ProcessManager::new();
-        tokio::spawn(async move { pm.run().await });
-        Shell::new(client)
-    }
+    use super::*;
 
     #[test]
     fn validate_argv_rejects_empty_argv() {
@@ -153,7 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn invoke_rejects_relative_workdir() {
-        let tool = spawn_shell();
+        let tool = Shell::new();
         let actual = tool
             .invoke(
                 Uuid::now_v7(),
@@ -174,7 +174,7 @@ mod tests {
 
     #[tokio::test]
     async fn invoke_delegates_to_process_manager() {
-        let tool = spawn_shell();
+        let tool = Shell::new();
         let result = tool
             .invoke(
                 Uuid::now_v7(),

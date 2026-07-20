@@ -5,7 +5,6 @@ use scry_utils::Element;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
-    sync::{mpsc, oneshot},
     time::timeout,
 };
 use uuid::Uuid;
@@ -15,8 +14,6 @@ use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
 };
 
-/// Bounded mpsc capacity for the actor's incoming event queue.
-const PROCESS_MANAGER_CHANNEL_CAPACITY: usize = 128;
 /// Wall-clock budget for a single command before it is force-killed.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// Grace period to flush buffered pipe bytes after the process group is killed.
@@ -25,73 +22,28 @@ const IO_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const READ_BUFFER_BYTES: usize = 8 * 1024;
 
 #[derive(Debug)]
-pub struct ProcessExecRequest {
+pub(crate) struct ProcessExecRequest {
     pub session_id: Uuid,
     pub call_id: String,
     pub command: Vec<String>,
     pub cwd: PathBuf,
 }
 
-#[derive(Debug)]
-pub enum ProcessManagerEvent {
-    Exec {
-        request: ProcessExecRequest,
-        reply: oneshot::Sender<Result<ToolResult>>,
-    },
-    CancelSession {
-        session_id: Uuid,
-        reply: oneshot::Sender<Result<()>>,
-    },
-}
-
-pub struct ProcessManager {
+pub(crate) struct ProcessController {
     sessions: Arc<DashMap<Uuid, Vec<i32>>>,
-    event_rx: mpsc::Receiver<ProcessManagerEvent>,
 }
 
-#[derive(Clone)]
-pub struct ProcessManagerClient {
-    event_tx: mpsc::Sender<ProcessManagerEvent>,
-}
-
-impl ProcessManager {
-    pub fn new() -> (Self, ProcessManagerClient) {
-        let (event_tx, event_rx) = mpsc::channel(PROCESS_MANAGER_CHANNEL_CAPACITY);
-        let manager = Self {
+impl ProcessController {
+    pub(crate) fn new() -> Self {
+        Self {
             sessions: Arc::new(DashMap::new()),
-            event_rx,
-        };
-        let client = ProcessManagerClient { event_tx };
-        (manager, client)
-    }
-
-    pub async fn run(&mut self) {
-        while let Some(event) = self.event_rx.recv().await {
-            self.handle_event(event);
         }
     }
 
-    fn handle_event(&mut self, event: ProcessManagerEvent) {
-        match event {
-            ProcessManagerEvent::Exec { request, reply } => {
-                self.handle_exec(request, reply);
-            },
-            ProcessManagerEvent::CancelSession { session_id, reply } => {
-                self.cancel_session(session_id);
-                let _ = reply.send(Ok(()));
-            },
-        }
-    }
-
-    fn handle_exec(
-        &mut self,
-        request: ProcessExecRequest,
-        reply: oneshot::Sender<Result<ToolResult>>,
-    ) {
+    pub(crate) async fn exec(&self, request: ProcessExecRequest) -> Result<ToolResult> {
         if request.command.is_empty() {
-            let _ = reply.send(Err(ProcessManagerError::Spawn("empty command".into())));
-            return;
-        };
+            return Err(ProcessControllerError::Spawn("empty command".into()));
+        }
         let mut cmd = Command::new(&request.command[0]);
         cmd.args(&request.command[1..])
             .current_dir(&request.cwd)
@@ -104,13 +56,9 @@ impl ProcessManager {
         #[cfg(unix)]
         cmd.process_group(0);
 
-        let child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = reply.send(Err(ProcessManagerError::Spawn(e.to_string())));
-                return;
-            },
-        };
+        let child = cmd
+            .spawn()
+            .map_err(|e| ProcessControllerError::Spawn(e.to_string()))?;
 
         let pgid = child.id().map(|id| id as i32);
         match pgid {
@@ -145,16 +93,18 @@ impl ProcessManager {
 
         let sessions = self.sessions.clone();
         let session_id = request.session_id;
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let result = run_to_completion(child, request, spill_paths).await;
             if let Some(pgid) = pgid {
                 remove_pid(&sessions, session_id, pgid);
             }
-            let _ = reply.send(Ok(result));
+            result
         });
+        task.await
+            .map_err(|e| ProcessControllerError::Task(e.to_string()))
     }
 
-    fn cancel_session(&mut self, session_id: Uuid) {
+    pub(crate) fn cancel_session(&self, session_id: Uuid) {
         if let Some((_, pids)) = self.sessions.remove(&session_id) {
             for pid in pids {
                 kill_process_group(pid);
@@ -163,46 +113,16 @@ impl ProcessManager {
     }
 }
 
-impl ProcessManagerClient {
-    pub async fn exec(&self, request: ProcessExecRequest) -> Result<ToolResult> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(ProcessManagerEvent::Exec {
-                request,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| ProcessManagerError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| ProcessManagerError::ChannelClosed)?
-    }
-
-    pub async fn cancel_session(&self, session_id: Uuid) -> Result<()> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.event_tx
-            .send(ProcessManagerEvent::CancelSession {
-                session_id,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| ProcessManagerError::ChannelClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| ProcessManagerError::ChannelClosed)?
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
-pub enum ProcessManagerError {
-    #[error("process manager channel closed")]
-    ChannelClosed,
-
+pub enum ProcessControllerError {
     #[error("failed to spawn process: {0}")]
     Spawn(String),
+
+    #[error("process task failed: {0}")]
+    Task(String),
 }
 
-type Result<T> = std::result::Result<T, ProcessManagerError>;
+type Result<T> = std::result::Result<T, ProcessControllerError>;
 
 fn remove_pid(sessions: &DashMap<Uuid, Vec<i32>>, session_id: Uuid, pid: i32) {
     let became_empty = match sessions.get_mut(&session_id) {
@@ -459,16 +379,10 @@ fn format_stream(name: &'static str, s: &CapturedStream) -> Element {
 mod tests {
     use super::*;
 
-    fn spawn_pm() -> ProcessManagerClient {
-        let (mut pm, client) = ProcessManager::new();
-        tokio::spawn(async move { pm.run().await });
-        client
-    }
-
     #[tokio::test]
     async fn exec_returns_stdout_and_exit_code() {
-        let client = spawn_pm();
-        let result = client
+        let pm = ProcessController::new();
+        let result = pm
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
                 call_id: "call_stdout".into(),
@@ -491,8 +405,8 @@ mod tests {
 
     #[tokio::test]
     async fn exec_returns_nonzero_exit_for_failing_command() {
-        let client = spawn_pm();
-        let result = client
+        let pm = ProcessController::new();
+        let result = pm
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
                 call_id: "call_exit".into(),
@@ -510,8 +424,8 @@ mod tests {
 
     #[tokio::test]
     async fn exec_reports_spawn_failure() {
-        let client = spawn_pm();
-        let err = client
+        let pm = ProcessController::new();
+        let err = pm
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
                 call_id: "call_spawn_fail".into(),
@@ -521,14 +435,14 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, ProcessManagerError::Spawn(_)));
+        assert!(matches!(err, ProcessControllerError::Spawn(_)));
     }
 
     #[tokio::test]
     async fn cancel_session_kills_running_command() {
-        let client = spawn_pm();
+        let pm = ProcessController::new();
         let session_id = Uuid::now_v7();
-        let cmd = client.exec(ProcessExecRequest {
+        let cmd = pm.exec(ProcessExecRequest {
             session_id,
             call_id: "call_cancel".into(),
             // 30s sleep — would normally time out at COMMAND_TIMEOUT or
@@ -537,10 +451,11 @@ mod tests {
             cwd: std::env::current_dir().unwrap(),
         });
 
-        // Cancel after a short delay so the spawn has time to land.
+        // Give the child a moment to become its own process-group leader
+        // before killing the group.
         let cancel = async {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            client.cancel_session(session_id).await.unwrap();
+            pm.cancel_session(session_id);
         };
 
         let (result, _) = tokio::join!(cmd, cancel);
@@ -559,9 +474,9 @@ mod tests {
     async fn exec_spills_when_output_exceeds_payload_cap() {
         // Twice the payload cap of stdout — expect truncated="true", a
         // full_output path keyed by call_id, and the body to end in "...".
-        let client = spawn_pm();
+        let pm = ProcessController::new();
         let bytes = MAX_STREAM_PAYLOAD_BYTES * 2;
-        let result = client
+        let result = pm
             .exec(ProcessExecRequest {
                 session_id: Uuid::now_v7(),
                 call_id: "call_spill".into(),

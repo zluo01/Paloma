@@ -4,7 +4,6 @@ use futures::Stream;
 use uuid::Uuid;
 
 use crate::{
-    capability::ProcessManager,
     controller::{
         PermissionWorkflowManager, PluginConnectionController, PluginConnectionError,
         ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SearchQuery,
@@ -106,13 +105,9 @@ impl AppContext {
             PermissionWorkflowManager::new(permission_controller);
         tokio::spawn(async move { permission_workflow_manager.run().await });
 
-        let (mut process_manager, process_manager_client) = ProcessManager::new();
-        tokio::spawn(async move { process_manager.run().await });
-
         let tool_controller = ToolController::new(
             storage.clone(),
             http.clone(),
-            process_manager_client,
             permission_workflow_client.clone(),
         )
         .await;

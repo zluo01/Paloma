@@ -254,6 +254,8 @@ impl DynTool for McpTool {
             truncate_payload(&tool, &call_id, text).await,
         ))
     }
+
+    async fn cancel_session(&self, _session_id: Uuid) {}
 }
 
 /// Truncate payload if exceed [`MAX_STREAM_PAYLOAD_BYTES`] to prevent

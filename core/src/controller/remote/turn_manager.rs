@@ -372,7 +372,7 @@ impl TurnManager {
         {
             warn!("turn {session_id}: provider cancel_chat failed: {err}");
         }
-        self.tool_controller.cancel_session(session_id).await?;
+        self.tool_controller.cancel_session(session_id).await;
         Ok(true)
     }
 
@@ -389,7 +389,7 @@ impl TurnManager {
             {
                 warn!("turn {session_id}: provider cancel_chat failed: {err}");
             }
-            self.tool_controller.cancel_session(session_id).await?;
+            self.tool_controller.cancel_session(session_id).await;
         }
         Ok(())
     }

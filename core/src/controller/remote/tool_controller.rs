@@ -9,10 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    capability::{
-        DynTool, McpTool, Placeholder, ProcessManagerClient, ProcessManagerError, Shell, Tool,
-        ToolResult, ToolSchema, ToolSpec,
-    },
+    capability::{DynTool, McpTool, Placeholder, Shell, Tool, ToolResult, ToolSchema, ToolSpec},
     controller::remote::PermissionWorkflowManagerClient,
     db::{Storage, StorageError},
     entity::{HealthStatus, Plugin, PluginType},
@@ -30,7 +27,6 @@ pub struct ToolController {
     tool_specs: RwLock<Arc<BTreeMap<String, ToolSpec>>>,
     storage: Storage,
     request_client: reqwest::Client,
-    process_manager_client: ProcessManagerClient,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
 
@@ -45,13 +41,12 @@ impl ToolController {
     pub async fn new(
         storage: Storage,
         request_client: reqwest::Client,
-        process_manager_client: ProcessManagerClient,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Arc<Self> {
         let handlers: DashMap<String, Arc<dyn DynTool>> = DashMap::new();
         let mut tool_specs: BTreeMap<String, ToolSpec> = BTreeMap::new();
 
-        let shell: Arc<dyn DynTool> = Arc::new(Shell::new(process_manager_client.clone()));
+        let shell: Arc<dyn DynTool> = Arc::new(Shell::new());
         for spec in shell.specs().await.unwrap() {
             tool_specs.insert(spec.schema.name.clone(), spec);
         }
@@ -70,7 +65,6 @@ impl ToolController {
             tool_specs: RwLock::new(Arc::new(tool_specs)),
             storage: storage.clone(),
             request_client: request_client.clone(),
-            process_manager_client,
             permission_workflow_client,
         });
 
@@ -300,11 +294,12 @@ impl ToolController {
         }
     }
 
-    pub async fn cancel_session(&self, session_id: Uuid) -> Result<()> {
-        self.process_manager_client
-            .cancel_session(session_id)
-            .await?;
-        Ok(())
+    pub async fn cancel_session(&self, session_id: Uuid) {
+        let tools: Vec<Arc<dyn DynTool>> =
+            self.handlers.iter().map(|e| e.value().clone()).collect();
+        for tool in tools {
+            tool.cancel_session(session_id).await;
+        }
     }
 }
 
@@ -312,9 +307,6 @@ impl ToolController {
 pub enum ToolControllerError {
     #[error(transparent)]
     Storage(#[from] StorageError),
-
-    #[error(transparent)]
-    ProcessManager(#[from] ProcessManagerError),
 
     #[error("fail to initialize mcp plugin: {}", reason.as_deref().unwrap_or("unknown error"))]
     FailToInitialize { reason: Option<String> },
