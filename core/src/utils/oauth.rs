@@ -97,9 +97,10 @@ async fn wait_for_callback(listener: &TcpListener) -> Result<(String, String)> {
         let path = first_line.split_whitespace().nth(1).unwrap_or("/");
         let query = path.split_once('?').map(|(_, query)| query).unwrap_or("");
 
-        let mut params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-            .into_owned()
-            .collect();
+        let mut params: HashMap<String, String> =
+            oauth2::url::form_urlencoded::parse(query.as_bytes())
+                .into_owned()
+                .collect();
 
         if let Some(code) = params.remove("code") {
             let Some(state) = params.remove("state") else {

@@ -21,13 +21,7 @@ oauth2 = { workspace = true }
 open = "5.3.6"
 rayon = "1.12.0"
 regex = "1.12.4"
-reqwest = { version = "0.13.4", default-features = false, features = [
-    "json",
-    "form",
-    "rustls",
-    "http2",
-    "stream",
-] }
+reqwest = { workspace = true }
 rmcp = { version = "2.1.0", default-features = false, features = [
     "client",
     "auth",
@@ -55,7 +49,6 @@ tokio = { workspace = true, features = [
 ] }
 tree-sitter = "0.26.10"
 tree-sitter-bash = "0.25.1"
-url = "2.5.8"
 uuid = { workspace = true, features = ["v7", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -73,4 +66,3 @@ nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["rt", "macros", "test-util", "time"] }
