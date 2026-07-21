@@ -16,7 +16,7 @@ use futures::{
 use log::{error, warn};
 use scry_provider_protocol::{
     Bytes, Message, PROTOCOL_VERSION,
-    transport::{FramedRead, FramedWrite, length_delimited_codec},
+    transport::{FramedRead, FramedWrite, VarintDelimitedCodec},
     v1::{
         BackendAuth, BackendHealthStatusRequest, BackendInitErrorRequest, CancelChatRequest,
         CancelConnectionRequest, ChatRequest, ConnectionPayload, FinalizeConnectionRequest,
@@ -78,7 +78,7 @@ impl ProviderPlugin {
         let health = Arc::clone(&health_status);
         let write_error = Arc::clone(&error);
         tokio::spawn(async move {
-            let mut output = FramedWrite::new(stdin, length_delimited_codec());
+            let mut output = FramedWrite::new(stdin, VarintDelimitedCodec);
             while let Some(request) = writer_rx.recv().await {
                 if let Err(e) = output.send(Bytes::from(request.encode_to_vec())).await {
                     // pipe closed: child is gone
@@ -96,7 +96,7 @@ impl ProviderPlugin {
         let read_error = Arc::clone(&error);
         let name = plugin.name.clone();
         tokio::spawn(async move {
-            let mut input = FramedRead::new(stdout, length_delimited_codec());
+            let mut input = FramedRead::new(stdout, VarintDelimitedCodec);
             while let Some(Ok(frame)) = input.next().await {
                 let response = match ResponseEvent::decode(frame.freeze()) {
                     Ok(response) => response,

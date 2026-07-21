@@ -8,7 +8,7 @@ use futures::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use scry_provider_protocol::{
     Bytes, Message, PROTOCOL_VERSION,
-    transport::{FramedRead, FramedWrite, length_delimited_codec},
+    transport::{FramedRead, FramedWrite, VarintDelimitedCodec},
     v1 as proto,
     v1::{
         ProviderAuth, RequestEvent, ResponseEvent, chat_response,
@@ -72,12 +72,12 @@ impl<F: ProviderRuntime> ProviderRuntimeService<F> {
     /// Run the plugin's stdin/stdout protocol loop until the host closes
     /// stdin; should only be called under a tokio runtime.
     pub async fn serve(self) -> Result<()> {
-        let mut input = FramedRead::new(tokio::io::stdin(), length_delimited_codec());
+        let mut input = FramedRead::new(tokio::io::stdin(), VarintDelimitedCodec);
         let (tx, mut rx) = mpsc::channel::<ResponseEvent>(PROVIDER_INNER_CHANNEL_CAPACITY);
 
         // Writer task: sole owner of stdout. Exits once every sender is dropped.
         let writer = tokio::spawn(async move {
-            let mut output = FramedWrite::new(tokio::io::stdout(), length_delimited_codec());
+            let mut output = FramedWrite::new(tokio::io::stdout(), VarintDelimitedCodec);
             while let Some(response) = rx.recv().await {
                 output.send(Bytes::from(response.encode_to_vec())).await?;
             }

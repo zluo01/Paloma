@@ -1,19 +1,8 @@
+pub mod transport;
+
 pub use prost::{DecodeError, Message, bytes::Bytes};
 
 pub const PROTOCOL_VERSION: u64 = 1;
-
-pub mod transport {
-    use tokio_util::codec::LengthDelimitedCodec;
-    pub use tokio_util::codec::{FramedRead, FramedWrite};
-
-    pub const MAX_FRAME_LENGTH: usize = 16 * 1024 * 1024;
-
-    pub fn length_delimited_codec() -> LengthDelimitedCodec {
-        LengthDelimitedCodec::builder()
-            .max_frame_length(MAX_FRAME_LENGTH)
-            .new_codec()
-    }
-}
 
 pub mod v1 {
     include!(concat!(env!("OUT_DIR"), "/scry.provider.runtime.v1.rs"));
