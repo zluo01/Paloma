@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package scry.provider.runtime.v1;
 
+option java_package = "com.github.zluo01.scry.proto.v1";
+option java_multiple_files = true;
+
 enum ProviderAuthMethod {
   PROVIDER_AUTH_METHOD_UNKNOWN = 0;
   PROVIDER_AUTH_METHOD_API_KEY = 1;
