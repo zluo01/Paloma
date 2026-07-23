@@ -32,23 +32,7 @@ pub struct ProviderController {
 impl ProviderController {
     /// service startup initialization
     pub async fn new(storage: Storage) -> Result<Self> {
-        let connected_providers: HashMap<ProviderBackendId, ProviderAuth> = storage
-            .connected_backends()
-            .await?
-            .into_iter()
-            .map(|cred| {
-                let payload = match cred.auth_kind {
-                    AuthKind::ApiKey => provider_auth::Payload::ApiKey(cred.secret),
-                    AuthKind::Oauth => provider_auth::Payload::RefreshToken(cred.secret),
-                };
-                (
-                    cred.id,
-                    ProviderAuth {
-                        payload: Some(payload),
-                    },
-                )
-            })
-            .collect();
+        let connected_providers = connected_auths(&storage).await?;
 
         let provider_plugins = storage.plugins_by_type(PluginType::Provider).await?;
 
@@ -146,8 +130,10 @@ impl ProviderController {
     }
 
     pub async fn update_provider(&self, plugin: &Plugin) -> Result<()> {
+        // re-init the updated plugin with any auth the user already connected
+        let connected_providers = connected_auths(&self.storage).await?;
         let (detail, provider) =
-            init_provider_plugin(plugin, self.storage.clone(), &HashMap::new()).await?;
+            init_provider_plugin(plugin, self.storage.clone(), &connected_providers).await?;
 
         if provider.health() != HealthStatus::Running {
             return Err(ProviderControllerError::FailToInitialize(
@@ -495,6 +481,26 @@ impl ProviderController {
             .cancel_chat(provider_backend_id.backend_id, session_id.to_string())
             .await?)
     }
+}
+
+async fn connected_auths(storage: &Storage) -> Result<HashMap<ProviderBackendId, ProviderAuth>> {
+    Ok(storage
+        .connected_backends()
+        .await?
+        .into_iter()
+        .map(|cred| {
+            let payload = match cred.auth_kind {
+                AuthKind::ApiKey => provider_auth::Payload::ApiKey(cred.secret),
+                AuthKind::Oauth => provider_auth::Payload::RefreshToken(cred.secret),
+            };
+            (
+                cred.id,
+                ProviderAuth {
+                    payload: Some(payload),
+                },
+            )
+        })
+        .collect())
 }
 
 async fn init_provider_plugin(
