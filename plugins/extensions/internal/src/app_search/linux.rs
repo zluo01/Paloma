@@ -7,9 +7,9 @@ use std::{
 
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{debug, error};
+use scry_extension_protocol::v1::{CapabilityIcon, capability_icon};
 
 use super::{AppEntry, AppSearchBackend};
-use crate::capability::IconRef;
 
 pub(super) struct Platform;
 
@@ -121,7 +121,9 @@ fn decode(de: &DesktopEntry, locales: &[String]) -> Option<AppEntry> {
                 .collect()
         })
         .unwrap_or_default();
-    let icon = de.icon().map(|s| IconRef::Name(s.to_owned()));
+    let icon = de.icon().map(|s| CapabilityIcon {
+        icon: Some(capability_icon::Icon::Name(s.to_owned())),
+    });
     Some(AppEntry {
         name,
         generic_name,

@@ -15,11 +15,13 @@ use log::{debug, error};
 use objc2::rc::autoreleasepool;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-
-use crate::capability::{
-    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
-    native::copy_to_clipboard,
+use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_protocol::v1::{
+    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
+    run_action_response::Behavior,
 };
+
+use crate::utils::copy_to_clipboard;
 
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
@@ -44,24 +46,17 @@ pub struct Clipboard {
 }
 
 impl Capability for Clipboard {
-    fn id(&self) -> &'static str {
-        "clipboard"
-    }
-
     fn metadata(&self) -> CapabilityMeta {
         CapabilityMeta {
-            name: "Clipboard".into(),
+            capability_id: "Clipboard".into(),
             description: "Browse and reuse clipboard history.".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            icon: None,
-            homepage: None,
-            author: None,
+            facet: Facet::Query as i32,
         }
     }
 }
 
 impl QueryHandler for Clipboard {
-    fn query(&self, input: &str) -> Vec<Item> {
+    fn search(&self, input: &str) -> Vec<Item> {
         let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
         let entries = self.history.read().unwrap();
 
@@ -72,10 +67,10 @@ impl QueryHandler for Clipboard {
             .collect()
     }
 
-    fn run(&self, action: Action) -> ActionOutcome {
+    fn run_search_action(&self, action: Action) -> Behavior {
         let Some(text) = action.params.into_iter().next() else {
             error!("action with no payload");
-            return ActionOutcome::Hide;
+            return Behavior::Hide(Hide {});
         };
 
         match action.label.as_str() {
@@ -86,7 +81,7 @@ impl QueryHandler for Clipboard {
             },
         };
 
-        ActionOutcome::Hide
+        Behavior::Hide(Hide {})
     }
 }
 
@@ -144,7 +139,10 @@ fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
     loop {
         buf.clear();
         match reader.read_until(0u8, &mut buf) {
-            Ok(0) => return Ok(()),
+            Ok(0) => {
+                let _ = child.wait();
+                return Ok(());
+            },
             Ok(_) => {
                 if buf.last() == Some(&0u8) {
                     buf.pop();
@@ -156,6 +154,7 @@ fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
             },
             Err(e) => {
                 let _ = child.kill();
+                let _ = child.wait();
                 return Err(e);
             },
         }
@@ -236,7 +235,9 @@ fn build_item(text: &str) -> Item {
     Item {
         title: text.to_owned(),
         subtitle: None,
-        icon: Some(IconRef::Name(ICON_NAME.into())),
+        icon: Some(CapabilityIcon {
+            icon: Some(capability_icon::Icon::Name(ICON_NAME.into())),
+        }),
         actions: SUPPORTED_ACTION_LABELS
             .iter()
             .map(|label| Action {

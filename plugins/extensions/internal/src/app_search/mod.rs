@@ -8,6 +8,7 @@ mod macos;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
+    thread,
     time::Duration,
 };
 
@@ -20,9 +21,10 @@ use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
-
-use crate::capability::{
-    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
+use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_protocol::v1::{
+    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item,
+    run_action_response::Behavior,
 };
 
 /// Contract each platform backend implements on its `Platform` struct.
@@ -55,7 +57,7 @@ struct AppEntry {
     /// name) — kept separate from `exec` so shared path prefixes like
     /// "/Applications" don't make every entry match.
     exec_interest: Option<String>,
-    icon: Option<IconRef>,
+    icon: Option<CapabilityIcon>,
 }
 
 impl AppEntry {
@@ -79,24 +81,17 @@ pub struct AppSearch {
 }
 
 impl Capability for AppSearch {
-    fn id(&self) -> &'static str {
-        "app_search"
-    }
-
     fn metadata(&self) -> CapabilityMeta {
         CapabilityMeta {
-            name: "App Search".to_string(),
+            capability_id: "App Search".to_string(),
             description: "Launch installed applications.".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            icon: None,
-            homepage: None,
-            author: None,
+            facet: Facet::Query as i32,
         }
     }
 }
 
 impl QueryHandler for AppSearch {
-    fn query(&self, input: &str) -> Vec<Item> {
+    fn search(&self, input: &str) -> Vec<Item> {
         let pattern = Pattern::parse(input.trim(), CaseMatching::Ignore, Normalization::Smart);
         if pattern.atoms.is_empty() {
             return Vec::new();
@@ -124,15 +119,15 @@ impl QueryHandler for AppSearch {
         ranked.into_iter().map(|(_, app)| app.to_item()).collect()
     }
 
-    fn run(&self, action: Action) -> ActionOutcome {
+    fn run_search_action(&self, action: Action) -> Behavior {
         Platform::launch(&action.params);
-        ActionOutcome::Hide
+        Behavior::Hide(Hide {})
     }
 }
 
 impl AppSearch {
     pub fn new() -> notify::Result<Self> {
-        let entries = Arc::new(RwLock::new(Platform::load()));
+        let entries: Arc<RwLock<Vec<AppEntry>>> = Arc::new(RwLock::new(Vec::new()));
         let entries_for_watcher = Arc::clone(&entries);
 
         let mut debouncer = new_debouncer(
@@ -165,6 +160,18 @@ impl AppSearch {
                 Ok(_) => info!("watching {path:?}"),
                 Err(e) => warn!("failed to watch {path:?}: {e}"),
             }
+        }
+
+        {
+            let entries = Arc::clone(&entries);
+            thread::Builder::new()
+                .name("scry-appsearch-index".into())
+                .spawn(move || {
+                    let loaded = Platform::load();
+                    info!("indexed {} applications", loaded.len());
+                    *entries.write().unwrap() = loaded;
+                })
+                .expect("spawn app index thread");
         }
 
         Ok(Self {

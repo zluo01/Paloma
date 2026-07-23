@@ -2,11 +2,13 @@ use std::sync::LazyLock;
 
 use log::error;
 use regex::Regex;
-
-use crate::capability::{
-    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
-    native::copy_to_clipboard,
+use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_protocol::v1::{
+    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
+    run_action_response::Behavior,
 };
+
+use crate::utils::copy_to_clipboard;
 
 const MAX_EXPRESSION_BYTES: usize = 1024;
 const ICON_NAME: &str = "accessories-calculator";
@@ -20,34 +22,27 @@ static PI_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bpi\b").exp
 pub struct Calculator;
 
 impl Capability for Calculator {
-    fn id(&self) -> &'static str {
-        "calculator"
-    }
-
     fn metadata(&self) -> CapabilityMeta {
         CapabilityMeta {
-            name: "Calculator".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            capability_id: "Calculator".to_string(),
             description: "Evaluate mathematical expressions.".to_string(),
-            icon: None,
-            homepage: None,
-            author: None,
+            facet: Facet::Query as i32,
         }
     }
 }
 
 impl QueryHandler for Calculator {
-    fn query(&self, input: &str) -> Vec<Item> {
+    fn search(&self, input: &str) -> Vec<Item> {
         evaluate(input)
             .map(|(expression, value)| build_item(expression, value))
             .into_iter()
             .collect()
     }
 
-    fn run(&self, action: Action) -> ActionOutcome {
+    fn run_search_action(&self, action: Action) -> Behavior {
         let Some(text) = action.params.into_iter().next() else {
             error!("calculator: action with no payload");
-            return ActionOutcome::Hide;
+            return Behavior::Hide(Hide {});
         };
 
         match action.label.as_str() {
@@ -55,7 +50,7 @@ impl QueryHandler for Calculator {
             other => error!("calculator: unknown action label: {other}"),
         }
 
-        ActionOutcome::Hide
+        Behavior::Hide(Hide {})
     }
 }
 
@@ -99,7 +94,9 @@ fn build_item(expression: &str, value: String) -> Item {
     Item {
         title: equation.clone(),
         subtitle: None,
-        icon: Some(IconRef::Name(ICON_NAME.into())),
+        icon: Some(CapabilityIcon {
+            icon: Some(capability_icon::Icon::Name(ICON_NAME.into())),
+        }),
         actions: vec![
             Action {
                 label: COPY_RESULT_ACTION_LABEL.into(),
@@ -173,7 +170,7 @@ mod tests {
 
     #[test]
     fn query_returns_item_with_copy_actions() {
-        let items = Calculator.query("2 + 2");
+        let items = Calculator.search("2 + 2");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "2 + 2 = 4");
         assert_eq!(items[0].actions.len(), 2);

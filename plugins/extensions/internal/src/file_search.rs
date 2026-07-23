@@ -18,11 +18,13 @@ use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
 };
 use rayon::prelude::*;
-
-use crate::capability::{
-    Action, ActionOutcome, Capability, CapabilityMeta, IconRef, Item, QueryHandler,
-    native::copy_to_clipboard,
+use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_protocol::v1::{
+    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
+    run_action_response::Behavior,
 };
+
+use crate::utils::copy_to_clipboard;
 
 const MIN_QUERY_CHARS: usize = 2;
 const MAX_RESULTS: usize = 30;
@@ -108,24 +110,17 @@ pub struct FileSearch {
 }
 
 impl Capability for FileSearch {
-    fn id(&self) -> &'static str {
-        "file_search"
-    }
-
     fn metadata(&self) -> CapabilityMeta {
         CapabilityMeta {
-            name: "Files".to_string(),
+            capability_id: "Files".to_string(),
             description: "Search files in your home directory.".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            icon: None,
-            homepage: None,
-            author: None,
+            facet: Facet::Query as i32,
         }
     }
 }
 
 impl QueryHandler for FileSearch {
-    fn query(&self, input: &str) -> Vec<Item> {
+    fn search(&self, input: &str) -> Vec<Item> {
         let entries = self.entries.read().unwrap();
         rank(input, &entries)
             .into_iter()
@@ -133,10 +128,10 @@ impl QueryHandler for FileSearch {
             .collect()
     }
 
-    fn run(&self, action: Action) -> ActionOutcome {
+    fn run_search_action(&self, action: Action) -> Behavior {
         let Some(target) = action.params.into_iter().next() else {
             error!("file_search: action with no payload");
-            return ActionOutcome::Hide;
+            return Behavior::Hide(Hide {});
         };
 
         match action.label.as_str() {
@@ -145,7 +140,7 @@ impl QueryHandler for FileSearch {
             other => error!("file_search: unknown action label: {other}"),
         }
 
-        ActionOutcome::Hide
+        Behavior::Hide(Hide {})
     }
 }
 
@@ -600,7 +595,9 @@ fn build_item(home: &Path, entry: &FileEntry) -> Item {
     Item {
         title: entry.name.clone(),
         subtitle: Some(display_parent(home, &entry.path)),
-        icon: Some(IconRef::Name(icon_name(entry))),
+        icon: Some(CapabilityIcon {
+            icon: Some(capability_icon::Icon::Name(icon_name(entry))),
+        }),
         actions,
     }
 }
