@@ -7,14 +7,13 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use scry_provider_protocol::{
-    Bytes, Message, PROTOCOL_VERSION,
-    transport::{FramedRead, FramedWrite, VarintDelimitedCodec},
-    v1 as proto,
+    Bytes, Message, PROTOCOL_VERSION, v1 as proto,
     v1::{
         ProviderAuth, RequestEvent, ResponseEvent, chat_response,
         finalize_connection_request::Input, request_event::Payload, response_event,
     },
 };
+use scry_utils::transport::{FramedRead, FramedWrite, VarintDelimitedCodec};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

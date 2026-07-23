@@ -1,5 +1,3 @@
-pub mod transport;
-
 pub use prost::{DecodeError, Message, bytes::Bytes};
 
 pub const PROTOCOL_VERSION: u64 = 1;

@@ -16,7 +16,6 @@ use futures::{
 use log::{error, warn};
 use scry_provider_protocol::{
     Bytes, Message, PROTOCOL_VERSION,
-    transport::{FramedRead, FramedWrite, VarintDelimitedCodec},
     v1::{
         BackendAuth, BackendHealthStatusRequest, BackendInitErrorRequest, CancelChatRequest,
         CancelConnectionRequest, ChatRequest, ConnectionPayload, FinalizeConnectionRequest,
@@ -27,6 +26,7 @@ use scry_provider_protocol::{
         response_event::Payload,
     },
 };
+use scry_utils::transport::{FramedRead, FramedWrite, VarintDelimitedCodec};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
