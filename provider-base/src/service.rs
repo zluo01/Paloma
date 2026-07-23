@@ -4,16 +4,15 @@ use std::{
 };
 
 use dashmap::DashMap;
-use futures::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use scry_provider_protocol::{
-    Bytes, Message, PROTOCOL_VERSION, v1 as proto,
+    PROTOCOL_VERSION, v1 as proto,
     v1::{
         ProviderAuth, RequestEvent, ResponseEvent, chat_response,
         finalize_connection_request::Input, request_event::Payload, response_event,
     },
 };
-use scry_utils::transport::{FramedRead, FramedWrite, VarintDelimitedCodec};
+use scry_utils::transport::serve_plugin;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -71,47 +70,30 @@ impl<F: ProviderRuntime> ProviderRuntimeService<F> {
     /// Run the plugin's stdin/stdout protocol loop until the host closes
     /// stdin; should only be called under a tokio runtime.
     pub async fn serve(self) -> Result<()> {
-        let mut input = FramedRead::new(tokio::io::stdin(), VarintDelimitedCodec);
-        let (tx, mut rx) = mpsc::channel::<ResponseEvent>(PROVIDER_INNER_CHANNEL_CAPACITY);
+        serve_plugin(
+            PROVIDER_INNER_CHANNEL_CAPACITY,
+            async move |request: RequestEvent, tx: mpsc::Sender<ResponseEvent>| {
+                let dispatcher = Dispatcher::new(request.event_id, tx);
 
-        // Writer task: sole owner of stdout. Exits once every sender is dropped.
-        let writer = tokio::spawn(async move {
-            let mut output = FramedWrite::new(tokio::io::stdout(), VarintDelimitedCodec);
-            while let Some(response) = rx.recv().await {
-                output.send(Bytes::from(response.encode_to_vec())).await?;
-            }
-            Ok::<_, std::io::Error>(())
-        });
+                let Some(payload) = request.payload else {
+                    error!(
+                        "request {} has no payload: host bug or newer protocol version",
+                        request.event_id
+                    );
+                    dispatcher
+                        .send(response_event::Payload::ProviderError(
+                            proto::ProviderError {
+                                error: "unsupported or missing request payload".into(),
+                            },
+                        ))
+                        .await;
+                    return;
+                };
 
-        while let Some(frame) = input.next().await {
-            let request = RequestEvent::decode(frame?.freeze())?;
-            let dispatcher = Dispatcher::new(request.event_id, tx.clone());
-
-            let Some(payload) = request.payload else {
-                error!(
-                    "request {} has no payload: host bug or newer protocol version",
-                    request.event_id
-                );
-                dispatcher
-                    .send(response_event::Payload::ProviderError(
-                        proto::ProviderError {
-                            error: "unsupported or missing request payload".into(),
-                        },
-                    ))
-                    .await;
-                continue;
-            };
-
-            self.handle(request.backend_id, payload, dispatcher).await
-        }
-
-        // stdin EOF: drop the root sender and the service (runtimes may hold a
-        // Dispatcher) so the writer drains in-flight responses and exits.
-        drop(tx);
-        drop(self);
-        writer
-            .await
-            .map_err(|e| ProviderError::Other(format!("writer task panicked: {e}")))??;
+                self.handle(request.backend_id, payload, dispatcher).await
+            },
+        )
+        .await?;
         Ok(())
     }
 

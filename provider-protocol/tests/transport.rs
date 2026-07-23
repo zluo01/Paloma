@@ -81,11 +81,10 @@ mod encoder_tests {
         Message,
         bytes::{Bytes, BytesMut},
     };
-    use scry_provider_protocol::v1::RequestEvent;
     use scry_utils::transport::VarintDelimitedCodec;
     use tokio_util::codec::Encoder;
 
-    use super::test_support::{JAVA_FIXTURE, decode_all, expected_events};
+    use super::test_support::{JAVA_FIXTURE, expected_events};
 
     fn encode(message: &impl Message) -> BytesMut {
         let mut dst = BytesMut::new();
@@ -113,38 +112,13 @@ mod encoder_tests {
         let tail = JAVA_FIXTURE.len() - health.len();
         assert_eq!(&JAVA_FIXTURE[tail..], &health[..],);
     }
-
-    #[test]
-    fn empty_payload_encodes_to_a_single_zero() {
-        let mut dst = BytesMut::new();
-        VarintDelimitedCodec.encode(Bytes::new(), &mut dst).unwrap();
-        assert_eq!(&dst[..], &[0x00]);
-    }
-
-    #[test]
-    fn encode_then_decode_should_produce_same_results() {
-        let events = expected_events();
-        let mut wire = BytesMut::new();
-        for event in &events {
-            VarintDelimitedCodec
-                .encode(Bytes::from(event.encode_to_vec()), &mut wire)
-                .unwrap();
-        }
-        let decoded: Vec<RequestEvent> = decode_all(&wire)
-            .iter()
-            .map(|f| RequestEvent::decode(&f[..]).expect("valid payload"))
-            .collect();
-        assert_eq!(decoded, events);
-    }
 }
 
 mod decoder_tests {
     use prost::Message;
     use scry_provider_protocol::v1::RequestEvent;
-    use scry_utils::transport::VarintDelimitedCodec;
-    use tokio_util::codec::Decoder;
 
-    use super::test_support::{JAVA_FIXTURE, buf, decode_all, expected_events};
+    use super::test_support::{JAVA_FIXTURE, decode_all, expected_events};
 
     #[test]
     fn decodes_encoded_payload_from_other_language() {
@@ -153,74 +127,5 @@ mod decoder_tests {
             .map(|f| RequestEvent::decode(&f[..]).expect("valid protobuf payload"))
             .collect();
         assert_eq!(decoded, expected_events());
-    }
-
-    #[test]
-    fn do_not_decode_on_not_enough_bytes() {
-        let first_frame_len = 1 + JAVA_FIXTURE[0] as usize; // 1-byte prefix + payload
-        let mut codec = VarintDelimitedCodec;
-        for cut in 0..first_frame_len {
-            let mut src = buf(&JAVA_FIXTURE[..cut]);
-            assert_eq!(codec.decode(&mut src).unwrap(), None);
-            assert_eq!(src.len(), cut);
-        }
-    }
-
-    #[test]
-    fn should_decode_frame_split_across_reads() {
-        let expected = expected_events()[0].encode_to_vec();
-        let mut codec = VarintDelimitedCodec;
-        let mut src = buf(&[]);
-        let mut frame = None;
-        for &byte in JAVA_FIXTURE {
-            src.extend_from_slice(&[byte]);
-            frame = codec.decode(&mut src).unwrap();
-            if frame.is_some() {
-                break;
-            }
-        }
-        assert_eq!(&frame.expect("a frame should decode")[..], &expected[..]);
-        assert!(src.is_empty());
-    }
-
-    #[test]
-    fn when_buffer_with_more_than_one_message_should_only_handle_first() {
-        let frame_len = 1 + JAVA_FIXTURE[0] as usize;
-        let end = frame_len + 3; // whole first frame + 3 bytes of the next
-        let expected = expected_events()[0].encode_to_vec();
-        let mut codec = VarintDelimitedCodec;
-        let mut src = buf(&JAVA_FIXTURE[..end]);
-        let frame = codec
-            .decode(&mut src)
-            .unwrap()
-            .expect("first frame complete");
-        assert_eq!(&frame[..], &expected[..]);
-        assert_eq!(codec.decode(&mut src).unwrap(), None);
-        assert_eq!(&src[..], &JAVA_FIXTURE[frame_len..end]);
-    }
-
-    #[test]
-    fn should_wait_on_incomplete_varint_length() {
-        assert_eq!(
-            VarintDelimitedCodec.decode(&mut buf(&[0x80; 9])).unwrap(),
-            None
-        );
-    }
-
-    #[test]
-    fn should_fail_on_corrupted_varint_length() {
-        assert!(VarintDelimitedCodec.decode(&mut buf(&[0x80; 10])).is_err());
-    }
-
-    #[test]
-    fn varint_overflowing_u64_is_rejected() {
-        let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F];
-        assert!(VarintDelimitedCodec.decode(&mut buf(&bytes)).is_err());
-    }
-
-    #[test]
-    fn oversize_length_is_rejected_before_buffering() {
-        let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
-        assert!(VarintDelimitedCodec.decode(&mut buf(&bytes)).is_err());
     }
 }

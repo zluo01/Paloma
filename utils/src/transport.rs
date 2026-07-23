@@ -1,9 +1,12 @@
 use std::io;
 
+use futures::{SinkExt, StreamExt};
 use prost::{
+    Message,
     bytes::{Buf, BufMut, Bytes, BytesMut},
     encoding::{decode_varint, encode_varint, encoded_len_varint},
 };
+use tokio::sync::mpsc;
 use tokio_util::codec::{Decoder, Encoder};
 pub use tokio_util::codec::{FramedRead, FramedWrite};
 
@@ -71,5 +74,167 @@ impl Encoder<Bytes> for VarintDelimitedCodec {
         encode_varint(payload.len() as u64, dst);
         dst.put(payload);
         Ok(())
+    }
+}
+
+pub async fn serve_plugin<Req, Res>(
+    capacity: usize,
+    mut handle: impl AsyncFnMut(Req, mpsc::Sender<Res>),
+) -> io::Result<()>
+where
+    Req: Message + Default,
+    Res: Message + 'static,
+{
+    let mut input = FramedRead::new(tokio::io::stdin(), VarintDelimitedCodec);
+    let (tx, mut rx) = mpsc::channel::<Res>(capacity);
+
+    // Writer task: sole owner of stdout. Exits once every sender is dropped.
+    let writer = tokio::spawn(async move {
+        let mut output = FramedWrite::new(tokio::io::stdout(), VarintDelimitedCodec);
+        while let Some(response) = rx.recv().await {
+            output.send(Bytes::from(response.encode_to_vec())).await?;
+        }
+        Ok::<_, io::Error>(())
+    });
+
+    while let Some(frame) = input.next().await {
+        let request = Req::decode(frame?.freeze()).map_err(invalid_data)?;
+        handle(request, tx.clone()).await;
+        if tx.is_closed() {
+            // writer gone; exit the loop and surface its error below
+            break;
+        }
+    }
+
+    // stdin EOF: drop the handler (which may still own response senders) and
+    // the root sender so the writer drains queued responses and exits.
+    drop((handle, tx));
+    writer
+        .await
+        .map_err(|e| io::Error::other(format!("writer task panicked: {e}")))??;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn buf(bytes: &[u8]) -> BytesMut {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(bytes);
+        b
+    }
+
+    fn encode(payload: &[u8]) -> BytesMut {
+        let mut dst = BytesMut::new();
+        VarintDelimitedCodec
+            .encode(Bytes::copy_from_slice(payload), &mut dst)
+            .expect("encode is infallible");
+        dst
+    }
+
+    fn decode_all(bytes: &[u8]) -> Vec<BytesMut> {
+        let mut codec = VarintDelimitedCodec;
+        let mut src = buf(bytes);
+        let mut frames = Vec::new();
+        while let Some(frame) = codec.decode(&mut src).expect("well-formed frames") {
+            frames.push(frame);
+        }
+        assert!(src.is_empty(), "decoder left {} trailing bytes", src.len());
+        frames
+    }
+
+    #[test]
+    fn empty_payload_encodes_to_a_single_zero() {
+        let mut dst = BytesMut::new();
+        VarintDelimitedCodec.encode(Bytes::new(), &mut dst).unwrap();
+        assert_eq!(&dst[..], &[0x00]);
+    }
+
+    #[test]
+    fn should_wait_on_incomplete_varint_length() {
+        assert_eq!(
+            VarintDelimitedCodec.decode(&mut buf(&[0x80; 9])).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn should_fail_on_corrupted_varint_length() {
+        assert!(VarintDelimitedCodec.decode(&mut buf(&[0x80; 10])).is_err());
+    }
+
+    #[test]
+    fn varint_overflowing_u64_is_rejected() {
+        let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F];
+        assert!(VarintDelimitedCodec.decode(&mut buf(&bytes)).is_err());
+    }
+
+    #[test]
+    fn oversize_length_is_rejected_before_buffering() {
+        let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
+        assert!(VarintDelimitedCodec.decode(&mut buf(&bytes)).is_err());
+    }
+
+    #[test]
+    fn encode_then_decode_should_produce_same_results() {
+        let payloads: Vec<&[u8]> = vec![b"", b"hello", &[0xAB; 300]];
+        let mut wire = BytesMut::new();
+        for payload in &payloads {
+            wire.extend_from_slice(&encode(payload));
+        }
+        let decoded = decode_all(&wire);
+        assert_eq!(decoded.len(), payloads.len());
+        for (frame, payload) in decoded.iter().zip(&payloads) {
+            assert_eq!(&frame[..], *payload);
+        }
+    }
+
+    #[test]
+    fn do_not_decode_on_not_enough_bytes() {
+        let frame = encode(b"hello");
+        let mut codec = VarintDelimitedCodec;
+        for cut in 0..frame.len() {
+            let mut src = buf(&frame[..cut]);
+            assert_eq!(codec.decode(&mut src).unwrap(), None);
+            assert_eq!(src.len(), cut);
+        }
+    }
+
+    #[test]
+    fn should_decode_frame_split_across_reads() {
+        let frame = encode(b"hello");
+        let mut codec = VarintDelimitedCodec;
+        let mut src = buf(&[]);
+        let mut decoded = None;
+        for &byte in frame.iter() {
+            src.extend_from_slice(&[byte]);
+            decoded = codec.decode(&mut src).unwrap();
+            if decoded.is_some() {
+                break;
+            }
+        }
+        assert_eq!(&decoded.expect("a frame should decode")[..], b"hello");
+        assert!(src.is_empty());
+    }
+
+    #[test]
+    fn when_buffer_with_more_than_one_message_should_only_handle_first() {
+        let first = encode(b"hello");
+        let second = encode(b"world");
+        let partial = 3;
+        let mut wire = BytesMut::new();
+        wire.extend_from_slice(&first);
+        wire.extend_from_slice(&second[..partial]);
+
+        let mut codec = VarintDelimitedCodec;
+        let mut src = buf(&wire);
+        let frame = codec
+            .decode(&mut src)
+            .unwrap()
+            .expect("first frame complete");
+        assert_eq!(&frame[..], b"hello");
+        assert_eq!(codec.decode(&mut src).unwrap(), None);
+        assert_eq!(&src[..], &second[..partial]);
     }
 }
