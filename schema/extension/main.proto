@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package scry.extension.v1;
+
+import "schema/extension/capability.proto";
+
+message RequestEvent {
+  uint64 event_id = 1;
+  optional string capability_id = 2;
+
+  oneof payload {
+    HandshakeRequest handshake_request = 3;
+
+    SearchRequest search_request = 4;
+    RunActionRequest run_action_request = 5;
+  }
+}
+
+message ResponseEvent {
+  uint64 event_id = 1;
+
+  oneof payload {
+    HandshakeResponse handshake_response = 2;
+
+    SearchResponse search_response = 3;
+    RunActionResponse run_action_response = 4;
+
+    // all unary request errors populate through this response
+    ExtensionError extension_error = 5;
+  }
+}
+
+message HandshakeRequest {}
+
+message HandshakeResponse {
+  uint64 version = 1;
+  string extension_id = 2;
+  string description = 3;
+  optional string author = 4;
+  optional string homepage = 5;
+  repeated Capability capabilities = 6;
+}
+

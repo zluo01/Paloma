@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package scry.extension.v1;
+
+enum Facet {
+  FACET_UNSPECIFIED = 0;
+  // launcher search: query / run_action
+  FACET_QUERY = 1;
+  // llm tools: specs / invoke / cancel
+  FACET_TOOL = 2;
+  // both launcher search and llm tools
+  FACET_BOTH = 3;
+}
+
+message Capability {
+  string capability_id = 1;
+  string description = 2;
+  Facet facet = 4;
+}
+
+message CapabilityIcon {
+  oneof icon {
+    string name = 1;
+    string path = 2;
+    bytes embedded = 3;
+  }
+}
+
+message SearchRequest {
+  string input = 1;
+}
+
+message SearchResponse {
+  repeated Item items = 1;
+}
+
+message Item {
+  string title = 1;
+  optional string subtitle = 2;
+  optional CapabilityIcon icon = 3;
+  repeated Action actions = 4;
+}
+
+message Action {
+  // action name for both UI display and as action enum
+  string label = 1;
+  // action input params
+  repeated string params = 2;
+  // whether the action is the default action
+  bool primary = 3;
+}
+
+message RunActionRequest {
+  Action action = 1;
+}
+
+message RunActionResponse {
+  oneof behavior {
+    Hide hide = 1;
+    Stay stay = 2;
+    Replace replace = 3;
+  }
+}
+
+message Hide {}
+
+message Stay {}
+
+// replace the launcher input with the given text
+message Replace {
+  string input = 1;
+}
+
+// all unary request errors populate through this response
+message ExtensionError {
+  string error = 1;
+}
