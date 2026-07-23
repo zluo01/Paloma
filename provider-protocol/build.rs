@@ -18,12 +18,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    // SAFETY: build scripts run as isolated processes, before any threads are started.
-    unsafe { env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path()?) };
-
     // Manually inject serde to protobuf generated struct as currently there is no built-in way
     // need to manually update whenever we update the protobuf schema
     let mut config = prost_build::Config::new();
+    config.protoc_executable(protoc_bin_vendored::protoc_bin_path()?);
     const SERDE_DERIVE: &str = "#[derive(serde::Serialize, serde::Deserialize)]";
     for message in [
         "UserPrompt",

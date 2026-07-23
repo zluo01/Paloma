@@ -3317,6 +3317,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scry-extension-protocol"
+version = "0.0.1"
+dependencies = [
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+]
+
+[[package]]
 name = "scry-ffi"
 version = "0.0.1"
 dependencies = [
@@ -3413,6 +3422,7 @@ dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "scry-utils",
  "serde",
  "serde_json",
  "tokio-util",
@@ -3423,7 +3433,9 @@ name = "scry-utils"
 version = "0.0.1"
 dependencies = [
  "backon",
+ "prost",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

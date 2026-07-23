@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "core",
+    "extension-protocol",
     "ffi",
     "gui/linux",
     "plugins/providers/anthropic",
@@ -36,6 +37,10 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "http2",
     "stream",
 ] }
+prost = "0.14.4"
+prost-build = "0.14.4"
+protoc-bin-vendored = "3.2.0"
+scry-extension-protocol = { path = "extension-protocol" }
 scry-provider-anthropic = { path = "plugins/providers/anthropic" }
 scry-provider-base = { path = "provider-base" }
 scry-provider-openai = { path = "plugins/providers/openai" }

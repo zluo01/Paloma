@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 backon = { workspace = true }
-prost = "0.14.4"
+prost = { workspace = true }
 tokio-util = { workspace = true }
 
 [dev-dependencies]
