@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use scry_provider_base::{
     ApiKeyConnector, Dispatcher, ProviderAuthenticator, ProviderCache, ProviderClient,
-    ProviderError, ProviderRuntime, ProviderRuntimeService, Result, init_logging, request_client,
+    ProviderError, ProviderRuntime, ProviderRuntimeService, Result, request_client,
 };
 use scry_provider_protocol::{v1 as proto, v1::ProviderAuth};
+use scry_utils::init_logging;
 
 use crate::{
     connect::{ClaudeCodeConnector, INSTRUCTION_URL},
@@ -86,7 +87,7 @@ pub fn run() -> Result<()> {
         .enable_all()
         .build()?
         .block_on(async {
-            init_logging();
+            init_logging("info".into());
             let request = request_client()?;
             ProviderRuntimeService::new(AnthropicGroup::new(request.clone()), request)
                 .serve()
@@ -97,7 +98,7 @@ pub fn run() -> Result<()> {
 #[allow(dead_code)]
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_logging();
+    init_logging("info".into());
     let request = request_client()?;
     ProviderRuntimeService::new(AnthropicGroup::new(request.clone()), request)
         .serve()

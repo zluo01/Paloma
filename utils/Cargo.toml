@@ -7,7 +7,10 @@ publish = false
 
 [dependencies]
 backon = { workspace = true }
+env_logger = { workspace = true }
+futures = { workspace = true }
 prost = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "rt", "sync"] }
 tokio-util = { workspace = true }
 
 [dev-dependencies]

@@ -28,13 +28,6 @@ pub use crate::error::{ProviderError, Result};
 
 pub const SSE_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
-pub fn init_logging() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .target(env_logger::Target::Stderr)
-        .try_init()
-        .ok();
-}
-
 pub fn request_client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))

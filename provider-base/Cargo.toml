@@ -7,10 +7,7 @@ publish = false
 
 [dependencies]
 async-trait = { workspace = true }
-
 dashmap = { workspace = true }
-env_logger = { workspace = true }
-futures = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 scry-provider-protocol = { workspace = true }
@@ -18,7 +15,7 @@ scry-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["io-std", "macros", "rt", "sync"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
 tokio-util = { workspace = true }
 
 [dev-dependencies]
