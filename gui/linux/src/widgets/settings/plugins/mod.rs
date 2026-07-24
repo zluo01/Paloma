@@ -10,8 +10,8 @@ use libadwaita::{
     PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
 };
 use scry_core::{
-    AppContext, ExtensionInfo, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginArgs,
-    PluginType, ProviderInfo,
+    AppContext, ExtensionInfo, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginType,
+    ProviderInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -431,9 +431,12 @@ impl PluginsPage {
         row.upcast()
     }
 
-    fn mcp_row(&self, server: &McpServer) -> ExpanderRow {
+    fn mcp_row(&self, server: &McpServer) -> Widget {
         let config = &server.config;
-        let row = actionable_row(&config.name, &server.description, config_props(config));
+        let row = ActionRow::builder()
+            .title(&config.name)
+            .subtitle(&server.description)
+            .build();
 
         let actions = plugin_actions(
             server.status,
@@ -443,7 +446,7 @@ impl PluginsPage {
         actions.append(&self.edit_button(PluginType::Mcp, &config.name));
         actions.append(&self.remove_button(PluginType::Mcp, &config.name));
         row.add_suffix(&actions);
-        row
+        row.upcast()
     }
 
     fn toggle_switch(&self, config: &Plugin) -> Switch {
@@ -499,26 +502,6 @@ impl PluginsPage {
         });
         button
     }
-}
-
-fn actionable_row(title: &str, subtitle: &str, props: Vec<(&'static str, String)>) -> ExpanderRow {
-    let row = ExpanderRow::builder()
-        .title(title)
-        .subtitle(subtitle)
-        .build();
-    for (title, value) in props {
-        if value.is_empty() {
-            continue;
-        }
-        row.add_row(
-            &ActionRow::builder()
-                .title(title)
-                .subtitle(&value)
-                .css_classes(["property"])
-                .build(),
-        );
-    }
-    row
 }
 
 fn plugin_actions(status: HealthStatus, error: Option<&str>, running: Option<Widget>) -> GtkBox {
@@ -586,33 +569,4 @@ fn open_oauth_dialog(
     });
     dialog.present(Some(parent));
     (dialog, closed)
-}
-
-fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {
-    let mut props = match &config.args {
-        PluginArgs::Local { command, args } => vec![
-            ("Transport", "Local command".to_string()),
-            ("Command", command.clone()),
-            ("Arguments", serde_json::to_string(args).unwrap_or_default()),
-        ],
-        PluginArgs::Remote { url, requires_auth } => vec![
-            ("Transport", "Remote server".to_string()),
-            ("URL", url.clone()),
-            (
-                "Requires authentication",
-                if *requires_auth { "Yes" } else { "No" }.to_string(),
-            ),
-        ],
-    };
-    props.push(("Timeout", format!("{}s", config.timeout)));
-    push_env_prop(&mut props, config);
-    props
-}
-
-fn push_env_prop(props: &mut Vec<(&'static str, String)>, config: &Plugin) {
-    if !config.env.is_empty() {
-        let mut env: Vec<String> = config.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        env.sort();
-        props.push(("Environment", env.join("\n")));
-    }
 }
