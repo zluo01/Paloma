@@ -10,7 +10,7 @@ use libadwaita::{
     PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
 };
 use scry_core::{
-    AppContext, ExtensionInfo, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginType,
+    AppContext, ExtensionInfo, HealthStatus, McpPluginInfo, OAuthCallbackState, Plugin, PluginType,
     ProviderInfo,
 };
 use tokio::task::JoinHandle;
@@ -431,7 +431,7 @@ impl PluginsPage {
         row.upcast()
     }
 
-    fn mcp_row(&self, server: &McpServer) -> Widget {
+    fn mcp_row(&self, server: &McpPluginInfo) -> Widget {
         let config = &server.config;
         let row = ActionRow::builder()
             .title(&config.name)

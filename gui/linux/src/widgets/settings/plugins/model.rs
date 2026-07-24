@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
 use scry_core::{
-    AppError, ExtensionInfo, McpServer, OAuthCallbackState, Plugin, PluginType, ProviderInfo,
+    AppError, ExtensionInfo, McpPluginInfo, OAuthCallbackState, Plugin, PluginType, ProviderInfo,
 };
 
 #[derive(Default)]
 pub(super) struct State {
     pub(super) extensions: Vec<ExtensionInfo>,
     pub(super) providers: Vec<ProviderInfo>,
-    pub(super) servers: Vec<McpServer>,
+    pub(super) servers: Vec<McpPluginInfo>,
 }
 
 pub(super) enum Msg {
@@ -16,7 +16,7 @@ pub(super) enum Msg {
     McpPlugin(McpPluginMsg),
     ExtensionLoaded(Result<Vec<ExtensionInfo>, AppError>),
     ProviderLoaded(Result<Vec<ProviderInfo>, AppError>),
-    McpServersLoaded(Result<Vec<McpServer>, AppError>),
+    McpServersLoaded(Result<Vec<McpPluginInfo>, AppError>),
     McpToggleChanged(String, bool),
     McpToggleFinished(Result<(), AppError>),
 }
@@ -260,8 +260,8 @@ mod tests {
         std::io::Error::other(message).into()
     }
 
-    fn server(name: &str, disabled: bool) -> McpServer {
-        McpServer {
+    fn server(name: &str, disabled: bool) -> McpPluginInfo {
+        McpPluginInfo {
             config: Plugin {
                 name: name.into(),
                 transport: Transport::Http,
@@ -300,7 +300,7 @@ mod tests {
     }
 
     /// Walk the model through a completed page load.
-    fn loaded(state: &mut State, servers: Vec<McpServer>) {
+    fn loaded(state: &mut State, servers: Vec<McpPluginInfo>) {
         let cmds = state.update(Msg::McpServersLoaded(Ok(servers)));
         assert!(matches!(cmds.as_slice(), [Command::RenderMcpServers]));
     }
