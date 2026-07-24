@@ -362,7 +362,7 @@ impl PluginsPage {
         self.provider_view.clear();
         let providers = self.model.borrow().providers.clone();
         for provider in &providers {
-            self.provider_view.add(&self.plugin_row(provider));
+            self.provider_view.add(&self.provider_row(provider));
         }
         self.provider_view.add(&self.add_provider);
     }
@@ -416,25 +416,17 @@ impl PluginsPage {
         row.upcast()
     }
 
-    fn plugin_row(&self, provider: &ProviderInfo) -> Widget {
+    fn provider_row(&self, provider: &ProviderInfo) -> Widget {
+        let row = ActionRow::builder()
+            .title(&provider.name)
+            .subtitle(&provider.description)
+            .build();
+
         let actions = plugin_actions(provider.status, provider.error.as_deref(), None);
-
-        let Some(config) = &provider.config else {
-            let row = ActionRow::builder()
-                .title(&provider.name)
-                .subtitle(&provider.description)
-                .build();
-            row.add_suffix(&actions);
-            return row.upcast();
-        };
-
-        let row = actionable_row(
-            &provider.name,
-            &provider.description,
-            provider_config_props(config),
-        );
-        actions.append(&self.edit_button(PluginType::Provider, &provider.name));
-        actions.append(&self.remove_button(PluginType::Provider, &provider.name));
+        if provider.config.is_some() {
+            actions.append(&self.edit_button(PluginType::Provider, &provider.name));
+            actions.append(&self.remove_button(PluginType::Provider, &provider.name));
+        }
         row.add_suffix(&actions);
         row.upcast()
     }
@@ -613,16 +605,6 @@ fn config_props(config: &Plugin) -> Vec<(&'static str, String)> {
         ],
     };
     props.push(("Timeout", format!("{}s", config.timeout)));
-    push_env_prop(&mut props, config);
-    props
-}
-
-fn provider_config_props(config: &Plugin) -> Vec<(&'static str, String)> {
-    let mut props = Vec::new();
-    if let PluginArgs::Local { command, args } = &config.args {
-        props.push(("Command", command.clone()));
-        props.push(("Arguments", serde_json::to_string(args).unwrap_or_default()));
-    }
     push_env_prop(&mut props, config);
     props
 }
