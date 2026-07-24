@@ -3,39 +3,7 @@ use scry_provider_protocol::v1::ToolDefinition;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::entity::HealthStatus;
-
-#[derive(Clone, Debug)]
-pub struct Item {
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub icon: Option<IconRef>,
-    pub actions: Vec<Action>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Action {
-    /// action name for both UI display and as action enum
-    pub label: String,
-    /// action input params
-    pub params: Vec<String>,
-    /// whether the action is the default action.
-    pub primary: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ActionOutcome {
-    Hide,
-    Stay,
-    Replace { input: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum IconRef {
-    Name(String),
-    Path(String),
-    Embedded(Vec<u8>),
-}
+use crate::entity::{HealthStatus, Icon};
 
 pub trait Capability: Send + Sync + 'static {
     /// handler unique name
@@ -44,18 +12,12 @@ pub trait Capability: Send + Sync + 'static {
     fn metadata(&self) -> CapabilityMeta;
 }
 
-pub trait QueryHandler: Capability {
-    fn query(&self, input: &str) -> Vec<Item>;
-
-    fn run(&self, action: Action) -> ActionOutcome;
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapabilityMeta {
     pub name: String,
     pub version: String,
     pub description: String,
-    pub icon: Option<IconRef>,
+    pub icon: Option<Icon>,
     pub homepage: Option<String>,
     pub author: Option<String>,
 }

@@ -5,9 +5,10 @@ use uuid::Uuid;
 
 use crate::{
     controller::{
-        PermissionWorkflowManager, PluginConnectionController, PluginConnectionError,
-        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SearchQuery,
-        SearchQueryInitError, SessionManager, SessionManagerError, ToolController, TurnManager,
+        ExtensionController, ExtensionControllerError, PermissionWorkflowManager,
+        PluginConnectionController, PluginConnectionError, ProviderController,
+        ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
+        SessionManagerError, ToolController, TurnManager,
     },
     db::{Storage, StorageError},
     permission::PermissionController,
@@ -18,6 +19,7 @@ mod constants;
 mod controller;
 mod db;
 mod entity;
+mod extension;
 mod permission;
 mod provider;
 mod utils;
@@ -25,9 +27,9 @@ mod utils;
 #[ctor::ctor(unsafe)]
 fn process_entry() {
     provider::serve_plugin_and_exit_if_requested();
+    extension::serve_extension_plugin_and_exit_if_requested();
 }
 
-pub use capability::{Action, ActionOutcome, IconRef, Item};
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
     ChatRenderEvent, Connector, ConnectorConnection, McpServer, ProviderStatus, QueryResponse,
@@ -35,10 +37,15 @@ pub use controller::{
 };
 pub use db::Permission;
 pub use entity::{
-    HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport,
+    ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs, PluginType,
+    ProviderBackendId, Transport,
 };
+pub use extension::ExtensionInfo;
 pub use permission::{PermissionState, UserDecision};
 pub use provider::ProviderInfo;
+pub use scry_extension_protocol::v1::{
+    Action, CapabilityIcon, Item, capability_icon, run_action_response::Behavior,
+};
 pub use scry_provider_protocol::v1::{
     BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, Model, ProviderAuthMethod,
     connection_payload,
@@ -52,9 +59,9 @@ use crate::{
 
 pub struct AppContext {
     storage: Storage,
-    search_query: SearchQuery,
     remote_query: RemoteQuery,
     providers: Arc<ProviderController>,
+    extensions: Arc<ExtensionController>,
     plugins: PluginConnectionController,
 }
 
@@ -68,22 +75,22 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (providers, remote_query, plugin) = Self::init_llm(storage.clone()).await?;
-        let search_query = Self::init_search()?;
+        let (providers, extensions, remote_query, plugin) = Self::init(storage.clone()).await?;
 
         Ok(Arc::new(Self {
             storage,
             providers,
-            search_query,
+            extensions,
             remote_query,
             plugins: plugin,
         }))
     }
 
-    async fn init_llm(
+    async fn init(
         storage: Storage,
     ) -> Result<(
         Arc<ProviderController>,
+        Arc<ExtensionController>,
         RemoteQuery,
         PluginConnectionController,
     )> {
@@ -99,6 +106,8 @@ impl AppContext {
             .build()?;
 
         let provider_controller = Arc::new(ProviderController::new(storage.clone()).await?);
+
+        let extension_controller = Arc::new(ExtensionController::new(storage.clone()).await?);
 
         let permission_controller = PermissionController::new(storage.clone());
         let (mut permission_workflow_manager, permission_workflow_client) =
@@ -116,6 +125,7 @@ impl AppContext {
             storage.clone(),
             Arc::clone(&tool_controller),
             Arc::clone(&provider_controller),
+            Arc::clone(&extension_controller),
         );
 
         let (mut session_manager, session_manager_client) = SessionManager::new(
@@ -141,19 +151,24 @@ impl AppContext {
             permission_workflow_client,
         );
 
-        Ok((provider_controller, remote_query, plugin))
+        Ok((
+            provider_controller,
+            extension_controller,
+            remote_query,
+            plugin,
+        ))
     }
 
-    fn init_search() -> Result<SearchQuery> {
-        Ok(SearchQuery::new()?)
+    pub fn search(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
+        self.extensions.search(input)
     }
 
-    pub fn query(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
-        self.search_query.query(input)
-    }
-
-    pub fn run_query_action(&self, id: &str, action: Action) -> Option<ActionOutcome> {
-        self.search_query.run(id, action)
+    pub async fn run_search_action(
+        &self,
+        id: ExtensionCapabilityId,
+        action: Action,
+    ) -> Result<Behavior> {
+        Ok(self.extensions.run_search_action(id, action).await?)
     }
 
     pub async fn chat(
@@ -274,12 +289,20 @@ impl AppContext {
         self.plugins.health_level().await
     }
 
+    pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>> {
+        Ok(self.extensions.available_extensions().await?)
+    }
+
     pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>> {
         Ok(self.providers.available_providers().await?)
     }
 
     pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {
         Ok(self.plugins.list_mcps().await?)
+    }
+
+    pub async fn add_extension_plugin(&self, config: Plugin) -> Result<()> {
+        Ok(self.extensions.add_extension(&config).await?)
     }
 
     pub async fn add_provider_plugin(&self, config: Plugin) -> Result<()> {
@@ -326,13 +349,13 @@ pub enum AppError {
     Provider(#[from] ProviderControllerError),
 
     #[error(transparent)]
+    Extension(#[from] ExtensionControllerError),
+
+    #[error(transparent)]
     RemoteQuery(#[from] RemoteQueryError),
 
     #[error(transparent)]
     PluginConnection(#[from] PluginConnectionError),
-
-    #[error(transparent)]
-    SearchQuery(#[from] SearchQueryInitError),
 
     #[error(transparent)]
     SessionManager(#[from] SessionManagerError),

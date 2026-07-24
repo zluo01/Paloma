@@ -2,9 +2,11 @@
 resolver = "3"
 members = [
     "core",
+    "extension-base",
     "extension-protocol",
     "ffi",
     "gui/linux",
+    "plugins/extensions/internal",
     "plugins/providers/anthropic",
     "plugins/providers/openai",
     "provider-base",
@@ -30,6 +32,9 @@ eventsource-stream = "0.2.3"
 futures = "0.3.32"
 log = "0.4.33"
 oauth2 = { version = "5.0.0", default-features = false }
+prost = "0.14.4"
+prost-build = "0.14.4"
+protoc-bin-vendored = "3.2.0"
 reqwest = { version = "0.13.4", default-features = false, features = [
     "json",
     "form",
@@ -37,9 +42,8 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "http2",
     "stream",
 ] }
-prost = "0.14.4"
-prost-build = "0.14.4"
-protoc-bin-vendored = "3.2.0"
+scry-extension-base = { path = "extension-base" }
+scry-extension-internal = { path = "plugins/extensions/internal" }
 scry-extension-protocol = { path = "extension-protocol" }
 scry-provider-anthropic = { path = "plugins/providers/anthropic" }
 scry-provider-base = { path = "provider-base" }

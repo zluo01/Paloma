@@ -1,3 +1,4 @@
+mod extension_controller;
 mod permission_workflow_manager;
 mod provider_controller;
 mod remote_query;
@@ -5,6 +6,7 @@ mod session_manager;
 mod tool_controller;
 mod turn_manager;
 
+pub use extension_controller::{ExtensionController, ExtensionControllerError};
 pub use permission_workflow_manager::{
     PermissionWorkflowError, PermissionWorkflowManager, PermissionWorkflowManagerClient,
 };

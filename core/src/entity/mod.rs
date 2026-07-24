@@ -16,10 +16,16 @@ impl fmt::Display for ProviderBackendId {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ExtensionCapabilityId {
+    pub extension_id: String,
+    pub capability_id: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum PluginType {
-    Native,
+    Extension,
     Provider,
     Mcp,
 }
@@ -47,6 +53,29 @@ pub struct Plugin {
     pub env: HashMap<String, String>,
     #[sqlx(json)]
     pub args: PluginArgs,
+}
+
+impl Plugin {
+    pub(crate) fn builtin(name: &str, flag: &str) -> Self {
+        let command = std::env::current_exe()
+            .unwrap_or_else(|_| {
+                panic!("current executable path should be resolvable for plugin {name}.")
+            })
+            .to_string_lossy()
+            .into_owned();
+        Self {
+            name: name.to_string(),
+            transport: Transport::Local,
+            // no global timeout in built-in plugins
+            timeout: 0,
+            disabled: false,
+            env: HashMap::new(),
+            args: PluginArgs::Local {
+                command,
+                args: vec![flag.to_string(), name.to_string()],
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,4 +128,11 @@ impl HealthLevel {
             _ => HealthLevel::Degraded,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Icon {
+    Name(String),
+    Path(String),
+    Embedded(Vec<u8>),
 }

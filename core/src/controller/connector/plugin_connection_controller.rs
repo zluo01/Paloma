@@ -4,7 +4,8 @@ use log::error;
 
 use crate::{
     controller::{
-        ProviderController, ProviderControllerError, ToolController, ToolControllerError,
+        ExtensionControllerError, ProviderController, ProviderControllerError, ToolController,
+        ToolControllerError, remote::ExtensionController,
     },
     db::{Storage, StorageError},
     entity::{HealthLevel, HealthStatus, Plugin, PluginArgs, PluginType},
@@ -23,6 +24,7 @@ pub struct PluginConnectionController {
     storage: Storage,
     tool_controller: Arc<ToolController>,
     provider_controller: Arc<ProviderController>,
+    extension_controller: Arc<ExtensionController>,
 }
 
 impl PluginConnectionController {
@@ -30,11 +32,13 @@ impl PluginConnectionController {
         storage: Storage,
         tool_controller: Arc<ToolController>,
         provider_controller: Arc<ProviderController>,
+        extension_controller: Arc<ExtensionController>,
     ) -> Self {
         Self {
             storage,
             tool_controller,
             provider_controller,
+            extension_controller,
         }
     }
 
@@ -133,7 +137,7 @@ impl PluginConnectionController {
 
     pub async fn remove_plugin(&self, plugin_type: PluginType, name: &str) -> Result<()> {
         match plugin_type {
-            PluginType::Native => error!("Not yet implemented."),
+            PluginType::Extension => self.extension_controller.remove_extension(name).await?,
             PluginType::Mcp => self.tool_controller.deregister_tool(name).await?,
             PluginType::Provider => self.provider_controller.remove_provider(name).await?,
         }
@@ -142,7 +146,7 @@ impl PluginConnectionController {
 
     pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {
         match plugin_type {
-            PluginType::Native => error!("Not yet implemented."),
+            PluginType::Extension => self.extension_controller.update_extension(&plugin).await?,
             PluginType::Mcp => self.tool_controller.update_tool(&plugin).await?,
             PluginType::Provider => self.provider_controller.update_provider(&plugin).await?,
         }
@@ -162,6 +166,9 @@ pub enum PluginConnectionError {
 
     #[error(transparent)]
     ProviderController(#[from] ProviderControllerError),
+
+    #[error(transparent)]
+    ExtensionController(#[from] ExtensionControllerError),
 
     #[error(transparent)]
     Storage(#[from] StorageError),

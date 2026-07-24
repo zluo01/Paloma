@@ -1294,9 +1294,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "globset"
-version = "0.4.18"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
+checksum = "e47d37d2ae4464254884b60ab7071be2b876a9c35b696bd018ddcc76847309cd"
 dependencies = [
  "aho-corasick",
  "bstr",
@@ -1805,9 +1805,9 @@ dependencies = [
 
 [[package]]
 name = "ignore"
-version = "0.4.27"
+version = "0.4.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe112b004901c62c2faa11f4f75e9864e0cc5af8da71c9115d184a3aa888749f"
+checksum = "7f8a7b8211e695a1d0cd91cace480d4d0bd57667ab10277cc412c5f7f4884f83"
 dependencies = [
  "crossbeam-deque",
  "globset",
@@ -3278,27 +3278,16 @@ dependencies = [
  "async-trait",
  "ctor",
  "dashmap",
- "exmex",
- "freedesktop-desktop-entry",
  "futures",
- "ignore",
  "log",
- "mime_guess",
  "nix",
- "notify",
- "notify-debouncer-full",
- "nucleo-matcher",
  "oauth2",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "open",
- "plist",
- "rayon",
  "regex",
  "reqwest",
  "rmcp",
  "schemars",
+ "scry-extension-internal",
+ "scry-extension-protocol",
  "scry-provider-anthropic",
  "scry-provider-openai",
  "scry-provider-protocol",
@@ -3307,12 +3296,46 @@ dependencies = [
  "serde_json",
  "sha1",
  "sqlx",
- "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tree-sitter",
  "tree-sitter-bash",
  "uuid",
+]
+
+[[package]]
+name = "scry-extension-base"
+version = "0.0.1"
+dependencies = [
+ "scry-extension-protocol",
+ "scry-utils",
+ "tokio",
+]
+
+[[package]]
+name = "scry-extension-internal"
+version = "0.0.1"
+dependencies = [
+ "exmex",
+ "freedesktop-desktop-entry",
+ "ignore",
+ "log",
+ "mime_guess",
+ "notify",
+ "notify-debouncer-full",
+ "nucleo-matcher",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "open",
+ "plist",
+ "rayon",
+ "regex",
+ "scry-extension-base",
+ "scry-extension-protocol",
+ "scry-utils",
+ "tempfile",
+ "tokio",
  "wl-clipboard-rs",
 ]
 
@@ -3383,8 +3406,6 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "dashmap",
- "env_logger",
- "futures",
  "log",
  "reqwest",
  "scry-provider-protocol",
@@ -3433,6 +3454,8 @@ name = "scry-utils"
 version = "0.0.1"
 dependencies = [
  "backon",
+ "env_logger",
+ "futures",
  "prost",
  "tokio",
  "tokio-util",

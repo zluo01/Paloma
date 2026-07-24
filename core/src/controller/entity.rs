@@ -1,4 +1,9 @@
-use crate::{capability::Item, entity::ProviderBackendId, permission::UserDecision};
+use scry_extension_protocol::v1::Item;
+
+use crate::{
+    entity::{ExtensionCapabilityId, ProviderBackendId},
+    permission::UserDecision,
+};
 
 #[derive(Clone, Debug)]
 pub enum RenderEvent {
@@ -16,8 +21,7 @@ pub enum SearchRenderEvent {
 
 #[derive(Clone, Debug)]
 pub struct QueryResponse {
-    /// handler unique name
-    pub id: &'static str,
+    pub extension_capability_id: ExtensionCapabilityId,
     /// Display section name
     pub name: String,
     /// handler results

@@ -1,13 +1,10 @@
 mod connection;
 
-use std::{collections::HashMap, process::exit, sync::LazyLock};
+use std::{process::exit, sync::LazyLock};
 
 pub use connection::{ChatStream, ProviderConnectionError, ProviderPlugin};
 
-use crate::{
-    HealthStatus,
-    entity::{Plugin, PluginArgs, Transport},
-};
+use crate::{HealthStatus, entity::Plugin};
 
 pub(crate) const PLUGIN_ANTHROPIC: &str = "Anthropic";
 pub(crate) const PLUGIN_OPENAI: &str = "OpenAI";
@@ -51,27 +48,7 @@ pub(crate) fn serve_plugin_and_exit_if_requested() {
 }
 
 pub(crate) static ANTHROPIC_PLUGIN: LazyLock<Plugin> =
-    LazyLock::new(|| builtin_plugin(PLUGIN_ANTHROPIC));
+    LazyLock::new(|| Plugin::builtin(PLUGIN_ANTHROPIC, PROVIDER_PLUGIN_FLAG));
 
-pub(crate) static OPENAI_PLUGIN: LazyLock<Plugin> = LazyLock::new(|| builtin_plugin(PLUGIN_OPENAI));
-
-fn builtin_plugin(name: &str) -> Plugin {
-    let command = std::env::current_exe()
-        .unwrap_or_else(|_| {
-            panic!("current executable path should be resolvable for plugin {name}.")
-        })
-        .to_string_lossy()
-        .into_owned();
-    Plugin {
-        name: name.to_string(),
-        transport: Transport::Local,
-        // no global timeout in provider plugin
-        timeout: 0,
-        disabled: false,
-        env: HashMap::new(),
-        args: PluginArgs::Local {
-            command,
-            args: vec![PROVIDER_PLUGIN_FLAG.to_string(), name.to_string()],
-        },
-    }
-}
+pub(crate) static OPENAI_PLUGIN: LazyLock<Plugin> =
+    LazyLock::new(|| Plugin::builtin(PLUGIN_OPENAI, PROVIDER_PLUGIN_FLAG));

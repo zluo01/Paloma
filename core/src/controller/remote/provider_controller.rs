@@ -13,9 +13,9 @@ use scry_provider_protocol::v1::{
 use uuid::Uuid;
 
 use crate::{
-    HealthLevel, HealthStatus, IconRef, Plugin, PluginType, Transport,
+    HealthLevel, HealthStatus, Plugin, PluginType, Transport,
     db::{AuthKind, ConnectedBackend, Storage, StorageError},
-    entity::ProviderBackendId,
+    entity::{Icon, ProviderBackendId},
     provider::{
         ANTHROPIC_PLUGIN, ChatStream, OPENAI_PLUGIN, ProviderConnectionError, ProviderInfo,
         ProviderPlugin,
@@ -334,7 +334,7 @@ impl ProviderController {
                 Connector {
                     id: id.clone(),
                     description: backend.description.clone(),
-                    icon: backend.icon.clone().map(IconRef::Embedded),
+                    icon: backend.icon.clone().map(Icon::Embedded),
                     connection,
                 }
             })
@@ -542,7 +542,7 @@ struct ProviderHandler {
 pub struct Connector {
     pub id: ProviderBackendId,
     pub description: String,
-    pub icon: Option<IconRef>,
+    pub icon: Option<Icon>,
     pub connection: Option<ConnectorConnection>,
 }
 
