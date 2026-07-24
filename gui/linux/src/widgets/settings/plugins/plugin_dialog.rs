@@ -208,7 +208,8 @@ impl PluginDialog {
         Self { frame }
     }
 
-    pub(super) fn new_provider_dialog(
+    pub(super) fn new_local_plugin_dialog(
+        plugin_type: PluginType,
         plugin: Option<Plugin>,
         dispatcher: mpsc::UnboundedSender<Msg>,
     ) -> Self {
@@ -218,11 +219,15 @@ impl PluginDialog {
             .unwrap_or_default();
         let editing = plugin.is_some();
 
+        let noun = match plugin_type {
+            PluginType::Extension => "Extension",
+            _ => "Provider",
+        };
         let frame = DialogFrame::new(
-            if editing {
-                "Edit Provider"
+            &if editing {
+                format!("Edit {noun}")
             } else {
-                "Add Provider"
+                format!("Add {noun}")
             },
             editing,
         );
@@ -281,7 +286,7 @@ impl PluginDialog {
                 );
                 let _ = dispatcher.unbounded_send(Msg::General(
                     GeneralPluginMsg::PluginDialogSubmitted {
-                        plugin_type: PluginType::Provider,
+                        plugin_type: plugin_type.clone(),
                         config: data.to_plugin(false),
                         editing,
                     },

@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 
-use scry_core::{AppError, McpServer, OAuthCallbackState, Plugin, PluginType, ProviderInfo};
+use scry_core::{
+    AppError, ExtensionInfo, McpServer, OAuthCallbackState, Plugin, PluginType, ProviderInfo,
+};
 
 #[derive(Default)]
 pub(super) struct State {
+    pub(super) extensions: Vec<ExtensionInfo>,
     pub(super) providers: Vec<ProviderInfo>,
     pub(super) servers: Vec<McpServer>,
 }
@@ -11,6 +14,7 @@ pub(super) struct State {
 pub(super) enum Msg {
     General(GeneralPluginMsg),
     McpPlugin(McpPluginMsg),
+    ExtensionLoaded(Result<Vec<ExtensionInfo>, AppError>),
     ProviderLoaded(Result<Vec<ProviderInfo>, AppError>),
     McpServersLoaded(Result<Vec<McpServer>, AppError>),
     McpToggleChanged(String, bool),
@@ -41,8 +45,10 @@ pub(super) enum McpPluginMsg {
 }
 
 pub(super) enum Command {
+    LoadExtensions,
     LoadProviderPlugins,
     LoadMcpServers,
+    RenderExtensions,
     RenderProviderPlugins,
     RenderMcpServers,
     SaveMcpToggle(String, bool),
@@ -86,6 +92,15 @@ impl State {
         match msg {
             Msg::General(msg) => self.handle_general(msg),
             Msg::McpPlugin(msg) => self.handle_mcp_connect(msg),
+            Msg::ExtensionLoaded(result) => match result {
+                Ok(extensions) => {
+                    self.extensions = extensions;
+                    vec![Command::RenderExtensions]
+                },
+                Err(e) => vec![Command::LogWarning(format!(
+                    "failed to load extensions: {e}"
+                ))],
+            },
             Msg::ProviderLoaded(result) => match result {
                 Ok(providers) => {
                     self.providers = providers;
@@ -212,7 +227,11 @@ impl State {
                 .iter()
                 .find(|p| p.name == name)
                 .and_then(|p| p.config.clone()),
-            PluginType::Extension => None,
+            PluginType::Extension => self
+                .extensions
+                .iter()
+                .find(|p| p.name == name)
+                .and_then(|p| p.config.clone()),
         }
     }
 
@@ -227,7 +246,7 @@ fn reload_list(plugin_type: &PluginType) -> Option<Command> {
     match plugin_type {
         PluginType::Provider => Some(Command::LoadProviderPlugins),
         PluginType::Mcp => Some(Command::LoadMcpServers),
-        PluginType::Extension => None,
+        PluginType::Extension => Some(Command::LoadExtensions),
     }
 }
 

@@ -10,8 +10,8 @@ use libadwaita::{
     PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
 };
 use scry_core::{
-    AppContext, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginArgs, PluginType,
-    ProviderInfo,
+    AppContext, ExtensionInfo, HealthStatus, McpServer, OAuthCallbackState, Plugin, PluginArgs,
+    PluginType, ProviderInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -27,8 +27,10 @@ use crate::{
 
 pub(crate) struct PluginsPage {
     view: PreferencesPage,
+    extension_view: PreferencesGroup,
     provider_view: PreferencesGroup,
     mcp_view: PreferencesGroup,
+    add_extension: ButtonRow,
     add_provider: ButtonRow,
     add_mcp: ButtonRow,
     dialog: RefCell<Option<plugin_dialog::PluginDialog>>,
@@ -44,17 +46,11 @@ impl PluginsPage {
     pub(crate) fn new(app_context: Arc<AppContext>, window: &ApplicationWindow) -> Rc<Self> {
         let view = PreferencesPage::new();
 
-        // Native plugin support is not wired yet; the disabled add row also
-        // serves as the empty state.
-        let plugins = PreferencesGroup::builder().title("Plugins").build();
-        plugins.add(
-            &ButtonRow::builder()
-                .title("Add Plugin…")
-                .start_icon_name("list-add-symbolic")
-                .sensitive(false)
-                .tooltip_text("Native plugins are not supported yet.")
-                .build(),
-        );
+        let extension_view = PreferencesGroup::builder().title("Extensions").build();
+        let add_extension = ButtonRow::builder()
+            .title("Add Extension Plugin…")
+            .start_icon_name("list-add-symbolic")
+            .build();
 
         let provider_view = PreferencesGroup::builder().title("Providers").build();
         let add_provider = ButtonRow::builder()
@@ -68,11 +64,20 @@ impl PluginsPage {
             .start_icon_name("list-add-symbolic")
             .build();
 
-        view.add(&plugins);
+        view.add(&extension_view);
         view.add(&provider_view);
         view.add(&mcp_view);
 
         let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
+
+        add_extension.connect_activated({
+            let dispatcher = dispatcher.clone();
+            move |_| {
+                let _ = dispatcher.unbounded_send(Msg::General(
+                    GeneralPluginMsg::AddPluginClicked(PluginType::Extension),
+                ));
+            }
+        });
 
         add_provider.connect_activated({
             let dispatcher = dispatcher.clone();
@@ -94,8 +99,10 @@ impl PluginsPage {
 
         let plugin_page = Rc::new(Self {
             view,
+            extension_view,
             provider_view,
             mcp_view,
+            add_extension,
             add_provider,
             add_mcp,
             dialog: RefCell::new(None),
@@ -128,8 +135,20 @@ impl PluginsPage {
     }
 
     pub(crate) fn refresh(&self) {
+        self.refresh_extensions();
         self.refresh_mcp_servers();
         self.refresh_providers();
+    }
+
+    fn refresh_extensions(&self) {
+        drop(tokio_runtime().spawn({
+            let app_context = self.app_context.clone();
+            let dispatcher = self.dispatcher.clone();
+            async move {
+                let result = app_context.list_extension_plugins().await;
+                let _ = dispatcher.unbounded_send(Msg::ExtensionLoaded(result));
+            }
+        }));
     }
 
     fn refresh_providers(&self) {
@@ -156,8 +175,10 @@ impl PluginsPage {
 
     fn run(&self, command: Command) {
         match command {
+            Command::RenderExtensions => self.render_extension_plugins(),
             Command::RenderMcpServers => self.render_mcp_servers(),
             Command::RenderProviderPlugins => self.render_provider_plugins(),
+            Command::LoadExtensions => self.refresh_extensions(),
             Command::LoadProviderPlugins => self.refresh_providers(),
             Command::LoadMcpServers => self.refresh_mcp_servers(),
             Command::SaveMcpToggle(name, enabled) => self.save_mcp_toggle(name, enabled),
@@ -224,14 +245,16 @@ impl PluginsPage {
 
     fn save_plugin(&self, plugin_type: PluginType, config: Plugin) {
         match plugin_type {
-            PluginType::Extension => {},
-            PluginType::Provider => {
+            PluginType::Extension | PluginType::Provider => {
                 let app_context = self.app_context.clone();
                 let dispatcher = self.dispatcher.clone();
                 let flow = tokio_runtime().spawn(async move {
-                    let result = app_context.add_provider_plugin(config).await;
+                    let result = match plugin_type {
+                        PluginType::Extension => app_context.add_extension_plugin(config).await,
+                        _ => app_context.add_provider_plugin(config).await,
+                    };
                     let _ = dispatcher.unbounded_send(Msg::General(
-                        GeneralPluginMsg::PluginSaveFinished(PluginType::Provider, result),
+                        GeneralPluginMsg::PluginSaveFinished(plugin_type, result),
                     ));
                 });
                 if let Some(old) = self.connection_flow.borrow_mut().replace(flow) {
@@ -308,24 +331,21 @@ impl PluginsPage {
             return;
         };
 
-        // no need for option when native is implemented
         let dialog = match plugin_type {
-            PluginType::Extension => None,
-            PluginType::Provider => Some(plugin_dialog::PluginDialog::new_provider_dialog(
-                config,
-                self.dispatcher.clone(),
-            )),
-            PluginType::Mcp => Some(plugin_dialog::PluginDialog::new_mcp_dialog(
-                config,
-                taken,
-                self.dispatcher.clone(),
-            )),
+            PluginType::Extension | PluginType::Provider => {
+                plugin_dialog::PluginDialog::new_local_plugin_dialog(
+                    plugin_type,
+                    config,
+                    self.dispatcher.clone(),
+                )
+            },
+            PluginType::Mcp => {
+                plugin_dialog::PluginDialog::new_mcp_dialog(config, taken, self.dispatcher.clone())
+            },
         };
 
-        if let Some(dialog) = dialog {
-            dialog.show(&window);
-            self.dialog.replace(Some(dialog));
-        }
+        dialog.show(&window);
+        self.dialog.replace(Some(dialog));
     }
 
     fn render_mcp_servers(&self) {
@@ -345,6 +365,55 @@ impl PluginsPage {
             self.provider_view.add(&self.plugin_row(provider));
         }
         self.provider_view.add(&self.add_provider);
+    }
+
+    fn render_extension_plugins(&self) {
+        self.extension_view.clear();
+        let extensions = self.model.borrow().extensions.clone();
+        for extension in &extensions {
+            self.extension_view.add(&self.extension_row(extension));
+        }
+        self.extension_view.add(&self.add_extension);
+    }
+
+    fn extension_row(&self, extension: &ExtensionInfo) -> Widget {
+        let subtitle = [
+            extension
+                .author
+                .as_deref()
+                .map(|author| format!("Author: {author}")),
+            extension
+                .homepage
+                .as_deref()
+                .map(|homepage| format!("Homepage: {homepage}")),
+            Some(extension.description.clone()).filter(|description| !description.is_empty()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        let row = ExpanderRow::builder()
+            .title(&extension.name)
+            .subtitle(&subtitle)
+            .build();
+
+        for capability in &extension.capabilities {
+            row.add_row(
+                &ActionRow::builder()
+                    .title(&capability.capability_id)
+                    .subtitle(&capability.description)
+                    .build(),
+            );
+        }
+
+        let actions = plugin_actions(extension.status, extension.error.as_deref(), None);
+        if extension.config.is_some() {
+            actions.append(&self.edit_button(PluginType::Extension, &extension.name));
+            actions.append(&self.remove_button(PluginType::Extension, &extension.name));
+        }
+        row.add_suffix(&actions);
+        row.upcast()
     }
 
     fn plugin_row(&self, provider: &ProviderInfo) -> Widget {
