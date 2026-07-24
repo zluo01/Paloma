@@ -1,9 +1,7 @@
-mod connector;
 mod entity;
 mod helper;
 mod remote;
 
-pub use connector::{PluginConnectionController, PluginConnectionError};
 pub use entity::{ChatRenderEvent, QueryResponse, RenderEvent, SearchRenderEvent};
 pub use remote::{
     ChatRenderStream, Connector, ConnectorConnection, ExtensionController,

@@ -1,13 +1,13 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use futures::Stream;
+use log::error;
 use uuid::Uuid;
 
 use crate::{
     controller::{
         ExtensionController, ExtensionControllerError, PermissionWorkflowManager,
-        PluginConnectionController, PluginConnectionError, ProviderController,
-        ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
+        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
         SessionManagerError, ToolController, TurnManager,
     },
     db::{Storage, StorageError},
@@ -65,7 +65,6 @@ pub struct AppContext {
     providers: Arc<ProviderController>,
     extensions: Arc<ExtensionController>,
     mcps: Arc<McpController>,
-    plugins: PluginConnectionController,
 }
 
 impl AppContext {
@@ -78,8 +77,7 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (providers, extensions, mcps, remote_query, plugin) =
-            Self::init(storage.clone()).await?;
+        let (providers, extensions, mcps, remote_query) = Self::init(storage.clone()).await?;
 
         Ok(Arc::new(Self {
             storage,
@@ -87,7 +85,6 @@ impl AppContext {
             extensions,
             mcps,
             remote_query,
-            plugins: plugin,
         }))
     }
 
@@ -98,7 +95,6 @@ impl AppContext {
         Arc<ExtensionController>,
         Arc<McpController>,
         RemoteQuery,
-        PluginConnectionController,
     )> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
@@ -129,13 +125,6 @@ impl AppContext {
         )
         .await;
 
-        let plugin = PluginConnectionController::new(
-            storage.clone(),
-            Arc::clone(&mcp_controller),
-            Arc::clone(&provider_controller),
-            Arc::clone(&extension_controller),
-        );
-
         let (mut session_manager, session_manager_client) = SessionManager::new(
             storage.clone(),
             tool_controller.clone(),
@@ -164,7 +153,6 @@ impl AppContext {
             extension_controller,
             mcp_controller,
             remote_query,
-            plugin,
         ))
     }
 
@@ -295,7 +283,23 @@ impl AppContext {
 /// plugins + mcps
 impl AppContext {
     pub async fn plugins_health_level(&self) -> HealthLevel {
-        self.plugins.health_level().await
+        let servers = match self.mcps.list_mcps().await {
+            Ok(servers) => servers,
+            Err(e) => {
+                error!("plugin health_level: {e}");
+                return HealthLevel::Inactive;
+            },
+        };
+        // servers still connecting don't count against health
+        let (settled, healthy) =
+            servers
+                .iter()
+                .fold((0, 0), |(settled, healthy), server| match server.status {
+                    HealthStatus::Starting => (settled, healthy),
+                    HealthStatus::Running => (settled + 1, healthy + 1),
+                    HealthStatus::Unhealthy => (settled + 1, healthy),
+                });
+        HealthLevel::from_counts(settled, healthy)
     }
 
     pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>> {
@@ -331,15 +335,26 @@ impl AppContext {
     }
 
     pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {
-        Ok(self.plugins.update_plugin(plugin_type, plugin).await?)
+        match plugin_type {
+            PluginType::Extension => self.extensions.update_extension(&plugin).await?,
+            PluginType::Mcp => self.mcps.update_mcp(&plugin).await?,
+            PluginType::Provider => self.providers.update_provider(&plugin).await?,
+        }
+        Ok(())
     }
 
     pub async fn remove_plugin(&self, plugin_type: PluginType, name: &str) -> Result<()> {
-        Ok(self.plugins.remove_plugin(plugin_type, name).await?)
+        match plugin_type {
+            PluginType::Extension => self.extensions.remove_extension(name).await?,
+            PluginType::Mcp => self.mcps.remove_mcp(name).await?,
+            PluginType::Provider => self.providers.remove_provider(name).await?,
+        }
+        Ok(())
     }
 
     pub async fn toggle_plugin(&self, name: &str, disabled: bool) -> Result<()> {
-        Ok(self.plugins.toggle_plugin(name, disabled).await?)
+        self.storage.toggle_plugin(name, disabled).await?;
+        Ok(())
     }
 }
 
@@ -365,9 +380,6 @@ pub enum AppError {
 
     #[error(transparent)]
     RemoteQuery(#[from] RemoteQueryError),
-
-    #[error(transparent)]
-    PluginConnection(#[from] PluginConnectionError),
 
     #[error(transparent)]
     SessionManager(#[from] SessionManagerError),
