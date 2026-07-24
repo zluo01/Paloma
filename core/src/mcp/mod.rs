@@ -1,4 +1,5 @@
 mod credentials;
+mod helper;
 
 use std::{
     collections::HashMap,
@@ -26,18 +27,25 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    capability::{
-        DynTool, ToolResult, ToolSchema, ToolSpec, tools::mcp::credentials::CredentialStorage,
-    },
+    capability::{ToolResult, ToolSchema, ToolSpec},
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
     entity::{HealthStatus, Plugin, PluginArgs},
-    utils::{mcp_function_name_encode, write_spill_file},
+    mcp::{credentials::CredentialStorage, helper::mcp_function_name_encode},
+    utils::write_spill_file,
 };
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub struct McpTool {
+#[derive(Clone)]
+pub struct McpPluginInfo {
+    pub description: String,
+    pub status: HealthStatus,
+    pub error: Option<String>,
+    pub config: Plugin,
+}
+
+pub struct McpPlugin {
     name: String,
     description: String,
     timeout: u32,
@@ -46,12 +54,12 @@ pub struct McpTool {
     error: Option<String>,
 }
 
-impl McpTool {
+impl McpPlugin {
     pub async fn new(
         config: &Plugin,
         request_client: reqwest::Client,
         storage: Storage,
-    ) -> (Self, Vec<ToolSpec>) {
+    ) -> (Self, HashMap<String, ToolSpec>) {
         // make sure problematic mcp server will not hang the startup
         let init = timeout(CONNECTION_TIMEOUT, async {
             let client = attempt_with_retry(
@@ -64,11 +72,11 @@ impl McpTool {
                         &config.env,
                     )
                 },
-                McpToolError::is_connection_level,
+                McpPluginError::is_connection_level,
             )
             .await?;
             let tools = client.list_all_tools().await?;
-            Ok::<_, McpToolError>((client, tools))
+            Ok::<_, McpPluginError>((client, tools))
         })
         .await;
 
@@ -96,18 +104,18 @@ impl McpTool {
                     "failed to connect to mcp server {}: {}",
                     &config.name, error
                 );
-                (Self::unhealthy(config, &error), Vec::new())
+                (Self::unhealthy(config, &error), HashMap::new())
             },
             Err(_elapsed) => {
-                let error = McpToolError::InitTimeout(CONNECTION_TIMEOUT.as_secs());
+                let error = McpPluginError::InitTimeout(CONNECTION_TIMEOUT.as_secs());
                 error!("mcp server {}: {}", &config.name, error);
-                (Self::unhealthy(config, &error), Vec::new())
+                (Self::unhealthy(config, &error), HashMap::new())
             },
         }
     }
 
     /// unhealthy constructor
-    fn unhealthy(config: &Plugin, error: &McpToolError) -> Self {
+    fn unhealthy(config: &Plugin, error: &McpPluginError) -> Self {
         Self {
             name: config.name.to_string(),
             description: String::new(),
@@ -117,11 +125,8 @@ impl McpTool {
             error: Some(error.to_string()),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl DynTool for McpTool {
-    async fn specs(&self) -> std::result::Result<Vec<ToolSpec>, String> {
+    async fn specs(&self) -> std::result::Result<HashMap<String, ToolSpec>, String> {
         let Some(client) = self.client.as_ref() else {
             error!(
                 "Unexpected invocation on disconnected mcp server `{}` for getting schema. This indicates a bug.",
@@ -136,8 +141,13 @@ impl DynTool for McpTool {
         let outcome = timeout(
             Duration::from_secs(self.timeout as u64),
             attempt_with_retry(
-                || async move { client.list_all_tools().await.map_err(McpToolError::Service) },
-                McpToolError::is_connection_level,
+                || async move {
+                    client
+                        .list_all_tools()
+                        .await
+                        .map_err(McpPluginError::Service)
+                },
+                McpPluginError::is_connection_level,
             ),
         )
         .await;
@@ -160,36 +170,33 @@ impl DynTool for McpTool {
         }
     }
 
-    fn health_status(&self) -> HealthStatus {
+    pub fn health_status(&self) -> HealthStatus {
         HealthStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
-    fn description(&self) -> &str {
+    pub fn description(&self) -> &str {
         &self.description
     }
 
-    fn error(&self) -> Option<&str> {
+    pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
     }
 
-    async fn invoke(
+    pub async fn call(
         &self,
         name: Option<String>, // mcp tool name
         _session_id: Uuid,
         call_id: String,
         args: Value,
-    ) -> std::result::Result<ToolResult, String> {
-        let tool = name.ok_or("MCP tool call requires a tool name")?;
+    ) -> Result<ToolResult> {
+        let tool = name.ok_or(McpPluginError::MissingToolName)?;
 
         let Some(client) = self.client.as_ref() else {
             error!(
                 "Unexpected invocation on disconnected mcp server `{}`. This indicates a bug.",
                 self.name
             );
-            return Err(format!(
-                "internal error: mcp server `{}` is unavailable",
-                self.name
-            ));
+            return Err(McpPluginError::Disconnected(self.name.clone()));
         };
 
         let arguments = args.as_object().cloned().unwrap_or_default();
@@ -204,10 +211,10 @@ impl DynTool for McpTool {
                         client
                             .call_tool(params)
                             .await
-                            .map_err(McpToolError::Service)
+                            .map_err(McpPluginError::Service)
                     }
                 },
-                McpToolError::is_connection_level,
+                McpPluginError::is_connection_level,
             ),
         )
         .await;
@@ -226,14 +233,17 @@ impl DynTool for McpTool {
                         .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
                 }
                 error!("mcp tool `{tool}` failed: {err}");
-                return Err(err.to_string());
+                return Err(err);
             },
             // Timed out across all retries — ambiguous (slow tool vs hung
             // server), so surface it but leave health untouched.
             Err(_elapsed) => {
-                let msg = format!("mcp tool `{tool}` timed out after {}s", self.timeout);
-                error!("{msg}");
-                return Err(msg);
+                let err = McpPluginError::CallTimeout {
+                    tool: tool.clone(),
+                    seconds: self.timeout,
+                };
+                error!("{err}");
+                return Err(err);
             },
         };
 
@@ -254,8 +264,6 @@ impl DynTool for McpTool {
             truncate_payload(&tool, &call_id, text).await,
         ))
     }
-
-    async fn cancel_session(&self, _session_id: Uuid) {}
 }
 
 /// Truncate payload if exceed [`MAX_STREAM_PAYLOAD_BYTES`] to prevent
@@ -356,7 +364,7 @@ async fn create_auth_http_connection(
     // Connecting never starts an interactive flow: stored credentials are
     // required, and authorization happens through the settings action.
     if !auth_manager.initialize_from_store().await? {
-        return Err(McpToolError::Auth(AuthError::AuthorizationRequired));
+        return Err(McpPluginError::Auth(AuthError::AuthorizationRequired));
     }
     // eagerly validate the access token
     auth_manager.get_access_token().await?;
@@ -368,23 +376,26 @@ async fn create_auth_http_connection(
 }
 
 /// convert list of rmcp tools to tool specs
-fn tools_to_specs(name: &str, tools: Vec<Tool>) -> Vec<ToolSpec> {
+fn tools_to_specs(name: &str, tools: Vec<Tool>) -> HashMap<String, ToolSpec> {
     tools
         .into_iter()
-        .map(|tool| ToolSpec {
-            name: name.to_string(),
-            tool: Some(tool.name.to_string()),
-            schema: ToolSchema {
-                name: mcp_function_name_encode(name, &tool.name),
-                description: tool.description.map(|d| d.into_owned()).unwrap_or_default(),
-                parameters: Value::Object((*tool.input_schema).clone()),
-            },
+        .map(|tool| {
+            let spec = ToolSpec {
+                name: name.to_string(),
+                tool: Some(tool.name.to_string()),
+                schema: ToolSchema {
+                    name: mcp_function_name_encode(name, &tool.name),
+                    description: tool.description.map(|d| d.into_owned()).unwrap_or_default(),
+                    parameters: Value::Object((*tool.input_schema).clone()),
+                },
+            };
+            (spec.schema.name.clone(), spec)
         })
         .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum McpToolError {
+pub enum McpPluginError {
     #[error("failed to spawn MCP server process: {0}")]
     Spawn(#[from] std::io::Error),
 
@@ -399,31 +410,40 @@ pub enum McpToolError {
 
     #[error("MCP authorization failed: {0}")]
     Auth(#[from] AuthError),
+
+    #[error("MCP tool call requires a tool name")]
+    MissingToolName,
+
+    #[error("internal error: mcp server `{0}` is unavailable")]
+    Disconnected(String),
+
+    #[error("mcp tool `{tool}` timed out after {seconds}s")]
+    CallTimeout { tool: String, seconds: u32 },
 }
 
 // `ClientInitializeError` is large (~500 bytes), so box it to keep `McpToolError`
 // small. Manual `From` (instead of `#[from]`) so `?` on a bare error still boxes.
-impl From<rmcp::service::ClientInitializeError> for McpToolError {
+impl From<rmcp::service::ClientInitializeError> for McpPluginError {
     fn from(error: rmcp::service::ClientInitializeError) -> Self {
-        McpToolError::Init(Box::new(error))
+        McpPluginError::Init(Box::new(error))
     }
 }
 
-impl McpToolError {
+impl McpPluginError {
     /// Connection-level failures: failing to establish the session (`Init`) or
     /// losing it mid-call (broken pipe / closed transport). These are the
     /// errors worth retrying — for both `connect` and live `call_tool`.
     fn is_connection_level(&self) -> bool {
         matches!(
             self,
-            McpToolError::Init(_)
-                | McpToolError::Service(
+            McpPluginError::Init(_)
+                | McpPluginError::Service(
                     rmcp::service::ServiceError::TransportSend(_)
                         | rmcp::service::ServiceError::TransportClosed
                 )
-                | McpToolError::Auth(AuthError::HttpError(_))
+                | McpPluginError::Auth(AuthError::HttpError(_))
         )
     }
 }
 
-type Result<T> = std::result::Result<T, McpToolError>;
+type Result<T> = std::result::Result<T, McpPluginError>;

@@ -20,6 +20,7 @@ mod controller;
 mod db;
 mod entity;
 mod extension;
+mod mcp;
 mod permission;
 mod provider;
 mod utils;
@@ -32,8 +33,8 @@ fn process_entry() {
 
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, McpServer, ProviderStatus, QueryResponse,
-    RenderEvent, SearchRenderEvent, SessionListItem,
+    ChatRenderEvent, Connector, ConnectorConnection, ProviderStatus, QueryResponse, RenderEvent,
+    SearchRenderEvent, SessionListItem,
 };
 pub use db::Permission;
 pub use entity::{
@@ -41,6 +42,7 @@ pub use entity::{
     ProviderBackendId, Transport,
 };
 pub use extension::ExtensionInfo;
+pub use mcp::McpPluginInfo;
 pub use permission::{PermissionState, UserDecision};
 pub use provider::ProviderInfo;
 pub use scry_extension_protocol::v1::{
@@ -54,7 +56,7 @@ pub use utils::OAuthCallbackState;
 
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
-    controller::ChatRenderStream,
+    controller::{ChatRenderStream, McpController, McpControllerError},
 };
 
 pub struct AppContext {
@@ -62,6 +64,7 @@ pub struct AppContext {
     remote_query: RemoteQuery,
     providers: Arc<ProviderController>,
     extensions: Arc<ExtensionController>,
+    mcps: Arc<McpController>,
     plugins: PluginConnectionController,
 }
 
@@ -75,12 +78,14 @@ impl AppContext {
         }
         let storage = Storage::new(&db_path).await?;
 
-        let (providers, extensions, remote_query, plugin) = Self::init(storage.clone()).await?;
+        let (providers, extensions, mcps, remote_query, plugin) =
+            Self::init(storage.clone()).await?;
 
         Ok(Arc::new(Self {
             storage,
             providers,
             extensions,
+            mcps,
             remote_query,
             plugins: plugin,
         }))
@@ -91,6 +96,7 @@ impl AppContext {
     ) -> Result<(
         Arc<ProviderController>,
         Arc<ExtensionController>,
+        Arc<McpController>,
         RemoteQuery,
         PluginConnectionController,
     )> {
@@ -105,6 +111,8 @@ impl AppContext {
             .http2_keep_alive_while_idle(true)
             .build()?;
 
+        let mcp_controller = Arc::new(McpController::new(storage.clone(), http.clone()).await?);
+
         let provider_controller = Arc::new(ProviderController::new(storage.clone()).await?);
 
         let extension_controller = Arc::new(ExtensionController::new(storage.clone()).await?);
@@ -116,14 +124,14 @@ impl AppContext {
 
         let tool_controller = ToolController::new(
             storage.clone(),
-            http.clone(),
+            Arc::clone(&mcp_controller),
             permission_workflow_client.clone(),
         )
         .await;
 
         let plugin = PluginConnectionController::new(
             storage.clone(),
-            Arc::clone(&tool_controller),
+            Arc::clone(&mcp_controller),
             Arc::clone(&provider_controller),
             Arc::clone(&extension_controller),
         );
@@ -154,6 +162,7 @@ impl AppContext {
         Ok((
             provider_controller,
             extension_controller,
+            mcp_controller,
             remote_query,
             plugin,
         ))
@@ -297,8 +306,8 @@ impl AppContext {
         Ok(self.providers.available_providers().await?)
     }
 
-    pub async fn list_mcps(&self) -> Result<Vec<McpServer>> {
-        Ok(self.plugins.list_mcps().await?)
+    pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>> {
+        Ok(self.mcps.list_mcps().await?)
     }
 
     pub async fn add_extension_plugin(&self, config: Plugin) -> Result<()> {
@@ -310,7 +319,7 @@ impl AppContext {
     }
 
     pub async fn init_mcp_connection(&self, config: Plugin) -> Result<Option<OAuthCallbackState>> {
-        Ok(self.plugins.init_mcp_connection(config).await?)
+        Ok(self.mcps.init_connection(config).await?)
     }
 
     pub async fn finalize_mcp_connection(
@@ -318,7 +327,7 @@ impl AppContext {
         config: Plugin,
         state: Option<OAuthCallbackState>,
     ) -> Result<()> {
-        Ok(self.plugins.finalize_mcp_connection(config, state).await?)
+        Ok(self.mcps.finalize_connection(config, state).await?)
     }
 
     pub async fn update_plugin(&self, plugin_type: PluginType, plugin: Plugin) -> Result<()> {
@@ -344,6 +353,9 @@ pub enum AppError {
 
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    Mcp(#[from] McpControllerError),
 
     #[error(transparent)]
     Provider(#[from] ProviderControllerError),

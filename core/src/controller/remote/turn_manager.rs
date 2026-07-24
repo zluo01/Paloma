@@ -17,7 +17,6 @@ use crate::{
     constants::{INSTRUCTION, TURN_MANAGER_CHANNEL_CAPACITY},
     controller::{
         ProviderController, ProviderControllerError, SessionManagerError, ToolController,
-        ToolControllerError,
         helper::{Disposition, extract_args},
         remote::{
             PermissionWorkflowManagerClient, SessionEvent, session_manager::SessionManagerClient,
@@ -624,9 +623,6 @@ pub enum TurnManagerError {
 
     #[error(transparent)]
     Session(#[from] SessionManagerError),
-
-    #[error(transparent)]
-    ToolController(#[from] ToolControllerError),
 }
 
 type Result<T> = std::result::Result<T, TurnManagerError>;

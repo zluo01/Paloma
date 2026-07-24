@@ -1,4 +1,3 @@
-use log::error;
 use scry_provider_protocol::v1::ToolDefinition;
 use serde_json::Value;
 use uuid::Uuid;
@@ -139,32 +138,5 @@ where
 
     async fn cancel_session(&self, session_id: Uuid) {
         Tool::cancel_session(self, session_id).await
-    }
-}
-
-pub struct Placeholder;
-
-#[async_trait::async_trait]
-impl DynTool for Placeholder {
-    async fn specs(&self) -> Result<Vec<ToolSpec>, String> {
-        Ok(Vec::new())
-    }
-
-    fn health_status(&self) -> HealthStatus {
-        HealthStatus::Starting
-    }
-
-    async fn invoke(
-        &self,
-        _name: Option<String>,
-        _session_id: Uuid,
-        _call_id: String,
-        _args: Value,
-    ) -> Result<ToolResult, String> {
-        Err("tool is still starting".to_string())
-    }
-
-    async fn cancel_session(&self, _session_id: Uuid) {
-        error!("placeholder tool get cancel during startup. This indicates a bug.")
     }
 }
