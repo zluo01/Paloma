@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use futures::channel::mpsc;
 use gtk4::{Align, Box as GtkBox, Button, Orientation, prelude::*};
-use scry_core::Item;
+use scry_core::{ExtensionCapabilityId, Item};
 
 use crate::{
     helper::{Clear, scroll_selection_into_view},
@@ -66,7 +66,7 @@ impl SearchView {
 
     pub(crate) fn append_section(
         &self,
-        handler_id: &'static str,
+        extension_capability_id: ExtensionCapabilityId,
         handler_name: &str,
         items: Vec<Item>,
     ) -> bool {
@@ -78,8 +78,12 @@ impl SearchView {
             return false;
         }
 
-        let section =
-            Section::search_section(handler_id, handler_name, items, self.dispatcher.clone());
+        let section = Section::search_section(
+            extension_capability_id,
+            handler_name,
+            items,
+            self.dispatcher.clone(),
+        );
 
         self.push_section(section.widget());
         self.sections.borrow_mut().push(section);
@@ -99,21 +103,23 @@ impl SearchView {
             return;
         }
 
-        let Some((button, handler_id, actions)) = self.selected_action().and_then(|row| {
-            (row.panel_actions.len() > 1).then(|| {
-                (
-                    row.button.clone(),
-                    row.handler_id,
-                    row.panel_actions.clone(),
-                )
+        let Some((button, extension_capability_id, actions)) =
+            self.selected_action().and_then(|row| {
+                (row.panel_actions.len() > 1).then(|| {
+                    (
+                        row.button.clone(),
+                        row.extension_capability_id,
+                        row.panel_actions.clone(),
+                    )
+                })
             })
-        }) else {
+        else {
             return;
         };
 
         *self.action_panel.borrow_mut() = Some(ActionPanel::new(
             &button,
-            handler_id,
+            extension_capability_id,
             actions,
             self.dispatcher.clone(),
         ));

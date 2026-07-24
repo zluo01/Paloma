@@ -212,7 +212,7 @@ impl State {
                 .iter()
                 .find(|p| p.name == name)
                 .and_then(|p| p.config.clone()),
-            PluginType::Native => None,
+            PluginType::Extension => None,
         }
     }
 
@@ -227,7 +227,7 @@ fn reload_list(plugin_type: &PluginType) -> Option<Command> {
     match plugin_type {
         PluginType::Provider => Some(Command::LoadProviderPlugins),
         PluginType::Mcp => Some(Command::LoadMcpServers),
-        PluginType::Native => None,
+        PluginType::Extension => None,
     }
 }
 

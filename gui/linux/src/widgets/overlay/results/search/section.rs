@@ -3,7 +3,7 @@ use gtk4::{
     Align, Box as GtkBox, Button, Image, Label, Orientation, Revealer, RevealerTransitionType,
     Separator, Widget, prelude::*,
 };
-use scry_core::{Action, IconRef, Item};
+use scry_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item, capability_icon};
 
 use crate::widgets::overlay::model::{ChatMsg, Msg, SearchMsg};
 
@@ -14,7 +14,7 @@ const MAX_SECTION_ITEMS: usize = 5;
 #[derive(Clone)]
 pub(super) struct SearchAction {
     pub(super) button: Button,
-    pub(super) handler_id: &'static str,
+    pub(super) extension_capability_id: ExtensionCapabilityId,
     pub(super) panel_actions: Vec<Action>,
 }
 
@@ -26,7 +26,7 @@ pub(super) struct Section {
 
 impl Section {
     pub(super) fn search_section(
-        handler_id: &'static str,
+        extension_capability_id: ExtensionCapabilityId,
         handler_name: &str,
         mut items: Vec<Item>,
         dispatcher: mpsc::UnboundedSender<Msg>,
@@ -49,7 +49,7 @@ impl Section {
 
         let mut actions = Vec::with_capacity(items.len() + tail.len());
         for item in &items {
-            let row = build_item_row(handler_id, item, &dispatcher);
+            let row = build_item_row(extension_capability_id.clone(), item, &dispatcher);
             view.append(&row.button);
             actions.push(row);
         }
@@ -58,7 +58,7 @@ impl Section {
         if !tail.is_empty() {
             let folded = GtkBox::builder().orientation(Orientation::Vertical).build();
             for item in &tail {
-                let row = build_item_row(handler_id, item, &dispatcher);
+                let row = build_item_row(extension_capability_id.clone(), item, &dispatcher);
                 folded.append(&row.button);
                 actions.push(row);
             }
@@ -104,7 +104,11 @@ impl Section {
         let item = Item {
             title: CHAT_ACTION_LABEL.to_string(),
             subtitle: None,
-            icon: Some(IconRef::Name("dialog-question-symbolic".to_string())),
+            icon: Some(CapabilityIcon {
+                icon: Some(capability_icon::Icon::Name(
+                    "dialog-question-symbolic".to_string(),
+                )),
+            }),
             actions: Vec::new(),
         };
         let button = flat_button(&item_content_row(&item), Some("scry-chat-action"));
@@ -119,7 +123,7 @@ impl Section {
             view: section,
             actions: vec![SearchAction {
                 button,
-                handler_id: "",
+                extension_capability_id: ExtensionCapabilityId::default(),
                 panel_actions: vec![],
             }],
             show_more: None,
@@ -155,19 +159,19 @@ impl Section {
 }
 
 fn build_item_row(
-    handler_id: &'static str,
+    extension_capability_id: ExtensionCapabilityId,
     item: &Item,
     dispatcher: &mpsc::UnboundedSender<Msg>,
 ) -> SearchAction {
     if item.actions.len() == 1 {
-        build_row(handler_id, item, dispatcher.clone())
+        build_row(extension_capability_id, item, dispatcher.clone())
     } else {
-        build_actionable_row(handler_id, item, dispatcher.clone())
+        build_actionable_row(extension_capability_id, item, dispatcher.clone())
     }
 }
 
 fn build_row(
-    handler_id: &'static str,
+    extension_capability_id: ExtensionCapabilityId,
     item: &Item,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> SearchAction {
@@ -176,22 +180,23 @@ fn build_row(
     let action = item.actions.first().unwrap().clone();
 
     let action_dispatcher = dispatcher.clone();
+    let id = extension_capability_id.clone();
     button.connect_clicked(move |_| {
         let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
-            handler_id,
+            extension_capability_id: id.clone(),
             action: action.clone(),
         }));
     });
 
     SearchAction {
         button,
-        handler_id,
+        extension_capability_id,
         panel_actions: vec![],
     }
 }
 
 fn build_actionable_row(
-    handler_id: &'static str,
+    extension_capability_id: ExtensionCapabilityId,
     item: &Item,
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> SearchAction {
@@ -210,16 +215,17 @@ fn build_actionable_row(
 
     let primary_action = primary.clone();
     let action_dispatcher = dispatcher.clone();
+    let id = extension_capability_id.clone();
     button.connect_clicked(move |_| {
         let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
-            handler_id,
+            extension_capability_id: id.clone(),
             action: primary_action.clone(),
         }));
     });
 
     SearchAction {
         button,
-        handler_id,
+        extension_capability_id,
         panel_actions: item.actions.clone(),
     }
 }
@@ -235,7 +241,7 @@ fn build_show_more_row(hidden: usize) -> SearchAction {
 
     SearchAction {
         button: flat_button(&content, Some("scry-show-more")),
-        handler_id: "",
+        extension_capability_id: ExtensionCapabilityId::default(),
         panel_actions: vec![],
     }
 }
@@ -259,10 +265,10 @@ fn item_content_row(item: &Item) -> GtkBox {
         .spacing(10)
         .build();
 
-    let image = match item.icon.as_ref() {
-        Some(IconRef::Name(name)) => Image::from_icon_name(name),
-        Some(IconRef::Path(path)) => Image::from_file(path),
-        Some(IconRef::Embedded { .. }) | None => Image::new(),
+    let image = match item.icon.as_ref().and_then(|icon| icon.icon.as_ref()) {
+        Some(capability_icon::Icon::Name(name)) => Image::from_icon_name(name),
+        Some(capability_icon::Icon::Path(path)) => Image::from_file(path),
+        Some(capability_icon::Icon::Embedded(_)) | None => Image::new(),
     };
     image.add_css_class("scry-item-icon");
     image.set_pixel_size(28);

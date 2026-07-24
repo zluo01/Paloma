@@ -4,7 +4,7 @@ use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Button, Label, Orientation, Popover, PositionType, Widget, prelude::*,
 };
-use scry_core::Action;
+use scry_core::{Action, ExtensionCapabilityId};
 
 use crate::widgets::overlay::{
     SELECTED_CLASS,
@@ -26,7 +26,7 @@ pub(super) struct ActionPanel {
 impl ActionPanel {
     pub(super) fn new(
         anchor: &impl IsA<Widget>,
-        handler_id: &'static str,
+        extension_capability_id: ExtensionCapabilityId,
         actions: Vec<Action>,
         dispatcher: mpsc::UnboundedSender<Msg>,
     ) -> Self {
@@ -61,11 +61,12 @@ impl ActionPanel {
 
             let action_popover = popover.clone();
             let action_dispatcher = dispatcher.clone();
+            let id = extension_capability_id.clone();
             button.connect_clicked(move |_| {
                 action_popover.popdown();
                 let _ = action_dispatcher.unbounded_send(Msg::Search(
                     SearchMsg::ResultActionRequested {
-                        handler_id,
+                        extension_capability_id: id.clone(),
                         action: action.clone(),
                     },
                 ));

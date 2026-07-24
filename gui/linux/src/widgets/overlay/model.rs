@@ -1,4 +1,6 @@
-use scry_core::{Action, AppError, ProviderBackendId, RenderEvent, SearchRenderEvent};
+use scry_core::{
+    Action, AppError, ExtensionCapabilityId, ProviderBackendId, RenderEvent, SearchRenderEvent,
+};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,7 +84,7 @@ pub(super) enum SearchMsg {
         has_result: bool,
     },
     ResultActionRequested {
-        handler_id: &'static str,
+        extension_capability_id: ExtensionCapabilityId,
         action: Action,
     },
     ExitRequested,
@@ -134,7 +136,7 @@ pub(super) enum Command {
     ClearSearchResults,
     HideContent,
     InvokeLocalQueryResultAction {
-        handler_id: &'static str,
+        extension_capability_id: ExtensionCapabilityId,
         action: Action,
     },
     ExitSearch,
@@ -347,10 +349,16 @@ impl Model {
                     vec![Command::HideContent]
                 }
             },
-            SearchMsg::ResultActionRequested { handler_id, action } => {
+            SearchMsg::ResultActionRequested {
+                extension_capability_id,
+                action,
+            } => {
                 self.reset();
                 vec![
-                    Command::InvokeLocalQueryResultAction { handler_id, action },
+                    Command::InvokeLocalQueryResultAction {
+                        extension_capability_id,
+                        action,
+                    },
                     Command::HideOverlay,
                 ]
             },
@@ -502,7 +510,10 @@ mod tests {
     fn query_event(id: &'static str) -> SearchRenderEvent {
         SearchRenderEvent::Append {
             response: QueryResponse {
-                id,
+                extension_capability_id: ExtensionCapabilityId {
+                    extension_id: id.into(),
+                    capability_id: id.into(),
+                },
                 name: id.into(),
                 items: vec![],
             },
@@ -578,7 +589,7 @@ mod tests {
         else {
             panic!("expected the current query event to render");
         };
-        assert_eq!(response.id, "current");
+        assert_eq!(response.extension_capability_id.capability_id, "current");
 
         let _ = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
             content: "second".into(),
@@ -650,17 +661,24 @@ mod tests {
         };
 
         let commands = model.update(Msg::Search(SearchMsg::ResultActionRequested {
-            handler_id: "handler",
+            extension_capability_id: ExtensionCapabilityId {
+                extension_id: "extension".into(),
+                capability_id: "handler".into(),
+            },
             action,
         }));
         let [
-            Command::InvokeLocalQueryResultAction { handler_id, action },
+            Command::InvokeLocalQueryResultAction {
+                extension_capability_id,
+                action,
+            },
             Command::HideOverlay,
         ] = commands.as_slice()
         else {
             panic!("expected the result action to run and hide the overlay");
         };
-        assert_eq!(*handler_id, "handler");
+        assert_eq!(extension_capability_id.extension_id, "extension");
+        assert_eq!(extension_capability_id.capability_id, "handler");
         assert_eq!(action.label, "Open");
         assert_eq!(action.params, ["target"]);
         assert!(action.primary);

@@ -17,7 +17,7 @@ use libadwaita::{
     prelude::*,
 };
 use scry_core::{
-    AppContext, ConnectorConnection, HealthStatus, IconRef, ProviderAuthMethod, ProviderBackendId,
+    AppContext, ConnectorConnection, HealthStatus, Icon, ProviderAuthMethod, ProviderBackendId,
 };
 use tokio::task::JoinHandle;
 
@@ -160,7 +160,7 @@ impl ServicesPage {
         &self,
         provider_backend_id: &ProviderBackendId,
         backend_description: &str,
-        icon: Option<IconRef>,
+        icon: Option<Icon>,
     ) -> ActionRow {
         let row = ActionRow::builder()
             .title(provider_backend_id.to_string())
@@ -175,7 +175,7 @@ impl ServicesPage {
         &self,
         provider_backend_id: &ProviderBackendId,
         backend_description: &str,
-        icon: Option<IconRef>,
+        icon: Option<Icon>,
         conn: &ConnectorConnection,
     ) -> ExpanderRow {
         let row = ExpanderRow::builder()
@@ -492,17 +492,17 @@ fn build_view() -> (PreferencesPage, PreferencesGroup, PreferencesGroup) {
     (view, connected, available)
 }
 
-fn logo(icon: Option<IconRef>) -> Image {
+fn logo(icon: Option<Icon>) -> Image {
     let image = match icon {
-        Some(IconRef::Embedded(data)) => match Texture::from_bytes(&Bytes::from_owned(data)) {
+        Some(Icon::Embedded(data)) => match Texture::from_bytes(&Bytes::from_owned(data)) {
             Ok(texture) => Image::from_paintable(Some(&texture)),
             Err(e) => {
                 log::warn!("failed to load embedded logo: {e}");
                 fallback_logo()
             },
         },
-        Some(IconRef::Path(path)) => Image::from_file(path),
-        Some(IconRef::Name(name)) => Image::from_icon_name(&name),
+        Some(Icon::Path(path)) => Image::from_file(path),
+        Some(Icon::Name(name)) => Image::from_icon_name(&name),
         None => fallback_logo(),
     };
     image.set_pixel_size(40);

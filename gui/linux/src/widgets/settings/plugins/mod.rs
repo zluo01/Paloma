@@ -224,7 +224,7 @@ impl PluginsPage {
 
     fn save_plugin(&self, plugin_type: PluginType, config: Plugin) {
         match plugin_type {
-            PluginType::Native => {},
+            PluginType::Extension => {},
             PluginType::Provider => {
                 let app_context = self.app_context.clone();
                 let dispatcher = self.dispatcher.clone();
@@ -310,7 +310,7 @@ impl PluginsPage {
 
         // no need for option when native is implemented
         let dialog = match plugin_type {
-            PluginType::Native => None,
+            PluginType::Extension => None,
             PluginType::Provider => Some(plugin_dialog::PluginDialog::new_provider_dialog(
                 config,
                 self.dispatcher.clone(),

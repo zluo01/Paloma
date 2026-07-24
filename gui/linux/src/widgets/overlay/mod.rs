@@ -23,7 +23,7 @@ mod results;
 mod window;
 
 use scry_core::{
-    Action, ActionOutcome, AppContext, ChatRenderEvent, ProviderBackendId, RenderEvent,
+    Action, AppContext, ChatRenderEvent, ExtensionCapabilityId, ProviderBackendId, RenderEvent,
     SearchRenderEvent,
 };
 
@@ -208,8 +208,11 @@ impl Overlay {
             Command::RunSearchQuery { content, query_id } => self.search(content, query_id),
             Command::RenderSearchQueryResult { event } => self.render_search_result(event),
             Command::RenderChatAction => self.render_chat_button(),
-            Command::InvokeLocalQueryResultAction { handler_id, action } => {
-                self.run_action(handler_id, action);
+            Command::InvokeLocalQueryResultAction {
+                extension_capability_id,
+                action,
+            } => {
+                self.run_action(extension_capability_id, action);
             },
             Command::FocusSearchEntry => self.launcher.focus(),
             Command::ClearQuery => self.launcher.clear(),
@@ -342,7 +345,7 @@ impl Overlay {
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let mut has_result = false;
-            let mut render_stream = app_context.query(&content);
+            let mut render_stream = app_context.search(&content);
             while let Some(event) = render_stream.next().await {
                 match event {
                     RenderEvent::Search(event) => {
@@ -373,10 +376,11 @@ impl Overlay {
 
     fn render_search_result(&self, event: SearchRenderEvent) {
         let SearchRenderEvent::Append { response } = event;
-        if self
-            .search
-            .append_section(response.id, &response.name, response.items)
-        {
+        if self.search.append_section(
+            response.extension_capability_id,
+            &response.name,
+            response.items,
+        ) {
             self.show_search_view();
         }
     }
@@ -386,16 +390,16 @@ impl Overlay {
         self.show_search_view();
     }
 
-    fn run_action(&self, handler_id: &str, action: Action) {
-        let Some(outcome) = self.app_context.run_query_action(handler_id, action) else {
-            return;
-        };
-
-        match outcome {
-            ActionOutcome::Hide => self.hide(),
-            ActionOutcome::Stay => {},
-            ActionOutcome::Replace { .. } => {},
-        }
+    fn run_action(&self, extension_capability_id: ExtensionCapabilityId, action: Action) {
+        let app_context = self.app_context.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            if let Err(error) = app_context
+                .run_search_action(extension_capability_id, action)
+                .await
+            {
+                error!("failed to run search action: {error}");
+            }
+        }));
     }
 
     fn render_any(&self) -> bool {
