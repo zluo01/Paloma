@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for proto in [
         "schema/extension/capability.proto",
+        "schema/extension/tool.proto",
         "schema/extension/main.proto",
     ] {
         println!(

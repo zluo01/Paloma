@@ -2,21 +2,18 @@ syntax = "proto3";
 
 package scry.extension.v1;
 
-enum Facet {
-  FACET_UNSPECIFIED = 0;
-  // launcher search: query / run_action
-  FACET_QUERY = 1;
-  // llm tools: specs / invoke / cancel
-  FACET_TOOL = 2;
-  // both launcher search and llm tools
-  FACET_BOTH = 3;
-}
+import "schema/extension/tool.proto";
 
 message Capability {
   string capability_id = 1;
   string description = 2;
-  Facet facet = 4;
+
+  optional SearchFacet search = 3;
+  optional ToolFacet tool = 4;
 }
+
+// placeholder to indicate capability has search support
+message SearchFacet {}
 
 message CapabilityIcon {
   oneof icon {

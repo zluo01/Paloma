@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package scry.extension.v1;
+
+message ToolFacet {
+  string description = 1;
+  // json schema string for tools
+  string parameters = 2;
+}
+
+message InvokeToolRequest {
+  string session_id = 1;
+  // id from llm tool_call payload
+  string call_id = 2;
+  // tool arguments encoded as json
+  string arguments = 3;
+}
+
+message InvokeToolResponse {
+  ToolContent content = 1;
+}
+
+message ToolContent {
+  // unique tag represent what current content represent.
+  string tag = 1;
+  repeated Attribute attributes = 2;
+
+  oneof body {
+    string text = 3;
+    Binary binary = 4;
+    Children children = 5;
+  }
+}
+
+message Children {
+  repeated ToolContent nodes = 1;
+}
+
+message Attribute {
+  string key = 1;
+  string value = 2;
+}
+
+message Binary {
+  string mime_type = 1;
+  bytes data = 2;
+}
+
+message CancelToolRequest {
+  string session_id = 1;
+}
+
+message CancelToolResponse {}
+

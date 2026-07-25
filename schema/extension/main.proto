@@ -3,6 +3,7 @@ syntax = "proto3";
 package scry.extension.v1;
 
 import "schema/extension/capability.proto";
+import "schema/extension/tool.proto";
 
 message RequestEvent {
   uint64 event_id = 1;
@@ -13,6 +14,9 @@ message RequestEvent {
 
     SearchRequest search_request = 4;
     RunActionRequest run_action_request = 5;
+
+    InvokeToolRequest invoke_tool_request = 6;
+    CancelToolRequest cancel_tool_request = 7;
   }
 }
 
@@ -25,8 +29,11 @@ message ResponseEvent {
     SearchResponse search_response = 3;
     RunActionResponse run_action_response = 4;
 
+    InvokeToolResponse invoke_tool_response = 5;
+    CancelToolResponse cancel_tool_response = 6;
+
     // all unary request errors populate through this response
-    ExtensionError extension_error = 5;
+    ExtensionError extension_error = 7;
   }
 }
 
