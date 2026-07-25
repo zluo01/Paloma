@@ -10,10 +10,7 @@ pub(crate) mod backend_id {
 }
 
 /// Codex is an OpenAI product; both backends share the OpenAI mark.
-const OPENAI_ICON: &[u8] = include_bytes!(concat!(
-    env!("SCRY_ASSETS_DIR"),
-    "/icons/providers/openai.svg"
-));
+const OPENAI_ICON: &[u8] = include_bytes!("../assets/openai.svg");
 
 /// Backends advertised in the handshake; cloned into each response.
 pub(crate) static BACKENDS: LazyLock<Vec<Backend>> = LazyLock::new(|| {

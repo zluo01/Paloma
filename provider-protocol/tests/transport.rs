@@ -6,8 +6,7 @@ mod test_support {
     use scry_utils::transport::VarintDelimitedCodec;
     use tokio_util::codec::Decoder;
 
-    pub const JAVA_FIXTURE: &[u8] =
-        include_bytes!("../../assets/fixtures/testdata/fixture_java.bin");
+    pub const JAVA_FIXTURE: &[u8] = include_bytes!("testdata/fixture_java.bin");
 
     pub fn buf(bytes: &[u8]) -> BytesMut {
         let mut b = BytesMut::new();

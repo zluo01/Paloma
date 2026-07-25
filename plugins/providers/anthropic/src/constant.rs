@@ -9,10 +9,7 @@ pub(crate) mod backend_id {
     pub(crate) const CLAUDE_CODE: &str = "Claude Code";
 }
 
-const CLAUDE_ICON: &[u8] = include_bytes!(concat!(
-    env!("SCRY_ASSETS_DIR"),
-    "/icons/providers/claude.svg"
-));
+const CLAUDE_ICON: &[u8] = include_bytes!("../assets/claude.svg");
 
 pub(crate) static BACKENDS: LazyLock<Vec<Backend>> = LazyLock::new(|| {
     vec![

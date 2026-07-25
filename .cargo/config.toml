@@ -1,4 +1,0 @@
-[env]
-# Absolute path to the shared assets tree, resolved at compile time relative
-# to the workspace root.
-SCRY_ASSETS_DIR = { value = "assets", relative = true }
