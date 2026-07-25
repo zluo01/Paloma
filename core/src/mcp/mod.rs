@@ -1,3 +1,4 @@
+mod cache;
 mod credentials;
 mod helper;
 
@@ -7,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+pub use cache::McpToolSpecCache;
 use log::{error, warn};
 use rmcp::{
     RoleClient, ServiceExt,
@@ -126,16 +128,13 @@ impl McpPlugin {
         }
     }
 
-    async fn specs(&self) -> std::result::Result<HashMap<String, ToolSpec>, String> {
+    pub(crate) async fn specs(&self) -> Result<HashMap<String, ToolSpec>> {
         let Some(client) = self.client.as_ref() else {
             error!(
                 "Unexpected invocation on disconnected mcp server `{}` for getting schema. This indicates a bug.",
                 self.name
             );
-            return Err(format!(
-                "internal error: mcp server `{}` is unavailable",
-                self.name
-            ));
+            return Err(McpPluginError::Disconnected(self.name.clone()));
         };
 
         let outcome = timeout(
@@ -160,12 +159,12 @@ impl McpPlugin {
                         .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
                 }
                 error!("fail to list tools: {err}");
-                Err(err.to_string())
+                Err(err)
             },
             Err(_elapsed) => {
-                let msg = format!("fail to list tools, timed out after {}s", self.timeout);
-                error!("{msg}");
-                Err(msg)
+                let err = McpPluginError::ListToolsTimeout(self.timeout);
+                error!("{err}");
+                Err(err)
             },
         }
     }
@@ -444,6 +443,9 @@ pub enum McpPluginError {
 
     #[error("mcp tool call was cancelled")]
     Cancelled,
+
+    #[error("fail to list tools, timed out after {0}s")]
+    ListToolsTimeout(u32),
 }
 
 // `ClientInitializeError` is large (~500 bytes), so box it to keep `McpToolError`

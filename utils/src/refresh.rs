@@ -23,6 +23,14 @@ impl<T> Default for RefreshSlot<T> {
 }
 
 impl<T: Clone> RefreshSlot<T> {
+    pub async fn peek(&self) -> Option<T> {
+        self.inner
+            .lock()
+            .await
+            .as_ref()
+            .map(|cached| cached.value.clone())
+    }
+
     pub async fn insert(&self, value: T, ttl_secs: u64) {
         *self.inner.lock().await = Some(Timestamped {
             value,
@@ -119,6 +127,15 @@ mod tests {
             .get_or_refresh(60, || async { Ok::<_, String>(2) })
             .await;
         assert_eq!(recovered.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn peek_serves_without_fetching_even_expired() {
+        let slot = RefreshSlot::<u32>::default();
+        assert_eq!(slot.peek().await, None);
+
+        slot.insert(5, 0).await;
+        assert_eq!(slot.peek().await, Some(5));
     }
 
     #[tokio::test]

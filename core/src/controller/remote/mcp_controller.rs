@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use dashmap::DashMap;
 use log::error;
@@ -13,13 +10,14 @@ use crate::{
     HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
     capability::{ToolResult, ToolSchema, ToolSpec},
     db::{Storage, StorageError},
-    mcp::{McpPlugin, McpPluginError, McpPluginInfo},
+    mcp::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
 };
 
 pub struct McpController {
     handlers: Arc<DashMap<String, McpHandler>>,
     sessions: DashMap<Uuid, CancellationToken>,
+    specs_cache: Arc<McpToolSpecCache>,
     storage: Storage,
     request_client: reqwest::Client,
 }
@@ -31,18 +29,20 @@ impl McpController {
         // Connect configured MCP servers in the background so a slow or broken
         // server can neither fail nor delay startup.
         let handlers: Arc<DashMap<String, McpHandler>> = Arc::new(DashMap::new());
+        let specs_cache = McpToolSpecCache::new();
         for mcp_plugin in mcp_plugins {
             let handlers = Arc::clone(&handlers);
+            let specs_cache = Arc::clone(&specs_cache);
             let client = request_client.clone();
             let storage = storage.clone();
             tokio::spawn(async move {
                 let (plugin, specs) = McpPlugin::new(&mcp_plugin, client, storage).await;
+                specs_cache.insert(mcp_plugin.name.clone(), specs).await;
                 handlers.insert(
                     mcp_plugin.name.clone(),
                     McpHandler {
                         description: plugin.description().to_string(),
                         connection: Arc::new(plugin),
-                        specs,
                     },
                 );
             });
@@ -51,6 +51,7 @@ impl McpController {
         Ok(Self {
             handlers,
             sessions: DashMap::new(),
+            specs_cache,
             storage,
             request_client,
         })
@@ -139,12 +140,12 @@ impl McpController {
             });
         }
 
+        self.specs_cache.insert(config.name.clone(), specs).await;
         self.handlers.insert(
             config.name.clone(),
             McpHandler {
                 description: plugin.description().to_string(),
                 connection: Arc::new(plugin),
-                specs,
             },
         );
         Ok(())
@@ -152,6 +153,7 @@ impl McpController {
 
     pub async fn remove_mcp(&self, name: &str) -> Result<()> {
         self.handlers.remove(name);
+        self.specs_cache.remove(name);
         self.storage.delete_plugin(name).await?;
         Ok(())
     }
@@ -171,18 +173,26 @@ impl McpController {
     }
 
     pub async fn schemas(&self, disabled: &HashSet<String>) -> Vec<ToolSchema> {
-        self.handlers
+        let servers: Vec<(String, Arc<McpPlugin>)> = self
+            .handlers
             .iter()
             .filter(|entry| !disabled.contains(entry.key()))
             .filter(|entry| entry.connection.health_status() == HealthStatus::Running)
-            .flat_map(|entry| {
-                entry
-                    .specs
-                    .values()
-                    .map(|spec| spec.schema.clone())
-                    .collect::<Vec<_>>()
-            })
-            .collect()
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
+            .collect();
+
+        let mut schemas = Vec::new();
+        for (name, connection) in servers {
+            match self
+                .specs_cache
+                .specs(name.clone(), || async move { connection.specs().await })
+                .await
+            {
+                Ok(specs) => schemas.extend(specs.values().map(|spec| spec.schema.clone())),
+                Err(e) => error!("fail to refresh tool specs for {name}: {e}"),
+            }
+        }
+        schemas
     }
 
     pub fn health_level(&self) -> HealthLevel {
@@ -193,10 +203,18 @@ impl McpController {
         )
     }
 
-    pub fn spec(&self, name: &str) -> Option<ToolSpec> {
-        self.handlers
+    pub async fn spec(&self, name: &str) -> Option<ToolSpec> {
+        let servers: Vec<String> = self
+            .handlers
             .iter()
-            .find_map(|entry| entry.specs.get(name).cloned())
+            .map(|entry| entry.key().clone())
+            .collect();
+        for server in servers {
+            if let Some(spec) = self.specs_cache.spec(&server, name).await {
+                return Some(spec);
+            }
+        }
+        None
     }
 
     pub async fn call(
@@ -206,12 +224,19 @@ impl McpController {
         call_id: String,
         args: Value,
     ) -> Result<ToolResult> {
-        let target = self.handlers.iter().find_map(|entry| {
-            entry
-                .specs
-                .get(&name)
-                .map(|spec| (Arc::clone(&entry.connection), spec.tool.clone()))
-        });
+        let servers: Vec<(String, Arc<McpPlugin>)> = self
+            .handlers
+            .iter()
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
+            .collect();
+
+        let mut target = None;
+        for (server, connection) in servers {
+            if let Some(spec) = self.specs_cache.spec(&server, &name).await {
+                target = Some((connection, spec.tool));
+                break;
+            }
+        }
 
         let Some((connection, tool)) = target else {
             return Err(McpControllerError::UnknownTool(name));
@@ -230,7 +255,6 @@ impl McpController {
 
 struct McpHandler {
     description: String,
-    specs: HashMap<String, ToolSpec>,
     connection: Arc<McpPlugin>,
 }
 

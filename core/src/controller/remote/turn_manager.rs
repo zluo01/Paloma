@@ -496,7 +496,7 @@ async fn exhaust_events(
                 if let Payload::OutputItem(conversation_item) = &payload
                     && let Some(Item::ToolCall(tool_call)) = &conversation_item.item
                 {
-                    match tool_controller.retrieve_toolspec(&tool_call.name) {
+                    match tool_controller.retrieve_toolspec(&tool_call.name).await {
                         // it should be ok to only log error here since later on, when actual tool call happens
                         // it will still fail with missing call_id, session_id or missing tool name.
                         // Then we can populate the error back to the LLM.

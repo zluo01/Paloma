@@ -69,11 +69,11 @@ impl ToolController {
         schemas
     }
 
-    pub fn retrieve_toolspec(&self, function_call_name: &str) -> Option<ToolSpec> {
-        self.specs
-            .get(function_call_name)
-            .cloned()
-            .or_else(|| self.mcp_controller.spec(function_call_name))
+    pub async fn retrieve_toolspec(&self, function_call_name: &str) -> Option<ToolSpec> {
+        match self.specs.get(function_call_name) {
+            Some(spec) => Some(spec.clone()),
+            None => self.mcp_controller.spec(function_call_name).await,
+        }
     }
 
     /// We should populate all errors back to the model such that model has context on what happens and what to do next

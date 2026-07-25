@@ -534,6 +534,7 @@ async fn tool_call_render(
 ) -> Option<RenderEvent> {
     let disposition = tool_controller
         .retrieve_toolspec(name)
+        .await
         .map(|spec| extract_args(spec, arguments))
         .unwrap_or(Disposition::Passthrough);
 
