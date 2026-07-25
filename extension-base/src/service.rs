@@ -3,14 +3,15 @@ use std::{collections::HashMap, io, sync::Arc};
 use scry_extension_protocol::{
     PROTOCOL_VERSION,
     v1::{
-        ExtensionError, HandshakeResponse, RequestEvent, ResponseEvent, RunActionResponse,
-        SearchResponse, request_event, response_event,
+        Capability as CapabilityMeta, ExtensionError, HandshakeResponse, RequestEvent,
+        ResponseEvent, RunActionResponse, SearchFacet, SearchResponse, request_event,
+        response_event,
     },
 };
 use scry_utils::transport::serve_plugin;
 use tokio::sync::mpsc;
 
-use crate::QueryHandler;
+use crate::Capability;
 
 const EXTENSION_INNER_CHANNEL_CAPACITY: usize = 32;
 
@@ -19,7 +20,7 @@ pub struct ExtensionService {
     description: String,
     author: Option<String>,
     homepage: Option<String>,
-    handlers: Arc<HashMap<String, Box<dyn QueryHandler>>>,
+    handlers: Arc<HashMap<String, Box<dyn Capability>>>,
 }
 
 impl ExtensionService {
@@ -28,11 +29,11 @@ impl ExtensionService {
         description: impl Into<String>,
         author: Option<String>,
         homepage: Option<String>,
-        capabilities: Vec<Box<dyn QueryHandler>>,
+        capabilities: Vec<Box<dyn Capability>>,
     ) -> Self {
         let mut handlers = HashMap::new();
         for handler in capabilities {
-            let capability_id = handler.metadata().capability_id;
+            let capability_id = handler.id().to_string();
             let previous = handlers.insert(capability_id.clone(), handler);
             assert!(
                 previous.is_none(),
@@ -79,8 +80,16 @@ impl ExtensionService {
 
         match payload {
             request_event::Payload::HandshakeRequest(_) => {
-                let mut capabilities: Vec<_> =
-                    self.handlers.values().map(|h| h.metadata()).collect();
+                let mut capabilities: Vec<_> = self
+                    .handlers
+                    .values()
+                    .map(|capability| CapabilityMeta {
+                        capability_id: capability.id().to_string(),
+                        description: capability.description().to_string(),
+                        search: capability.search_handler().map(|_| SearchFacet {}),
+                        tool: capability.tool_handler().map(|tool| tool.facet()),
+                    })
+                    .collect();
                 capabilities.sort_by(|a, b| a.capability_id.cmp(&b.capability_id));
                 let payload = response_event::Payload::HandshakeResponse(HandshakeResponse {
                     version: PROTOCOL_VERSION,
@@ -96,9 +105,17 @@ impl ExtensionService {
                 let handlers = Arc::clone(&self.handlers);
                 tokio::task::spawn_blocking(move || {
                     let payload = match handler(&handlers, capability_id) {
-                        Ok(handler) => response_event::Payload::SearchResponse(SearchResponse {
-                            items: handler.search(&request.input),
-                        }),
+                        Ok(capability) => match capability.search_handler() {
+                            Some(search) => {
+                                response_event::Payload::SearchResponse(SearchResponse {
+                                    items: search.search(&request.input),
+                                })
+                            },
+                            None => error_payload(&format!(
+                                "capability {} does not implement search handler",
+                                capability.id()
+                            )),
+                        },
                         Err(error) => error_payload(&error),
                     };
                     let _ = tx.blocking_send(response(event_id, payload));
@@ -108,27 +125,35 @@ impl ExtensionService {
                 let handlers = Arc::clone(&self.handlers);
                 tokio::task::spawn_blocking(move || {
                     let payload = match handler(&handlers, capability_id) {
-                        Ok(handler) => match request.action {
-                            Some(action) => {
-                                response_event::Payload::RunActionResponse(RunActionResponse {
-                                    behavior: Some(handler.run_search_action(action)),
-                                })
+                        Ok(capability) => match capability.search_handler() {
+                            Some(search) => match request.action {
+                                Some(action) => {
+                                    response_event::Payload::RunActionResponse(RunActionResponse {
+                                        behavior: Some(search.run_search_action(action)),
+                                    })
+                                },
+                                None => error_payload("run_action request has no action"),
                             },
-                            None => error_payload("run_action request has no action"),
+                            None => error_payload(&format!(
+                                "capability {} does not implement search handler",
+                                capability.id()
+                            )),
                         },
                         Err(error) => error_payload(&error),
                     };
                     let _ = tx.blocking_send(response(event_id, payload));
                 });
             },
+            request_event::Payload::InvokeToolRequest(_) => {},
+            request_event::Payload::CancelToolRequest(_) => {},
         }
     }
 }
 
 fn handler(
-    handlers: &HashMap<String, Box<dyn QueryHandler>>,
+    handlers: &HashMap<String, Box<dyn Capability>>,
     capability_id: Option<String>,
-) -> Result<&dyn QueryHandler, String> {
+) -> Result<&dyn Capability, String> {
     capability_id
         .as_deref()
         .and_then(|id| handlers.get(id))
@@ -157,26 +182,34 @@ fn error_payload(error: &str) -> response_event::Payload {
 #[cfg(test)]
 mod tests {
     use scry_extension_protocol::v1::{
-        Action, Capability as CapabilityMeta, Facet, HandshakeRequest, Hide, Item,
-        RunActionRequest, SearchRequest, Stay, run_action_response::Behavior,
+        Action, HandshakeRequest, Hide, Item, RunActionRequest, SearchRequest, Stay,
+        run_action_response::Behavior,
     };
 
     use super::*;
-    use crate::Capability;
+    use crate::{Capability, SearchHandler, ToolHandler};
 
     struct Stub(&'static str);
 
     impl Capability for Stub {
-        fn metadata(&self) -> CapabilityMeta {
-            CapabilityMeta {
-                capability_id: self.0.to_string(),
-                description: format!("{} capability", self.0),
-                facet: Facet::Query as i32,
-            }
+        fn id(&self) -> &str {
+            self.0
+        }
+
+        fn description(&self) -> &str {
+            "stub capability"
+        }
+
+        fn search_handler(&self) -> Option<&dyn SearchHandler> {
+            Some(self)
+        }
+
+        fn tool_handler(&self) -> Option<&dyn ToolHandler> {
+            None
         }
     }
 
-    impl QueryHandler for Stub {
+    impl SearchHandler for Stub {
         fn search(&self, input: &str) -> Vec<Item> {
             vec![Item {
                 title: format!("{}: {input}", self.0),
@@ -246,6 +279,12 @@ mod tests {
             .map(|capability| capability.capability_id.as_str())
             .collect();
         assert_eq!(ids, ["alpha", "beta"]);
+        assert!(
+            handshake
+                .capabilities
+                .iter()
+                .all(|capability| capability.search.is_some() && capability.tool.is_none())
+        );
     }
 
     #[tokio::test]

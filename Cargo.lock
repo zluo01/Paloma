@@ -3308,9 +3308,11 @@ dependencies = [
 name = "scry-extension-base"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "scry-extension-protocol",
  "scry-utils",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
