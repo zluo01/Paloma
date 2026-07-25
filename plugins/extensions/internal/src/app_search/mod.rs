@@ -21,10 +21,9 @@ use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
-use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_base::{Capability, SearchHandler};
 use scry_extension_protocol::v1::{
-    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item,
-    run_action_response::Behavior,
+    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
 /// Contract each platform backend implements on its `Platform` struct.
@@ -81,16 +80,20 @@ pub struct AppSearch {
 }
 
 impl Capability for AppSearch {
-    fn metadata(&self) -> CapabilityMeta {
-        CapabilityMeta {
-            capability_id: "App Search".to_string(),
-            description: "Launch installed applications.".to_string(),
-            facet: Facet::Query as i32,
-        }
+    fn id(&self) -> &str {
+        "App Search"
+    }
+
+    fn description(&self) -> &str {
+        "Launch installed applications."
+    }
+
+    fn search_handler(&self) -> Option<&dyn SearchHandler> {
+        Some(self)
     }
 }
 
-impl QueryHandler for AppSearch {
+impl SearchHandler for AppSearch {
     fn search(&self, input: &str) -> Vec<Item> {
         let pattern = Pattern::parse(input.trim(), CaseMatching::Ignore, Normalization::Smart);
         if pattern.atoms.is_empty() {

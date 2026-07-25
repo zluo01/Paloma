@@ -6,7 +6,7 @@ mod utils;
 
 use std::io;
 
-use scry_extension_base::{ExtensionService, QueryHandler};
+use scry_extension_base::{Capability, ExtensionService};
 use scry_utils::init_logging;
 
 use crate::{
@@ -25,7 +25,7 @@ pub fn run() -> io::Result<()> {
 }
 
 fn service() -> io::Result<ExtensionService> {
-    let capabilities: Vec<Box<dyn QueryHandler>> = vec![
+    let capabilities: Vec<Box<dyn Capability>> = vec![
         Box::new(Calculator),
         Box::new(Clipboard::new()),
         Box::new(FileSearch::new().map_err(io::Error::other)?),

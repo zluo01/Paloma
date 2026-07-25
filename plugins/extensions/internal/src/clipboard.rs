@@ -15,10 +15,9 @@ use log::{debug, error};
 use objc2::rc::autoreleasepool;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_base::{Capability, SearchHandler};
 use scry_extension_protocol::v1::{
-    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
-    run_action_response::Behavior,
+    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
 use crate::utils::copy_to_clipboard;
@@ -46,16 +45,20 @@ pub struct Clipboard {
 }
 
 impl Capability for Clipboard {
-    fn metadata(&self) -> CapabilityMeta {
-        CapabilityMeta {
-            capability_id: "Clipboard".into(),
-            description: "Browse and reuse clipboard history.".into(),
-            facet: Facet::Query as i32,
-        }
+    fn id(&self) -> &str {
+        "Clipboard"
+    }
+
+    fn description(&self) -> &str {
+        "Browse and reuse clipboard history."
+    }
+
+    fn search_handler(&self) -> Option<&dyn SearchHandler> {
+        Some(self)
     }
 }
 
-impl QueryHandler for Clipboard {
+impl SearchHandler for Clipboard {
     fn search(&self, input: &str) -> Vec<Item> {
         let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
         let entries = self.history.read().unwrap();
@@ -235,9 +238,7 @@ fn build_item(text: &str) -> Item {
     Item {
         title: text.to_owned(),
         subtitle: None,
-        icon: Some(CapabilityIcon {
-            icon: Some(capability_icon::Icon::Name(ICON_NAME.into())),
-        }),
+        icon: Some(CapabilityIcon::name(ICON_NAME)),
         actions: SUPPORTED_ACTION_LABELS
             .iter()
             .map(|label| Action {

@@ -18,10 +18,9 @@ use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
 };
 use rayon::prelude::*;
-use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_base::{Capability, SearchHandler};
 use scry_extension_protocol::v1::{
-    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
-    run_action_response::Behavior,
+    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
 use crate::utils::copy_to_clipboard;
@@ -110,16 +109,20 @@ pub struct FileSearch {
 }
 
 impl Capability for FileSearch {
-    fn metadata(&self) -> CapabilityMeta {
-        CapabilityMeta {
-            capability_id: "Files".to_string(),
-            description: "Search files in your home directory.".to_string(),
-            facet: Facet::Query as i32,
-        }
+    fn id(&self) -> &str {
+        "Files"
+    }
+
+    fn description(&self) -> &str {
+        "Search files in your home directory."
+    }
+
+    fn search_handler(&self) -> Option<&dyn SearchHandler> {
+        Some(self)
     }
 }
 
-impl QueryHandler for FileSearch {
+impl SearchHandler for FileSearch {
     fn search(&self, input: &str) -> Vec<Item> {
         let entries = self.entries.read().unwrap();
         rank(input, &entries)
@@ -595,9 +598,7 @@ fn build_item(home: &Path, entry: &FileEntry) -> Item {
     Item {
         title: entry.name.clone(),
         subtitle: Some(display_parent(home, &entry.path)),
-        icon: Some(CapabilityIcon {
-            icon: Some(capability_icon::Icon::Name(icon_name(entry))),
-        }),
+        icon: Some(CapabilityIcon::name(icon_name(entry))),
         actions,
     }
 }

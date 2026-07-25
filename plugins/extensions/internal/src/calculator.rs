@@ -2,10 +2,9 @@ use std::sync::LazyLock;
 
 use log::error;
 use regex::Regex;
-use scry_extension_base::{Capability, QueryHandler};
+use scry_extension_base::{Capability, SearchHandler};
 use scry_extension_protocol::v1::{
-    Action, Capability as CapabilityMeta, CapabilityIcon, Facet, Hide, Item, capability_icon,
-    run_action_response::Behavior,
+    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
 use crate::utils::copy_to_clipboard;
@@ -22,16 +21,20 @@ static PI_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bpi\b").exp
 pub struct Calculator;
 
 impl Capability for Calculator {
-    fn metadata(&self) -> CapabilityMeta {
-        CapabilityMeta {
-            capability_id: "Calculator".to_string(),
-            description: "Evaluate mathematical expressions.".to_string(),
-            facet: Facet::Query as i32,
-        }
+    fn id(&self) -> &str {
+        "Calculator"
+    }
+
+    fn description(&self) -> &str {
+        "Evaluate mathematical expressions."
+    }
+
+    fn search_handler(&self) -> Option<&dyn SearchHandler> {
+        Some(self)
     }
 }
 
-impl QueryHandler for Calculator {
+impl SearchHandler for Calculator {
     fn search(&self, input: &str) -> Vec<Item> {
         evaluate(input)
             .map(|(expression, value)| build_item(expression, value))
@@ -94,9 +97,7 @@ fn build_item(expression: &str, value: String) -> Item {
     Item {
         title: equation.clone(),
         subtitle: None,
-        icon: Some(CapabilityIcon {
-            icon: Some(capability_icon::Icon::Name(ICON_NAME.into())),
-        }),
+        icon: Some(CapabilityIcon::name(ICON_NAME)),
         actions: vec![
             Action {
                 label: COPY_RESULT_ACTION_LABEL.into(),
