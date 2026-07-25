@@ -121,15 +121,6 @@ pub enum HealthLevel {
 }
 
 impl HealthLevel {
-    pub fn from_counts(total: usize, healthy: usize) -> Self {
-        match (total, healthy) {
-            (0, _) => HealthLevel::Inactive,
-            (total, healthy) if healthy == total => HealthLevel::Healthy,
-            (_, 0) => HealthLevel::Down,
-            _ => HealthLevel::Degraded,
-        }
-    }
-
     pub fn combine(levels: impl IntoIterator<Item = HealthLevel>) -> Self {
         match levels.into_iter().fold(0u8, |acc, level| acc | level as u8) {
             0b00 => HealthLevel::Inactive,

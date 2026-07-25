@@ -353,23 +353,15 @@ impl ProviderController {
             .map(|entry| Arc::clone(&entry.value().connection))
             .collect();
 
-        let statuses: Vec<HealthStatus> =
-            join_all(plugins.into_iter().map(|connection| async move {
-                connection
-                    .backend_health_status()
-                    .await
-                    .unwrap_or_else(|_| vec![HealthStatus::Unhealthy])
-            }))
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let statuses = join_all(plugins.into_iter().map(|connection| async move {
+            connection
+                .backend_health_status()
+                .await
+                .unwrap_or_else(|_| vec![HealthStatus::Unhealthy])
+        }))
+        .await;
 
-        let healthy = statuses
-            .iter()
-            .filter(|status| **status == HealthStatus::Running)
-            .count();
-        HealthLevel::from_counts(statuses.len(), healthy)
+        HealthLevel::combine(statuses.into_iter().flatten().map(Into::into))
     }
 }
 
