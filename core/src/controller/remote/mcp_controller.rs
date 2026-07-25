@@ -6,6 +6,7 @@ use std::{
 use dashmap::DashMap;
 use log::error;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
@@ -18,6 +19,7 @@ use crate::{
 
 pub struct McpController {
     handlers: Arc<DashMap<String, McpHandler>>,
+    sessions: DashMap<Uuid, CancellationToken>,
     storage: Storage,
     request_client: reqwest::Client,
 }
@@ -48,6 +50,7 @@ impl McpController {
 
         Ok(Self {
             handlers,
+            sessions: DashMap::new(),
             storage,
             request_client,
         })
@@ -213,7 +216,15 @@ impl McpController {
         let Some((connection, tool)) = target else {
             return Err(McpControllerError::UnknownTool(name));
         };
-        Ok(connection.call(tool, session_id, call_id, args).await?)
+
+        let token = self.sessions.entry(session_id).or_default().clone();
+        Ok(connection.call(tool, token, call_id, args).await?)
+    }
+
+    pub fn cancel_session(&self, session_id: Uuid) {
+        if let Some((_, token)) = self.sessions.remove(&session_id) {
+            token.cancel();
+        }
     }
 }
 

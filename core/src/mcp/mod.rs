@@ -10,8 +10,8 @@ use std::{
 use log::{error, warn};
 use rmcp::{
     RoleClient, ServiceExt,
-    model::{CallToolRequestParams, Tool},
-    service::RunningService,
+    model::{CallToolRequest, CallToolRequestParams, ClientRequest, ServerResult, Tool},
+    service::{PeerRequestOptions, RunningService, ServiceError},
     transport::{
         AuthClient, AuthError, AuthorizationManager, StreamableHttpClientTransport,
         TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -24,7 +24,7 @@ use tokio::{
     process::Command,
     time::timeout,
 };
-use uuid::Uuid;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     capability::{ToolResult, ToolSchema, ToolSpec},
@@ -185,7 +185,7 @@ impl McpPlugin {
     pub async fn call(
         &self,
         name: Option<String>, // mcp tool name
-        _session_id: Uuid,
+        cancel: CancellationToken,
         call_id: String,
         args: Value,
     ) -> Result<ToolResult> {
@@ -207,11 +207,33 @@ impl McpPlugin {
                 || {
                     let params = CallToolRequestParams::new(tool.to_string())
                         .with_arguments(arguments.clone());
+                    let cancel = cancel.clone();
                     async move {
-                        client
-                            .call_tool(params)
+                        let mut handle = client
+                            .send_cancellable_request(
+                                ClientRequest::CallToolRequest(CallToolRequest::new(params)),
+                                PeerRequestOptions::no_options(),
+                            )
                             .await
-                            .map_err(McpPluginError::Service)
+                            .map_err(McpPluginError::Service)?;
+
+                        tokio::select! {
+                            result = &mut handle.rx => {
+                                let response = result
+                                    .unwrap_or(Err(ServiceError::TransportClosed))
+                                    .map_err(McpPluginError::Service)?;
+                                match response {
+                                    ServerResult::CallToolResult(result) => Ok(result),
+                                    _ => Err(McpPluginError::Service(
+                                        ServiceError::UnexpectedResponse,
+                                    )),
+                                }
+                            },
+                            _ = cancel.cancelled() => {
+                                let _ = handle.cancel(Some("session cancelled".into())).await;
+                                Err(McpPluginError::Cancelled)
+                            },
+                        }
                     }
                 },
                 McpPluginError::is_connection_level,
@@ -419,6 +441,9 @@ pub enum McpPluginError {
 
     #[error("mcp tool `{tool}` timed out after {seconds}s")]
     CallTimeout { tool: String, seconds: u32 },
+
+    #[error("mcp tool call was cancelled")]
+    Cancelled,
 }
 
 // `ClientInitializeError` is large (~500 bytes), so box it to keep `McpToolError`

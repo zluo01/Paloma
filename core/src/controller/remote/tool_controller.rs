@@ -132,6 +132,7 @@ impl ToolController {
     }
 
     pub async fn cancel_session(&self, session_id: Uuid) {
+        self.mcp_controller.cancel_session(session_id);
         self.shell.cancel_session(session_id).await;
     }
 }
