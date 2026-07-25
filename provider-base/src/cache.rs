@@ -2,9 +2,10 @@ use std::{fmt::Display, future::Future, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use scry_provider_protocol::v1::Model;
-use scry_utils::RefreshSlot;
+use scry_utils::{RefreshSlot, ttl_with_jitter};
 
 const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(8).as_secs();
+const MODELS_CACHE_JITTER_SECS: u64 = Duration::from_mins(30).as_secs();
 
 pub struct ProviderCache {
     models: DashMap<String, Arc<RefreshSlot<Vec<Model>>>>,
@@ -35,13 +36,15 @@ impl ProviderCache {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<Vec<Model>, E>>,
     {
+        let ttl = ttl_with_jitter(MODELS_CACHE_TTL_SECS, MODELS_CACHE_JITTER_SECS, &id);
         let slot = self.models.entry(id).or_default().clone();
-        slot.get_or_refresh(MODELS_CACHE_TTL_SECS, fetch).await
+        slot.get_or_refresh(ttl, fetch).await
     }
 
     pub async fn insert_models(&self, id: String, models: Vec<Model>) {
+        let ttl = ttl_with_jitter(MODELS_CACHE_TTL_SECS, MODELS_CACHE_JITTER_SECS, &id);
         let slot = self.models.entry(id).or_default().clone();
-        slot.insert(models, MODELS_CACHE_TTL_SECS).await;
+        slot.insert(models, ttl).await;
     }
 }
 

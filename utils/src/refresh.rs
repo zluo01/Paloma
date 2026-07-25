@@ -1,9 +1,23 @@
-use std::{fmt::Display, future::Future};
+use std::{
+    fmt::Display,
+    future::Future,
+    hash::{DefaultHasher, Hash, Hasher},
+};
 
 use log::error;
 use tokio::sync::Mutex;
 
 use crate::unix_now;
+
+/// add some variation to the cache TTL so we do not refresh everything at the same time.
+pub fn ttl_with_jitter(base_secs: u64, jitter_secs: u64, key: &str) -> u64 {
+    if jitter_secs == 0 {
+        return base_secs;
+    }
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    base_secs + hasher.finish() % jitter_secs
+}
 
 struct Timestamped<T> {
     value: T,
@@ -127,6 +141,14 @@ mod tests {
             .get_or_refresh(60, || async { Ok::<_, String>(2) })
             .await;
         assert_eq!(recovered.unwrap(), 2);
+    }
+
+    #[test]
+    fn jitter_is_stable_and_bounded() {
+        let a = ttl_with_jitter(100, 60, "github");
+        assert_eq!(a, ttl_with_jitter(100, 60, "github"));
+        assert!((100..160).contains(&a));
+        assert_eq!(ttl_with_jitter(100, 0, "github"), 100);
     }
 
     #[tokio::test]
