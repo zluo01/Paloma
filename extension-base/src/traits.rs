@@ -1,13 +1,19 @@
 use async_trait::async_trait;
-use scry_extension_protocol::v1::{Action, Item, ToolFacet, run_action_response::Behavior};
-use tokio_util::sync::CancellationToken;
+use scry_extension_protocol::v1::{
+    Action, Item, ToolContent, ToolFacet, run_action_response::Behavior,
+};
 
 pub trait Capability: Send + Sync {
     fn id(&self) -> &str;
     fn description(&self) -> &str;
 
-    fn search_handler(&self) -> Option<&dyn SearchHandler>;
-    fn tool_handler(&self) -> Option<&dyn ToolHandler>;
+    fn search_handler(&self) -> Option<&dyn SearchHandler> {
+        None
+    }
+
+    fn tool_handler(&self) -> Option<&dyn ToolHandler> {
+        None
+    }
 }
 
 pub trait SearchHandler {
@@ -17,13 +23,15 @@ pub trait SearchHandler {
 }
 
 #[async_trait]
-pub trait ToolHandler {
+pub trait ToolHandler: Send + Sync {
     fn facet(&self) -> ToolFacet;
 
     async fn invoke(
         &self,
-        cancel: CancellationToken,
+        session_id: &str,
         call_id: &str,
         arguments: &str,
-    ) -> Result<String, String>;
+    ) -> Result<ToolContent, String>;
+
+    async fn cancel(&self, session_id: &str) -> Result<(), String>;
 }
