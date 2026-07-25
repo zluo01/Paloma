@@ -112,11 +112,12 @@ impl From<ProviderHealthStatus> for HealthStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum HealthLevel {
-    Inactive,
-    Healthy,
-    Degraded,
-    Down,
+    Inactive = 0b00,
+    Healthy = 0b01,
+    Down = 0b10,
+    Degraded = 0b11,
 }
 
 impl HealthLevel {
@@ -126,6 +127,25 @@ impl HealthLevel {
             (total, healthy) if healthy == total => HealthLevel::Healthy,
             (_, 0) => HealthLevel::Down,
             _ => HealthLevel::Degraded,
+        }
+    }
+
+    pub fn combine(levels: impl IntoIterator<Item = HealthLevel>) -> Self {
+        match levels.into_iter().fold(0u8, |acc, level| acc | level as u8) {
+            0b00 => HealthLevel::Inactive,
+            0b01 => HealthLevel::Healthy,
+            0b10 => HealthLevel::Down,
+            _ => HealthLevel::Degraded,
+        }
+    }
+}
+
+impl From<HealthStatus> for HealthLevel {
+    fn from(status: HealthStatus) -> Self {
+        match status {
+            HealthStatus::Starting => HealthLevel::Inactive,
+            HealthStatus::Running => HealthLevel::Healthy,
+            HealthStatus::Unhealthy => HealthLevel::Down,
         }
     }
 }

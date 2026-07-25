@@ -346,7 +346,7 @@ impl ProviderController {
     }
 
     /// overall health level for all model connections.
-    pub async fn health_level(&self) -> HealthLevel {
+    pub async fn backends_health_level(&self) -> HealthLevel {
         let plugins: Vec<Arc<ProviderPlugin>> = self
             .handlers
             .iter()
@@ -426,6 +426,14 @@ impl ProviderController {
         .collect();
 
         Ok(statuses)
+    }
+
+    pub fn health_level(&self) -> HealthLevel {
+        HealthLevel::combine(
+            self.handlers
+                .iter()
+                .map(|entry| entry.connection.health().into()),
+        )
     }
 
     pub async fn available_providers(&self) -> Result<Vec<ProviderInfo>> {

@@ -9,7 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
+    HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
     capability::{ToolResult, ToolSchema, ToolSpec},
     db::{Storage, StorageError},
     mcp::{McpPlugin, McpPluginError, McpPluginInfo},
@@ -180,6 +180,14 @@ impl McpController {
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    pub fn health_level(&self) -> HealthLevel {
+        HealthLevel::combine(
+            self.handlers
+                .iter()
+                .map(|entry| entry.connection.health_status().into()),
+        )
     }
 
     pub fn spec(&self, name: &str) -> Option<ToolSpec> {

@@ -1,7 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use futures::Stream;
-use log::error;
 use uuid::Uuid;
 
 use crate::{
@@ -276,30 +275,18 @@ impl AppContext {
     }
 
     pub async fn connectors_health_level(&self) -> HealthLevel {
-        self.providers.health_level().await
+        self.providers.backends_health_level().await
     }
 }
 
 /// plugins + mcps
 impl AppContext {
     pub async fn plugins_health_level(&self) -> HealthLevel {
-        let servers = match self.mcps.list_mcps().await {
-            Ok(servers) => servers,
-            Err(e) => {
-                error!("plugin health_level: {e}");
-                return HealthLevel::Inactive;
-            },
-        };
-        // servers still connecting don't count against health
-        let (settled, healthy) =
-            servers
-                .iter()
-                .fold((0, 0), |(settled, healthy), server| match server.status {
-                    HealthStatus::Starting => (settled, healthy),
-                    HealthStatus::Running => (settled + 1, healthy + 1),
-                    HealthStatus::Unhealthy => (settled + 1, healthy),
-                });
-        HealthLevel::from_counts(settled, healthy)
+        HealthLevel::combine([
+            self.extensions.health_level(),
+            self.providers.health_level(),
+            self.mcps.health_level(),
+        ])
     }
 
     pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>> {

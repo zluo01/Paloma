@@ -9,8 +9,8 @@ use scry_extension_protocol::v1::{
 use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::{
-    HealthStatus, Plugin, PluginType, QueryResponse, RENDER_CHANNEL_CAPACITY, RenderEvent,
-    SearchRenderEvent, Transport,
+    HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse, RENDER_CHANNEL_CAPACITY,
+    RenderEvent, SearchRenderEvent, Transport,
     db::{Storage, StorageError},
     entity::ExtensionCapabilityId,
     extension::{ExtensionConnectionError, ExtensionInfo, ExtensionPlugin, INTERNAL_PLUGIN},
@@ -148,6 +148,14 @@ impl ExtensionController {
         Ok(connection
             .run_search_action(extension_capability_id.capability_id.to_string(), action)
             .await?)
+    }
+
+    pub fn health_level(&self) -> HealthLevel {
+        HealthLevel::combine(
+            self.handlers
+                .iter()
+                .map(|entry| entry.connection.health().into()),
+        )
     }
 
     pub async fn available_extensions(&self) -> Result<Vec<ExtensionInfo>> {
