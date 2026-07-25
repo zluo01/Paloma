@@ -3457,6 +3457,7 @@ dependencies = [
  "backon",
  "env_logger",
  "futures",
+ "log",
  "prost",
  "tokio",
  "tokio-util",
