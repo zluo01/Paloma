@@ -7,6 +7,7 @@ members = [
     "ffi",
     "gui/linux",
     "plugins/extensions/internal",
+    "plugins/extensions/shell",
     "plugins/providers/anthropic",
     "plugins/providers/openai",
     "provider-base",

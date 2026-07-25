@@ -1,0 +1,31 @@
+[package]
+name = "scry-extension-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+log = { workspace = true }
+schemars = "1.2.1"
+scry-extension-base = { workspace = true }
+scry-extension-protocol = { workspace = true }
+scry-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [
+    "fs",
+    "io-util",
+    "sync",
+    "rt-multi-thread",
+    "time",
+    "macros",
+    "process",
+] }
+uuid = { workspace = true, features = ["v7", "std"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.3", default-features = false, features = ["signal"] }

@@ -3280,7 +3280,6 @@ dependencies = [
  "dashmap",
  "futures",
  "log",
- "nix",
  "oauth2",
  "regex",
  "reqwest",
@@ -3350,6 +3349,25 @@ dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+]
+
+[[package]]
+name = "scry-extension-shell"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "log",
+ "nix",
+ "schemars",
+ "scry-extension-base",
+ "scry-extension-protocol",
+ "scry-utils",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

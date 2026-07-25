@@ -1,16 +1,40 @@
 mod process_controller;
 
-use std::path::PathBuf;
+use std::{io, path::PathBuf, str::FromStr};
 
 use process_controller::{ProcessController, ProcessExecRequest};
 use schemars::JsonSchema;
+use scry_extension_base::{Capability, ExtensionService, ToolHandler};
+use scry_extension_protocol::v1::{ToolContent, ToolFacet};
+use scry_utils::init_logging;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::capability::{Capability, CapabilityMeta, Tool, ToolResult};
+pub fn run() -> io::Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?
+        .block_on(async {
+            init_logging("info".into());
+            service()?.serve().await
+        })
+}
+
+fn service() -> io::Result<ExtensionService> {
+    let capabilities: Vec<Box<dyn Capability>> = vec![Box::new(Shell::new())];
+
+    Ok(ExtensionService::new(
+        "Shell",
+        "Execute shell commands.",
+        None,
+        None,
+        capabilities,
+    ))
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct ShellArgs {
+struct ShellArgs {
     /// argv array to execute. argv[0] is the program name (e.g. "git",
     /// "cargo", "bash"); the remaining elements are its positional
     /// arguments, one per element. Do NOT pre-concatenate multiple
@@ -47,10 +71,11 @@ pub struct ShellArgs {
     /// mechanics. Examples:
     ///   "Lists installed Firefox packages"
     ///   "Compiles the workspace in release mode"
+    #[allow(dead_code)]
     pub description: String,
 }
 
-pub struct Shell {
+struct Shell {
     process_controller: ProcessController,
 }
 
@@ -64,40 +89,42 @@ impl Shell {
 
 impl Capability for Shell {
     fn id(&self) -> &'static str {
-        "shell"
+        "Shell"
     }
 
-    fn metadata(&self) -> CapabilityMeta {
-        CapabilityMeta {
-            name: "Shell".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            description: "Execute a command and return stdout, stderr, and exit code.".to_string(),
-            icon: None,
-            homepage: None,
-            author: None,
-        }
+    fn description(&self) -> &str {
+        "Execute a command and return stdout, stderr, and exit code."
+    }
+
+    fn tool_handler(&self) -> Option<&dyn ToolHandler> {
+        Some(self)
     }
 }
 
 #[async_trait::async_trait]
-impl Tool for Shell {
-    type Args = ShellArgs;
-
-    const NAME: &'static str = "shell";
-    const DESCRIPTION: &'static str = include_str!("description.md");
+impl ToolHandler for Shell {
+    fn facet(&self) -> ToolFacet {
+        ToolFacet {
+            description: include_str!("description.md").to_string(),
+            parameters: serde_json::to_string(&schemars::schema_for!(ShellArgs))
+                .expect("JsonSchema output is always serializable"),
+        }
+    }
 
     async fn invoke(
         &self,
-        session_id: Uuid,
-        call_id: String,
-        args: Self::Args,
-    ) -> Result<ToolResult, String> {
+        session_id: &str,
+        call_id: &str,
+        arguments: &str,
+    ) -> Result<ToolContent, String> {
+        let args: ShellArgs = serde_json::from_str(arguments).map_err(|e| e.to_string())?;
         validate_argv(&args.command)?;
         let workdir = resolve_workdir(&args.workdir)?;
+        let session_id = Uuid::from_str(session_id).map_err(|e| e.to_string())?;
 
         let request = ProcessExecRequest {
             session_id,
-            call_id,
+            call_id: call_id.to_string(),
             command: args.command,
             cwd: workdir,
         };
@@ -108,8 +135,10 @@ impl Tool for Shell {
             .map_err(|e| e.to_string())
     }
 
-    async fn cancel_session(&self, session_id: Uuid) {
-        self.process_controller.cancel_session(session_id)
+    async fn cancel(&self, session_id: &str) -> Result<(), String> {
+        let id = Uuid::from_str(session_id).map_err(|e| e.to_string())?;
+        self.process_controller.cancel_session(id);
+        Ok(())
     }
 }
 
@@ -136,6 +165,8 @@ fn resolve_workdir(workdir: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
+    use scry_extension_protocol::v1::tool_content;
+
     use super::*;
 
     #[test]
@@ -154,16 +185,14 @@ mod tests {
     #[tokio::test]
     async fn invoke_rejects_relative_workdir() {
         let tool = Shell::new();
+        let arguments = serde_json::json!({
+            "command": ["printf", "ok"],
+            "workdir": "relative",
+            "description": "Prints ok for the relative-workdir test",
+        })
+        .to_string();
         let actual = tool
-            .invoke(
-                Uuid::now_v7(),
-                "call_1".to_string(),
-                ShellArgs {
-                    command: vec!["printf".to_string(), "ok".to_string()],
-                    workdir: "relative".to_string(),
-                    description: "Prints ok for the relative-workdir test".to_string(),
-                },
-            )
+            .invoke(&Uuid::now_v7().to_string(), "call_1", &arguments)
             .await;
 
         assert_eq!(
@@ -173,28 +202,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn invoke_rejects_malformed_arguments() {
+        let tool = Shell::new();
+        let actual = tool
+            .invoke(&Uuid::now_v7().to_string(), "call_1", "not json")
+            .await;
+
+        assert!(actual.is_err());
+    }
+
+    #[tokio::test]
     async fn invoke_delegates_to_process_manager() {
         let tool = Shell::new();
-        let result = tool
-            .invoke(
-                Uuid::now_v7(),
-                "call_2".to_string(),
-                ShellArgs {
-                    command: vec!["printf".to_string(), "ok".to_string()],
-                    workdir: std::env::current_dir()
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned(),
-                    description: "Prints ok to verify process-manager delegation".to_string(),
-                },
-            )
+        let arguments = serde_json::json!({
+            "command": ["printf", "ok"],
+            "workdir": std::env::current_dir().unwrap().to_string_lossy(),
+            "description": "Prints ok to verify process-manager delegation",
+        })
+        .to_string();
+        let content = tool
+            .invoke(&Uuid::now_v7().to_string(), "call_2", &arguments)
             .await
             .unwrap();
 
-        let ToolResult::Text(text) = result else {
-            panic!("expected text result");
-        };
-        assert!(text.contains("exit_code=\"0\""), "got:\n{text}");
-        assert!(text.contains("<![CDATA[ok]]>"), "got:\n{text}");
+        assert_eq!(content.tag, "shell_output");
+        assert!(
+            content
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "exit_code" && attribute.value == "0"),
+            "got: {content:?}"
+        );
+        let stdout = content
+            .children()
+            .iter()
+            .find(|child| child.tag == "stdout")
+            .expect("stdout child");
+        assert_eq!(
+            stdout.body,
+            Some(tool_content::Body::Text("ok".to_string()))
+        );
     }
 }

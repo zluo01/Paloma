@@ -7,7 +7,7 @@ Executes a command and returns its stdout, stderr, and exit code.
 `workdir` is required and must be an absolute path. Set the working directory via `workdir`; do NOT use `cd` in the command.
 
 Output handling:
-- Each stream is captured up to 50 KiB inline; ANSI escape sequences are stripped from the inline payload (but NOT from the spill file).
+- Each stream is captured up to 50 KiB inline; ANSI escape sequences are stripped from the payload.
 - When a stream exceeds 50 KiB, the full untruncated bytes are written to /tmp/scry/<exec_id>/<stdout|stderr> and the path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
 - Do NOT pre-truncate output yourself (no head/tail/sed unless the user explicitly asks) — run the command directly and let truncation happen.
 
