@@ -2,7 +2,8 @@ use std::fmt::Write;
 
 use sha1::{Digest, Sha1};
 
-const PREFIX: &str = "mcp__";
+const EXT_PREFIX: &str = "ext__";
+const MCP_PREFIX: &str = "mcp__";
 const DELIM: &str = "__";
 
 const MAX_TOOL_NAME_LENGTH: usize = 64;
@@ -31,8 +32,24 @@ fn truncate(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
+pub fn is_ext_tool_name(name: &str) -> bool {
+    name.starts_with(EXT_PREFIX)
+}
+
+pub fn is_mcp_tool_name(name: &str) -> bool {
+    name.starts_with(MCP_PREFIX)
+}
+
+pub fn ext_tool_name_encode(server_name: &str, tool_name: &str) -> String {
+    function_name_encode(EXT_PREFIX, server_name, tool_name)
+}
+
 pub fn mcp_function_name_encode(server_name: &str, tool_name: &str) -> String {
-    let namespace = format!("{PREFIX}{server_name}{DELIM}");
+    function_name_encode(MCP_PREFIX, server_name, tool_name)
+}
+
+fn function_name_encode(prefix: &str, server_name: &str, tool_name: &str) -> String {
+    let namespace = format!("{prefix}{server_name}{DELIM}");
     let full = format!("{namespace}{tool_name}");
     if full.len() <= MAX_TOOL_NAME_LENGTH {
         return full;
@@ -61,6 +78,7 @@ mod tests {
     fn encodes_simple_names() {
         let name = mcp_function_name_encode("spotify", "search");
         assert_eq!(name, "mcp__spotify__search");
+        assert_eq!(ext_tool_name_encode("Shell", "Shell"), "ext__Shell__Shell");
     }
 
     #[test]

@@ -502,7 +502,9 @@ async fn exhaust_events(
                         // Then we can populate the error back to the LLM.
                         Some(toolspec) => {
                             let command = match extract_args(toolspec, &tool_call.arguments) {
-                                Disposition::Gated(command, _) => Some(command),
+                                Disposition::Gated {
+                                    require_permission, ..
+                                } => Some(require_permission),
                                 Disposition::Skip => Some(vec![]), // malform args, should mark as fail directly
                                 Disposition::Passthrough => None,
                             };

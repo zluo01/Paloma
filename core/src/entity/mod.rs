@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fmt};
 
-use scry_provider_protocol::v1::ProviderHealthStatus;
+use scry_provider_protocol::v1::{ProviderHealthStatus, ToolDefinition};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::FromRow;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, FromRow, Serialize, Deserialize)]
@@ -146,4 +147,40 @@ pub enum Icon {
     Name(String),
     Path(String),
     Embedded(Vec<u8>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolSpec {
+    // mcp or extension name
+    pub name: String,
+    // mcp tool or extension capability name
+    pub tool: String,
+    pub schema: ToolSchema,
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolSchema {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+}
+
+impl ToolSchema {
+    pub(crate) fn to_definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            parameters: self.parameters.to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ToolResult {
+    Text(String),
+    #[allow(dead_code)]
+    Binary {
+        mime_type: String,
+        data: Vec<u8>,
+    },
 }

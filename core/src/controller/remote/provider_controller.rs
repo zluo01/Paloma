@@ -17,8 +17,7 @@ use crate::{
     db::{AuthKind, ConnectedBackend, Storage, StorageError},
     entity::{Icon, ProviderBackendId},
     provider::{
-        ANTHROPIC_PLUGIN, ChatStream, OPENAI_PLUGIN, ProviderConnectionError, ProviderInfo,
-        ProviderPlugin,
+        BUILTIN_PROVIDERS, ChatStream, ProviderConnectionError, ProviderInfo, ProviderPlugin,
     },
 };
 
@@ -37,21 +36,18 @@ impl ProviderController {
         let provider_plugins = storage.plugins_by_type(PluginType::Provider).await?;
 
         // init in parallel
-        let results = join_all(
-            [&*ANTHROPIC_PLUGIN, &*OPENAI_PLUGIN]
-                .into_iter()
-                .chain(provider_plugins.iter())
-                .map(|plugin| {
-                    let storage = storage.clone();
-                    let connected_providers = &connected_providers;
-                    async move {
-                        (
-                            plugin.name.as_str(),
-                            init_provider_plugin(plugin, storage, connected_providers).await,
-                        )
-                    }
-                }),
-        )
+        let results = join_all(BUILTIN_PROVIDERS.iter().chain(provider_plugins.iter()).map(
+            |plugin| {
+                let storage = storage.clone();
+                let connected_providers = &connected_providers;
+                async move {
+                    (
+                        plugin.name.as_str(),
+                        init_provider_plugin(plugin, storage, connected_providers).await,
+                    )
+                }
+            },
+        ))
         .await;
 
         let handlers: DashMap<String, ProviderHandler> = DashMap::new();
@@ -430,8 +426,8 @@ impl ProviderController {
 
     pub async fn available_providers(&self) -> Result<Vec<ProviderInfo>> {
         let plugins = self.storage.plugins_by_type(PluginType::Provider).await?;
-        Ok([&*ANTHROPIC_PLUGIN, &*OPENAI_PLUGIN]
-            .into_iter()
+        Ok(BUILTIN_PROVIDERS
+            .iter()
             .map(|builtin| (builtin.name.clone(), None))
             .chain(
                 plugins

@@ -1,23 +1,23 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use log::error;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    capability::{DynTool, Shell, Tool, ToolResult, ToolSchema, ToolSpec},
-    controller::remote::{McpController, PermissionWorkflowManagerClient},
+    controller::{
+        ExtensionController,
+        remote::{McpController, PermissionWorkflowManagerClient},
+    },
     db::Storage,
+    entity::{ToolResult, ToolSchema, ToolSpec},
     permission::PermissionState,
+    utils::{is_ext_tool_name, is_mcp_tool_name},
 };
 
 pub struct ToolController {
-    shell: Arc<dyn DynTool>,
-    specs: HashMap<String, ToolSpec>,
     storage: Storage,
+    extension_controller: Arc<ExtensionController>,
     mcp_controller: Arc<McpController>,
     permission_workflow_client: PermissionWorkflowManagerClient,
 }
@@ -30,24 +30,15 @@ pub struct ToolCallPayload {
 }
 
 impl ToolController {
-    pub async fn new(
+    pub fn new(
         storage: Storage,
+        extension_controller: Arc<ExtensionController>,
         mcp_controller: Arc<McpController>,
         permission_workflow_client: PermissionWorkflowManagerClient,
     ) -> Arc<Self> {
-        let shell: Arc<dyn DynTool> = Arc::new(Shell::new());
-        let specs = shell
-            .specs()
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|spec| (spec.schema.name.clone(), spec))
-            .collect();
-
         Arc::new(Self {
-            shell,
-            specs,
             storage,
+            extension_controller,
             mcp_controller,
             permission_workflow_client,
         })
@@ -59,20 +50,19 @@ impl ToolController {
             HashSet::new()
         });
 
-        let mut schemas: Vec<ToolSchema> = self
-            .specs
-            .values()
-            .map(|spec| spec.schema.clone())
-            .collect();
+        let mut schemas = self.extension_controller.schemas();
         schemas.extend(self.mcp_controller.schemas(&disabled).await);
         schemas.sort_by(|a, b| a.name.cmp(&b.name));
         schemas
     }
 
     pub async fn retrieve_toolspec(&self, function_call_name: &str) -> Option<ToolSpec> {
-        match self.specs.get(function_call_name) {
-            Some(spec) => Some(spec.clone()),
-            None => self.mcp_controller.spec(function_call_name).await,
+        if is_ext_tool_name(function_call_name) {
+            self.extension_controller.spec(function_call_name)
+        } else if is_mcp_tool_name(function_call_name) {
+            self.mcp_controller.spec(function_call_name).await
+        } else {
+            None
         }
     }
 
@@ -86,16 +76,21 @@ impl ToolController {
 
         let call_id = &call.call_id;
 
+        if self.retrieve_toolspec(&call.name).await.is_none() {
+            return format!("unknown tool: {}", call.name);
+        }
+
         // Shell and MCP commands must clear the permission workflow before they run.
         if let Err(msg) = self.authorize(call_id.clone()).await {
             error!("error happens when waiting permission for {call_id}: {msg}");
             return msg;
         }
 
-        let outcome = if call.name == Shell::NAME {
-            self.shell
-                .invoke(None, session_id, call_id.clone(), args)
+        let outcome = if is_ext_tool_name(&call.name) {
+            self.extension_controller
+                .invoke(call.name.clone(), session_id, call_id.clone(), args)
                 .await
+                .map_err(|err| err.to_string())
         } else {
             self.mcp_controller
                 .call(call.name.clone(), session_id, call_id.clone(), args)
@@ -132,7 +127,7 @@ impl ToolController {
     }
 
     pub async fn cancel_session(&self, session_id: Uuid) {
-        self.mcp_controller.cancel_session(session_id);
-        self.shell.cancel_session(session_id).await;
+        self.mcp_controller.cancel(session_id);
+        self.extension_controller.cancel(session_id).await;
     }
 }

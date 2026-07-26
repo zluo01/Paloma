@@ -7,9 +7,17 @@ use scry_extension_protocol::v1::Capability;
 
 use crate::{HealthStatus, entity::Plugin};
 
-pub(crate) const PLUGIN_INTERNAL: &str = "Internal";
+const PLUGIN_INTERNAL: &str = "Internal";
+const PLUGIN_SHELL: &str = "Shell";
 
 const EXTENSION_PLUGIN_FLAG: &str = "--extension-plugin";
+
+pub(crate) static BUILTIN_EXTENSIONS: LazyLock<Vec<Plugin>> = LazyLock::new(|| {
+    vec![
+        Plugin::builtin(PLUGIN_INTERNAL, EXTENSION_PLUGIN_FLAG),
+        Plugin::builtin(PLUGIN_SHELL, EXTENSION_PLUGIN_FLAG),
+    ]
+});
 
 #[derive(Clone)]
 pub struct ExtensionInfo {
@@ -35,6 +43,7 @@ pub(crate) fn serve_extension_plugin_and_exit_if_requested() {
     };
     let result = match name.as_str() {
         PLUGIN_INTERNAL => scry_extension_internal::run(),
+        PLUGIN_SHELL => scry_extension_shell::run(),
         _ => {
             eprintln!("unknown extension plugin {name}");
             exit(1);
@@ -48,6 +57,3 @@ pub(crate) fn serve_extension_plugin_and_exit_if_requested() {
         },
     }
 }
-
-pub(crate) static INTERNAL_PLUGIN: LazyLock<Plugin> =
-    LazyLock::new(|| Plugin::builtin(PLUGIN_INTERNAL, EXTENSION_PLUGIN_FLAG));

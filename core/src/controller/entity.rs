@@ -41,7 +41,7 @@ pub enum ChatRenderEvent {
         text: String,
     },
     ToolCall {
-        name: String,
+        tool_name: String,
         arguments: String,
         description: Option<String>,
         decisions: Vec<UserDecision>,

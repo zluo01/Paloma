@@ -7,7 +7,6 @@ use log::error;
 use scry_provider_protocol::v1::{
     ConversationItem, UserPrompt, chat_response, conversation_item::Item,
 };
-use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -15,7 +14,7 @@ use crate::{
     constants::SESSION_MANAGER_CHANNEL_CAPACITY,
     controller::{
         ChatRenderEvent, PermissionWorkflowError, RenderEvent, ToolController,
-        helper::{Disposition, extract_args},
+        helper::{Disposition, extract_args, prettify_arg},
         remote::PermissionWorkflowManagerClient,
     },
     db::{Session as StorageSession, Storage, StorageError},
@@ -511,12 +510,9 @@ impl SessionEvent {
 }
 
 fn hosted_tool_render(function_type: &str, content: &str) -> Option<RenderEvent> {
-    let arguments = serde_json::from_str::<Value>(content)
-        .ok()
-        .and_then(|v| serde_json::to_string_pretty(&v).ok())
-        .unwrap_or_else(|| content.to_string());
+    let arguments = prettify_arg(content);
     Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-        name: function_type.to_string(),
+        tool_name: function_type.to_string(),
         arguments,
         description: None,
         decisions: vec![],
@@ -528,18 +524,23 @@ async fn tool_call_render(
     tool_controller: Arc<ToolController>,
     session_id: Uuid,
     call_id: &str,
-    name: &str,
+    tool_id: &str,
     arguments: &str,
     finished: bool,
 ) -> Option<RenderEvent> {
     let disposition = tool_controller
-        .retrieve_toolspec(name)
+        .retrieve_toolspec(tool_id)
         .await
         .map(|spec| extract_args(spec, arguments))
         .unwrap_or(Disposition::Passthrough);
 
-    let (arguments, description, decisions) = match disposition {
-        Disposition::Gated(command, description) => {
+    let (name, arguments, description, decisions) = match disposition {
+        Disposition::Gated {
+            name,
+            description,
+            arguments,
+            ..
+        } => {
             let decisions = if finished {
                 vec![]
             } else {
@@ -554,20 +555,17 @@ async fn tool_call_render(
                     },
                 }
             };
-            (command.join(" "), description, decisions)
+            (name, arguments, description, decisions)
         },
         Disposition::Passthrough => {
-            let args = serde_json::from_str::<Value>(arguments)
-                .ok()
-                .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                .unwrap_or(arguments.to_string());
-            (args, None, vec![])
+            let args = prettify_arg(arguments);
+            (tool_id.to_string(), args, None, vec![])
         },
         Disposition::Skip => return None,
     };
 
     Some(RenderEvent::Chat(ChatRenderEvent::ToolCall {
-        name: name.to_string(),
+        tool_name: name,
         arguments,
         description,
         decisions,

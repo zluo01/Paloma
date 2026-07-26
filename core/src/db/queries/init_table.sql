@@ -96,7 +96,7 @@ END;
 CREATE TABLE IF NOT EXISTS plugins
 (
     name        TEXT PRIMARY KEY NOT NULL,
-    plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('native', 'provider', 'mcp')),
+    plugin_type TEXT             NOT NULL CHECK (plugin_type IN ('extension', 'provider', 'mcp')),
     transport   TEXT             NOT NULL CHECK (transport IN ('local', 'http')),
     timeout     INTEGER          NOT NULL DEFAULT 300 CHECK (timeout > 0),
     disabled    INTEGER          NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS plugins
     args        TEXT             NOT NULL,
     credential  TEXT,
     creation    INTEGER          NOT NULL DEFAULT (unixepoch()),
-    -- Native plugins and provider plugins run in-process
+    -- Extension and provider plugins are spawned as local subprocesses,
     -- only mcp plugins may go over http.
     CHECK (plugin_type = 'mcp' OR transport = 'local')
 );

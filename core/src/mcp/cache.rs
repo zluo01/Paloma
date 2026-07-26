@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, sync::Arc, time::Duration};
 use dashmap::DashMap;
 use scry_utils::{RefreshSlot, ttl_with_jitter};
 
-use crate::capability::ToolSpec;
+use crate::entity::ToolSpec;
 
 const MCP_SPECS_CACHE_TTL_SECS: u64 = Duration::from_hours(6).as_secs();
 const MCP_SPECS_CACHE_JITTER_SECS: u64 = Duration::from_mins(30).as_secs();

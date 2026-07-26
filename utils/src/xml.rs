@@ -2,8 +2,8 @@ use std::fmt::{self, Display, Formatter, Write};
 
 #[derive(Debug, Clone)]
 pub struct Element {
-    name: &'static str,
-    attrs: Vec<(&'static str, String)>,
+    name: String,
+    attrs: Vec<(String, String)>,
     body: Body,
 }
 
@@ -16,24 +16,25 @@ enum Body {
 }
 
 impl Element {
-    pub fn new(name: &'static str) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
-            name,
+            name: name.into(),
             attrs: Vec::new(),
             body: Body::Empty,
         }
     }
 
-    pub fn attr(mut self, key: &'static str, value: impl Display) -> Self {
-        self.attrs.push((key, escape_attr(&value.to_string())));
+    pub fn attr(mut self, key: impl Into<String>, value: impl Display) -> Self {
+        self.attrs
+            .push((key.into(), escape_attr(&value.to_string())));
         self
     }
 
-    pub fn attr_if(self, cond: bool, key: &'static str, value: impl Display) -> Self {
+    pub fn attr_if(self, cond: bool, key: impl Into<String>, value: impl Display) -> Self {
         if cond { self.attr(key, value) } else { self }
     }
 
-    pub fn attr_if_some<T: Display>(self, key: &'static str, value: Option<T>) -> Self {
+    pub fn attr_if_some<T: Display>(self, key: impl Into<String>, value: Option<T>) -> Self {
         match value {
             Some(v) => self.attr(key, v),
             None => self,

@@ -34,7 +34,7 @@ fn service() -> io::Result<ExtensionService> {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct ShellArgs {
+pub struct ShellArgs {
     /// argv array to execute. argv[0] is the program name (e.g. "git",
     /// "cargo", "bash"); the remaining elements are its positional
     /// arguments, one per element. Do NOT pre-concatenate multiple

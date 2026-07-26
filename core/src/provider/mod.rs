@@ -6,10 +6,17 @@ pub use connection::{ChatStream, ProviderConnectionError, ProviderPlugin};
 
 use crate::{HealthStatus, entity::Plugin};
 
-pub(crate) const PLUGIN_ANTHROPIC: &str = "Anthropic";
-pub(crate) const PLUGIN_OPENAI: &str = "OpenAI";
+const PLUGIN_ANTHROPIC: &str = "Anthropic";
+const PLUGIN_OPENAI: &str = "OpenAI";
 
 const PROVIDER_PLUGIN_FLAG: &str = "--provider-plugin";
+
+pub(crate) static BUILTIN_PROVIDERS: LazyLock<Vec<Plugin>> = LazyLock::new(|| {
+    vec![
+        Plugin::builtin(PLUGIN_ANTHROPIC, PROVIDER_PLUGIN_FLAG),
+        Plugin::builtin(PLUGIN_OPENAI, PROVIDER_PLUGIN_FLAG),
+    ]
+});
 
 #[derive(Clone)]
 pub struct ProviderInfo {
@@ -46,9 +53,3 @@ pub(crate) fn serve_plugin_and_exit_if_requested() {
         },
     }
 }
-
-pub(crate) static ANTHROPIC_PLUGIN: LazyLock<Plugin> =
-    LazyLock::new(|| Plugin::builtin(PLUGIN_ANTHROPIC, PROVIDER_PLUGIN_FLAG));
-
-pub(crate) static OPENAI_PLUGIN: LazyLock<Plugin> =
-    LazyLock::new(|| Plugin::builtin(PLUGIN_OPENAI, PROVIDER_PLUGIN_FLAG));

@@ -1652,4 +1652,33 @@ mod plugins {
             .await;
         assert!(matches!(zero, Err(StorageError::Sqlx(_))), "zero: {zero:?}");
     }
+
+    #[tokio::test]
+    async fn insert_plugin_accepts_extension_type() {
+        let storage = fresh_storage().await;
+        let env = HashMap::new();
+        let args = PluginArgs::Local {
+            command: "my-extension".to_string(),
+            args: vec![],
+        };
+        storage
+            .insert_plugin(
+                "MyExtension",
+                PluginType::Extension,
+                Transport::Local,
+                300,
+                &env,
+                &args,
+                None,
+            )
+            .await
+            .expect("extension plugin should insert");
+
+        let plugins = storage
+            .plugins_by_type(PluginType::Extension)
+            .await
+            .expect("query extensions");
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name, "MyExtension");
+    }
 }

@@ -13,7 +13,6 @@ use crate::{
     permission::PermissionController,
 };
 
-mod capability;
 mod constants;
 mod controller;
 mod db;
@@ -119,10 +118,10 @@ impl AppContext {
 
         let tool_controller = ToolController::new(
             storage.clone(),
+            Arc::clone(&extension_controller),
             Arc::clone(&mcp_controller),
             permission_workflow_client.clone(),
-        )
-        .await;
+        );
 
         let (mut session_manager, session_manager_client) = SessionManager::new(
             storage.clone(),

@@ -32,7 +32,7 @@ impl ProviderEncoder for ClaudeCodec {
             .iter()
             .fold(
                 Element::new("environment_context"),
-                |element, (key, value)| element.child(Element::new(key).plain_text(value)),
+                |element, (key, value)| element.child(Element::new(*key).plain_text(value)),
             )
             .to_string();
 

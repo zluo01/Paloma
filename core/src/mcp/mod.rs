@@ -1,6 +1,5 @@
 mod cache;
 mod credentials;
-mod helper;
 
 use std::{
     collections::HashMap,
@@ -29,12 +28,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    capability::{ToolResult, ToolSchema, ToolSpec},
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
-    entity::{HealthStatus, Plugin, PluginArgs},
-    mcp::{credentials::CredentialStorage, helper::mcp_function_name_encode},
-    utils::write_spill_file,
+    entity::{HealthStatus, Plugin, PluginArgs, ToolResult, ToolSchema, ToolSpec},
+    mcp::credentials::CredentialStorage,
+    utils::{mcp_function_name_encode, write_spill_file},
 };
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -183,13 +181,11 @@ impl McpPlugin {
 
     pub async fn call(
         &self,
-        name: Option<String>, // mcp tool name
+        tool_name: String, // mcp tool name
         cancel: CancellationToken,
         call_id: String,
         args: Value,
     ) -> Result<ToolResult> {
-        let tool = name.ok_or(McpPluginError::MissingToolName)?;
-
         let Some(client) = self.client.as_ref() else {
             error!(
                 "Unexpected invocation on disconnected mcp server `{}`. This indicates a bug.",
@@ -204,7 +200,7 @@ impl McpPlugin {
             Duration::from_secs(self.timeout as u64),
             attempt_with_retry(
                 || {
-                    let params = CallToolRequestParams::new(tool.to_string())
+                    let params = CallToolRequestParams::new(tool_name.clone())
                         .with_arguments(arguments.clone());
                     let cancel = cancel.clone();
                     async move {
@@ -253,14 +249,14 @@ impl McpPlugin {
                     self.status
                         .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
                 }
-                error!("mcp tool `{tool}` failed: {err}");
+                error!("mcp tool `{}` failed: {err}", &tool_name);
                 return Err(err);
             },
             // Timed out across all retries — ambiguous (slow tool vs hung
             // server), so surface it but leave health untouched.
             Err(_elapsed) => {
                 let err = McpPluginError::CallTimeout {
-                    tool: tool.clone(),
+                    tool: tool_name,
                     seconds: self.timeout,
                 };
                 error!("{err}");
@@ -282,7 +278,7 @@ impl McpPlugin {
         };
 
         Ok(ToolResult::Text(
-            truncate_payload(&tool, &call_id, text).await,
+            truncate_payload(&tool_name, &call_id, text).await,
         ))
     }
 }
@@ -403,7 +399,7 @@ fn tools_to_specs(name: &str, tools: Vec<Tool>) -> HashMap<String, ToolSpec> {
         .map(|tool| {
             let spec = ToolSpec {
                 name: name.to_string(),
-                tool: Some(tool.name.to_string()),
+                tool: tool.name.to_string(),
                 schema: ToolSchema {
                     name: mcp_function_name_encode(name, &tool.name),
                     description: tool.description.map(|d| d.into_owned()).unwrap_or_default(),
@@ -431,9 +427,6 @@ pub enum McpPluginError {
 
     #[error("MCP authorization failed: {0}")]
     Auth(#[from] AuthError),
-
-    #[error("MCP tool call requires a tool name")]
-    MissingToolName,
 
     #[error("internal error: mcp server `{0}` is unavailable")]
     Disconnected(String),

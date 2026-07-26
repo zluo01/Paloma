@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 use crate::{
     HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
-    capability::{ToolResult, ToolSchema, ToolSpec},
     db::{Storage, StorageError},
+    entity::{ToolResult, ToolSchema, ToolSpec},
     mcp::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
 };
@@ -203,18 +203,23 @@ impl McpController {
         )
     }
 
-    pub async fn spec(&self, name: &str) -> Option<ToolSpec> {
-        let servers: Vec<String> = self
+    async fn locate(&self, name: &str) -> Option<(Arc<McpPlugin>, ToolSpec)> {
+        let servers: Vec<(String, Arc<McpPlugin>)> = self
             .handlers
             .iter()
-            .map(|entry| entry.key().clone())
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
             .collect();
-        for server in servers {
+
+        for (server, connection) in servers {
             if let Some(spec) = self.specs_cache.spec(&server, name).await {
-                return Some(spec);
+                return Some((connection, spec));
             }
         }
         None
+    }
+
+    pub async fn spec(&self, name: &str) -> Option<ToolSpec> {
+        self.locate(name).await.map(|(_, spec)| spec)
     }
 
     pub async fn call(
@@ -224,29 +229,16 @@ impl McpController {
         call_id: String,
         args: Value,
     ) -> Result<ToolResult> {
-        let servers: Vec<(String, Arc<McpPlugin>)> = self
-            .handlers
-            .iter()
-            .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
-            .collect();
-
-        let mut target = None;
-        for (server, connection) in servers {
-            if let Some(spec) = self.specs_cache.spec(&server, &name).await {
-                target = Some((connection, spec.tool));
-                break;
-            }
-        }
-
-        let Some((connection, tool)) = target else {
+        let Some((connection, spec)) = self.locate(&name).await else {
             return Err(McpControllerError::UnknownTool(name));
         };
+        let tool = spec.tool;
 
         let token = self.sessions.entry(session_id).or_default().clone();
         Ok(connection.call(tool, token, call_id, args).await?)
     }
 
-    pub fn cancel_session(&self, session_id: Uuid) {
+    pub fn cancel(&self, session_id: Uuid) {
         if let Some((_, token)) = self.sessions.remove(&session_id) {
             token.cancel();
         }

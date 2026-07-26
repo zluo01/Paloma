@@ -1,19 +1,22 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use dashmap::DashMap;
 use futures::{Stream, future::join_all, stream};
-use log::error;
+use log::{error, warn};
 use scry_extension_protocol::v1::{
-    Action, Capability, Facet, HandshakeResponse, run_action_response::Behavior,
+    Action, Capability, HandshakeResponse, run_action_response::Behavior,
 };
+use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinSet};
+use uuid::Uuid;
 
 use crate::{
     HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse, RENDER_CHANNEL_CAPACITY,
     RenderEvent, SearchRenderEvent, Transport,
     db::{Storage, StorageError},
-    entity::ExtensionCapabilityId,
-    extension::{ExtensionConnectionError, ExtensionInfo, ExtensionPlugin, INTERNAL_PLUGIN},
+    entity::{ExtensionCapabilityId, ToolResult, ToolSchema, ToolSpec},
+    extension::{BUILTIN_EXTENSIONS, ExtensionConnectionError, ExtensionInfo, ExtensionPlugin},
+    utils::ext_tool_name_encode,
 };
 
 pub struct ExtensionController {
@@ -27,8 +30,8 @@ impl ExtensionController {
 
         // init in parallel
         let results = join_all(
-            [&*INTERNAL_PLUGIN]
-                .into_iter()
+            BUILTIN_EXTENSIONS
+                .iter()
                 .chain(extension_plugins.iter())
                 .map(|plugin| async move {
                     (plugin.name.as_str(), init_extension_plugin(plugin).await)
@@ -37,9 +40,10 @@ impl ExtensionController {
         .await;
 
         let handlers: DashMap<String, ExtensionHandler> = DashMap::new();
-        for (name, result) in results {
+        for (index, (name, result)) in results.into_iter().enumerate() {
             match result {
                 Ok((detail, connection)) => {
+                    let specs = capability_specs(&detail.extension_id, &detail.capabilities);
                     handlers.insert(
                         detail.extension_id,
                         ExtensionHandler {
@@ -47,11 +51,30 @@ impl ExtensionController {
                             author: detail.author,
                             homepage: detail.homepage,
                             capabilities: detail.capabilities,
+                            specs,
                             connection,
                         },
                     );
                 },
-                Err(e) => error!("failed to initialize extension plugin {name}: {e}"),
+                Err(e) if index < BUILTIN_EXTENSIONS.len() => {
+                    return Err(ExtensionControllerError::FailToInitialize(format!(
+                        "{name}: {e}"
+                    )));
+                },
+                Err(e) => {
+                    error!("failed to initialize extension plugin {name}: {e}");
+                    handlers.insert(
+                        name.to_string(),
+                        ExtensionHandler {
+                            description: String::new(),
+                            author: None,
+                            homepage: None,
+                            capabilities: Vec::new(),
+                            specs: HashMap::new(),
+                            connection: ExtensionPlugin::unhealthy(e.to_string()),
+                        },
+                    );
+                },
             }
         }
 
@@ -65,12 +88,13 @@ impl ExtensionController {
         let handlers: Vec<(ExtensionCapabilityId, Arc<ExtensionPlugin>)> = self
             .handlers
             .iter()
+            .filter(|entry| entry.connection.health() == HealthStatus::Running)
             .flat_map(|entry| {
                 let handler = entry.value();
                 handler
                     .capabilities
                     .iter()
-                    .filter(|capability| matches!(capability.facet(), Facet::Query | Facet::Both))
+                    .filter(|capability| capability.search.is_some())
                     .map(|capability| {
                         (
                             ExtensionCapabilityId {
@@ -160,8 +184,8 @@ impl ExtensionController {
 
     pub async fn available_extensions(&self) -> Result<Vec<ExtensionInfo>> {
         let plugins = self.storage.plugins_by_type(PluginType::Extension).await?;
-        Ok([&*INTERNAL_PLUGIN]
-            .into_iter()
+        Ok(BUILTIN_EXTENSIONS
+            .iter()
             .map(|builtin| (builtin.name.clone(), None))
             .chain(
                 plugins
@@ -170,9 +194,7 @@ impl ExtensionController {
             )
             .filter_map(|(name, config)| {
                 let Some(handler) = self.handlers.get(&name) else {
-                    error!(
-                        "no live extension status for plugin {name}; This indicates a bug. Skipping"
-                    );
+                    error!("no extension handler for plugin {name}; This indicates a bug.");
                     return None;
                 };
                 Some(ExtensionInfo {
@@ -190,7 +212,7 @@ impl ExtensionController {
     }
 
     pub async fn add_extension(&self, plugin: &Plugin) -> Result<()> {
-        let (detail, provider) = init_extension_plugin(plugin).await?;
+        let (detail, connection) = init_extension_plugin(plugin).await?;
 
         self.storage
             .insert_plugin(
@@ -204,27 +226,12 @@ impl ExtensionController {
             )
             .await?;
 
-        self.handlers.insert(
-            detail.extension_id,
-            ExtensionHandler {
-                description: detail.description,
-                author: detail.author,
-                homepage: detail.homepage,
-                capabilities: detail.capabilities,
-                connection: provider,
-            },
-        );
+        self.register_handler(detail, connection);
         Ok(())
     }
 
     pub async fn update_extension(&self, plugin: &Plugin) -> Result<()> {
-        let (detail, provider) = init_extension_plugin(plugin).await?;
-
-        if provider.health() != HealthStatus::Running {
-            return Err(ExtensionControllerError::FailToInitialize(
-                detail.extension_id,
-            ));
-        }
+        let (detail, connection) = init_extension_plugin(plugin).await?;
 
         self.storage
             .update_plugin(
@@ -236,6 +243,18 @@ impl ExtensionController {
             )
             .await?;
 
+        if let Some(previous) = self.register_handler(detail, connection) {
+            previous.connection.shutdown();
+        }
+        Ok(())
+    }
+
+    fn register_handler(
+        &self,
+        detail: HandshakeResponse,
+        connection: Arc<ExtensionPlugin>,
+    ) -> Option<ExtensionHandler> {
+        let specs = capability_specs(&detail.extension_id, &detail.capabilities);
         self.handlers.insert(
             detail.extension_id,
             ExtensionHandler {
@@ -243,10 +262,10 @@ impl ExtensionController {
                 author: detail.author,
                 homepage: detail.homepage,
                 capabilities: detail.capabilities,
-                connection: provider,
+                specs,
+                connection,
             },
-        );
-        Ok(())
+        )
     }
 
     pub async fn remove_extension(&self, extension_id: &str) -> Result<()> {
@@ -258,20 +277,117 @@ impl ExtensionController {
     }
 }
 
+impl ExtensionController {
+    pub async fn invoke(
+        &self,
+        name: String, // encoded extension function call name
+        session_id: Uuid,
+        call_id: String,
+        arguments: Value,
+    ) -> Result<ToolResult> {
+        let Some((connection, tool)) = self.handlers.iter().find_map(|entry| {
+            let spec = entry.specs.get(&name)?;
+            Some((Arc::clone(&entry.connection), spec.tool.clone()))
+        }) else {
+            return Err(ExtensionControllerError::UnknownTool(name));
+        };
+
+        Ok(connection
+            .invoke_tool(tool, session_id.to_string(), call_id, arguments.to_string())
+            .await?)
+    }
+
+    pub async fn cancel(&self, session_id: Uuid) {
+        let tools: Vec<Arc<ExtensionPlugin>> = self
+            .handlers
+            .iter()
+            .filter(|entry| entry.connection.health() == HealthStatus::Running)
+            .filter(|entry| {
+                entry
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability.tool.is_some())
+            })
+            .map(|entry| Arc::clone(&entry.connection))
+            .collect();
+
+        let results =
+            join_all(tools.into_iter().map(|connection| async move {
+                connection.cancel_tool(session_id.to_string()).await
+            }))
+            .await;
+        for result in results {
+            if let Err(e) = result {
+                warn!("failed to cancel extension tool session {session_id}: {e}");
+            }
+        }
+    }
+
+    pub fn schemas(&self) -> Vec<ToolSchema> {
+        self.handlers
+            .iter()
+            .filter(|entry| entry.connection.health() == HealthStatus::Running)
+            .flat_map(|entry| {
+                entry
+                    .specs
+                    .values()
+                    .map(|spec| spec.schema.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    pub fn spec(&self, name: &str) -> Option<ToolSpec> {
+        self.handlers
+            .iter()
+            .find_map(|entry| entry.specs.get(name).cloned())
+    }
+}
+
+fn capability_specs(extension_id: &str, capabilities: &[Capability]) -> HashMap<String, ToolSpec> {
+    capabilities
+        .iter()
+        .filter_map(|capability| {
+            let tool = capability.tool.as_ref()?;
+            let parameters = match serde_json::from_str(&tool.parameters) {
+                Ok(parameters) => parameters,
+                Err(e) => {
+                    error!(
+                        "invalid tool parameters schema for capability {}: {e}",
+                        capability.capability_id
+                    );
+                    return None;
+                },
+            };
+            let spec = ToolSpec {
+                name: extension_id.to_string(),
+                tool: capability.capability_id.clone(),
+                schema: ToolSchema {
+                    name: ext_tool_name_encode(extension_id, &capability.capability_id),
+                    description: tool.description.clone(),
+                    parameters,
+                },
+            };
+            Some((spec.schema.name.clone(), spec))
+        })
+        .collect()
+}
+
 struct ExtensionHandler {
     description: String,
     author: Option<String>,
     homepage: Option<String>,
     capabilities: Vec<Capability>,
+    specs: HashMap<String, ToolSpec>,
     connection: Arc<ExtensionPlugin>,
 }
 
 async fn init_extension_plugin(
     plugin: &Plugin,
 ) -> Result<(HandshakeResponse, Arc<ExtensionPlugin>)> {
-    let provider = ExtensionPlugin::connect(plugin)?;
-    let provider_detail = provider.handshake().await?;
-    Ok((provider_detail, provider))
+    let connection = ExtensionPlugin::connect(plugin)?;
+    let detail = connection.handshake().await?;
+    Ok((detail, connection))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -279,13 +395,16 @@ pub enum ExtensionControllerError {
     #[error("extension plugin {0} is not registered")]
     UnknownExtension(String),
 
+    #[error("unknown extension tool: {0}")]
+    UnknownTool(String),
+
     #[error(transparent)]
     Storage(#[from] StorageError),
 
     #[error(transparent)]
     Connection(#[from] ExtensionConnectionError),
 
-    #[error("fail to initialize extension plugin: {0}")]
+    #[error("fail to initialize builtin extension {0}")]
     FailToInitialize(String),
 }
 
