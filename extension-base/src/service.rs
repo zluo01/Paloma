@@ -107,45 +107,61 @@ impl ExtensionService {
             },
             request_event::Payload::SearchRequest(request) => {
                 let handlers = Arc::clone(&self.handlers);
-                tokio::task::spawn_blocking(move || {
-                    let payload = match handler(&handlers, capability_id) {
-                        Ok(capability) => match capability.search_handler() {
-                            Some(search) => {
-                                response_event::Payload::SearchResponse(SearchResponse {
-                                    items: search.search(&request.input),
-                                })
+                tokio::spawn(async move {
+                    let joined = tokio::task::spawn_blocking(move || {
+                        match handler(&handlers, capability_id) {
+                            Ok(capability) => match capability.search_handler() {
+                                Some(search) => {
+                                    response_event::Payload::SearchResponse(SearchResponse {
+                                        items: search.search(&request.input),
+                                    })
+                                },
+                                None => error_payload(&format!(
+                                    "capability {} does not implement search handler",
+                                    capability.id()
+                                )),
                             },
-                            None => error_payload(&format!(
-                                "capability {} does not implement search handler",
-                                capability.id()
-                            )),
-                        },
-                        Err(error) => error_payload(&error),
+                            Err(error) => error_payload(&error),
+                        }
+                    })
+                    .await;
+
+                    let payload = match joined {
+                        Ok(payload) => payload,
+                        Err(e) => error_payload(&format!("search handler panicked: {e}")),
                     };
-                    let _ = tx.blocking_send(response(event_id, payload));
+                    let _ = tx.send(response(event_id, payload)).await;
                 });
             },
             request_event::Payload::RunActionRequest(request) => {
                 let handlers = Arc::clone(&self.handlers);
-                tokio::task::spawn_blocking(move || {
-                    let payload = match handler(&handlers, capability_id) {
-                        Ok(capability) => match capability.search_handler() {
-                            Some(search) => match request.action {
-                                Some(action) => {
-                                    response_event::Payload::RunActionResponse(RunActionResponse {
-                                        behavior: Some(search.run_search_action(action)),
-                                    })
+                tokio::spawn(async move {
+                    let joined = tokio::task::spawn_blocking(move || {
+                        match handler(&handlers, capability_id) {
+                            Ok(capability) => match capability.search_handler() {
+                                Some(search) => match request.action {
+                                    Some(action) => response_event::Payload::RunActionResponse(
+                                        RunActionResponse {
+                                            behavior: Some(search.run_search_action(action)),
+                                        },
+                                    ),
+                                    None => error_payload("run_action request has no action"),
                                 },
-                                None => error_payload("run_action request has no action"),
+                                None => error_payload(&format!(
+                                    "capability {} does not implement search handler",
+                                    capability.id()
+                                )),
                             },
-                            None => error_payload(&format!(
-                                "capability {} does not implement search handler",
-                                capability.id()
-                            )),
-                        },
-                        Err(error) => error_payload(&error),
+                            Err(error) => error_payload(&error),
+                        }
+                    })
+                    .await;
+
+                    let payload = match joined {
+                        Ok(payload) => payload,
+                        Err(e) => error_payload(&format!("run_action handler panicked: {e}")),
                     };
-                    let _ = tx.blocking_send(response(event_id, payload));
+                    let _ = tx.send(response(event_id, payload)).await;
                 });
             },
             request_event::Payload::InvokeToolRequest(request) => {
@@ -407,6 +423,88 @@ mod tests {
             Some(response_event::Payload::ExtensionError(e)) => e.error,
             other => panic!("expected an extension error, got {other:?}"),
         }
+    }
+
+    struct Panicking;
+
+    impl Capability for Panicking {
+        fn id(&self) -> &str {
+            "boom"
+        }
+
+        fn description(&self) -> &str {
+            "panicking capability"
+        }
+
+        fn search_handler(&self) -> Option<&dyn SearchHandler> {
+            Some(self)
+        }
+    }
+
+    impl SearchHandler for Panicking {
+        fn search(&self, _input: &str) -> Vec<Item> {
+            panic!("search exploded");
+        }
+
+        fn run_search_action(&self, _action: Action) -> Behavior {
+            panic!("run_action exploded");
+        }
+    }
+
+    fn panicking_service() -> ExtensionService {
+        ExtensionService::new(
+            "Test",
+            "test extension.",
+            None,
+            None,
+            vec![Box::new(Panicking)],
+        )
+    }
+
+    #[tokio::test]
+    async fn panicking_search_handler_reports_an_error() {
+        let response = roundtrip(
+            &panicking_service(),
+            RequestEvent {
+                event_id: 21,
+                capability_id: Some("boom".into()),
+                payload: Some(request_event::Payload::SearchRequest(SearchRequest {
+                    input: "hi".into(),
+                })),
+            },
+        )
+        .await;
+
+        assert_eq!(response.event_id, 21);
+        assert!(
+            extension_error(response).contains("search handler panicked"),
+            "panic should surface as an extension error"
+        );
+    }
+
+    #[tokio::test]
+    async fn panicking_run_action_handler_reports_an_error() {
+        let response = roundtrip(
+            &panicking_service(),
+            RequestEvent {
+                event_id: 22,
+                capability_id: Some("boom".into()),
+                payload: Some(request_event::Payload::RunActionRequest(RunActionRequest {
+                    action: Some(Action {
+                        label: "hide".into(),
+                        params: vec![],
+                        primary: true,
+                    }),
+                })),
+            },
+        )
+        .await;
+
+        assert_eq!(response.event_id, 22);
+        assert!(
+            extension_error(response).contains("run_action handler panicked"),
+            "panic should surface as an extension error"
+        );
     }
 
     #[tokio::test]
