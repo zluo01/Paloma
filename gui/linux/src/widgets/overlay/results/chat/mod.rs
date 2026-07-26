@@ -79,7 +79,7 @@ impl ChatView {
 
     pub(crate) fn append_tool_call(
         &self,
-        name: &str,
+        tool_name: &str,
         arguments: &str,
         description: Option<&str>,
         decisions: &[UserDecision],
@@ -88,7 +88,7 @@ impl ChatView {
             prev.complete();
         }
         let (toolcall_section, decisions) =
-            ToolCallSection::new(name, arguments, description, decisions);
+            ToolCallSection::new(tool_name, arguments, description, decisions);
         self.turns.append(toolcall_section.widgets());
 
         let on_finish: Rc<dyn Fn(PermissionState)> = {

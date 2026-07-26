@@ -503,13 +503,17 @@ impl Overlay {
                 self.chat.append_reasoning(&text);
             },
             RenderEvent::Chat(ChatRenderEvent::ToolCall {
-                name,
+                tool_name,
                 arguments,
                 description,
                 decisions,
             }) => {
-                self.chat
-                    .append_tool_call(&name, &arguments, description.as_deref(), &decisions);
+                self.chat.append_tool_call(
+                    &tool_name,
+                    &arguments,
+                    description.as_deref(),
+                    &decisions,
+                );
             },
             RenderEvent::Done => {
                 self.chat.finish();

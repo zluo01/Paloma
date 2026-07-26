@@ -24,7 +24,7 @@ pub(crate) struct ToolCallSection {
 
 impl ToolCallSection {
     pub(crate) fn new(
-        name: &str,
+        tool_name: &str,
         arguments: &str,
         description: Option<&str>,
         decisions: &[UserDecision],
@@ -33,7 +33,7 @@ impl ToolCallSection {
         if let Some(description) = description.filter(|d| !d.is_empty()) {
             append_content_label(&view, description, "scry-chat-tool-description");
         }
-        view.append(&code_card(name, arguments));
+        view.append(&code_card(tool_name, arguments));
 
         let (decision_group, parsed) = if !decisions.is_empty() {
             let (decision_group, parsed) = decision_button_group(decisions);

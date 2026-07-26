@@ -104,11 +104,7 @@ impl Section {
         let item = Item {
             title: CHAT_ACTION_LABEL.to_string(),
             subtitle: None,
-            icon: Some(CapabilityIcon {
-                icon: Some(capability_icon::Icon::Name(
-                    "dialog-question-symbolic".to_string(),
-                )),
-            }),
+            icon: Some(CapabilityIcon::name("dialog-question-symbolic")),
             actions: Vec::new(),
         };
         let button = flat_button(&item_content_row(&item), Some("scry-chat-action"));
