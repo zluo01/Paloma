@@ -1,8 +1,8 @@
 [package]
 name = "scry-extension-base"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
 publish = false
 
 [dependencies]
@@ -12,6 +12,3 @@ scry-extension-protocol = { workspace = true }
 scry-utils = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tokio-util = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "sync"] }

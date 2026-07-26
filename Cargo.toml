@@ -36,6 +36,7 @@ oauth2 = { version = "5.0.0", default-features = false }
 prost = "0.14.4"
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.2.0"
+regex = "1.12.4"
 reqwest = { version = "0.13.4", default-features = false, features = [
     "json",
     "form",
@@ -43,9 +44,11 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "http2",
     "stream",
 ] }
+scry-core = { path = "core" }
 scry-extension-base = { path = "extension-base" }
 scry-extension-internal = { path = "plugins/extensions/internal" }
 scry-extension-protocol = { path = "extension-protocol" }
+scry-extension-shell = { path = "plugins/extensions/shell" }
 scry-provider-anthropic = { path = "plugins/providers/anthropic" }
 scry-provider-base = { path = "provider-base" }
 scry-provider-openai = { path = "plugins/providers/openai" }
@@ -53,11 +56,12 @@ scry-provider-protocol = { path = "provider-protocol" }
 scry-utils = { path = "utils" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", default-features = false }
 tokio-util = { version = "0.7.18", features = ["codec"] }
 uniffi = "0.32.0"
-uuid = { version = "1.23.4", default-features = false }
+uuid = { version = "1.23.4", default-features = false, features = ["v7", "std"] }
 
 [profile.release]
 lto = "thin"
