@@ -311,7 +311,7 @@ struct PluginDialog: View {
             return Plugin(
                 name: "",
                 transport: .local,
-                timeout: 0,
+                timeout: UInt32(state.timeout),
                 disabled: false,
                 env: env,
                 args: .local(
