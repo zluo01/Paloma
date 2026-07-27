@@ -31,13 +31,11 @@ fn process_entry() {
 }
 
 pub use constants::RENDER_CHANNEL_CAPACITY;
-pub use controller::{
-    ChatRenderEvent, QueryResponse, RenderEvent, SearchRenderEvent, SessionListItem,
-};
+pub use controller::SessionListItem;
 pub use db::Permission;
 pub use entity::{
-    ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs, PluginType,
-    ProviderBackendId, Transport,
+    ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs,
+    PluginType, ProviderBackendId, QueryResponse, RenderEvent, SearchRenderEvent, Transport,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;

@@ -1,9 +1,12 @@
 use std::{collections::HashMap, fmt};
 
+use scry_extension_protocol::v1::Item;
 use scry_provider_protocol::v1::{ProviderHealthStatus, ToolDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
+
+use crate::permission::UserDecision;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, FromRow, Serialize, Deserialize)]
 pub struct ProviderBackendId {
@@ -182,5 +185,48 @@ pub enum ToolResult {
     Binary {
         mime_type: String,
         data: Vec<u8>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum RenderEvent {
+    Search(SearchRenderEvent),
+    Chat(ChatRenderEvent),
+    Cancel,
+    Done,
+    Error { message: String },
+}
+
+#[derive(Clone, Debug)]
+pub enum SearchRenderEvent {
+    Append { response: QueryResponse },
+}
+
+#[derive(Clone, Debug)]
+pub struct QueryResponse {
+    pub extension_capability_id: ExtensionCapabilityId,
+    /// Display section name
+    pub name: String,
+    /// handler results
+    pub items: Vec<Item>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ChatRenderEvent {
+    UserPrompt {
+        text: String,
+    },
+    TextDelta {
+        provider_backend_id: ProviderBackendId,
+        text: String,
+    },
+    ReasoningDelta {
+        text: String,
+    },
+    ToolCall {
+        tool_name: String,
+        arguments: String,
+        description: Option<String>,
+        decisions: Vec<UserDecision>,
     },
 }

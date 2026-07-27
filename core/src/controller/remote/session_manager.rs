@@ -13,12 +13,12 @@ use uuid::Uuid;
 use crate::{
     constants::SESSION_MANAGER_CHANNEL_CAPACITY,
     controller::{
-        ChatRenderEvent, PermissionWorkflowError, RenderEvent, ToolController,
+        PermissionWorkflowError, ToolController,
         helper::{Disposition, extract_args, prettify_arg},
         remote::PermissionWorkflowManagerClient,
     },
     db::{Session as StorageSession, Storage, StorageError},
-    entity::ProviderBackendId,
+    entity::{ChatRenderEvent, ProviderBackendId, RenderEvent},
     utils::Gated,
 };
 
