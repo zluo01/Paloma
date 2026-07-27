@@ -26,7 +26,7 @@ struct ProviderRowView: View {
 
             statusIcon
 
-            if provider.config != nil {
+            if provider.config != nil, provider.status != .starting {
                 Button(action: onEdit) {
                     Image(systemName: "pencil")
                 }

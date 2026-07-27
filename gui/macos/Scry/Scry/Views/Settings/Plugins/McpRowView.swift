@@ -24,17 +24,20 @@ struct McpRowView: View {
             Spacer()
 
             statusIcon
-            Button(action: onEdit) {
-                Image(systemName: "pencil")
-            }
-            .buttonStyle(.ghostIcon)
-            .help("Edit")
 
-            Button(action: onDelete) {
-                Image(systemName: "trash")
+            if server.status != .starting {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.ghostIcon)
+                .help("Edit")
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.ghostIcon)
+                .help("Remove")
             }
-            .buttonStyle(.ghostIcon)
-            .help("Remove")
         }
         .padding(.vertical, 2)
     }
