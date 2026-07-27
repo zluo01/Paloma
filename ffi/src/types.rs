@@ -10,10 +10,9 @@
 use std::collections::HashMap;
 
 pub use scry_core::{
-    Action, ActionOutcome, Connector, ConnectorConnection, HealthLevel, HealthStatus, IconRef,
-    Item, McpServer, Model, Permission, PermissionState, Plugin, PluginArgs, PluginType,
-    ProviderAuthMethod, ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem,
-    Transport, UserDecision,
+    Action, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus, McpPluginInfo,
+    Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
+    ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
 };
 use uuid::Uuid;
 
@@ -30,6 +29,12 @@ uniffi::custom_type!(Uuid, String, {
 pub struct ProviderBackendId {
     pub provider_id: String,
     pub backend_id: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct ExtensionCapabilityId {
+    pub extension_id: String,
+    pub capability_id: String,
 }
 
 #[uniffi::remote(Enum)]
@@ -51,13 +56,13 @@ pub enum HealthStatus {
 pub enum HealthLevel {
     Inactive,
     Healthy,
-    Degraded,
     Down,
+    Degraded,
 }
 
 #[uniffi::remote(Enum)]
 pub enum PluginType {
-    Native,
+    Extension,
     Provider,
     Mcp,
 }
@@ -85,11 +90,11 @@ pub struct Plugin {
 }
 
 #[uniffi::remote(Record)]
-pub struct McpServer {
-    pub config: Plugin,
+pub struct McpPluginInfo {
     pub description: String,
     pub status: HealthStatus,
     pub error: Option<String>,
+    pub config: Plugin,
 }
 
 #[uniffi::remote(Record)]
@@ -152,28 +157,6 @@ pub struct Action {
     pub primary: bool,
 }
 
-#[uniffi::remote(Enum)]
-pub enum ActionOutcome {
-    Hide,
-    Stay,
-    Replace { input: String },
-}
-
-#[uniffi::remote(Enum)]
-pub enum IconRef {
-    Name(String),
-    Path(String),
-    Embedded(Vec<u8>),
-}
-
-#[uniffi::remote(Record)]
-pub struct Item {
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub icon: Option<IconRef>,
-    pub actions: Vec<Action>,
-}
-
 #[uniffi::remote(Record)]
 pub struct Model {
     pub id: String,
@@ -197,16 +180,143 @@ pub struct ConnectorConnection {
     pub status: ProviderStatus,
 }
 
-#[uniffi::remote(Record)]
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum Icon {
+    Name(String),
+    Path(String),
+    Embedded(Vec<u8>),
+}
+
+impl From<scry_core::Icon> for Icon {
+    fn from(value: scry_core::Icon) -> Self {
+        match value {
+            scry_core::Icon::Name(name) => Self::Name(name),
+            scry_core::Icon::Path(path) => Self::Path(path),
+            scry_core::Icon::Embedded(bytes) => Self::Embedded(bytes),
+        }
+    }
+}
+
+impl From<scry_core::capability_icon::Icon> for Icon {
+    fn from(value: scry_core::capability_icon::Icon) -> Self {
+        use scry_core::capability_icon::Icon as CapabilityIcon;
+        match value {
+            CapabilityIcon::Name(name) => Self::Name(name),
+            CapabilityIcon::Path(path) => Self::Path(path),
+            CapabilityIcon::Embedded(bytes) => Self::Embedded(bytes),
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct Item {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub icon: Option<Icon>,
+    pub actions: Vec<Action>,
+}
+
+impl From<scry_core::Item> for Item {
+    fn from(value: scry_core::Item) -> Self {
+        Self {
+            title: value.title,
+            subtitle: value.subtitle,
+            icon: value.icon.and_then(|icon| icon.icon).map(Icon::from),
+            actions: value.actions,
+        }
+    }
+}
+
+#[derive(Clone, uniffi::Record)]
 pub struct Connector {
     pub id: ProviderBackendId,
     pub description: String,
-    pub icon: Option<IconRef>,
+    pub icon: Option<Icon>,
     pub connection: Option<ConnectorConnection>,
 }
 
+impl From<scry_core::Connector> for Connector {
+    fn from(value: scry_core::Connector) -> Self {
+        Self {
+            id: value.id,
+            description: value.description,
+            icon: value.icon.map(Icon::from),
+            connection: value.connection,
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct Capability {
+    pub capability_id: String,
+    pub description: String,
+    pub search: bool,
+    pub tool: bool,
+}
+
+impl From<scry_core::Capability> for Capability {
+    fn from(value: scry_core::Capability) -> Self {
+        Self {
+            capability_id: value.capability_id,
+            description: value.description,
+            search: value.search.is_some(),
+            tool: value.tool.is_some(),
+        }
+    }
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct ExtensionInfo {
+    pub name: String,
+    pub description: String,
+    pub author: Option<String>,
+    pub homepage: Option<String>,
+    pub capabilities: Vec<Capability>,
+    pub status: HealthStatus,
+    pub error: Option<String>,
+    pub config: Option<Plugin>,
+}
+
+impl From<scry_core::ExtensionInfo> for ExtensionInfo {
+    fn from(value: scry_core::ExtensionInfo) -> Self {
+        Self {
+            name: value.name,
+            description: value.description,
+            author: value.author,
+            homepage: value.homepage,
+            capabilities: value
+                .capabilities
+                .into_iter()
+                .map(Capability::from)
+                .collect(),
+            status: value.status,
+            error: value.error,
+            config: value.config,
+        }
+    }
+}
+
 #[derive(Clone, Debug, uniffi::Enum)]
-pub enum Connection {
+pub enum Behavior {
+    Hide,
+    Stay,
+    Replace { input: String },
+}
+
+impl From<scry_core::Behavior> for Behavior {
+    fn from(value: scry_core::Behavior) -> Self {
+        match value {
+            scry_core::Behavior::Hide(_) => Self::Hide,
+            scry_core::Behavior::Stay(_) => Self::Stay,
+            scry_core::Behavior::Replace(replace) => Self::Replace {
+                input: replace.input,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum ConnectionPayload {
     DeviceCode {
         verification_url: String,
         user_code: String,
@@ -220,7 +330,7 @@ pub enum Connection {
     },
 }
 
-impl TryFrom<scry_core::ConnectionPayload> for Connection {
+impl TryFrom<scry_core::ConnectionPayload> for ConnectionPayload {
     type Error = ScryError;
 
     fn try_from(value: scry_core::ConnectionPayload) -> Result<Self, Self::Error> {
@@ -247,8 +357,7 @@ impl TryFrom<scry_core::ConnectionPayload> for Connection {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct QueryResponse {
-    /// handler unique name
-    pub id: String,
+    pub extension_capability_id: ExtensionCapabilityId,
     /// Display section name
     pub name: String,
     /// handler results
@@ -265,9 +374,9 @@ impl From<scry_core::SearchRenderEvent> for SearchRenderEvent {
         match value {
             scry_core::SearchRenderEvent::Append { response } => Self::Append {
                 response: QueryResponse {
-                    id: response.id.to_owned(),
+                    extension_capability_id: response.extension_capability_id,
                     name: response.name,
-                    items: response.items,
+                    items: response.items.into_iter().map(Item::from).collect(),
                 },
             },
         }
@@ -287,7 +396,7 @@ pub enum ChatRenderEvent {
         text: String,
     },
     ToolCall {
-        name: String,
+        tool_name: String,
         arguments: String,
         description: Option<String>,
         decisions: Vec<UserDecision>,
@@ -307,12 +416,12 @@ impl From<scry_core::ChatRenderEvent> for ChatRenderEvent {
             },
             scry_core::ChatRenderEvent::ReasoningDelta { text } => Self::ReasoningDelta { text },
             scry_core::ChatRenderEvent::ToolCall {
-                name,
+                tool_name,
                 arguments,
                 description,
                 decisions,
             } => Self::ToolCall {
-                name,
+                tool_name,
                 arguments,
                 description,
                 decisions,

@@ -244,21 +244,27 @@ impl ScryApp {
     }
 
     /// Run a launcher search; results arrive on the returned stream.
-    pub async fn query(&self, input: String) -> Result<Arc<EventStream>, ScryError> {
+    pub async fn search(&self, input: String) -> Result<Arc<EventStream>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let stream = on_runtime(async move { EventStream::pump(inner.query(&input)) }).await?;
+        let stream = on_runtime(async move { EventStream::pump(inner.search(&input)) }).await?;
         Ok(Arc::new(stream))
     }
 
     /// Run an action off the caller's thread: handlers may spawn processes
     /// or touch the pasteboard, which shouldn't stall the UI thread.
-    pub async fn run_query_action(
+    pub async fn run_search_action(
         &self,
-        id: String,
+        extension_capability_id: ExtensionCapabilityId,
         action: Action,
-    ) -> Result<Option<ActionOutcome>, ScryError> {
+    ) -> Result<Behavior, ScryError> {
         let inner = Arc::clone(&self.inner);
-        on_runtime(async move { inner.run_query_action(&id, action) }).await
+        Ok(on_runtime(async move {
+            inner
+                .run_search_action(extension_capability_id, action)
+                .await
+        })
+        .await??
+        .into())
     }
 
     /// Start (or continue) a chat turn. `session_id` of `None` opens a new
@@ -339,7 +345,7 @@ impl ScryApp {
     pub async fn init_connection(
         &self,
         provider_backend_id: ProviderBackendId,
-    ) -> Result<Connection, ScryError> {
+    ) -> Result<ConnectionPayload, ScryError> {
         let inner = Arc::clone(&self.inner);
         on_runtime(async move { inner.init_connection(provider_backend_id).await })
             .await??
@@ -403,7 +409,13 @@ impl ScryApp {
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.available_connectors().await }).await??)
+        Ok(
+            on_runtime(async move { inner.available_connectors().await })
+                .await??
+                .into_iter()
+                .map(Connector::from)
+                .collect(),
+        )
     }
 
     pub async fn connectors_health_level(&self) -> Result<HealthLevel, ScryError> {
@@ -416,9 +428,25 @@ impl ScryApp {
         on_runtime(async move { inner.plugins_health_level().await }).await
     }
 
+    pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>, ScryError> {
+        let inner = Arc::clone(&self.inner);
+        Ok(
+            on_runtime(async move { inner.list_extension_plugins().await })
+                .await??
+                .into_iter()
+                .map(ExtensionInfo::from)
+                .collect(),
+        )
+    }
+
     pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>, ScryError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.list_provider_plugins().await }).await??)
+    }
+
+    pub async fn add_extension_plugin(&self, config: Plugin) -> Result<(), ScryError> {
+        let inner = Arc::clone(&self.inner);
+        Ok(on_runtime(async move { inner.add_extension_plugin(config).await }).await??)
     }
 
     pub async fn add_provider_plugin(&self, config: Plugin) -> Result<(), ScryError> {
@@ -426,7 +454,7 @@ impl ScryApp {
         Ok(on_runtime(async move { inner.add_provider_plugin(config).await }).await??)
     }
 
-    pub async fn list_mcps(&self) -> Result<Vec<McpServer>, ScryError> {
+    pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>, ScryError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.list_mcps().await }).await??)
     }
