@@ -1,0 +1,7 @@
+.scry-capability-badge {
+    font-size: 0.75em;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 9999px;
+    background: alpha(currentColor, 0.12);
+}

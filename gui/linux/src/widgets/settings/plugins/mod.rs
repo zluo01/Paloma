@@ -4,14 +4,15 @@ mod plugin_dialog;
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Orientation, Switch, Widget, glib, prelude::*};
+use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Switch, Widget, glib, prelude::*};
 use libadwaita::{
     ActionRow, ApplicationWindow, ButtonRow, Dialog, ExpanderRow, HeaderBar, PreferencesGroup,
-    PreferencesPage, Spinner, SpinnerPaintable, StatusPage, ToolbarView, prelude::*,
+    PreferencesPage, PreferencesRow, Spinner, SpinnerPaintable, StatusPage, ToolbarView,
+    prelude::*,
 };
 use scry_core::{
-    AppContext, ExtensionInfo, HealthStatus, McpPluginInfo, OAuthCallbackState, Plugin, PluginType,
-    ProviderInfo,
+    AppContext, Capability, ExtensionInfo, HealthStatus, McpPluginInfo, OAuthCallbackState, Plugin,
+    PluginType, ProviderInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -24,6 +25,8 @@ use crate::{
         plugins::model::{GeneralPluginMsg, McpPluginMsg},
     },
 };
+
+pub(super) const CSS: &str = include_str!("style.css");
 
 pub(crate) struct PluginsPage {
     view: PreferencesPage,
@@ -399,12 +402,7 @@ impl PluginsPage {
             .build();
 
         for capability in &extension.capabilities {
-            row.add_row(
-                &ActionRow::builder()
-                    .title(&capability.capability_id)
-                    .subtitle(&capability.description)
-                    .build(),
-            );
+            row.add_row(&capability_row(capability));
         }
 
         let actions = plugin_actions(extension.status, extension.error.as_deref(), None);
@@ -528,6 +526,66 @@ fn plugin_actions(status: HealthStatus, error: Option<&str>, running: Option<Wid
 fn starting_spinner() -> Spinner {
     Spinner::builder()
         .tooltip_text("Connecting…")
+        .valign(Align::Center)
+        .build()
+}
+
+fn capability_row(capability: &Capability) -> PreferencesRow {
+    let title_line = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    title_line.append(
+        &Label::builder()
+            .label(&capability.capability_id)
+            .css_classes(["title"])
+            .halign(Align::Start)
+            .xalign(0.0)
+            .build(),
+    );
+    if capability.search.is_some() {
+        title_line.append(&capability_badge("Search"));
+    }
+    if capability.tool.is_some() {
+        title_line.append(&capability_badge("Tool"));
+    }
+
+    let title_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .css_classes(["title"])
+        .valign(Align::Center)
+        .hexpand(true)
+        .build();
+    title_box.append(&title_line);
+    title_box.append(
+        &Label::builder()
+            .label(&capability.description)
+            .css_classes(["subtitle"])
+            .halign(Align::Start)
+            .xalign(0.0)
+            .wrap(true)
+            .build(),
+    );
+
+    let header = GtkBox::builder()
+        .css_classes(["header"])
+        .valign(Align::Center)
+        .hexpand(false)
+        .build();
+    header.append(&title_box);
+
+    let row = PreferencesRow::builder()
+        .title(&capability.capability_id)
+        .activatable(false)
+        .build();
+    row.set_child(Some(&header));
+    row
+}
+
+fn capability_badge(facet: &str) -> Label {
+    Label::builder()
+        .label(facet)
+        .css_classes(["scry-capability-badge"])
         .valign(Align::Center)
         .build()
 }

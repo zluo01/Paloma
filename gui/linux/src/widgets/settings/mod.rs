@@ -20,7 +20,7 @@ use crate::widgets::settings::{
     services::ServicesPage,
 };
 
-pub(crate) const CSS_PARTS: &[&str] = &[services::CSS];
+pub(crate) const CSS_PARTS: &[&str] = &[plugins::CSS, services::CSS];
 
 #[derive(Clone, Copy, Debug)]
 enum Page {
