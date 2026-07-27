@@ -5,12 +5,11 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    controller::{
-        ExtensionController,
-        remote::{McpController, PermissionWorkflowManagerClient},
-    },
+    controller::remote::PermissionWorkflowManagerClient,
     db::Storage,
     entity::{ToolResult, ToolSchema, ToolSpec},
+    extension::ExtensionController,
+    mcp::McpController,
     permission::PermissionState,
     utils::{is_ext_tool_name, is_mcp_tool_name},
 };

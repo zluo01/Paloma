@@ -4,9 +4,7 @@ mod remote;
 
 pub use entity::{ChatRenderEvent, QueryResponse, RenderEvent, SearchRenderEvent};
 pub use remote::{
-    ChatRenderStream, Connector, ConnectorConnection, ExtensionController,
-    ExtensionControllerError, McpController, McpControllerError, PermissionWorkflowError,
-    PermissionWorkflowManager, ProviderController, ProviderControllerError, ProviderStatus,
-    RemoteQuery, RemoteQueryError, SessionListItem, SessionManager, SessionManagerError,
-    ToolController, TurnManager,
+    ChatRenderStream, PermissionWorkflowError, PermissionWorkflowManager, RemoteQuery,
+    RemoteQueryError, SessionListItem, SessionManager, SessionManagerError, ToolController,
+    TurnManager,
 };

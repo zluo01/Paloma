@@ -10,12 +10,12 @@ use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinSet};
 use uuid::Uuid;
 
+use super::{BUILTIN_EXTENSIONS, ExtensionConnectionError, ExtensionInfo, ExtensionPlugin};
 use crate::{
     HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse, RENDER_CHANNEL_CAPACITY,
     RenderEvent, SearchRenderEvent, Transport,
     db::{Storage, StorageError},
     entity::{ExtensionCapabilityId, ToolResult, ToolSchema, ToolSpec},
-    extension::{BUILTIN_EXTENSIONS, ExtensionConnectionError, ExtensionInfo, ExtensionPlugin},
     utils::ext_tool_name_encode,
 };
 

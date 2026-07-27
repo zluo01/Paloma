@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     constants::{INSTRUCTION, TURN_MANAGER_CHANNEL_CAPACITY},
     controller::{
-        ProviderController, ProviderControllerError, SessionManagerError, ToolController,
+        SessionManagerError, ToolController,
         helper::{Disposition, extract_args},
         remote::{
             PermissionWorkflowManagerClient, SessionEvent, session_manager::SessionManagerClient,
@@ -25,7 +25,7 @@ use crate::{
     },
     db::{Storage, StorageError},
     entity::ProviderBackendId,
-    provider::ChatStream,
+    provider::{ChatStream, ProviderController, ProviderControllerError},
 };
 
 pub struct TurnManager {

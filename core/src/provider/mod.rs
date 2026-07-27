@@ -1,8 +1,12 @@
 mod connection;
+mod controller;
 
 use std::{process::exit, sync::LazyLock};
 
 pub use connection::{ChatStream, ProviderConnectionError, ProviderPlugin};
+pub use controller::{
+    Connector, ConnectorConnection, ProviderController, ProviderControllerError, ProviderStatus,
+};
 
 use crate::{HealthStatus, entity::Plugin};
 

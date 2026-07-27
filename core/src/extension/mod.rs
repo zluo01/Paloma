@@ -1,8 +1,10 @@
 mod connection;
+mod controller;
 
 use std::{process::exit, sync::LazyLock};
 
 pub use connection::{ExtensionConnectionError, ExtensionPlugin};
+pub use controller::{ExtensionController, ExtensionControllerError};
 use scry_extension_protocol::v1::Capability;
 
 use crate::{HealthStatus, entity::Plugin};

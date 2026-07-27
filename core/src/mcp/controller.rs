@@ -6,11 +6,11 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache};
 use crate::{
     HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
     db::{Storage, StorageError},
     entity::{ToolResult, ToolSchema, ToolSpec},
-    mcp::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
 };
 

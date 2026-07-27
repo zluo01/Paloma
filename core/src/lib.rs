@@ -5,12 +5,13 @@ use uuid::Uuid;
 
 use crate::{
     controller::{
-        ExtensionController, ExtensionControllerError, PermissionWorkflowManager,
-        ProviderController, ProviderControllerError, RemoteQuery, RemoteQueryError, SessionManager,
+        PermissionWorkflowManager, RemoteQuery, RemoteQueryError, SessionManager,
         SessionManagerError, ToolController, TurnManager,
     },
     db::{Storage, StorageError},
+    extension::{ExtensionController, ExtensionControllerError},
     permission::PermissionController,
+    provider::{ProviderController, ProviderControllerError},
 };
 
 mod constants;
@@ -31,8 +32,7 @@ fn process_entry() {
 
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use controller::{
-    ChatRenderEvent, Connector, ConnectorConnection, ProviderStatus, QueryResponse, RenderEvent,
-    SearchRenderEvent, SessionListItem,
+    ChatRenderEvent, QueryResponse, RenderEvent, SearchRenderEvent, SessionListItem,
 };
 pub use db::Permission;
 pub use entity::{
@@ -42,7 +42,7 @@ pub use entity::{
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;
 pub use permission::{PermissionState, UserDecision};
-pub use provider::ProviderInfo;
+pub use provider::{Connector, ConnectorConnection, ProviderInfo, ProviderStatus};
 pub use scry_extension_protocol::v1::{
     Action, CapabilityIcon, Item, capability_icon, run_action_response::Behavior,
 };
@@ -54,7 +54,8 @@ pub use utils::OAuthCallbackState;
 
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
-    controller::{ChatRenderStream, McpController, McpControllerError},
+    controller::ChatRenderStream,
+    mcp::{McpController, McpControllerError},
 };
 
 pub struct AppContext {

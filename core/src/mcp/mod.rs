@@ -1,4 +1,5 @@
 mod cache;
+mod controller;
 mod credentials;
 
 use std::{
@@ -8,6 +9,7 @@ use std::{
 };
 
 pub use cache::McpToolSpecCache;
+pub use controller::{McpController, McpControllerError};
 use log::{error, warn};
 use rmcp::{
     RoleClient, ServiceExt,

@@ -12,13 +12,11 @@ use scry_provider_protocol::v1::{
 };
 use uuid::Uuid;
 
+use super::{BUILTIN_PROVIDERS, ChatStream, ProviderConnectionError, ProviderInfo, ProviderPlugin};
 use crate::{
     HealthLevel, HealthStatus, Plugin, PluginType, Transport,
     db::{AuthKind, ConnectedBackend, Storage, StorageError},
     entity::{Icon, ProviderBackendId},
-    provider::{
-        BUILTIN_PROVIDERS, ChatStream, ProviderConnectionError, ProviderInfo, ProviderPlugin,
-    },
 };
 
 pub struct ProviderController {
