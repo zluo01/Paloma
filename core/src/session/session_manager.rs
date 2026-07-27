@@ -10,12 +10,10 @@ use scry_provider_protocol::v1::{
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
+use super::helper::{Disposition, extract_args, prettify_arg};
 use crate::{
     constants::SESSION_MANAGER_CHANNEL_CAPACITY,
-    controller::{
-        PermissionWorkflowError, PermissionWorkflowManagerClient, ToolController,
-        helper::{Disposition, extract_args, prettify_arg},
-    },
+    controller::{PermissionWorkflowError, PermissionWorkflowManagerClient, ToolController},
     db::{Session as StorageSession, Storage, StorageError},
     entity::{ChatRenderEvent, ProviderBackendId, RenderEvent},
     utils::Gated,

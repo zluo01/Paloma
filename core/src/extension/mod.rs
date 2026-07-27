@@ -10,7 +10,8 @@ use scry_extension_protocol::v1::Capability;
 use crate::{HealthStatus, entity::Plugin};
 
 const PLUGIN_INTERNAL: &str = "Internal";
-const PLUGIN_SHELL: &str = "Shell";
+pub(crate) const PLUGIN_SHELL: &str = scry_extension_shell::EXTENSION_ID;
+pub(crate) const SHELL_CAPABILITY: &str = scry_extension_shell::CAPABILITY_ID;
 
 const EXTENSION_PLUGIN_FLAG: &str = "--extension-plugin";
 

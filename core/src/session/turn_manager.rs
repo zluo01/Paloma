@@ -13,12 +13,10 @@ use tokio::{
 };
 use uuid::Uuid;
 
+use super::helper::{Disposition, extract_args};
 use crate::{
     constants::{INSTRUCTION, TURN_MANAGER_CHANNEL_CAPACITY},
-    controller::{
-        PermissionWorkflowManagerClient, ToolCallPayload, ToolController,
-        helper::{Disposition, extract_args},
-    },
+    controller::{PermissionWorkflowManagerClient, ToolCallPayload, ToolController},
     db::{Storage, StorageError},
     entity::ProviderBackendId,
     provider::{ChatStream, ProviderController, ProviderControllerError},

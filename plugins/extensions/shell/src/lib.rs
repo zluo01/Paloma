@@ -10,6 +10,9 @@ use scry_utils::init_logging;
 use serde::Deserialize;
 use uuid::Uuid;
 
+pub const EXTENSION_ID: &str = "Shell";
+pub const CAPABILITY_ID: &str = "Shell";
+
 pub fn run() -> io::Result<()> {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -25,7 +28,7 @@ fn service() -> io::Result<ExtensionService> {
     let capabilities: Vec<Box<dyn Capability>> = vec![Box::new(Shell::new())];
 
     Ok(ExtensionService::new(
-        "Shell",
+        EXTENSION_ID,
         "Execute shell commands.",
         None,
         None,
@@ -89,7 +92,7 @@ impl Shell {
 
 impl Capability for Shell {
     fn id(&self) -> &'static str {
-        "Shell"
+        CAPABILITY_ID
     }
 
     fn description(&self) -> &str {

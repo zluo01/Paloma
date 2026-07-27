@@ -1,8 +1,14 @@
+use std::sync::LazyLock;
+
 use log::error;
 use scry_extension_shell::ShellArgs;
 use serde_json::Value;
 
-use crate::entity::ToolSpec;
+use crate::{
+    entity::ToolSpec,
+    extension::{PLUGIN_SHELL, SHELL_CAPABILITY},
+    utils::ext_tool_name_encode,
+};
 
 pub(crate) enum Disposition {
     Gated {
@@ -15,15 +21,16 @@ pub(crate) enum Disposition {
     Skip,
 }
 
-const SHELL_KEY: &str = "ext__Shell__Shell";
+static SHELL_KEY: LazyLock<String> =
+    LazyLock::new(|| ext_tool_name_encode(PLUGIN_SHELL, SHELL_CAPABILITY));
 
 /// extract commands and description for permission checking
 pub(crate) fn extract_args(spec: ToolSpec, raw_args: &str) -> Disposition {
     // have to hardcode on the shell tool to extract the commands for approval
-    if spec.schema.name == SHELL_KEY {
+    if spec.schema.name == *SHELL_KEY {
         return match serde_json::from_str::<ShellArgs>(raw_args) {
             Ok(args) => Disposition::Gated {
-                name: "Shell".to_string(),
+                name: PLUGIN_SHELL.to_string(),
                 arguments: args.command.join(" "),
                 description: Some(args.description),
                 require_permission: args.command,
