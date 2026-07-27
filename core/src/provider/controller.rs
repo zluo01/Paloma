@@ -502,7 +502,7 @@ async fn init_provider_plugin(
     storage: Storage,
     connected_providers: &HashMap<ProviderBackendId, ProviderAuth>,
 ) -> Result<(HandshakeResponse, Arc<ProviderPlugin>)> {
-    let provider = ProviderPlugin::connect(plugin, storage)?;
+    let provider = ProviderPlugin::connect(plugin, storage).await?;
 
     let provider_detail = provider.handshake().await?;
 

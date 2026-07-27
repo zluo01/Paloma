@@ -27,6 +27,7 @@ mod utils;
 fn process_entry() {
     provider::serve_plugin_and_exit_if_requested();
     extension::serve_extension_plugin_and_exit_if_requested();
+    utils::print_path_and_exit_if_requested();
 }
 
 pub use constants::RENDER_CHANNEL_CAPACITY;

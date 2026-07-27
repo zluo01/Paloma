@@ -35,7 +35,7 @@ use crate::{
     HealthStatus, Plugin, PluginArgs,
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     entity::ToolResult,
-    utils::write_spill_file,
+    utils::{shell_path, write_spill_file},
 };
 
 const EXTENSION_REQUEST_CHANNEL_CAPACITY: usize = 16;
@@ -52,8 +52,8 @@ pub struct ExtensionPlugin {
 }
 
 impl ExtensionPlugin {
-    pub fn connect(plugin: &Plugin) -> Result<Arc<Self>> {
-        let mut child = execute_plugin(plugin)?;
+    pub async fn connect(plugin: &Plugin) -> Result<Arc<Self>> {
+        let mut child = execute_plugin(plugin).await?;
         let stdin = child.stdin.take().expect("stdin piped");
         let stdout = child.stdout.take().expect("stdout piped");
 
@@ -307,7 +307,7 @@ impl ExtensionPlugin {
     }
 }
 
-fn execute_plugin(plugin: &Plugin) -> Result<Child> {
+async fn execute_plugin(plugin: &Plugin) -> Result<Child> {
     let PluginArgs::Local { command, args } = plugin.args.clone() else {
         return Err(ExtensionConnectionError::Extension(format!(
             "extension plugin {} must be a local command",
@@ -315,7 +315,11 @@ fn execute_plugin(plugin: &Plugin) -> Result<Child> {
         )));
     };
 
-    let mut child = Command::new(command)
+    let mut cmd = Command::new(&command);
+    if let Some(path) = shell_path().await {
+        cmd.env("PATH", path);
+    }
+    let mut child = cmd
         .args(args)
         .envs(&plugin.env)
         .stdin(Stdio::piped())

@@ -38,6 +38,7 @@ use crate::{
     HealthStatus, Plugin, PluginArgs,
     db::{AuthKind, Storage},
     entity::ProviderBackendId,
+    utils::shell_path,
 };
 
 const PROVIDER_REQUEST_CHANNEL_CAPACITY: usize = 16;
@@ -64,8 +65,8 @@ pub struct ProviderPlugin {
 }
 
 impl ProviderPlugin {
-    pub fn connect(plugin: &Plugin, storage: Storage) -> Result<Arc<Self>> {
-        let mut child = execute_plugin(plugin)?;
+    pub async fn connect(plugin: &Plugin, storage: Storage) -> Result<Arc<Self>> {
+        let mut child = execute_plugin(plugin).await?;
         let stdin = child.stdin.take().expect("stdin piped");
         let stdout = child.stdout.take().expect("stdout piped");
 
@@ -507,7 +508,7 @@ fn resolve_unary(routes: &DashMap<u64, Pending>, event_id: u64, payload: Payload
     }
 }
 
-fn execute_plugin(plugin: &Plugin) -> Result<Child> {
+async fn execute_plugin(plugin: &Plugin) -> Result<Child> {
     let PluginArgs::Local { command, args } = plugin.args.clone() else {
         return Err(ProviderConnectionError::Provider(format!(
             "provider plugin {} must be a local command",
@@ -515,7 +516,11 @@ fn execute_plugin(plugin: &Plugin) -> Result<Child> {
         )));
     };
 
-    let mut child = Command::new(command)
+    let mut cmd = Command::new(&command);
+    if let Some(path) = shell_path().await {
+        cmd.env("PATH", path);
+    }
+    let mut child = cmd
         .args(args)
         .envs(&plugin.env)
         .stdin(Stdio::piped())

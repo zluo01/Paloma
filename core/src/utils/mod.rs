@@ -2,6 +2,7 @@ mod encoder;
 mod future;
 mod gated;
 mod oauth;
+mod shell_path;
 mod spill;
 
 pub(crate) use encoder::{
@@ -11,4 +12,5 @@ pub(crate) use future::CompletableFuture;
 pub(crate) use gated::Gated;
 pub use oauth::OAuthCallbackState;
 pub(crate) use oauth::{OAuthError, finalize_oauth_connection, init_oauth_connection};
+pub(crate) use shell_path::{print_path_and_exit_if_requested, shell_path};
 pub(crate) use spill::write_spill_file;

@@ -385,7 +385,7 @@ struct ExtensionHandler {
 async fn init_extension_plugin(
     plugin: &Plugin,
 ) -> Result<(HandshakeResponse, Arc<ExtensionPlugin>)> {
-    let connection = ExtensionPlugin::connect(plugin)?;
+    let connection = ExtensionPlugin::connect(plugin).await?;
     let detail = connection.handshake().await?;
     Ok((detail, connection))
 }
