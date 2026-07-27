@@ -128,6 +128,12 @@ impl McpPlugin {
         }
     }
 
+    pub fn shutdown(&self) {
+        if let Some(client) = self.client.as_ref() {
+            client.cancellation_token().cancel();
+        }
+    }
+
     pub(crate) async fn specs(&self) -> Result<HashMap<String, ToolSpec>> {
         let Some(client) = self.client.as_ref() else {
             error!(

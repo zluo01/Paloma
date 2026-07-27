@@ -152,7 +152,9 @@ impl McpController {
     }
 
     pub async fn remove_mcp(&self, name: &str) -> Result<()> {
-        self.handlers.remove(name);
+        if let Some((_, handler)) = self.handlers.remove(name) {
+            handler.connection.shutdown();
+        }
         self.specs_cache.remove(name);
         self.storage.delete_plugin(name).await?;
         Ok(())
