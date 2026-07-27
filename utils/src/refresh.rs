@@ -2,6 +2,7 @@ use std::{
     fmt::Display,
     future::Future,
     hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
 };
 
 use log::error;
@@ -24,14 +25,48 @@ struct Timestamped<T> {
     expires_at: u64,
 }
 
+struct RefreshState<T> {
+    cached: Option<Timestamped<T>>,
+    revision: u64,
+    refreshing: bool,
+}
+
+impl<T> RefreshState<T> {
+    fn replace(&mut self, value: T, ttl_secs: u64) {
+        self.revision = self.revision.wrapping_add(1);
+        self.cached = Some(Timestamped {
+            value,
+            expires_at: unix_now() + ttl_secs,
+        });
+    }
+}
+
+impl<T> Default for RefreshState<T> {
+    fn default() -> Self {
+        Self {
+            cached: None,
+            revision: 0,
+            refreshing: false,
+        }
+    }
+}
+
 pub struct RefreshSlot<T> {
-    inner: Mutex<Option<Timestamped<T>>>,
+    inner: Arc<Mutex<RefreshState<T>>>,
+}
+
+impl<T> Clone for RefreshSlot<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl<T> Default for RefreshSlot<T> {
     fn default() -> Self {
         Self {
-            inner: Mutex::new(None),
+            inner: Arc::new(Mutex::new(RefreshState::default())),
         }
     }
 }
@@ -41,44 +76,51 @@ impl<T: Clone> RefreshSlot<T> {
         self.inner
             .lock()
             .await
+            .cached
             .as_ref()
             .map(|cached| cached.value.clone())
     }
 
     pub async fn insert(&self, value: T, ttl_secs: u64) {
-        *self.inner.lock().await = Some(Timestamped {
-            value,
-            expires_at: unix_now() + ttl_secs,
-        });
+        self.inner.lock().await.replace(value, ttl_secs);
     }
 
     pub async fn get_or_refresh<E, F, Fut>(&self, ttl_secs: u64, fetch: F) -> Result<T, E>
     where
-        E: Display,
+        T: Send + 'static,
+        E: Display + Send + 'static,
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
     {
-        let mut slot = self.inner.lock().await;
-        if let Some(cached) = slot.as_ref()
-            && unix_now() < cached.expires_at
-        {
-            return Ok(cached.value.clone());
+        let mut state = self.inner.lock().await;
+
+        if let Some(cached) = state.cached.as_ref() {
+            let value = cached.value.clone();
+            if unix_now() < cached.expires_at || state.refreshing {
+                return Ok(value);
+            }
+
+            // Stale-while-revalidate
+            state.refreshing = true;
+            let revision = state.revision;
+            let inner = Arc::clone(&self.inner);
+            let pending = fetch();
+            tokio::spawn(async move {
+                let refreshed = pending.await;
+                let mut state = inner.lock().await;
+                state.refreshing = false;
+                match refreshed {
+                    Ok(fresh) if state.revision == revision => state.replace(fresh, ttl_secs),
+                    Ok(_) => {},
+                    Err(e) => error!("fail to refresh cache value. {}", e),
+                }
+            });
+            return Ok(value);
         }
-        match fetch().await {
-            Ok(value) => {
-                *slot = Some(Timestamped {
-                    value: value.clone(),
-                    expires_at: unix_now() + ttl_secs,
-                });
-                Ok(value)
-            },
-            // fetch failed: serve the stale value; expires_at stays in the
-            // past, so the next call retries.
-            Err(e) => {
-                error!("fail to refresh cache value. {}", e);
-                slot.as_ref().map(|cached| cached.value.clone()).ok_or(e)
-            },
-        }
+
+        let value = fetch().await?;
+        state.replace(value.clone(), ttl_secs);
+        Ok(value)
     }
 }
 
@@ -92,15 +134,59 @@ mod tests {
         time::Duration,
     };
 
+    use tokio::sync::{Notify, oneshot};
+
     use super::*;
+
+    struct DropSignalValue {
+        value: u32,
+        dropped: Option<Arc<Notify>>,
+    }
+
+    impl DropSignalValue {
+        fn new(value: u32) -> Self {
+            Self {
+                value,
+                dropped: None,
+            }
+        }
+
+        fn tracked(value: u32, dropped: &Arc<Notify>) -> Self {
+            Self {
+                value,
+                dropped: Some(Arc::clone(dropped)),
+            }
+        }
+    }
+
+    impl Clone for DropSignalValue {
+        fn clone(&self) -> Self {
+            Self::new(self.value)
+        }
+    }
+
+    impl Drop for DropSignalValue {
+        fn drop(&mut self) {
+            if let Some(dropped) = &self.dropped {
+                dropped.notify_one();
+            }
+        }
+    }
+
+    async fn await_signal(signal: &Notify, expectation: &str) {
+        tokio::time::timeout(Duration::from_secs(1), signal.notified())
+            .await
+            .expect(expectation);
+    }
 
     #[tokio::test]
     async fn fresh_value_is_served_without_fetching() {
         let slot = RefreshSlot::default();
-        let calls = AtomicUsize::new(0);
+        let calls = Arc::new(AtomicUsize::new(0));
         for _ in 0..3 {
+            let calls = Arc::clone(&calls);
             let value = slot
-                .get_or_refresh(60, || async {
+                .get_or_refresh(60, || async move {
                     calls.fetch_add(1, Ordering::SeqCst);
                     Ok::<_, String>(5)
                 })
@@ -111,36 +197,126 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expired_value_is_refetched() {
+    async fn expired_value_is_served_stale_then_refreshed() {
         let slot = RefreshSlot::default();
-        let first = slot
-            .get_or_refresh(0, || async { Ok::<_, String>(1) })
-            .await;
-        assert_eq!(first.unwrap(), 1);
-        let second = slot
-            .get_or_refresh(0, || async { Ok::<_, String>(2) })
-            .await;
-        assert_eq!(second.unwrap(), 2);
+        let replaced = Arc::new(Notify::new());
+        slot.insert(DropSignalValue::tracked(1, &replaced), 0).await;
+
+        let stale = slot
+            .get_or_refresh(60, || async { Ok::<_, String>(DropSignalValue::new(2)) })
+            .await
+            .unwrap();
+        assert_eq!(stale.value, 1, "stale value is served immediately");
+
+        await_signal(&replaced, "background refresh never landed").await;
+        assert_eq!(slot.peek().await.unwrap().value, 2);
     }
 
     #[tokio::test]
-    async fn failed_refresh_serves_stale_then_retries() {
+    async fn failed_refresh_keeps_serving_stale_and_retries() {
         let slot = RefreshSlot::default();
-        let seeded = slot
-            .get_or_refresh(0, || async { Ok::<_, String>(1) })
-            .await;
-        assert_eq!(seeded.unwrap(), 1);
+        let replaced = Arc::new(Notify::new());
+        slot.insert(DropSignalValue::tracked(1, &replaced), 0).await;
+
+        let (failed_tx, failed_rx) = oneshot::channel();
+        let stale = slot
+            .get_or_refresh(60, || async move {
+                failed_tx.send(()).unwrap();
+                Err::<DropSignalValue, _>("down".to_string())
+            })
+            .await
+            .unwrap();
+        assert_eq!(stale.value, 1);
+        failed_rx.await.unwrap();
+
+        // the failed refresh must not re-stamp the TTL: this call refreshes again
+        let stale = slot
+            .get_or_refresh(60, || async { Ok::<_, String>(DropSignalValue::new(2)) })
+            .await
+            .unwrap();
+        assert_eq!(stale.value, 1);
+
+        await_signal(&replaced, "retry after a failed refresh never landed").await;
+        assert_eq!(slot.peek().await.unwrap().value, 2);
+    }
+
+    #[tokio::test]
+    async fn stale_callers_share_one_refresh() {
+        let slot = RefreshSlot::default();
+        slot.insert(1u32, 0).await;
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
 
         let stale = slot
-            .get_or_refresh(0, || async { Err::<u32, _>("down".to_string()) })
-            .await;
-        assert_eq!(stale.unwrap(), 1);
+            .get_or_refresh(60, {
+                let calls = Arc::clone(&calls);
+                move || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        started_tx.send(()).unwrap();
+                        release_rx.await.unwrap();
+                        Ok::<_, String>(2u32)
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(stale, 1);
 
-        // the stale serve must not re-stamp the TTL: this call fetches again
-        let recovered = slot
-            .get_or_refresh(60, || async { Ok::<_, String>(2) })
-            .await;
-        assert_eq!(recovered.unwrap(), 2);
+        started_rx.await.unwrap();
+
+        for _ in 0..3 {
+            let stale = slot
+                .get_or_refresh(60, {
+                    let calls = Arc::clone(&calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        async move { Ok::<_, String>(99u32) }
+                    }
+                })
+                .await
+                .unwrap();
+            assert_eq!(stale, 1);
+        }
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a refresh already in flight must not be duplicated"
+        );
+
+        release_tx.send(()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn insert_supersedes_older_background_refresh() {
+        let slot = RefreshSlot::default();
+        slot.insert(DropSignalValue::new(1), 0).await;
+
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let discarded = Arc::new(Notify::new());
+        let stale = slot
+            .get_or_refresh(60, || {
+                let discarded = Arc::clone(&discarded);
+                async move {
+                    started_tx.send(()).unwrap();
+                    release_rx.await.unwrap();
+                    Ok::<_, String>(DropSignalValue::tracked(2, &discarded))
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(stale.value, 1);
+
+        started_rx.await.unwrap();
+        slot.insert(DropSignalValue::new(3), 60).await;
+        release_tx.send(()).unwrap();
+        await_signal(&discarded, "older refresh result was not discarded").await;
+
+        assert_eq!(slot.peek().await.unwrap().value, 3);
     }
 
     #[test]
@@ -170,8 +346,8 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn concurrent_callers_share_one_fetch() {
-        let slot = Arc::new(RefreshSlot::<u32>::default());
+    async fn concurrent_cold_callers_share_one_fetch() {
+        let slot = RefreshSlot::<u32>::default();
         let calls = Arc::new(AtomicUsize::new(0));
         let mut handles = Vec::new();
         for _ in 0..4 {

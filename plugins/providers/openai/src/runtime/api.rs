@@ -55,7 +55,10 @@ impl OpenAIRuntime {
 
         match health_check(&request, &api_key).await {
             Ok(()) => match provider_cache
-                .models(backend_id::OPENAI_API.into(), || fetch_models(&request))
+                .models(backend_id::OPENAI_API.into(), || {
+                    let request = request.clone();
+                    async move { fetch_models(&request).await }
+                })
                 .await
             {
                 Ok(_) => Self {
@@ -125,9 +128,11 @@ impl ProviderClient for OpenAIRuntime {
         Ok(())
     }
 
-    async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(&self.provider_cache, backend_id::OPENAI_API.into(), || {
-            fetch_models(&self.request)
+    async fn models(self: Arc<Self>) -> Option<Vec<Model>> {
+        let cache = Arc::clone(&self.provider_cache);
+
+        cached_models(&cache, backend_id::OPENAI_API.into(), move || async move {
+            fetch_models(&self.request).await
         })
         .await
     }

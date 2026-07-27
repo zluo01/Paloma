@@ -113,12 +113,12 @@ impl ProviderClient for AnthropicRuntime {
         Ok(())
     }
 
-    async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(
-            &self.provider_cache,
-            backend_id::ANTHROPIC_API.into(),
-            || fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key)),
-        )
+    async fn models(self: Arc<Self>) -> Option<Vec<Model>> {
+        let cache = Arc::clone(&self.provider_cache);
+
+        cached_models(&cache, backend_id::ANTHROPIC_API.into(), move || async move {
+            fetch_models(&self.request, ClaudeAuth::ApiKey(&self.api_key)).await
+        })
         .await
     }
 

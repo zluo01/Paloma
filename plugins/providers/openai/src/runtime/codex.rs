@@ -62,9 +62,14 @@ impl CodexRuntime {
         match fetch_access_token(&request, &oauth, &dispatcher).await {
             Ok((access_token, oauth)) => {
                 let warmup = provider_cache
-                    .models(backend_id::CODEX.into(), || async {
-                        let version = client_version(&provider_cache, &request).await;
-                        fetch_models(&request, &access_token, &version).await
+                    .models(backend_id::CODEX.into(), || {
+                        let cache = Arc::clone(&provider_cache);
+                        let request = request.clone();
+                        let access_token = access_token.clone();
+                        async move {
+                            let version = client_version(&cache, &request).await;
+                            fetch_models(&request, &access_token, &version).await
+                        }
                     })
                     .await;
                 match warmup {
@@ -203,19 +208,18 @@ impl ProviderClient for CodexRuntime {
         Ok(())
     }
 
-    async fn models(&self) -> Option<Vec<Model>> {
-        cached_models(
-            &self.provider_cache,
-            backend_id::CODEX.into(),
-            || async move {
-                let version = client_version(&self.provider_cache, &self.request).await;
-                let token = self
-                    .refresh()
-                    .await
-                    .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
-                fetch_models(&self.request, &token, &version).await
-            },
-        )
+    async fn models(self: Arc<Self>) -> Option<Vec<Model>> {
+        let cache = Arc::clone(&self.provider_cache);
+
+        cached_models(&cache, backend_id::CODEX.into(), move || async move {
+            let token = self
+                .refresh()
+                .await
+                .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+
+            let version = client_version(&self.provider_cache, &self.request).await;
+            fetch_models(&self.request, &token, &version).await
+        })
         .await
     }
 
@@ -328,7 +332,10 @@ async fn client_version(cache: &ProviderCache, request: &reqwest::Client) -> Str
         .value(
             CLIENT_VERSION_CACHE_KEY,
             CLIENT_VERSION_CACHE_TTL_SECS,
-            || fetch_client_version(request),
+            || {
+                let request = request.clone();
+                async move { fetch_client_version(&request).await }
+            },
         )
         .await
         .unwrap_or_else(|e| {

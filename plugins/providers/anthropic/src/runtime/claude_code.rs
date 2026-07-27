@@ -60,7 +60,11 @@ impl ClaudeRuntime {
             Ok((access_token, oauth)) => {
                 let warmup = provider_cache
                     .models(backend_id::ANTHROPIC_API.into(), || {
-                        fetch_models(&request, ClaudeAuth::AccessToken(&access_token))
+                        let request = request.clone();
+                        let access_token = access_token.clone();
+                        async move {
+                            fetch_models(&request, ClaudeAuth::AccessToken(&access_token)).await
+                        }
                     })
                     .await;
                 match warmup {
@@ -198,15 +202,17 @@ impl ProviderClient for ClaudeRuntime {
         Ok(())
     }
 
-    async fn models(&self) -> Option<Vec<Model>> {
+    async fn models(self: Arc<Self>) -> Option<Vec<Model>> {
+        let cache = Arc::clone(&self.provider_cache);
         cached_models(
-            &self.provider_cache,
+            &cache,
             backend_id::ANTHROPIC_API.into(),
-            || async move {
+            move || async move {
                 let token = self
                     .refresh()
                     .await
                     .inspect_err(|e| self.mark_unhealthy(e.to_string()))?;
+
                 fetch_models(&self.request, ClaudeAuth::AccessToken(&token)).await
             },
         )

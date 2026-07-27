@@ -48,7 +48,7 @@ pub async fn cached_models<F, Fut>(
 ) -> Option<Vec<Model>>
 where
     F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<Vec<Model>>>,
+    Fut: Future<Output = Result<Vec<Model>>> + Send + 'static,
 {
     match cache.models(id.clone(), fetch).await {
         Ok(models) => Some(models),

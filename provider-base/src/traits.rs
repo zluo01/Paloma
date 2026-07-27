@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use scry_provider_protocol::v1::{
     ChatRequest, ConnectionPayload, Model, ProviderAuth, ProviderHealthStatus,
     finalize_connection_request, request_event,
@@ -21,7 +23,7 @@ pub trait ProviderClient: Send + Sync {
 
     async fn chat(&self, request: ChatRequest, dispatcher: Dispatcher) -> Result<()>;
 
-    async fn models(&self) -> Option<Vec<Model>>;
+    async fn models(self: Arc<Self>) -> Option<Vec<Model>>;
 
     fn health_status(&self) -> ProviderHealthStatus;
 

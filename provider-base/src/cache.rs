@@ -8,8 +8,8 @@ const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(8).as_secs();
 const MODELS_CACHE_JITTER_SECS: u64 = Duration::from_mins(30).as_secs();
 
 pub struct ProviderCache {
-    models: DashMap<String, Arc<RefreshSlot<Vec<Model>>>>,
-    values: DashMap<String, Arc<RefreshSlot<String>>>,
+    models: DashMap<String, RefreshSlot<Vec<Model>>>,
+    values: DashMap<String, RefreshSlot<String>>,
 }
 
 impl ProviderCache {
@@ -22,9 +22,9 @@ impl ProviderCache {
 
     pub async fn value<E, F, Fut>(&self, key: &str, ttl_secs: u64, fetch: F) -> Result<String, E>
     where
-        E: Display,
+        E: Display + Send + 'static,
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<String, E>>,
+        Fut: Future<Output = Result<String, E>> + Send + 'static,
     {
         let slot = self.values.entry(key.to_owned()).or_default().clone();
         slot.get_or_refresh(ttl_secs, fetch).await
@@ -32,9 +32,9 @@ impl ProviderCache {
 
     pub async fn models<E, F, Fut>(&self, id: String, fetch: F) -> Result<Vec<Model>, E>
     where
-        E: Display,
+        E: Display + Send + 'static,
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<Vec<Model>, E>>,
+        Fut: Future<Output = Result<Vec<Model>, E>> + Send + 'static,
     {
         let ttl = ttl_with_jitter(MODELS_CACHE_TTL_SECS, MODELS_CACHE_JITTER_SECS, &id);
         let slot = self.models.entry(id).or_default().clone();
@@ -50,8 +50,6 @@ impl ProviderCache {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
     use super::*;
 
     fn model(id: &str) -> Model {
@@ -63,42 +61,36 @@ mod tests {
         }
     }
 
+    fn never_fetch<T>() -> std::future::Ready<Result<T, String>> {
+        panic!("cache must not fetch")
+    }
+
     #[tokio::test]
     async fn insert_models_seeds_the_read_through() {
         let cache = ProviderCache::new();
         cache.insert_models("codex".into(), vec![model("m1")]).await;
 
-        let calls = AtomicUsize::new(0);
-        let models = cache
-            .models("codex".into(), || async {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok::<_, String>(Vec::new())
-            })
-            .await
-            .unwrap();
+        let models = cache.models("codex".into(), never_fetch).await.unwrap();
         assert_eq!(models[0].id, "m1");
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
     async fn string_values_cache_by_key() {
         let cache = ProviderCache::new();
-        let calls = AtomicUsize::new(0);
-        for _ in 0..2 {
-            let value = cache
-                .value("a", 60, || async {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    Ok::<_, String>("one".to_string())
-                })
-                .await;
-            assert_eq!(value.unwrap(), "one");
-        }
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let first = cache
+            .value("a", 60, || async { Ok::<_, String>("one".into()) })
+            .await
+            .unwrap();
+        let cached = cache.value("a", 60, never_fetch).await.unwrap();
 
         let other = cache
-            .value("b", 60, || async { Ok::<_, String>("two".to_string()) })
-            .await;
-        assert_eq!(other.unwrap(), "two");
+            .value("b", 60, || async { Ok::<_, String>("two".into()) })
+            .await
+            .unwrap();
+
+        assert_eq!(first, "one");
+        assert_eq!(cached, "one");
+        assert_eq!(other, "two");
     }
 
     #[tokio::test]
