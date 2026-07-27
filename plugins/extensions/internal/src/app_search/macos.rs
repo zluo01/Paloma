@@ -4,10 +4,9 @@ use std::{
 };
 
 use log::{debug, error};
-use serde::Deserialize;
+use scry_extension_protocol::v1::CapabilityIcon;
 
 use super::{AppEntry, AppSearchBackend};
-use crate::capability::IconRef;
 
 pub(super) struct Platform;
 
@@ -102,20 +101,11 @@ fn push_bundle(bundle: &Path, seen: &mut HashSet<String>, entries: &mut Vec<AppE
     }
 }
 
-// Per-field, so an empty CFBundleDisplayName doesn't suppress the fallback
+// Per-key, so an empty CFBundleDisplayName doesn't suppress the fallback
 // to a valid CFBundleName.
-fn non_empty(value: &Option<String>) -> Option<String> {
-    value.clone().filter(|v| !v.trim().is_empty())
-}
-
-#[derive(Deserialize)]
-struct BundleInfo {
-    #[serde(rename = "CFBundleIdentifier")]
-    identifier: Option<String>,
-    #[serde(rename = "CFBundleDisplayName")]
-    display_name: Option<String>,
-    #[serde(rename = "CFBundleName")]
-    name: Option<String>,
+fn non_empty(info: Option<&plist::Dictionary>, key: &str) -> Option<String> {
+    let value = info?.get(key)?.as_string()?;
+    (!value.trim().is_empty()).then(|| value.to_owned())
 }
 
 /// Returns the dedupe key (bundle identifier, falling back to the path)
@@ -126,19 +116,17 @@ fn decode(bundle: &Path) -> Option<(String, AppEntry)> {
         return None;
     }
 
-    let info: Option<BundleInfo> = plist::from_file(&info_plist).ok();
+    let info = plist::Value::from_file(&info_plist)
+        .ok()
+        .and_then(|value| value.into_dictionary());
     let stem = bundle.file_stem()?.to_str()?.to_string();
     let path = bundle.to_str()?.to_string();
 
-    let name = info
-        .as_ref()
-        .and_then(|i| non_empty(&i.display_name).or_else(|| non_empty(&i.name)))
+    let name = non_empty(info.as_ref(), "CFBundleDisplayName")
+        .or_else(|| non_empty(info.as_ref(), "CFBundleName"))
         .unwrap_or_else(|| stem.clone());
     let exec_interest = (name != stem).then_some(stem);
-    let key = info
-        .and_then(|i| i.identifier)
-        .filter(|id| !id.trim().is_empty())
-        .unwrap_or_else(|| path.clone());
+    let key = non_empty(info.as_ref(), "CFBundleIdentifier").unwrap_or_else(|| path.clone());
 
     let app = AppEntry {
         name,
@@ -146,7 +134,7 @@ fn decode(bundle: &Path) -> Option<(String, AppEntry)> {
         keywords: Vec::new(),
         exec: vec![path.clone()],
         exec_interest,
-        icon: Some(IconRef::Path(path)),
+        icon: Some(CapabilityIcon::path(path)),
     };
     Some((key, app))
 }
@@ -203,7 +191,7 @@ mod tests {
         assert_eq!(app.exec_interest.as_deref(), Some("Code"));
         assert_eq!(
             app.icon,
-            Some(IconRef::Path(bundle.to_str().unwrap().to_string()))
+            Some(CapabilityIcon::path(bundle.to_str().unwrap()))
         );
     }
 
