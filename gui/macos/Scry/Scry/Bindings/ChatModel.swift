@@ -226,12 +226,12 @@ final class ChatModel {
             } else {
                 transcript.append(.reasoning(id: nextSectionId(), text: text))
             }
-        case let .toolCall(name, arguments, description, decisions):
+        case let .toolCall(toolName, arguments, description, decisions):
             transcript.append(
                 .tool(
                     ToolCallState(
                         id: nextSectionId(),
-                        name: name,
+                        name: toolName,
                         arguments: arguments,
                         description: description,
                         decisions: decisions,

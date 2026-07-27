@@ -7,7 +7,7 @@
 import SwiftUI
 
 struct McpRowView: View {
-    let server: McpServer
+    let server: McpPluginInfo
     let onEdit: () -> Void
     let onToggle: (_ disabled: Bool) -> Void
     let onDelete: () -> Void

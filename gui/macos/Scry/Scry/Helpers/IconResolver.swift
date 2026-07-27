@@ -23,7 +23,7 @@ enum IconResolver {
         "folder": "folder",
     ]
 
-    static func resolve(_ icon: IconRef?) -> ResolvedIcon {
+    static func resolve(_ icon: Icon?) -> ResolvedIcon {
         switch icon {
         case let .path(path):
             if let cached = cache.object(forKey: path as NSString) {
@@ -60,7 +60,7 @@ enum IconResolver {
 struct IconView: View {
     private let resolved: ResolvedIcon
 
-    init(icon: IconRef?) {
+    init(icon: Icon?) {
         resolved = IconResolver.resolve(icon)
     }
 

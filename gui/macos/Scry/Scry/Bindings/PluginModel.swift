@@ -10,7 +10,7 @@ import Observation
 @Observable
 final class PluginModel {
     private(set) var providers: [ProviderInfo] = []
-    private(set) var mcps: [McpServer] = []
+    private(set) var mcps: [McpPluginInfo] = []
 
     func refresh() {
         refreshProviderPlugins()
@@ -37,7 +37,7 @@ final class PluginModel {
         await CoreClient.shared.withApp { app in
             try await app.updatePlugin(pluginType: pluginType, plugin: config)
             switch pluginType {
-            case .native:
+            case .extension:
                 break
             case .provider:
                 refreshProviderPlugins()
@@ -80,7 +80,7 @@ final class PluginModel {
         await CoreClient.shared.withApp { app in
             try await app.removePlugin(pluginType: pluginType, name: name)
             switch pluginType {
-            case .native:
+            case .extension:
                 break
             case .provider:
                 providers.removeAll { $0.name == name }

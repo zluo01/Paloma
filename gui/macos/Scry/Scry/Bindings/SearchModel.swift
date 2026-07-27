@@ -55,7 +55,7 @@ final class SearchModel {
         searchTask = Task {
             // Query failures surface as empty results; core logs details.
             _ = await CoreClient.shared.withApp { app in
-                let stream = try await app.query(input: input)
+                let stream = try await app.search(input: input)
                 while let event = await stream.next() {
                     if Task.isCancelled {
                         return
@@ -82,9 +82,9 @@ final class SearchModel {
         }
     }
 
-    func runAction(_ sectionId: String, action: Action) async -> Result<Void, Error> {
+    func runAction(_ sectionId: ExtensionCapabilityId, action: Action) async -> Result<Void, Error> {
         await CoreClient.shared.withApp { app in
-            _ = try await app.runQueryAction(id: sectionId, action: action)
+            _ = try await app.runSearchAction(extensionCapabilityId: sectionId, action: action)
         }
     }
 
@@ -108,7 +108,7 @@ final class SearchModel {
     }
 
     /// Flat selection → (handler id, item).
-    var selected: (sectionId: String, item: Item)? {
+    var selected: (sectionId: ExtensionCapabilityId, item: Item)? {
         for (base, section) in zip(sectionBases, sections) {
             let offset = selection - base
             if offset >= 0, offset < section.items.count {
@@ -119,7 +119,7 @@ final class SearchModel {
     }
 
     /// What Return should run: panel highlight if open, else primary-or-first.
-    func selectedAction() -> (sectionId: String, action: Action)? {
+    func selectedAction() -> (sectionId: ExtensionCapabilityId, action: Action)? {
         guard let (sectionId, item) = selected else { return nil }
         if let panelSelection, panelSelection < item.actions.count {
             return (sectionId, item.actions[panelSelection])

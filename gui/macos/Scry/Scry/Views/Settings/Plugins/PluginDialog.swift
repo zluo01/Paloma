@@ -57,7 +57,7 @@ struct PluginDialog: View {
     private var fields: some View {
         Form {
             switch state.pluginType {
-            case .native:
+            case .extension:
                 EmptyView()
             case .provider:
                 providerFormView
@@ -304,9 +304,9 @@ struct PluginDialog: View {
     private func constructPlugin() -> Plugin? {
         guard let env = parsedEnv else { return nil }
         switch state.pluginType {
-        case .native:
-            // Unreachable: the native form is empty, so canSubmit never enables.
-            fatalError("native plugins cannot be configured")
+        case .extension:
+            // Unreachable: the extension form is empty, so canSubmit never enables.
+            fatalError("extension plugins cannot be configured")
         case .provider:
             return Plugin(
                 name: "",

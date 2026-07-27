@@ -38,7 +38,7 @@ struct PluginDialogHeader: View {
                 .scaledToFit()
                 .padding(4)
                 .frame(width: 40, height: 40)
-        case .native:
+        case .extension:
             Image(systemName: "cpu")
                 .resizable()
                 .scaledToFit()
@@ -53,7 +53,7 @@ struct PluginDialogHeader: View {
 
     private var subtitle: String {
         switch pluginType {
-        case .native: "Configure a native plugin."
+        case .extension: "Configure an extension plugin."
         case .provider: "Connect a provider plugin."
         case .mcp: "Connect a Model Context Protocol server."
         }
