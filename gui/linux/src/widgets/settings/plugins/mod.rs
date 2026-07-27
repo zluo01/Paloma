@@ -408,7 +408,7 @@ impl PluginsPage {
         }
 
         let actions = plugin_actions(extension.status, extension.error.as_deref(), None);
-        if extension.config.is_some() {
+        if extension.config.is_some() && extension.status != HealthStatus::Starting {
             actions.append(&self.edit_button(PluginType::Extension, &extension.name));
             actions.append(&self.remove_button(PluginType::Extension, &extension.name));
         }
@@ -423,7 +423,7 @@ impl PluginsPage {
             .build();
 
         let actions = plugin_actions(provider.status, provider.error.as_deref(), None);
-        if provider.config.is_some() {
+        if provider.config.is_some() && provider.status != HealthStatus::Starting {
             actions.append(&self.edit_button(PluginType::Provider, &provider.name));
             actions.append(&self.remove_button(PluginType::Provider, &provider.name));
         }
@@ -443,8 +443,11 @@ impl PluginsPage {
             server.error.as_deref(),
             Some(self.toggle_switch(config).upcast()),
         );
-        actions.append(&self.edit_button(PluginType::Mcp, &config.name));
-        actions.append(&self.remove_button(PluginType::Mcp, &config.name));
+
+        if server.status != HealthStatus::Starting {
+            actions.append(&self.edit_button(PluginType::Mcp, &config.name));
+            actions.append(&self.remove_button(PluginType::Mcp, &config.name));
+        }
         row.add_suffix(&actions);
         row.upcast()
     }
