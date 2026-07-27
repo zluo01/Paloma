@@ -4,14 +4,12 @@ use futures::Stream;
 use uuid::Uuid;
 
 use crate::{
-    controller::{
-        PermissionWorkflowManager, RemoteQuery, RemoteQueryError, SessionManager,
-        SessionManagerError, ToolController, TurnManager,
-    },
+    controller::{PermissionWorkflowManager, RemoteQuery, RemoteQueryError, ToolController},
     db::{Storage, StorageError},
     extension::{ExtensionController, ExtensionControllerError},
     permission::PermissionController,
     provider::{ProviderController, ProviderControllerError},
+    session::{SessionManager, SessionManagerError, TurnManager},
 };
 
 mod constants;
@@ -22,6 +20,7 @@ mod extension;
 mod mcp;
 mod permission;
 mod provider;
+mod session;
 mod utils;
 
 #[ctor::ctor(unsafe)]
@@ -31,7 +30,6 @@ fn process_entry() {
 }
 
 pub use constants::RENDER_CHANNEL_CAPACITY;
-pub use controller::SessionListItem;
 pub use db::Permission;
 pub use entity::{
     ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs,
@@ -48,6 +46,7 @@ pub use scry_provider_protocol::v1::{
     BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, Model, ProviderAuthMethod,
     connection_payload,
 };
+pub use session::SessionListItem;
 pub use utils::OAuthCallbackState;
 
 use crate::{

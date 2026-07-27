@@ -1,8 +1,8 @@
-mod helper;
+pub(crate) mod helper;
 mod remote;
 
 pub use remote::{
-    ChatRenderStream, PermissionWorkflowError, PermissionWorkflowManager, RemoteQuery,
-    RemoteQueryError, SessionListItem, SessionManager, SessionManagerError, ToolController,
-    TurnManager,
+    ChatRenderStream, PermissionWorkflowError, PermissionWorkflowManager,
+    PermissionWorkflowManagerClient, RemoteQuery, RemoteQueryError, ToolCallPayload,
+    ToolController,
 };

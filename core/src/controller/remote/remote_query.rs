@@ -4,17 +4,14 @@ use uuid::Uuid;
 
 use crate::{
     ChatRenderEvent, RenderEvent,
-    controller::{
-        PermissionWorkflowError, SessionManagerError,
-        remote::{
-            PermissionWorkflowManagerClient,
-            session_manager::{SessionListItem, SessionManagerClient},
-            turn_manager::{TurnManagerClient, TurnManagerError},
-        },
-    },
+    controller::{PermissionWorkflowError, remote::PermissionWorkflowManagerClient},
     entity::ProviderBackendId,
     permission::{PermissionState, UserDecision},
     provider::ProviderControllerError,
+    session::{
+        SessionListItem, SessionManagerClient, SessionManagerError, TurnManagerClient,
+        TurnManagerError,
+    },
 };
 
 pub struct RemoteQuery {
