@@ -6,5 +6,7 @@
 //
 
 extension QueryResponse: Identifiable {
-    public var id: ExtensionCapabilityId { extensionCapabilityId }
+    public var id: ExtensionCapabilityId {
+        extensionCapabilityId
+    }
 }

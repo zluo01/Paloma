@@ -57,10 +57,8 @@ struct PluginDialog: View {
     private var fields: some View {
         Form {
             switch state.pluginType {
-            case .extension:
-                EmptyView()
-            case .provider:
-                providerFormView
+            case .extension, .provider:
+                commandFormView
             case .mcp:
                 mcpFormView
             }
@@ -143,8 +141,8 @@ struct PluginDialog: View {
     }
 
     @ViewBuilder
-    private var providerFormView: some View {
-        TextField("Command", text: $state.command, prompt: Text("/path/to/provider"))
+    private var commandFormView: some View {
+        TextField("Command", text: $state.command, prompt: Text("/path/to/\(state.pluginType.label.lowercased())"))
             .fontDesign(.monospaced)
             .padding(.bottom, 6)
             .disabled(submitting)
@@ -243,7 +241,7 @@ struct PluginDialog: View {
     }
 
     private var canSubmit: Bool {
-        if state.pluginType == .provider {
+        if state.pluginType != .mcp {
             return !state.command.trimmingCharacters(in: .whitespaces).isEmpty
                 && argsError == nil
                 && envError == nil
@@ -289,8 +287,12 @@ struct PluginDialog: View {
                     submitting = false
                 }
             } else {
-                OperationError.run("Failed to Add Provider", into: $operationError) {
-                    await model.addProviderPlugin(plugin)
+                OperationError.run("Failed to Add \(state.pluginType.label)", into: $operationError) {
+                    if state.pluginType == .extension {
+                        await model.addExtensionPlugin(plugin)
+                    } else {
+                        await model.addProviderPlugin(plugin)
+                    }
                 } onSuccess: {
                     onClose()
                 } onFailure: {
@@ -304,10 +306,7 @@ struct PluginDialog: View {
     private func constructPlugin() -> Plugin? {
         guard let env = parsedEnv else { return nil }
         switch state.pluginType {
-        case .extension:
-            // Unreachable: the extension form is empty, so canSubmit never enables.
-            fatalError("extension plugins cannot be configured")
-        case .provider:
+        case .extension, .provider:
             return Plugin(
                 name: "",
                 transport: .local,

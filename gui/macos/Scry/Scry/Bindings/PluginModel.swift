@@ -11,10 +11,18 @@ import Observation
 final class PluginModel {
     private(set) var providers: [ProviderInfo] = []
     private(set) var mcps: [McpPluginInfo] = []
+    private(set) var extensions: [ExtensionInfo] = []
 
     func refresh() {
+        refreshExtensionsPlugins()
         refreshProviderPlugins()
         refreshMcpServers()
+    }
+
+    func refreshExtensionsPlugins() {
+        CoreClient.shared.load({ try await $0.listExtensionPlugins() }, or: "failed to refresh extension plugins", category: "plugins") {
+            self.extensions = $0
+        }
     }
 
     func refreshProviderPlugins() {
@@ -38,12 +46,19 @@ final class PluginModel {
             try await app.updatePlugin(pluginType: pluginType, plugin: config)
             switch pluginType {
             case .extension:
-                break
+                refreshExtensionsPlugins()
             case .provider:
                 refreshProviderPlugins()
             case .mcp:
                 refreshMcpServers()
             }
+        }
+    }
+
+    func addExtensionPlugin(_ config: Plugin) async -> Result<Void, Error> {
+        await CoreClient.shared.withApp { app in
+            try await app.addExtensionPlugin(config: config)
+            refreshExtensionsPlugins()
         }
     }
 
@@ -81,7 +96,7 @@ final class PluginModel {
             try await app.removePlugin(pluginType: pluginType, name: name)
             switch pluginType {
             case .extension:
-                break
+                extensions.removeAll { $0.name == name }
             case .provider:
                 providers.removeAll { $0.name == name }
             case .mcp:
