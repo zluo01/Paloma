@@ -101,9 +101,6 @@ struct OverlayView: View {
         .frame(width: 640)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .onReceive(NotificationCenter.default.publisher(for: .panelDidHide)) { _ in
-            mode = .search
-            query.removeAll()
-            searches.clear()
             operationError = nil
         }
         .onChange(of: mode) { previous, current in
@@ -260,9 +257,8 @@ struct OverlayView: View {
                 return
             }
             query.removeAll()
-            if !searches.clear() {
-                onHide()
-            }
+            searches.clear()
+            onHide()
         case .chat, .session:
             mode = .search
         }
