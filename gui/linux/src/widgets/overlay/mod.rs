@@ -75,6 +75,9 @@ pub(crate) struct Overlay {
     model: RefCell<Model>,
     /// Chat auto-scroll stays pinned until the user scrolls away.
     stuck_to_bottom: Cell<bool>,
+    /// Whether [`Overlay::conceal`] hid a visible content panel, so the next
+    /// summon brings it back. Cleared whenever the content is actually closed.
+    restore_content: Cell<bool>,
     /// Bar top-left in monitor pixels; `None` until first show.
     position: Cell<Option<(i32, i32)>>,
     /// Monitor that `position` is relative to.
@@ -160,6 +163,7 @@ impl Overlay {
             model: RefCell::new(Model::new()),
             dispatcher: dispatcher.clone(),
             stuck_to_bottom: Cell::new(true),
+            restore_content: Cell::new(false),
             position: Cell::new(None),
             monitor: RefCell::new(None),
         });
@@ -280,7 +284,7 @@ impl Overlay {
 
     fn toggle_launcher(&self) {
         if self.is_visible() {
-            self.hide();
+            self.conceal();
         } else {
             self.show();
         }
@@ -300,10 +304,21 @@ impl Overlay {
             }
             self.launcher_window.present();
         }
+        if self.restore_content.replace(false) {
+            self.content_window.present();
+        }
         self.launcher.refresh();
         self.launcher.focus();
     }
 
+    /// Hide launcher without clear the content
+    fn conceal(&self) {
+        self.restore_content.set(self.content_window.is_visible());
+        self.content_window.set_visible(false);
+        self.launcher_window.set_visible(false);
+    }
+
+    /// Hide launcher and clear the content
     fn hide(&self) {
         self.launcher.clear();
         self.close_content();
@@ -319,6 +334,13 @@ impl Overlay {
     }
 
     fn show_content(&self) {
+        // when we conceal on ongoing events (chat streaming)
+        // we do not want the content shows when we hide,
+        // defer the rendering to next show
+        if !self.is_visible() {
+            self.restore_content.set(true);
+            return;
+        }
         if !self.content_window.is_visible() {
             self.content_window.present();
         }
@@ -329,6 +351,7 @@ impl Overlay {
         self.clear_session();
         self.sessions.clear();
 
+        self.restore_content.set(false);
         self.launcher.set_mode(Mode::Search);
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.content_window.set_visible(false);

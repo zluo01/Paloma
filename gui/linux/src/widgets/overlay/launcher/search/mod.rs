@@ -43,6 +43,9 @@ impl Search {
 
     pub(super) fn focus(&self) {
         self.entry.grab_focus();
+        // Focusing the entry selects its text, which would make the first
+        // keystroke after a summon discard a restored query.
+        self.entry.set_position(-1);
     }
 
     pub(super) fn has_selection(&self) -> bool {

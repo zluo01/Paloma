@@ -219,15 +219,16 @@ impl Model {
     }
 
     /// Launcher workflow:
-    /// - Toggle visibility: `ToggleVisibilityRequested -> ToggleLauncher`.
+    /// - Toggle visibility: `ToggleVisibilityRequested -> ToggleLauncher`. The
+    ///   summon shortcut only shows and hides: mode, query, session, and any
+    ///   live turn survive so the next summon resumes where the user left off.
+    ///   Escape (`SearchMsg::ExitRequested` / `ContentCloseRequested`) remains
+    ///   the reset path.
     /// - Open settings: `OpenSettingsRequested -> OpenSettings + HideOverlay`.
     /// - Query input: `QueryChanged` starts a search, filters sessions, or is ignored in Chat mode. Search follow-up messages are handled by `update_search`.
     fn update_launcher(&mut self, msg: LauncherMsg) -> Vec<Command> {
         match msg {
-            LauncherMsg::ToggleVisibilityRequested => {
-                self.reset();
-                vec![Command::ToggleLauncher]
-            },
+            LauncherMsg::ToggleVisibilityRequested => vec![Command::ToggleLauncher],
             LauncherMsg::OpenSettingsRequested => {
                 self.reset();
                 vec![Command::OpenSettings, Command::HideOverlay]
@@ -805,6 +806,71 @@ mod tests {
         assert!(matches!(model.mode, Mode::Search));
         assert_eq!(model.current_session, None);
         assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn summoning_hides_and_shows_without_disturbing_the_state() {
+        let mut model = Model::new();
+        let turn_id = expect_running_chat(&mut model, "hello");
+        let session_id = Uuid::now_v7();
+        let _ = model.update(Msg::Chat(ChatMsg::RequestStarted {
+            turn_id,
+            session_id: Some(session_id),
+        }));
+
+        for _ in 0..2 {
+            let commands = model.update(Msg::Launcher(LauncherMsg::ToggleVisibilityRequested));
+            assert!(matches!(commands.as_slice(), [Command::ToggleLauncher]));
+            assert!(matches!(model.mode, Mode::Chat));
+            assert_eq!(model.current_session, Some(session_id));
+            assert_chat_running(&model, turn_id);
+        }
+
+        // The turn survives the round trip, so its stream still renders.
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
+            turn_id,
+            event: RenderEvent::Done,
+        }));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RenderChatEvent { .. }]
+        ));
+        assert_chat_idle(&model);
+
+        // Escape still resets everything.
+        let commands = model.update(Msg::ContentCloseRequested);
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ClearQuery, Command::HideContent]
+        ));
+        assert!(matches!(model.mode, Mode::Search));
+        assert_eq!(model.current_session, None);
+    }
+
+    #[test]
+    fn summoning_keeps_an_in_flight_search_query_alive() {
+        let mut model = Model::new();
+        let commands = model.update(Msg::Launcher(LauncherMsg::QueryChanged {
+            content: "docker".into(),
+        }));
+        let [
+            Command::ClearSearchResults,
+            Command::RunSearchQuery { query_id, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected a search query to start");
+        };
+        let query_id = *query_id;
+
+        let _ = model.update(Msg::Launcher(LauncherMsg::ToggleVisibilityRequested));
+        let _ = model.update(Msg::Launcher(LauncherMsg::ToggleVisibilityRequested));
+
+        // Results for the preserved query still belong to the restored view.
+        let commands = model.update(Msg::Search(SearchMsg::QueryFinished {
+            query_id,
+            has_result: true,
+        }));
+        assert!(matches!(commands.as_slice(), [Command::RenderChatAction]));
     }
 
     #[test]
