@@ -17,6 +17,9 @@ pub const PERMISSION_EVICT_TTL_SECS: u64 = 600;
 /// at this prefix. Shared by all tools that will output to llm.
 pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 
+/// Floor on a node's share of [`MAX_STREAM_PAYLOAD_BYTES`].
+pub const MIN_NODE_PAYLOAD_BYTES: usize = 1024;
+
 /// Root directory where spilled tool output lives, keyed by call id; never
 /// cleaned by the process — relies on the system tmp lifecycle.
 pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| std::env::temp_dir().join(APP_NAME));

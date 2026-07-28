@@ -33,7 +33,7 @@ use tokio::{
 
 use crate::{
     HealthStatus, Plugin, PluginArgs,
-    constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
+    constants::{MAX_STREAM_PAYLOAD_BYTES, MIN_NODE_PAYLOAD_BYTES, SPILL_ROOT},
     entity::ToolResult,
     utils::{shell_path, write_spill_file},
 };
@@ -407,7 +407,9 @@ async fn build_element(
         element = element.attr(attribute.key.clone(), &attribute.value);
     }
     if let Some(tool_content::Body::Text(text)) = &node.body {
-        let budget = total.map(|total| text.len() * MAX_STREAM_PAYLOAD_BYTES / total);
+        let budget = total.map(|total| {
+            (text.len() * MAX_STREAM_PAYLOAD_BYTES / total).max(MIN_NODE_PAYLOAD_BYTES)
+        });
         element = match budget {
             Some(budget) if text.len() > budget => {
                 let name = format!("part-{}", spilled.fetch_add(1, Ordering::Relaxed));
@@ -498,59 +500,109 @@ mod tests {
         );
     }
 
+    fn total_forcing_floor(text_bytes: usize) -> usize {
+        text_bytes * MAX_STREAM_PAYLOAD_BYTES
+    }
+
     #[tokio::test]
     async fn over_budget_body_truncates_spills_and_annotates() {
         let dir = tempfile::tempdir().unwrap();
-        let content = ToolContent::new("stdout").cdata("hello world");
-        let total = "hello world".len() * MAX_STREAM_PAYLOAD_BYTES / 5;
+        let text = "hello world ".repeat(200);
+        let content = ToolContent::new("stdout").cdata(text.clone());
 
-        let rendered = tool_content_to_element(&content, Some(total), "tc_trunc", dir.path())
-            .await
-            .to_string();
+        let rendered = tool_content_to_element(
+            &content,
+            Some(total_forcing_floor(text.len())),
+            "tc_trunc",
+            dir.path(),
+        )
+        .await
+        .to_string();
 
         let spill = dir.path().join("tc_trunc").join("part-0");
-        assert!(rendered.contains("total_bytes=\"11\""), "got: {rendered}");
+        assert!(
+            rendered.contains(&format!("total_bytes=\"{}\"", text.len())),
+            "got: {rendered}"
+        );
         assert!(rendered.contains("truncated=\"true\""), "got: {rendered}");
         assert!(
             rendered.contains(&format!("full_output=\"{}\"", spill.display())),
             "got: {rendered}"
         );
-        assert!(rendered.contains("<![CDATA[hello...]]>"), "got: {rendered}");
-        assert_eq!(std::fs::read_to_string(&spill).unwrap(), "hello world");
+        assert!(
+            rendered.contains(&format!(
+                "<![CDATA[{}...]]>",
+                &text[..MIN_NODE_PAYLOAD_BYTES]
+            )),
+            "got: {rendered}"
+        );
+        assert_eq!(std::fs::read_to_string(&spill).unwrap(), text);
     }
 
     #[tokio::test]
     async fn truncation_respects_char_boundaries() {
         let dir = tempfile::tempdir().unwrap();
-        let content = ToolContent::new("stdout").cdata("résumé.txt not found");
-        let total = "résumé.txt not found".len() * MAX_STREAM_PAYLOAD_BYTES / 2;
+        let head = "a".repeat(MIN_NODE_PAYLOAD_BYTES - 1);
+        let text = format!("{head}ésumé not found");
+        let content = ToolContent::new("stdout").cdata(text.clone());
 
-        let rendered = tool_content_to_element(&content, Some(total), "tc_boundary", dir.path())
-            .await
-            .to_string();
+        let rendered = tool_content_to_element(
+            &content,
+            Some(total_forcing_floor(text.len())),
+            "tc_boundary",
+            dir.path(),
+        )
+        .await
+        .to_string();
 
         let spill = dir.path().join("tc_boundary").join("part-0");
-        assert!(rendered.contains("total_bytes=\"22\""), "got: {rendered}");
         assert!(rendered.contains("truncated=\"true\""), "got: {rendered}");
         assert!(
             rendered.contains(&format!("full_output=\"{}\"", spill.display())),
             "got: {rendered}"
         );
-        assert!(rendered.contains("<![CDATA[r...]]>"), "got: {rendered}");
-        assert_eq!(
-            std::fs::read_to_string(&spill).unwrap(),
-            "résumé.txt not found"
+        assert!(rendered.contains(&format!("<![CDATA[{head}...]]>")));
+        assert_eq!(std::fs::read_to_string(&spill).unwrap(), text);
+    }
+
+    #[tokio::test]
+    async fn short_sibling_is_kept_whole_in_an_over_budget_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = ToolContent::new("shell_output")
+            .child(
+                ToolContent::new("stdout").cdata("x".repeat(MAX_STREAM_PAYLOAD_BYTES + 10 * 1024)),
+            )
+            .child(ToolContent::new("stderr").cdata("permission denied"));
+
+        let rendered = tool_content_to_element(
+            &content,
+            Some(total_text_bytes(&content)),
+            "tc_floor",
+            dir.path(),
+        )
+        .await
+        .to_string();
+
+        assert!(
+            rendered.contains("<stderr><![CDATA[permission denied]]></stderr>"),
+            "short stderr should survive whole"
+        );
+        assert!(
+            rendered.contains("truncated=\"true\""),
+            "the oversized stdout should still be truncated"
         );
     }
 
     #[tokio::test]
     async fn same_tag_siblings_spill_to_separate_files() {
         let dir = tempfile::tempdir().unwrap();
+        let first = "first payload ".repeat(100);
+        let second = "second payload ".repeat(100);
         let content = ToolContent::new("results")
-            .child(ToolContent::new("match").cdata("first payload"))
-            .child(ToolContent::new("match").cdata("second payload"));
+            .child(ToolContent::new("match").cdata(first.clone()))
+            .child(ToolContent::new("match").cdata(second.clone()));
 
-        let total = ("first payload".len() + "second payload".len()) * MAX_STREAM_PAYLOAD_BYTES / 4;
+        let total = total_forcing_floor(first.len() + second.len());
 
         tool_content_to_element(&content, Some(total), "tc_siblings", dir.path()).await;
 
@@ -561,10 +613,7 @@ mod tests {
             .collect();
         spilled.sort();
 
-        assert_eq!(
-            spilled,
-            vec!["first payload".to_string(), "second payload".to_string()]
-        );
+        assert_eq!(spilled, vec![first, second]);
     }
 
     #[tokio::test]
