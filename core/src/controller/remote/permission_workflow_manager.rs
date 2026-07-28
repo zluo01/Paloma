@@ -184,45 +184,33 @@ impl PermissionWorkflowManager {
 
         match self.permission_controller.classify(&command).await {
             Ok(decision) => {
-                // only bypass permission check if the command is a composite
-                if session_allows && decision.command_type() == &CommandType::Composite {
-                    self.permission_tracker.insert(
-                        call_id,
-                        PermissionRequest {
-                            session_id,
-                            decision: PermissionDecision::new(
-                                CommandType::Composite,
-                                vec![], // should not be used.
-                                ArgvDecision::Allow,
-                            ),
-                            tracker: CompletableFuture::completed(PermissionState::Allow),
-                            command,
-                            evict_at: Some(PermissionRequest::evict_deadline()),
-                        },
-                    );
-                } else {
-                    let (tracker, evict_at) = match decision.decision() {
-                        ArgvDecision::Allow => (
-                            CompletableFuture::completed(PermissionState::Allow),
-                            Some(PermissionRequest::evict_deadline()),
-                        ),
-                        ArgvDecision::NotExecutable => (
-                            CompletableFuture::completed(PermissionState::Deny),
-                            Some(PermissionRequest::evict_deadline()),
-                        ),
-                        _ => (CompletableFuture::pending(), None),
-                    };
-                    self.permission_tracker.insert(
-                        call_id,
-                        PermissionRequest {
-                            session_id,
-                            decision,
-                            tracker,
-                            command,
-                            evict_at,
-                        },
-                    );
-                }
+                let (tracker, evict_at) = match decision.decision() {
+                    ArgvDecision::Allow => (
+                        CompletableFuture::completed(PermissionState::Allow),
+                        Some(PermissionRequest::evict_deadline()),
+                    ),
+                    ArgvDecision::NotExecutable => (
+                        CompletableFuture::completed(PermissionState::Deny),
+                        Some(PermissionRequest::evict_deadline()),
+                    ),
+                    // session bypass only applies to composites, and never to
+                    // the refusal verdicts matched above
+                    _ if session_allows && decision.command_type() == &CommandType::Composite => (
+                        CompletableFuture::completed(PermissionState::Allow),
+                        Some(PermissionRequest::evict_deadline()),
+                    ),
+                    _ => (CompletableFuture::pending(), None),
+                };
+                self.permission_tracker.insert(
+                    call_id,
+                    PermissionRequest {
+                        session_id,
+                        decision,
+                        tracker,
+                        command,
+                        evict_at,
+                    },
+                );
             },
             Err(e) => {
                 error!(
@@ -587,10 +575,106 @@ type Result<T> = std::result::Result<T, PermissionWorkflowError>;
 
 #[cfg(test)]
 mod tests {
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
     use super::*;
+    use crate::db::Storage;
 
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    async fn manager() -> PermissionWorkflowManager {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(":memory:"))
+            .await
+            .expect("in-memory pool");
+        let storage = Storage::from_pool(pool).await.expect("Storage::from_pool");
+        PermissionWorkflowManager::new(PermissionController::new(storage)).0
+    }
+
+    /// `None` when the request is still waiting on the user.
+    async fn resolution(
+        manager: &PermissionWorkflowManager,
+        call_id: &str,
+    ) -> Option<PermissionState> {
+        let pending = manager
+            .handle_wait_decision(call_id.to_string())
+            .expect("tracked call");
+        tokio::time::timeout(Duration::from_millis(50), pending)
+            .await
+            .ok()
+            .flatten()
+    }
+
+    async fn init(manager: &mut PermissionWorkflowManager, session_id: Uuid, command: &[&str]) {
+        manager
+            .init_permission_workflow(session_id, "c".into(), argv(command))
+            .await;
+    }
+
+    fn ignore_permission_for(manager: &mut PermissionWorkflowManager, session_id: Uuid) {
+        manager
+            .session_permission
+            .entry(session_id)
+            .or_default()
+            .always = true;
+    }
+
+    const SUDO_COMPOSITE: &[&str] = &["bash", "-lc", "sudo systemctl stop firewalld && echo done"];
+    const BENIGN_COMPOSITE: &[&str] = &["bash", "-lc", "cargo build && ls"];
+
+    #[tokio::test]
+    async fn not_executable_composite_is_denied_outright() {
+        let mut manager = manager().await;
+        let session_id = Uuid::from_u128(1);
+
+        init(&mut manager, session_id, SUDO_COMPOSITE).await;
+
+        assert!(matches!(
+            resolution(&manager, "c").await,
+            Some(PermissionState::Deny)
+        ));
+    }
+
+    #[tokio::test]
+    async fn session_bypass_auto_allows_ordinary_composite() {
+        let mut manager = manager().await;
+        let session_id = Uuid::from_u128(2);
+        ignore_permission_for(&mut manager, session_id);
+
+        init(&mut manager, session_id, BENIGN_COMPOSITE).await;
+
+        assert!(matches!(
+            resolution(&manager, "c").await,
+            Some(PermissionState::Allow)
+        ));
+    }
+
+    #[tokio::test]
+    async fn session_bypass_does_not_cover_simple_commands() {
+        let mut manager = manager().await;
+        let session_id = Uuid::from_u128(3);
+        ignore_permission_for(&mut manager, session_id);
+
+        init(&mut manager, session_id, &["some-unknown-program"]).await;
+
+        assert!(resolution(&manager, "c").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn session_bypass_does_not_override_not_executable() {
+        let mut manager = manager().await;
+        let session_id = Uuid::from_u128(4);
+        ignore_permission_for(&mut manager, session_id);
+
+        init(&mut manager, session_id, SUDO_COMPOSITE).await;
+
+        assert!(matches!(
+            resolution(&manager, "c").await,
+            Some(PermissionState::Deny)
+        ));
     }
 
     /// A glob `Allow` with call_id "c" — asserting against it checks all
