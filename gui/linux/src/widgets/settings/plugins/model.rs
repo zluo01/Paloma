@@ -276,6 +276,7 @@ mod tests {
             description: String::new(),
             status: HealthStatus::Running,
             error: None,
+            tools: vec![],
         }
     }
 

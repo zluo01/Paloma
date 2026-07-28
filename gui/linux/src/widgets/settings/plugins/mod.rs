@@ -12,7 +12,7 @@ use libadwaita::{
 };
 use scry_core::{
     AppContext, Capability, ExtensionInfo, HealthStatus, McpPluginInfo, OAuthCallbackState, Plugin,
-    PluginType, ProviderInfo,
+    PluginType, ProviderInfo, ToolSpec,
 };
 use tokio::task::JoinHandle;
 
@@ -431,10 +431,14 @@ impl PluginsPage {
 
     fn mcp_row(&self, server: &McpPluginInfo) -> Widget {
         let config = &server.config;
-        let row = ActionRow::builder()
+        let row = ExpanderRow::builder()
             .title(&config.name)
             .subtitle(&server.description)
             .build();
+
+        for tool in &server.tools {
+            row.add_row(&tool_row(tool));
+        }
 
         let actions = plugin_actions(
             server.status,
@@ -580,6 +584,14 @@ fn capability_row(capability: &Capability) -> PreferencesRow {
         .build();
     row.set_child(Some(&header));
     row
+}
+
+fn tool_row(spec: &ToolSpec) -> ActionRow {
+    ActionRow::builder()
+        .title(&spec.tool)
+        .subtitle(&spec.schema.description)
+        .subtitle_lines(0)
+        .build()
 }
 
 fn capability_badge(facet: &str) -> Label {
