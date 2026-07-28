@@ -24,6 +24,9 @@ pub(crate) enum Disposition {
 static SHELL_KEY: LazyLock<String> =
     LazyLock::new(|| ext_tool_name_encode(PLUGIN_SHELL, SHELL_CAPABILITY));
 
+/// Namespace for tool approvals
+const TOOL_PERMISSION_NAMESPACE: &str = "tool:";
+
 /// extract commands and description for permission checking
 pub(crate) fn extract_args(spec: ToolSpec, raw_args: &str) -> Disposition {
     // have to hardcode on the shell tool to extract the commands for approval
@@ -46,7 +49,10 @@ pub(crate) fn extract_args(spec: ToolSpec, raw_args: &str) -> Disposition {
         name: format!("{} - {}", spec.name, spec.tool),
         arguments: prettify_arg(raw_args),
         description: Some(spec.schema.description),
-        require_permission: vec![spec.name, spec.tool],
+        require_permission: vec![
+            format!("{TOOL_PERMISSION_NAMESPACE}{}", spec.name),
+            spec.tool,
+        ],
     }
 }
 
@@ -55,4 +61,34 @@ pub(crate) fn prettify_arg(args: &str) -> String {
         .ok()
         .and_then(|v| serde_json::to_string_pretty(&v).ok())
         .unwrap_or(args.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::ToolSchema;
+
+    fn spec(name: &str, tool: &str) -> ToolSpec {
+        ToolSpec {
+            name: name.to_string(),
+            tool: tool.to_string(),
+            schema: ToolSchema {
+                name: format!("{name}__{tool}"),
+                description: String::new(),
+                parameters: serde_json::json!({}),
+            },
+        }
+    }
+
+    #[test]
+    fn tool_permission_key_cannot_collide_with_shell_argv() {
+        let Disposition::Gated {
+            require_permission, ..
+        } = extract_args(spec("git", "status"), "{}")
+        else {
+            panic!("tool calls are gated");
+        };
+
+        assert_eq!(require_permission, ["tool:git", "status"]);
+    }
 }
