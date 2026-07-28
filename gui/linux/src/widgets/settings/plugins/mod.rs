@@ -1,7 +1,12 @@
 mod model;
 mod plugin_dialog;
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashSet,
+    rc::Rc,
+    sync::Arc,
+};
 
 use futures::channel::mpsc;
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Switch, Widget, glib, prelude::*};
@@ -401,9 +406,7 @@ impl PluginsPage {
             .subtitle(&subtitle)
             .build();
 
-        for capability in &extension.capabilities {
-            row.add_row(&capability_row(capability));
-        }
+        fill_on_expand(&row, &extension.capabilities, capability_row);
 
         let actions = plugin_actions(extension.status, extension.error.as_deref(), None);
         if extension.config.is_some() && extension.status != HealthStatus::Starting {
@@ -436,9 +439,7 @@ impl PluginsPage {
             .subtitle(&server.description)
             .build();
 
-        for tool in &server.tools {
-            row.add_row(&tool_row(tool));
-        }
+        fill_on_expand(&row, &server.tools, tool_row);
 
         let actions = plugin_actions(
             server.status,
@@ -592,6 +593,30 @@ fn tool_row(spec: &ToolSpec) -> ActionRow {
         .subtitle(&spec.schema.description)
         .subtitle_lines(0)
         .build()
+}
+
+/// lazy load the sublist
+fn fill_on_expand<T, W>(row: &ExpanderRow, items: &[T], build: impl Fn(&T) -> W + 'static)
+where
+    T: Clone + 'static,
+    W: IsA<Widget>,
+{
+    if items.is_empty() {
+        return;
+    }
+
+    let items = items.to_vec();
+    // The signal fires on collapse and on every later expand too, so the rows
+    // are built exactly once.
+    let filled = Cell::new(false);
+    row.connect_expanded_notify(move |row| {
+        if !row.is_expanded() || filled.replace(true) {
+            return;
+        }
+        for item in &items {
+            row.add_row(&build(item));
+        }
+    });
 }
 
 fn capability_badge(facet: &str) -> Label {
