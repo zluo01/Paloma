@@ -19,7 +19,7 @@ pub const MAX_STREAM_PAYLOAD_BYTES: usize = 50 * 1024;
 
 /// Root directory where spilled tool output lives, keyed by call id; never
 /// cleaned by the process — relies on the system tmp lifecycle.
-pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp").join(APP_NAME));
+pub static SPILL_ROOT: LazyLock<PathBuf> = LazyLock::new(|| std::env::temp_dir().join(APP_NAME));
 
 /// Static system prompt sent as the `instructions` field on every LLM call.
 /// Describes role, tool contract, and behavioral rules.
