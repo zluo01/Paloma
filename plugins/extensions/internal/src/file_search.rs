@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cmp::{Ordering, Reverse},
     collections::{BinaryHeap, HashMap, HashSet},
     path::{Path, PathBuf},
@@ -53,22 +54,24 @@ const FALLBACK_ICON: &str = "text-x-generic";
 type FsWatcher = Debouncer<notify::RecommendedWatcher, NoCache>;
 
 struct FileEntry {
-    name: String,
     path: PathBuf,
     /// component count of `path`, precomputed so ranking ties are cheap
-    depth: usize,
+    depth: u16,
     is_dir: bool,
 }
 
 impl FileEntry {
-    fn new(name: String, path: PathBuf, is_dir: bool) -> Self {
-        let depth = path.components().count();
+    fn new(path: PathBuf, is_dir: bool) -> Self {
+        let depth = path.components().count() as u16;
         Self {
-            name,
             path,
             depth,
             is_dir,
         }
+    }
+
+    fn name(&self) -> Cow<'_, str> {
+        self.path.file_name().unwrap_or_default().to_string_lossy()
     }
 }
 
@@ -84,7 +87,7 @@ impl Ord for Candidate<'_> {
         self.score
             .cmp(&other.score)
             .then_with(|| other.entry.depth.cmp(&self.entry.depth))
-            .then_with(|| other.entry.name.cmp(&self.entry.name))
+            .then_with(|| other.entry.name().cmp(&self.entry.name()))
     }
 }
 
@@ -273,14 +276,14 @@ fn scan(root: &Path) -> (Vec<FileEntry>, Vec<PathBuf>) {
             }
 
             let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let _ = tx.send(FileEntry::new(name, entry.into_path(), is_dir));
+            let _ = tx.send(FileEntry::new(entry.into_path(), is_dir));
             WalkState::Continue
         })
     });
     drop(tx);
 
-    let found: Vec<FileEntry> = rx.iter().collect();
+    let mut found: Vec<FileEntry> = rx.iter().collect();
+    found.shrink_to_fit();
     if found.len() >= MAX_ENTRIES {
         warn!("file_search: entry cap {MAX_ENTRIES} reached; index is partial");
     }
@@ -432,8 +435,7 @@ fn rescan_dirs(
                 continue;
             }
             let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
-            let name = entry.file_name().to_string_lossy().into_owned();
-            current.push(FileEntry::new(name, entry.into_path(), is_dir));
+            current.push(FileEntry::new(entry.into_path(), is_dir));
         }
 
         // Diff on (path, kind): a path replaced by the other kind (file ->
@@ -549,7 +551,8 @@ fn top_matches<'a>(pattern: &Pattern, entries: &'a [FileEntry]) -> Vec<Candidate
     let mut best: BinaryHeap<Reverse<Candidate>> = BinaryHeap::with_capacity(MAX_RESULTS + 1);
 
     for entry in entries {
-        let haystack = Utf32Str::new(&entry.name, &mut buf);
+        let name = entry.name();
+        let haystack = Utf32Str::new(&name, &mut buf);
         let Some(score) = pattern.score(haystack, &mut matcher) else {
             continue;
         };
@@ -596,7 +599,7 @@ fn build_item(home: &Path, entry: &FileEntry) -> Item {
     });
 
     Item {
-        title: entry.name.clone(),
+        title: entry.name().into_owned(),
         subtitle: Some(display_parent(home, &entry.path)),
         icon: Some(CapabilityIcon::name(icon_name(entry))),
         actions,
@@ -654,8 +657,8 @@ mod tests {
         fs::write(path, b"").unwrap();
     }
 
-    fn entry(name: &str, path: &str, is_dir: bool) -> FileEntry {
-        FileEntry::new(name.to_string(), PathBuf::from(path), is_dir)
+    fn entry(path: &str, is_dir: bool) -> FileEntry {
+        FileEntry::new(PathBuf::from(path), is_dir)
     }
 
     fn test_watcher() -> Mutex<FsWatcher> {
@@ -719,9 +722,9 @@ mod tests {
 
         let (found, dirs) = scan(root.path());
 
-        let names: Vec<_> = found.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"docs"));
-        assert!(names.contains(&"report.txt"));
+        let names: Vec<String> = found.iter().map(|e| e.name().into_owned()).collect();
+        assert!(names.iter().any(|n| n == "docs"));
+        assert!(names.iter().any(|n| n == "report.txt"));
         assert!(dirs.contains(&root.path().to_path_buf()));
         assert!(dirs.contains(&root.path().join("docs")));
     }
@@ -750,21 +753,21 @@ mod tests {
     #[test]
     fn rank_matches_fuzzily() {
         let entries = vec![
-            entry("Cargo.toml", "/home/u/proj/Cargo.toml", false),
-            entry("photo.png", "/home/u/photo.png", false),
+            entry("/home/u/proj/Cargo.toml", false),
+            entry("/home/u/photo.png", false),
         ];
 
         let ranked = rank("cargtom", &entries);
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].name, "Cargo.toml");
+        assert_eq!(ranked[0].name(), "Cargo.toml");
     }
 
     #[test]
     fn rank_prefers_shallower_paths_on_ties() {
         let entries = vec![
-            entry("notes.md", "/home/u/a/b/c/notes.md", false),
-            entry("notes.md", "/home/u/notes.md", false),
+            entry("/home/u/a/b/c/notes.md", false),
+            entry("/home/u/notes.md", false),
         ];
 
         let ranked = rank("notes", &entries);
@@ -775,28 +778,19 @@ mod tests {
     #[test]
     fn multi_word_queries_require_every_word_as_substring() {
         let entries = vec![
-            entry(
-                "annual_report_2026.pdf",
-                "/home/u/annual_report_2026.pdf",
-                false,
-            ),
-            entry(
-                "annual_summary_export.pdf",
-                "/home/u/annual_summary_export.pdf",
-                false,
-            ),
+            entry("/home/u/annual_report_2026.pdf", false),
+            entry("/home/u/annual_summary_export.pdf", false),
         ];
 
         let ranked = rank("annual report", &entries);
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].name, "annual_report_2026.pdf");
+        assert_eq!(ranked[0].name(), "annual_report_2026.pdf");
     }
 
     #[test]
     fn sentences_do_not_match_scattered_names() {
         let entries = vec![entry(
-            "homework_todo_maker_playlist_agenda.txt",
             "/home/u/homework_todo_maker_playlist_agenda.txt",
             false,
         )];
@@ -806,7 +800,7 @@ mod tests {
 
     #[test]
     fn rank_rejects_short_queries() {
-        let entries = vec![entry("a.txt", "/home/u/a.txt", false)];
+        let entries = vec![entry("/home/u/a.txt", false)];
 
         assert!(rank("a", &entries).is_empty());
     }
@@ -814,7 +808,7 @@ mod tests {
     #[test]
     fn rank_caps_results() {
         let entries: Vec<FileEntry> = (0..100)
-            .map(|i| entry("match.txt", &format!("/home/u/{i}/match.txt"), false))
+            .map(|i| entry(&format!("/home/u/{i}/match.txt"), false))
             .collect();
 
         assert_eq!(rank("match", &entries).len(), MAX_RESULTS);
@@ -836,7 +830,7 @@ mod tests {
 
         let guard = entries.read().unwrap();
         assert_eq!(guard.len(), 1);
-        assert_eq!(guard[0].name, "new.txt");
+        assert_eq!(guard[0].name(), "new.txt");
     }
 
     #[test]
@@ -844,8 +838,8 @@ mod tests {
         let root = TempDir::new().unwrap();
         let dir = root.path().join("gone");
         let entries = RwLock::new(vec![
-            FileEntry::new("gone".into(), dir.clone(), true),
-            FileEntry::new("inner.txt".into(), dir.join("inner.txt"), false),
+            FileEntry::new(dir.clone(), true),
+            FileEntry::new(dir.join("inner.txt"), false),
         ]);
         let watcher = test_watcher();
 
@@ -864,7 +858,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         let target = root.path().join("thing");
         // indexed as a file, but on disk it is now a directory
-        let entries = RwLock::new(vec![FileEntry::new("thing".into(), target.clone(), false)]);
+        let entries = RwLock::new(vec![FileEntry::new(target.clone(), false)]);
         let watcher = test_watcher();
         fs::create_dir(&target).unwrap();
 
@@ -886,8 +880,8 @@ mod tests {
         fs::create_dir(root.path().join("a")).unwrap();
         fs::create_dir(root.path().join("b")).unwrap();
         let entries = RwLock::new(vec![
-            FileEntry::new("a".into(), root.path().join("a"), true),
-            FileEntry::new("b".into(), root.path().join("b"), true),
+            FileEntry::new(root.path().join("a"), true),
+            FileEntry::new(root.path().join("b"), true),
         ]);
         let watcher = test_watcher();
         touch(&root.path().join("a/x.txt"));
@@ -901,9 +895,9 @@ mod tests {
         );
 
         let guard = entries.read().unwrap();
-        let names: Vec<&str> = guard.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"x.txt"));
-        assert!(names.contains(&"y.txt"));
+        let names: Vec<String> = guard.iter().map(|e| e.name().into_owned()).collect();
+        assert!(names.iter().any(|n| n == "x.txt"));
+        assert!(names.iter().any(|n| n == "y.txt"));
     }
 
     #[test]
@@ -926,10 +920,7 @@ mod tests {
 
     #[test]
     fn files_offer_open_folder_action() {
-        let item = build_item(
-            Path::new("/home/u"),
-            &entry("a.txt", "/home/u/docs/a.txt", false),
-        );
+        let item = build_item(Path::new("/home/u"), &entry("/home/u/docs/a.txt", false));
 
         let labels: Vec<_> = item.actions.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(
@@ -945,7 +936,7 @@ mod tests {
 
     #[test]
     fn directories_omit_open_folder_action() {
-        let item = build_item(Path::new("/home/u"), &entry("docs", "/home/u/docs", true));
+        let item = build_item(Path::new("/home/u"), &entry("/home/u/docs", true));
 
         let labels: Vec<_> = item.actions.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(labels, [OPEN_ACTION_LABEL, COPY_PATH_ACTION_LABEL]);
@@ -964,14 +955,8 @@ mod tests {
 
     #[test]
     fn icon_name_maps_mime_types() {
-        assert_eq!(
-            icon_name(&entry("a.png", "/home/u/a.png", false)),
-            "image-png"
-        );
-        assert_eq!(icon_name(&entry("docs", "/home/u/docs", true)), FOLDER_ICON);
-        assert_eq!(
-            icon_name(&entry("noext", "/home/u/noext", false)),
-            FALLBACK_ICON
-        );
+        assert_eq!(icon_name(&entry("/home/u/a.png", false)), "image-png");
+        assert_eq!(icon_name(&entry("/home/u/docs", true)), FOLDER_ICON);
+        assert_eq!(icon_name(&entry("/home/u/noext", false)), FALLBACK_ICON);
     }
 }
