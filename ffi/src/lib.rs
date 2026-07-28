@@ -456,7 +456,11 @@ impl ScryApp {
 
     pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.list_mcps().await }).await??)
+        Ok(on_runtime(async move { inner.list_mcps().await })
+            .await??
+            .into_iter()
+            .map(McpPluginInfo::from)
+            .collect())
     }
 
     /// Start connecting an MCP server. Returns an OAuth handle when the server

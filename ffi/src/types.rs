@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 
 pub use scry_core::{
-    Action, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus, McpPluginInfo,
-    Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
+    Action, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus, Model,
+    Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
     ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
 };
 use uuid::Uuid;
@@ -87,14 +87,6 @@ pub struct Plugin {
     pub disabled: bool,
     pub env: HashMap<String, String>,
     pub args: PluginArgs,
-}
-
-#[uniffi::remote(Record)]
-pub struct McpPluginInfo {
-    pub description: String,
-    pub status: HealthStatus,
-    pub error: Option<String>,
-    pub config: Plugin,
 }
 
 #[uniffi::remote(Record)]
@@ -291,6 +283,42 @@ impl From<scry_core::ExtensionInfo> for ExtensionInfo {
                 .collect(),
             status: value.status,
             error: value.error,
+            config: value.config,
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ToolSpec {
+    pub tool: String,
+    pub description: String,
+}
+
+impl From<scry_core::ToolSpec> for ToolSpec {
+    fn from(value: scry_core::ToolSpec) -> Self {
+        Self {
+            tool: value.tool,
+            description: value.schema.description,
+        }
+    }
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct McpPluginInfo {
+    pub description: String,
+    pub status: HealthStatus,
+    pub error: Option<String>,
+    pub tools: Vec<ToolSpec>,
+    pub config: Plugin,
+}
+
+impl From<scry_core::McpPluginInfo> for McpPluginInfo {
+    fn from(value: scry_core::McpPluginInfo) -> Self {
+        Self {
+            description: value.description,
+            status: value.status,
+            error: value.error,
+            tools: value.tools.into_iter().map(ToolSpec::from).collect(),
             config: value.config,
         }
     }
