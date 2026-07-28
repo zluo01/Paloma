@@ -8,22 +8,29 @@ import SwiftUI
 
 struct McpRowView: View {
     let server: McpPluginInfo
+    let onOpen: () -> Void
     let onEdit: () -> Void
     let onToggle: (_ disabled: Bool) -> Void
     let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(server.config.name)
-                if !server.description.isEmpty {
-                    Text(server.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+            Button(action: onOpen) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(server.config.name)
+                        if !server.description.isEmpty {
+                            Text(server.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
                 }
+                .contentShape(.rect)
             }
-            Spacer()
+            .buttonStyle(.plain)
 
             statusIcon
 
@@ -40,6 +47,13 @@ struct McpRowView: View {
                 .buttonStyle(.ghostIcon)
                 .help("Remove")
             }
+
+            Button(action: onOpen) {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+            }
+            .buttonStyle(.ghostIcon)
+            .help("Show Tools")
         }
         .padding(.vertical, 2)
     }

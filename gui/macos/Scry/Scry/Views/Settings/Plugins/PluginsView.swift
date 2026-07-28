@@ -8,7 +8,7 @@ import SwiftUI
 struct PluginsView: View {
     let model: PluginModel
     @State private var dialog: PluginDialogState?
-    @State private var path: [ExtensionInfo] = []
+    @State private var path = NavigationPath()
     @State private var operationError: OperationError?
 
     var body: some View {
@@ -73,6 +73,8 @@ struct PluginsView: View {
                     }
                     ForEach(model.mcps, id: \.config.name) { server in
                         McpRowView(server: server) {
+                            path.append(server)
+                        } onEdit: {
                             dialog = PluginDialogState(.mcp, editing: server.config)
                         } onToggle: { disabled in
                             OperationError.run(
@@ -104,6 +106,11 @@ struct PluginsView: View {
             .formStyle(.grouped)
             .navigationDestination(for: ExtensionInfo.self) { extensionInfo in
                 ExtensionCapabilitiesView(extensionInfo: extensionInfo) {
+                    path.removeLast()
+                }
+            }
+            .navigationDestination(for: McpPluginInfo.self) { server in
+                McpToolsView(server: server) {
                     path.removeLast()
                 }
             }
