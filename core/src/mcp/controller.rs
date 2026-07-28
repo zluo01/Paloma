@@ -59,27 +59,30 @@ impl McpController {
 
     pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>> {
         let plugins = self.storage.plugins_by_type(PluginType::Mcp).await?;
-        Ok(plugins
-            .into_iter()
-            .map(|config| {
-                // no handler yet: the background connect from `new` has not
-                // settled, so the server is still starting
-                let Some(handler) = self.handlers.get(&config.name) else {
-                    return McpPluginInfo {
-                        description: String::new(),
-                        status: HealthStatus::Starting,
-                        error: None,
-                        config,
-                    };
-                };
-                McpPluginInfo {
-                    description: handler.description.clone(),
-                    status: handler.connection.health_status(),
-                    error: handler.connection.error().map(str::to_string),
+        let mut infos = Vec::with_capacity(plugins.len());
+        for config in plugins {
+            // following will temporarily hold the handlers map shard lock until the end of the scope
+            // should be fine as handlers is read more write less
+            let Some(handler) = self.handlers.get(&config.name) else {
+                infos.push(McpPluginInfo {
+                    description: String::new(),
+                    status: HealthStatus::Starting,
+                    error: None,
+                    tools: vec![],
                     config,
-                }
-            })
-            .collect())
+                });
+                continue;
+            };
+
+            infos.push(McpPluginInfo {
+                description: handler.description.clone(),
+                status: handler.connection.health_status(),
+                error: handler.connection.error().map(str::to_string),
+                tools: self.specs_cache.peek(&config.name).await,
+                config,
+            });
+        }
+        Ok(infos)
     }
 
     pub async fn init_connection(&self, config: Plugin) -> Result<Option<OAuthCallbackState>> {

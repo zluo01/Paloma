@@ -34,7 +34,8 @@ pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use db::Permission;
 pub use entity::{
     ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs,
-    PluginType, ProviderBackendId, QueryResponse, RenderEvent, SearchRenderEvent, Transport,
+    PluginType, ProviderBackendId, QueryResponse, RenderEvent, SearchRenderEvent, ToolSchema,
+    ToolSpec, Transport,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;

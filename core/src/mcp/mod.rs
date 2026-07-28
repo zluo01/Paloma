@@ -44,6 +44,7 @@ pub struct McpPluginInfo {
     pub description: String,
     pub status: HealthStatus,
     pub error: Option<String>,
+    pub tools: Vec<ToolSpec>,
     pub config: Plugin,
 }
 

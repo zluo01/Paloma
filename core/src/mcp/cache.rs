@@ -45,6 +45,18 @@ impl McpToolSpecCache {
         slot.peek().await?.get(name).cloned()
     }
 
+    pub async fn peek(&self, id: &str) -> Vec<ToolSpec> {
+        let Some(slot) = self.specs.get(id).map(|slot| slot.clone()) else {
+            return Vec::new();
+        };
+        let Some(specs) = slot.peek().await else {
+            return Vec::new();
+        };
+        let mut specs: Vec<ToolSpec> = specs.into_values().collect();
+        specs.sort_by(|a, b| a.tool.cmp(&b.tool));
+        specs
+    }
+
     pub fn remove(&self, id: &str) {
         self.specs.remove(id);
     }
@@ -84,6 +96,41 @@ mod tests {
 
         assert!(served.contains_key("old"));
         assert!(!served.contains_key("should-not-fetch"));
+    }
+
+    #[tokio::test]
+    async fn peek_serves_cached_specs_sorted_by_tool() {
+        let cache = McpToolSpecCache::new();
+        let mut cached = specs("zebra");
+        cached.extend(specs("alpha"));
+        cache.insert("server".into(), cached).await;
+
+        let tools: Vec<String> = cache
+            .peek("server")
+            .await
+            .into_iter()
+            .map(|spec| spec.tool)
+            .collect();
+        assert_eq!(tools, ["alpha", "zebra"]);
+    }
+
+    #[tokio::test]
+    async fn peek_is_empty_for_an_unconnected_server() {
+        let cache = McpToolSpecCache::new();
+        assert!(cache.peek("server").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn peek_still_reports_expired_specs() {
+        let cache = McpToolSpecCache::new();
+        let slot = cache.specs.entry("server".into()).or_default().clone();
+        slot.insert(specs("old"), 0).await;
+
+        // Listing reports what is known rather than an empty server while a
+        // refresh is due.
+        let tools = cache.peek("server").await;
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].tool, "old");
     }
 
     #[tokio::test]
