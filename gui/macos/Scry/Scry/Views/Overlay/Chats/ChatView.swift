@@ -7,8 +7,6 @@ import SwiftUI
 
 struct ChatView: View {
     @Bindable var model: ChatModel
-    /// Pinned to the tail until the user scrolls away.
-    @State private var stuckToBottom = true
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -24,25 +22,8 @@ struct ChatView: View {
             }
             // Opens restored transcripts at the tail without a follow event.
             .defaultScrollAnchor(.bottom)
-            .onScrollPhaseChange { _, newPhase, context in
-                // A user scroll suspends the follow; where it settles decides.
-                guard newPhase != .animating else { return }
-                if newPhase == .idle {
-                    let geometry = context.geometry
-                    let pinned = geometry.contentOffset.y + geometry.containerSize.height
-                        >= geometry.contentSize.height - 24
-                    if stuckToBottom != pinned {
-                        stuckToBottom = pinned
-                    }
-                } else if stuckToBottom {
-                    stuckToBottom = false
-                }
-            }
-            .onChange(of: model.chatRevision) {
-                if stuckToBottom {
-                    proxy.scrollTo("chat-bottom")
-                }
-            }
+            // Follows the tail as the turn streams, unless the user scrolled away.
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .onChange(of: model.decisionCursor) {
                 // The cursor returning to the input field returns to the tail.
                 if let decision = model.selectedDecision {

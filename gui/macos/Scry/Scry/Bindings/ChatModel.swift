@@ -12,8 +12,6 @@ import Observation
 final class ChatModel {
     private(set) var transcript: [ChatSection] = []
     private(set) var chatStatus: ChatStatus = .idle
-    /// Bumped on every rendered chat event so the view can follow the tail.
-    private(set) var chatRevision = 0
     /// Keyboard cursor over the pending decision buttons; -1 = input field.
     private(set) var decisionCursor = -1
     /// Tool ids with a decision round-trip in flight.
@@ -149,7 +147,6 @@ final class ChatModel {
         tool.resolution = state
         transcript[index] = .tool(tool)
         decisionCursor = -1
-        chatRevision += 1
     }
 
     // MARK: Decision keyboard navigation
@@ -203,7 +200,6 @@ final class ChatModel {
         case .search:
             break
         }
-        chatRevision += 1
     }
 
     /// Deltas accumulate into the trailing section of the same kind.
