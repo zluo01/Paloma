@@ -95,7 +95,11 @@ impl ProviderPlugin {
         let routes = Arc::clone(&pending);
         let health = Arc::clone(&health_status);
         let read_error = Arc::clone(&error);
-        let name = plugin.name.clone();
+        // this is required due to for oauth third party connection,
+        // we do not know the provider id yet on init connection
+        // so any oauth update will get empty name. Hence, we override the name on handshake
+        // this is not a problem for any ongoing reinit
+        let mut provider_id = plugin.name.clone();
         tokio::spawn(async move {
             let mut input = FramedRead::new(stdout, VarintDelimitedCodec);
             while let Some(Ok(frame)) = input.next().await {
@@ -114,7 +118,10 @@ impl ProviderPlugin {
                     routes.remove(&response.event_id);
                     continue;
                 };
-                handle_response(&name, &routes, &storage, response.event_id, payload).await;
+                if let Payload::HandshakeResponse(handshake) = &payload {
+                    provider_id = handshake.provider_id.clone();
+                }
+                handle_response(&provider_id, &routes, &storage, response.event_id, payload).await;
             }
             // EOF: child died.
             let _ = read_error.set("plugin process exited".to_string());
@@ -130,7 +137,7 @@ impl ProviderPlugin {
             for tx in streams {
                 let _ = tx
                     .send(chat_response::Payload::Error(format!(
-                        "provider [{name}] process exited"
+                        "provider [{provider_id}] process exited"
                     )))
                     .await;
             }
@@ -448,7 +455,7 @@ impl ProviderPlugin {
 }
 
 async fn handle_response(
-    name: &str,
+    provider_id: &str,
     routes: &DashMap<u64, Pending>,
     storage: &Storage,
     event_id: u64,
@@ -502,7 +509,7 @@ async fn handle_response(
         },
         Payload::AuthUpdateRequest(update) => {
             let id = ProviderBackendId {
-                provider_id: name.to_string(),
+                provider_id: provider_id.to_string(),
                 backend_id: update.backend_id,
             };
             if let Err(e) = storage
