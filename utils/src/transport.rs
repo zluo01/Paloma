@@ -19,6 +19,9 @@ pub struct VarintDelimitedCodec;
 /// Max possible length for VARINT LENGTH
 const MAX_VARINT_LENGTH: usize = 10;
 
+/// Ceiling on the buffer can pre-allocate for a message
+const MAX_RESERVE_CHUNK: usize = 8 * 1024 * 1024;
+
 fn invalid_data(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
 }
@@ -57,7 +60,7 @@ impl Decoder for VarintDelimitedCodec {
         // the frame buffer does not contain the total message payload yet
         // proactively ask frame buffer to relocate to fit the rest of the message size if needed
         if src.len() < total_message_size {
-            src.reserve(total_message_size - src.len());
+            src.reserve((total_message_size - src.len()).min(MAX_RESERVE_CHUNK));
             return Ok(None);
         }
 
@@ -174,6 +177,34 @@ mod tests {
     fn oversize_length_is_rejected_before_buffering() {
         let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01];
         assert!(VarintDelimitedCodec.decode(&mut buf(&bytes)).is_err());
+    }
+
+    #[test]
+    fn forged_huge_length_reserves_bounded_memory() {
+        let mut src = BytesMut::new();
+        encode_varint(1 << 30, &mut src);
+
+        assert_eq!(VarintDelimitedCodec.decode(&mut src).unwrap(), None);
+        assert!(
+            src.capacity() <= 2 * MAX_RESERVE_CHUNK,
+            "capacity: {}",
+            src.capacity()
+        );
+    }
+
+    #[test]
+    fn frame_larger_than_reserve_chunk_still_decodes() {
+        let payload = vec![0xCD; MAX_RESERVE_CHUNK + 1024];
+        let wire = encode(&payload);
+
+        let mut codec = VarintDelimitedCodec;
+        let mut src = buf(&wire[..MAX_VARINT_LENGTH]);
+        assert_eq!(codec.decode(&mut src).unwrap(), None);
+        src.extend_from_slice(&wire[MAX_VARINT_LENGTH..]);
+        let frame = codec.decode(&mut src).unwrap().expect("complete frame");
+
+        assert_eq!(frame.len(), payload.len());
+        assert_eq!(&frame[..], &payload[..]);
     }
 
     #[test]
