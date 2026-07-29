@@ -5,6 +5,9 @@ use std::{collections::HashSet, path::Path, sync::LazyLock};
 
 use crate::permission::{ArgvDecision, PermissionError, Result, constants::SHELLS};
 
+// TODO: auto-approved commands run with full user privileges and no prompt,
+//  so `cat ~/.ssh/id_rsa` streams secrets into the LLM request without consent.
+//  This list is only safe once the shell plugin gets filesystem isolation.
 static ALWAYS_ALLOWED: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         "cat", "cd", "cut", "echo", "expr", "false", "grep", "head", "id", "ls", "nl", "paste",
