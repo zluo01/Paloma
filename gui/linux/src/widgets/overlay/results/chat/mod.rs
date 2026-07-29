@@ -4,7 +4,10 @@ use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, TextView, Widget, p
 use log::error;
 use scry_core::{AppContext, PermissionState, ProviderBackendId, UserDecision};
 
-use crate::{helper::Clear, runtime};
+use crate::{
+    helper::{Clear, scroll_into_view},
+    runtime,
+};
 
 mod helper;
 mod markdown;
@@ -355,6 +358,7 @@ impl PendingDecisionsState {
         }
         if let Some((group, button)) = target.and_then(|index| self.locate(index)) {
             self.groups[group].buttons[button].add_css_class(SELECTED_CLASS);
+            scroll_into_view(&self.groups[group].buttons[button]);
         }
         self.current = target;
     }
