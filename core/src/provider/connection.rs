@@ -119,6 +119,21 @@ impl ProviderPlugin {
             // EOF: child died.
             let _ = read_error.set("plugin process exited".to_string());
             health.store(HealthStatus::Unhealthy as u8, Ordering::SeqCst);
+            // fire and forget, populate the error to ongoing streams
+            let streams: Vec<_> = routes
+                .iter()
+                .filter_map(|entry| match entry.value() {
+                    Pending::Stream(tx) => Some(tx.clone()),
+                    Pending::Unary(_) => None,
+                })
+                .collect();
+            for tx in streams {
+                let _ = tx
+                    .send(chat_response::Payload::Error(format!(
+                        "provider [{name}] process exited"
+                    )))
+                    .await;
+            }
             routes.clear();
         });
 
