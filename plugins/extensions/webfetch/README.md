@@ -1,0 +1,151 @@
+# Web Fetch
+
+A [Scry](../../..) extension that fetches a URL and returns its content to
+the model as markdown, plain text, or raw HTML. Advertises itself to the
+host as `WebFetch`; lives in `plugins/extensions/webfetch`.
+
+Written in Go and deliberately outside the Cargo workspace: it doubles as an
+integration exercise for third-party extensions, proving the stdio protocol
+holds up for plugins the host did not compile. Ships as a single static
+binary — installing it is copying one file and pointing the host's plugin
+config at it.
+
+## Installation
+
+```sh
+make release
+```
+
+Copy the resulting `webfetch` binary somewhere stable and register it in
+the host under **Settings → Plugins → Add Extension Plugin…**, with
+**Command** set to the binary's absolute path.
+
+## The tool
+
+The extension advertises one capability, `WebFetch`, with one tool:
+
+| argument | default | meaning |
+|---|---|---|
+| `url` | required | absolute http(s) URL |
+| `format` | `markdown` | `markdown` converts HTML (keeping GFM tables and strikethrough); `text` extracts plain text; `html` returns the source |
+| `timeout_seconds` | 30 | clamped to [1, 120]; the host allows 600s per invoke |
+
+Responses carry the rendered body plus attributes: final `url` after
+redirects, HTTP `status`, effective `content_type`, the `format` actually
+rendered (a degraded conversion or passthrough body reports what the model
+really received), and `fetch_id`. Bodies cut short — by the size cap or a
+failed connection — add `fetch_truncated="true"` and `fetched_bytes`
+(prefixed so the host's own spill attributes can never collide with them).
+
+Failures the model can act on come back as errors that say what happened: a
+binary body names its media type and size, a blocked address says the target
+was private, a timeout names the deadline that expired.
+
+## Content pipeline
+
+`internal/content` turns a fetched body into text in four steps:
+
+1. **Resolve the media type.** The `Content-Type` header wins when it commits
+   to a type; a missing, malformed, or `application/octet-stream` header
+   falls back to sniffing the body — rescuing the many servers that serve
+   text files as octet-stream.
+2. **Refuse binary.** Images, archives, PDFs, and anything else without a
+   textual rendering produce an error instead of megabytes of mojibake.
+3. **Decode to UTF-8.** Charsets declared by header parameter, BOM, or HTML
+   `<meta>` tag are honored; undeclared but valid UTF-8 is kept as-is
+   (the WHATWG windows-1252 default would mangle most of the modern web);
+   only genuinely undeclared legacy bytes take the windows-1252 guess.
+   Invalid sequences become U+FFFD, never silently dropped.
+4. **Render.** Markdown and plain text both come from
+   `JohannesKaufmann/html-to-markdown`: markdown uses its full plugin set
+   (tables render as GFM, strikethrough survives), and plain text is the
+   same converter without its markdown-syntax layer — so both formats share
+   one tag taxonomy and cannot drift on what counts as content. Non-HTML
+   textual bodies (JSON, XML, scripts, CSV) pass through unchanged.
+
+`internal/content` holds only *policy* — what to trust, refuse, and keep.
+Parsing, tag knowledge, and charset mechanics live in the libraries.
+
+## Safety
+
+Enforced in `internal/fetch`, all limits fixed at compile time:
+
+- **Scheme**: http(s) only, checked on the initial URL and on every redirect
+  (at most 5 hops).
+- **Address screen**: dials are screened in the dialer's `Control` hook —
+  after DNS resolution, per attempted address — so hostnames, redirects,
+  every A/AAAA record, and DNS rebinding all pass through one chokepoint.
+  Blocked: loopback, RFC 1918, link-local (cloud metadata), CGNAT,
+  benchmarking, documentation, multicast, reserved, broadcast, unspecified,
+  IPv6 ULA/site-local — and NAT64 addresses are judged by the IPv4 they
+  embed, so NAT64-only networks work while `64:ff9b::7f00:1` cannot smuggle
+  in loopback.
+- **Size**: body reads cap at 5 MiB (post-decompression, so gzip bombs
+  cannot expand past it). Oversized or interrupted bodies return what
+  arrived, flagged truncated, rather than discarding it.
+- **Time**: overall deadline from `timeout_seconds`; separate 10s dial and
+  10s TLS timeouts fail unreachable hosts early.
+- **No proxy**: `HTTP(S)_PROXY` is deliberately ignored — a proxy would
+  route requests around the dial-time address screen.
+
+Two guarantees protect the protocol stream itself:
+
+- stdout belongs to the protocol: `main` hands the real stdout to the frame
+  writer and repoints `os.Stdout` at stderr, so a stray print from any
+  dependency lands in the log instead of corrupting a frame.
+- Everything written into protobuf string fields — rendered text and error
+  messages alike — is guaranteed valid UTF-8, because the encoder rejects
+  anything else and a rejected message would cost the host its response.
+
+## Protocol
+
+The host spawns the binary and speaks varint-delimited protobuf frames over
+stdio: `RequestEvent` in on stdin, `ResponseEvent` out on stdout, protocol
+version 1. Schema lives in [`schema/extension`](../../../schema/extension),
+generated code in `internal/pb`. Inbound frames are capped at 4 MiB.
+
+The service answers handshakes, runs each `InvokeToolRequest` on its own
+goroutine (so the read loop keeps consuming and a cancel can still arrive),
+and translates the protocol's session-scoped `CancelToolRequest` into
+per-invocation context cancellation. On stdin EOF it drains in-flight work
+before exiting; a host killed mid-frame reads as a shutdown, not an error.
+
+## Architecture
+
+```
+main.go        wiring: stdio, logging, the stdout swap
+service.go     protocol loop: dispatch, session cancel registry, drain
+webfetch.go    the tool: argument schema, orchestration, response shape
+internal/
+  transport/   varint framing over stdio (locked writer, bounded reader)
+  fetch/       HTTP client: address screen, limits, partial-read recovery
+  content/     media type, charset, markdown/text rendering
+  pb/          generated protocol code (committed)
+```
+
+Layering rule: `service` knows the protocol but nothing about HTTP;
+`fetch` and `content` each own one domain and know nothing of the protocol;
+`webfetch.go` composes them and owns everything the model experiences —
+schema wording, error messages, response attributes. Tests exploit the seams:
+the tool is tested against a stubbed fetcher, the fetch client against local
+servers with a permissive screen, the service against an in-memory pipe.
+
+## Development
+
+```sh
+make build     # dev build
+make release   # static, stripped, path-free — the binary to ship
+make test      # go test -race ./...
+make lint      # gofmt + go vet
+make proto     # regenerate internal/pb after a schema change
+```
+
+Go compiles fully optimized either way; `release` differs only in packaging
+(no cgo, no debug info, no embedded local paths), yielding a single static
+binary that runs on any Linux.
+
+Generated protobuf code is committed, so `go build` needs no codegen
+toolchain — the Go convention, since Go has no build-time codegen hook.
+`make proto` installs `buf` and `protoc-gen-go` into `.tools/` (gitignored,
+disposable) and regenerates; the generator version resolves from go.mod,
+keeping generated code and the protobuf runtime in lockstep.
