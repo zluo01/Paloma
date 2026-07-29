@@ -72,7 +72,7 @@ impl ProcessController {
         let sessions = self.sessions.clone();
         let session_id = request.session_id;
         let task = tokio::spawn(async move {
-            let result = run_to_completion(child, request).await;
+            let result = run_to_completion(child, request, pgid).await;
             if let Some(pgid) = pgid {
                 remove_pid(&sessions, session_id, pgid);
             }
@@ -129,7 +129,11 @@ fn kill_process_group(pgid: i32) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
 }
 
-async fn run_to_completion(mut child: Child, request: ProcessExecRequest) -> Result<ToolContent> {
+async fn run_to_completion(
+    mut child: Child,
+    request: ProcessExecRequest,
+    pgid: Option<i32>,
+) -> Result<ToolContent> {
     let started_at = std::time::Instant::now();
     let stdout_task = child.stdout.take().map(|s| tokio::spawn(exhaust(s)));
     let stderr_task = child.stderr.take().map(|s| tokio::spawn(exhaust(s)));
@@ -158,10 +162,8 @@ async fn run_to_completion(mut child: Child, request: ProcessExecRequest) -> Res
         },
     };
 
-    // Drain reader tasks with a bounded timeout. If a grandchild kept the
-    // pipe open past the kill, give up rather than hang forever.
-    let stdout = drain_task(stdout_task).await;
-    let stderr = drain_task(stderr_task).await;
+    let stdout = drain_task(stdout_task, pgid).await;
+    let stderr = drain_task(stderr_task, pgid).await;
 
     let duration = started_at.elapsed();
     Ok(ToolContent::new("shell_output")
@@ -182,8 +184,20 @@ fn stream_content(name: &str, text: Option<String>) -> ToolContent {
     }
 }
 
-async fn drain_task(task: Option<tokio::task::JoinHandle<String>>) -> Option<String> {
-    timeout(IO_DRAIN_TIMEOUT, task?).await.ok()?.ok()
+async fn drain_task(
+    task: Option<tokio::task::JoinHandle<String>>,
+    pgid: Option<i32>,
+) -> Option<String> {
+    let mut task = task?;
+    match timeout(IO_DRAIN_TIMEOUT, &mut task).await {
+        Ok(joined) => joined.ok(),
+        Err(_) => {
+            if let Some(pgid) = pgid {
+                kill_process_group(pgid);
+            }
+            timeout(IO_DRAIN_TIMEOUT, task).await.ok()?.ok()
+        },
+    }
 }
 
 async fn exhaust<R>(mut reader: R) -> String
@@ -325,6 +339,25 @@ mod tests {
         let content = result.unwrap();
         // Killed by SIGKILL -> no exit code, surfaced as terminated_by_signal.
         assert_eq!(attr(&content, "exit_code"), Some("terminated_by_signal"));
+    }
+
+    #[tokio::test]
+    async fn background_grandchild_does_not_discard_buffered_output() {
+        let pm = ProcessController::new();
+        let content = pm
+            .exec(ProcessExecRequest {
+                session_id: Uuid::now_v7(),
+                call_id: "call_bg".into(),
+                // sh exits immediately; the backgrounded sleep inherits the
+                // stdout pipe and holds it past the drain timeout
+                command: vec!["sh".into(), "-c".into(), "echo BUILD_OK; sleep 30 &".into()],
+                cwd: std::env::current_dir().unwrap(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(attr(&content, "exit_code"), Some("0"));
+        assert_eq!(text_body(child(&content, "stdout")), Some("BUILD_OK\n"));
     }
 
     #[tokio::test]
