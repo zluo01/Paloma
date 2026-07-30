@@ -18,4 +18,4 @@ The result is an XML envelope with at most 30 matches, ranked best-first (match 
       <file path="/home/user/docs/report.txt"/>
     </file_search_results>
 
-count="0" means nothing in the index matches the query. To recover: shorten the query, drop a word, or reduce a multi-word query to its single most distinctive word. When you have several different name guesses, issue one file_search call per guess in the same turn — they execute concurrently.
+count="0" means nothing in the index matches the query. To recover: shorten the query, drop a word, or reduce a multi-word query to its single most distinctive word. When you have several different name guesses, issue one call to this tool per guess in the same turn — they execute concurrently.
