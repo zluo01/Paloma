@@ -236,7 +236,12 @@ impl ExtensionController {
                     description: handler.description.clone(),
                     author: handler.author.clone(),
                     homepage: handler.homepage.clone(),
-                    capabilities: capability_infos(&name, &handler.capabilities, &disabled),
+                    capabilities: capability_infos(
+                        &name,
+                        &handler.capabilities,
+                        &handler.specs,
+                        &disabled,
+                    ),
                     status: handler.connection.health(),
                     error: handler.connection.plugin_error(),
                     config,
@@ -394,18 +399,23 @@ impl ExtensionController {
 fn capability_infos(
     extension_id: &str,
     capabilities: &[Capability],
+    specs: &HashMap<String, ToolSpec>,
     disabled: &HashSet<(String, String, CapabilityFacet)>,
 ) -> Vec<CapabilityInfo> {
     let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled
         .iter()
         .map(|(plugin, capability, facet)| (plugin.as_str(), capability.as_str(), *facet))
         .collect();
+    let routable: HashSet<&str> = specs.values().map(|spec| spec.tool.as_str()).collect();
     capabilities
         .iter()
         .map(|capability| {
             let facets = [
                 (CapabilityFacet::Search, capability.search.is_some()),
-                (CapabilityFacet::Tool, capability.tool.is_some()),
+                (
+                    CapabilityFacet::Tool,
+                    routable.contains(capability.capability_id.as_str()),
+                ),
             ]
             .into_iter()
             .filter(|&(_, present)| present)
