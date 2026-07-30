@@ -50,6 +50,13 @@ pub enum CapabilityFacet {
     Mcp,
 }
 
+#[derive(Clone, Debug)]
+pub struct CapabilityInfo {
+    pub id: String,
+    pub description: String,
+    pub facets: Vec<(CapabilityFacet, bool)>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginArgs {
     Local { command: String, args: Vec<String> },

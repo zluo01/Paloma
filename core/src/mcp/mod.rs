@@ -32,7 +32,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
-    entity::{HealthStatus, Plugin, PluginArgs, ToolResult, ToolSchema, ToolSpec},
+    entity::{CapabilityInfo, HealthStatus, Plugin, PluginArgs, ToolResult, ToolSchema, ToolSpec},
     mcp::credentials::CredentialStorage,
     utils::{mcp_function_name_encode, shell_path, write_spill_file},
 };
@@ -44,7 +44,7 @@ pub struct McpPluginInfo {
     pub description: String,
     pub status: HealthStatus,
     pub error: Option<String>,
-    pub tools: Vec<ToolSpec>,
+    pub tools: Vec<CapabilityInfo>,
     pub config: Plugin,
 }
 

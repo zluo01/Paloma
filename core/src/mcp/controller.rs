@@ -10,7 +10,7 @@ use super::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache};
 use crate::{
     CapabilityFacet, HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
     db::{Storage, StorageError},
-    entity::{ToolResult, ToolSchema, ToolSpec},
+    entity::{CapabilityInfo, ToolResult, ToolSchema, ToolSpec},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
 };
 
@@ -59,6 +59,10 @@ impl McpController {
 
     pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>> {
         let plugins = self.storage.plugins_by_type(PluginType::Mcp).await?;
+        let disabled = self
+            .storage
+            .disabled_capabilities(&[CapabilityFacet::Mcp])
+            .await?;
         let mut infos = Vec::with_capacity(plugins.len());
         for config in plugins {
             // following will temporarily hold the handlers map shard lock until the end of the scope
@@ -78,7 +82,11 @@ impl McpController {
                 description: handler.description.clone(),
                 status: handler.connection.health_status(),
                 error: handler.connection.error().map(str::to_string),
-                tools: self.specs_cache.peek(&config.name).await,
+                tools: tool_infos(
+                    &config.name,
+                    self.specs_cache.peek(&config.name).await,
+                    &disabled,
+                ),
                 config,
             });
         }
@@ -263,6 +271,25 @@ impl McpController {
             token.cancel();
         }
     }
+}
+
+fn tool_infos(
+    server: &str,
+    specs: Vec<ToolSpec>,
+    disabled: &HashSet<(String, String, CapabilityFacet)>,
+) -> Vec<CapabilityInfo> {
+    specs
+        .into_iter()
+        .map(|spec| {
+            let flag =
+                disabled.contains(&(server.to_string(), spec.tool.clone(), CapabilityFacet::Mcp));
+            CapabilityInfo {
+                id: spec.tool,
+                description: spec.schema.description,
+                facets: vec![(CapabilityFacet::Mcp, flag)],
+            }
+        })
+        .collect()
 }
 
 struct McpHandler {

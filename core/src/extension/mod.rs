@@ -5,9 +5,11 @@ use std::{process::exit, sync::LazyLock};
 
 pub use connection::{ExtensionConnectionError, ExtensionPlugin};
 pub use controller::{ExtensionController, ExtensionControllerError};
-use scry_extension_protocol::v1::Capability;
 
-use crate::{HealthStatus, entity::Plugin};
+use crate::{
+    HealthStatus,
+    entity::{CapabilityInfo, Plugin},
+};
 
 const PLUGIN_INTERNAL: &str = "Internal";
 pub(crate) const PLUGIN_SHELL: &str = scry_extension_shell::EXTENSION_ID;
@@ -28,7 +30,7 @@ pub struct ExtensionInfo {
     pub description: String,
     pub author: Option<String>,
     pub homepage: Option<String>,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<CapabilityInfo>,
     pub status: HealthStatus,
     pub error: Option<String>,
     /// `None` for built-in providers, which have no user-editable config.

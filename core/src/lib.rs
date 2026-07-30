@@ -33,16 +33,16 @@ fn process_entry() {
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use db::Permission;
 pub use entity::{
-    CapabilityFacet, ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon,
-    Plugin, PluginArgs, PluginType, ProviderBackendId, QueryResponse, RenderEvent,
-    SearchRenderEvent, ToolSchema, ToolSpec, Transport,
+    CapabilityFacet, CapabilityInfo, ChatRenderEvent, ExtensionCapabilityId, HealthLevel,
+    HealthStatus, Icon, Plugin, PluginArgs, PluginType, ProviderBackendId, QueryResponse,
+    RenderEvent, SearchRenderEvent, ToolSchema, ToolSpec, Transport,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;
 pub use permission::{PermissionState, UserDecision};
 pub use provider::{Connector, ConnectorConnection, ProviderInfo, ProviderStatus};
 pub use scry_extension_protocol::v1::{
-    Action, Capability, CapabilityIcon, Item, capability_icon, run_action_response::Behavior,
+    Action, CapabilityIcon, Item, capability_icon, run_action_response::Behavior,
 };
 pub use scry_provider_protocol::v1::{
     BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, Model, ProviderAuthMethod,

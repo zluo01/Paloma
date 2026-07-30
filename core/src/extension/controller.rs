@@ -18,7 +18,7 @@ use crate::{
     CapabilityFacet, HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse,
     RENDER_CHANNEL_CAPACITY, RenderEvent, SearchRenderEvent, Transport,
     db::{Storage, StorageError},
-    entity::{ExtensionCapabilityId, ToolResult, ToolSchema, ToolSpec},
+    entity::{CapabilityInfo, ExtensionCapabilityId, ToolResult, ToolSchema, ToolSpec},
     utils::ext_tool_name_encode,
 };
 
@@ -95,7 +95,8 @@ impl ExtensionController {
 
         let fetched = tokio::try_join!(
             self.storage.disabled_plugins(),
-            self.storage.disabled_capabilities(&[CapabilityFacet::Search]),
+            self.storage
+                .disabled_capabilities(&[CapabilityFacet::Search]),
         );
         let (disabled_plugins, disabled_capabilities) = match fetched {
             Ok(sets) => sets,
@@ -214,6 +215,10 @@ impl ExtensionController {
 
     pub async fn available_extensions(&self) -> Result<Vec<ExtensionInfo>> {
         let plugins = self.storage.plugins_by_type(PluginType::Extension).await?;
+        let disabled = self
+            .storage
+            .disabled_capabilities(&[CapabilityFacet::Search, CapabilityFacet::Tool])
+            .await?;
         Ok(BUILTIN_EXTENSIONS
             .iter()
             .map(|builtin| (builtin.name.clone(), None))
@@ -228,14 +233,14 @@ impl ExtensionController {
                     return None;
                 };
                 Some(ExtensionInfo {
-                    name,
                     description: handler.description.clone(),
                     author: handler.author.clone(),
                     homepage: handler.homepage.clone(),
-                    capabilities: handler.capabilities.clone(),
+                    capabilities: capability_infos(&name, &handler.capabilities, &disabled),
                     status: handler.connection.health(),
                     error: handler.connection.plugin_error(),
                     config,
+                    name,
                 })
             })
             .collect())
@@ -384,6 +389,39 @@ impl ExtensionController {
             .iter()
             .find_map(|entry| entry.specs.get(name).cloned())
     }
+}
+
+fn capability_infos(
+    extension_id: &str,
+    capabilities: &[Capability],
+    disabled: &HashSet<(String, String, CapabilityFacet)>,
+) -> Vec<CapabilityInfo> {
+    let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled
+        .iter()
+        .map(|(plugin, capability, facet)| (plugin.as_str(), capability.as_str(), *facet))
+        .collect();
+    capabilities
+        .iter()
+        .map(|capability| {
+            let facets = [
+                (CapabilityFacet::Search, capability.search.is_some()),
+                (CapabilityFacet::Tool, capability.tool.is_some()),
+            ]
+            .into_iter()
+            .filter(|&(_, present)| present)
+            .map(|(facet, _)| {
+                let flag =
+                    disabled.contains(&(extension_id, capability.capability_id.as_str(), facet));
+                (facet, flag)
+            })
+            .collect();
+            CapabilityInfo {
+                id: capability.capability_id.clone(),
+                description: capability.description.clone(),
+                facets,
+            }
+        })
+        .collect()
 }
 
 fn capability_specs(extension_id: &str, capabilities: &[Capability]) -> HashMap<String, ToolSpec> {
