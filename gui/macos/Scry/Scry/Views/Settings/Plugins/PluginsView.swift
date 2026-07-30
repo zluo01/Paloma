@@ -11,6 +11,30 @@ struct PluginsView: View {
     @State private var path = NavigationPath()
     @State private var operationError: OperationError?
 
+    private func runToggle(
+        _ noun: String,
+        disabled: Bool,
+        _ operation: @escaping () async -> Result<Void, Error>
+    ) {
+        OperationError.run(
+            disabled ? "Failed to Disable \(noun)" : "Failed to Enable \(noun)",
+            into: $operationError,
+            operation
+        )
+    }
+
+    /// Nothing should be able to open a page for a plugin that is gone, so this
+    /// reports rather than showing a stale one. If this shows, it indicates a bug.
+    private func vanished(_ kind: String, _ name: String) -> some View {
+        Color.clear.onAppear {
+            operationError = OperationError(
+                title: "\(kind) Unavailable",
+                message: "\(name) is no longer installed."
+            )
+            path.removeLast()
+        }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             Form {
@@ -21,6 +45,10 @@ struct PluginsView: View {
                         } onEdit: {
                             if let config = extensionInfo.config {
                                 dialog = PluginDialogState(.extension, editing: config)
+                            }
+                        } onToggle: { disabled in
+                            runToggle("Extension", disabled: disabled) {
+                                await model.togglePlugin(extensionInfo.name, disabled: disabled)
                             }
                         } onDelete: {
                             OperationError.run("Failed to Remove Extension", into: $operationError) {
@@ -77,10 +105,7 @@ struct PluginsView: View {
                         } onEdit: {
                             dialog = PluginDialogState(.mcp, editing: server.config)
                         } onToggle: { disabled in
-                            OperationError.run(
-                                disabled ? "Failed to Disable MCP Server" : "Failed to Enable MCP Server",
-                                into: $operationError
-                            ) {
+                            runToggle("MCP Server", disabled: disabled) {
                                 await model.togglePlugin(server.config.name, disabled: disabled)
                             }
                         } onDelete: {
@@ -104,20 +129,44 @@ struct PluginsView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationDestination(for: ExtensionInfo.self) { extensionInfo in
-                ExtensionCapabilitiesView(extensionInfo: extensionInfo) {
-                    path.removeLast()
+            .navigationDestination(for: ExtensionInfo.self) { ext in
+                // we need to get the object from model such that the switch becomes reactive
+                // this is unlikely to cause error since extension is rendered from model
+                if let extensionInfo = model.extensions.first(where: { $0.name == ext.name }) {
+                    ExtensionCapabilitiesView(extensionInfo: extensionInfo) {
+                        path.removeLast()
+                    } onToggleCapability: { capability, facet, disabled in
+                        runToggle("Capability", disabled: disabled) {
+                            await model.toggleCapability(
+                                .extension, extensionInfo.name, capability, facet: facet,
+                                disabled: disabled
+                            )
+                        }
+                    }
+                } else {
+                    vanished("Extension", ext.name)
                 }
             }
-            .navigationDestination(for: McpPluginInfo.self) { server in
-                McpToolsView(server: server) {
-                    path.removeLast()
+            .navigationDestination(for: McpPluginInfo.self) { mcp in
+                // same as above, if shows error, it means bug.
+                if let server = model.mcps.first(where: { $0.config.name == mcp.config.name }) {
+                    McpToolsView(server: server) {
+                        path.removeLast()
+                    } onToggleTool: { capability, disabled in
+                        runToggle("Tool", disabled: disabled) {
+                            await model.toggleCapability(
+                                .mcp, server.config.name, capability, facet: .mcp, disabled: disabled
+                            )
+                        }
+                    }
+                } else {
+                    vanished("MCP Server", mcp.config.name)
                 }
             }
-            .sheet(item: $dialog) { state in
-                PluginDialog(model: model, onClose: { dialog = nil }, state: state)
-            }
-            .operationErrorAlert($operationError)
         }
+        .sheet(item: $dialog) { state in
+            PluginDialog(model: model, onClose: { dialog = nil }, state: state)
+        }
+        .operationErrorAlert($operationError)
     }
 }

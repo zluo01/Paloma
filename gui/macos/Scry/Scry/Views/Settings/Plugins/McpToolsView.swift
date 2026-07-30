@@ -8,6 +8,7 @@ import SwiftUI
 struct McpToolsView: View {
     let server: McpPluginInfo
     let onBack: () -> Void
+    let onToggleTool: (_ capability: String, _ disabled: Bool) -> Void
 
     var body: some View {
         Form {
@@ -26,7 +27,15 @@ struct McpToolsView: View {
                     Text(server.status == .starting ? "Connecting…" : "No tools.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(server.tools, id: \.id, content: toolRow)
+                ForEach(server.tools, id: \.id) { tool in
+                    CapabilityRowView(
+                        capability: tool,
+                        facet: .mcp,
+                        isPluginDisabled: server.config.disabled
+                    ) { disabled in
+                        onToggleTool(tool.id, disabled)
+                    }
+                }
             } header: {
                 Text("Tools")
             }
@@ -41,18 +50,5 @@ struct McpToolsView: View {
                 .help("Back to Plugins")
             }
         }
-    }
-
-    private func toolRow(_ tool: CapabilityInfo) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(tool.id)
-            if !tool.description.isEmpty {
-                Text(tool.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
     }
 }

@@ -63,7 +63,7 @@ struct McpRowView: View {
         switch server.status {
         case .running:
             Toggle(
-                "",
+                "Toggle MCP Plugin",
                 isOn: .init(
                     get: { !server.config.disabled },
                     set: { enabled in

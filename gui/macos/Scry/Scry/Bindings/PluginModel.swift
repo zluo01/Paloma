@@ -88,7 +88,50 @@ final class PluginModel {
             if let index = mcps.firstIndex(where: { $0.config.name == name }) {
                 mcps[index].config.disabled = disabled
             }
+            if let index = extensions.firstIndex(where: { $0.name == name }) {
+                extensions[index].config?.disabled = disabled
+            }
         }
+    }
+
+    func toggleCapability(
+        _ pluginType: PluginType,
+        _ name: String,
+        _ capability: String,
+        facet: CapabilityFacet,
+        disabled: Bool
+    ) async -> Result<Void, Error> {
+        await CoreClient.shared.withApp { app in
+            try await app.toggleCapability(
+                name: name, capability: capability, facet: facet, disabled: disabled
+            )
+            switch pluginType {
+            case .extension:
+                if let index = extensions.firstIndex(where: { $0.name == name }) {
+                    Self.patch(&extensions[index].capabilities, capability, facet, disabled)
+                }
+            case .mcp:
+                if let index = mcps.firstIndex(where: { $0.config.name == name }) {
+                    Self.patch(&mcps[index].tools, capability, facet, disabled)
+                }
+            case .provider:
+                break
+            }
+        }
+    }
+
+    private static func patch(
+        _ capabilities: inout [CapabilityInfo],
+        _ capability: String,
+        _ facet: CapabilityFacet,
+        _ disabled: Bool
+    ) {
+        guard let index = capabilities.firstIndex(where: { $0.id == capability }),
+              let facetIndex = capabilities[index].facets.firstIndex(where: { $0.facet == facet })
+        else {
+            return
+        }
+        capabilities[index].facets[facetIndex].disabled = disabled
     }
 
     func removePlugin(_ pluginType: PluginType, _ name: String) async -> Result<Void, Error> {

@@ -9,6 +9,7 @@ struct ExtensionRowView: View {
     let extensionInfo: ExtensionInfo
     let onOpen: () -> Void
     let onEdit: () -> Void
+    let onToggle: (_ disabled: Bool) -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -60,7 +61,21 @@ struct ExtensionRowView: View {
     private var statusIcon: some View {
         switch extensionInfo.status {
         case .running:
-            EmptyView()
+            // Built-ins have no config row to disable.
+            if let config = extensionInfo.config {
+                Toggle(
+                    "Toggle Extension Plugin",
+                    isOn: .init(
+                        get: { !config.disabled },
+                        set: { enabled in
+                            onToggle(!enabled)
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+            }
         case .starting:
             ProgressView().controlSize(.mini)
         case .unhealthy:

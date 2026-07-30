@@ -8,6 +8,7 @@ import SwiftUI
 struct ExtensionCapabilitiesView: View {
     let extensionInfo: ExtensionInfo
     let onBack: () -> Void
+    let onToggleCapability: (_ capability: String, _ facet: CapabilityFacet, _ disabled: Bool) -> Void
 
     var body: some View {
         Form {
@@ -35,14 +36,14 @@ struct ExtensionCapabilitiesView: View {
             }
             if !searchCapabilities.isEmpty {
                 Section {
-                    ForEach(searchCapabilities, id: \.id, content: capabilityRow)
+                    ForEach(searchCapabilities, id: \.id) { capabilityRow($0, facet: .search) }
                 } header: {
                     Text("Search")
                 }
             }
             if !toolCapabilities.isEmpty {
                 Section {
-                    ForEach(toolCapabilities, id: \.id, content: capabilityRow)
+                    ForEach(toolCapabilities, id: \.id) { capabilityRow($0, facet: .tool) }
                 } header: {
                     Text("Tools")
                 }
@@ -72,16 +73,14 @@ struct ExtensionCapabilitiesView: View {
         extensionInfo.capabilities.filter { $0.facets.contains { $0.facet == facet } }
     }
 
-    private func capabilityRow(_ capability: CapabilityInfo) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(capability.id)
-            if !capability.description.isEmpty {
-                Text(capability.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    private func capabilityRow(_ capability: CapabilityInfo, facet: CapabilityFacet) -> some View {
+        CapabilityRowView(
+            capability: capability,
+            facet: facet,
+            // Built-ins have no config to disable, so their switches stay live.
+            isPluginDisabled: extensionInfo.config?.disabled ?? false
+        ) { disabled in
+            onToggleCapability(capability.id, facet, disabled)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
     }
 }
