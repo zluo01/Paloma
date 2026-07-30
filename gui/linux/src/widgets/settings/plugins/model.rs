@@ -17,8 +17,6 @@ pub(super) enum Msg {
     ExtensionLoaded(Result<Vec<ExtensionInfo>, AppError>),
     ProviderLoaded(Result<Vec<ProviderInfo>, AppError>),
     McpServersLoaded(Result<Vec<McpPluginInfo>, AppError>),
-    McpToggleChanged(String, bool),
-    McpToggleFinished(Result<(), AppError>),
 }
 
 pub(super) enum GeneralPluginMsg {
@@ -31,6 +29,8 @@ pub(super) enum GeneralPluginMsg {
         config: Plugin,
         editing: bool,
     },
+    ToggleSwitch(PluginType, String, bool),
+    SwitchToggledFinish(PluginType, Result<(), AppError>),
     PluginSaveFinished(PluginType, Result<(), AppError>),
     PluginDialogCancelled,
 }
@@ -51,7 +51,7 @@ pub(super) enum Command {
     RenderExtensions,
     RenderProviderPlugins,
     RenderMcpServers,
-    SaveMcpToggle(String, bool),
+    TogglePlugin(PluginType, String, bool),
     RemovePlugin(PluginType, String),
     OpenPluginDialog {
         plugin_type: PluginType,
@@ -85,8 +85,8 @@ impl State {
     /// - Failed init or save: `McpPlugin(McpInitFinished(Err))` / `PluginSaveFinished(Err) -> ShowPluginDialogError`.
     /// - Canceled authorization: `McpPlugin(OauthDialogClosed) -> AbortMcpConnection -> ShowPluginDialogError`.
     /// - Dialog cancel: `General(PluginDialogCancelled) -> ClosePluginDialog`.
-    /// - Enable switch: `McpToggleChanged -> SaveMcpToggle -> McpToggleFinished`.
-    /// - Failed toggle: `McpToggleFinished(Err) -> LoadMcpServers -> ShowErrorDialog`.
+    /// - Enable switch: `General(ToggleSwitch) -> TogglePlugin -> General(SwitchToggledFinish)`.
+    /// - Failed toggle: `SwitchToggledFinish(Err) -> LoadMcpServers`/`LoadExtensions -> ShowErrorDialog`.
     /// - Remove button: `General(RemovePluginClicked) -> RemovePlugin -> RemovePluginFinished(Ok) -> LoadMcpServers`/`LoadProviderPlugins`.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
         match msg {
@@ -116,17 +116,6 @@ impl State {
                     vec![Command::RenderMcpServers]
                 },
                 Err(e) => vec![Command::LogWarning(format!("list_mcps failed: {e}"))],
-            },
-            Msg::McpToggleChanged(name, enabled) => {
-                self.set_enabled(&name, enabled);
-                vec![Command::SaveMcpToggle(name, enabled)]
-            },
-            Msg::McpToggleFinished(result) => match result {
-                Ok(()) => vec![],
-                Err(e) => vec![
-                    Command::LoadMcpServers,
-                    Command::ShowErrorDialog(format!("{e}")),
-                ],
             },
         }
     }
@@ -184,6 +173,17 @@ impl State {
                     vec![Command::SavePlugin(plugin_type, config)]
                 }
             },
+            GeneralPluginMsg::ToggleSwitch(plugin_type, name, enabled) => {
+                self.set_enabled(&plugin_type, &name, enabled);
+                vec![Command::TogglePlugin(plugin_type, name, enabled)]
+            },
+            GeneralPluginMsg::SwitchToggledFinish(plugin_type, result) => match result {
+                Ok(()) => vec![],
+                Err(e) => reload_list(&plugin_type)
+                    .into_iter()
+                    .chain([Command::ShowErrorDialog(format!("{e}"))])
+                    .collect(),
+            },
         }
     }
 
@@ -212,6 +212,7 @@ impl State {
             .iter()
             .map(|s| s.config.name.clone())
             .chain(self.providers.iter().map(|p| p.name.clone()))
+            .chain(self.extensions.iter().map(|e| e.name.clone()))
             .collect()
     }
 
@@ -235,9 +236,24 @@ impl State {
         }
     }
 
-    fn set_enabled(&mut self, name: &str, enabled: bool) {
-        if let Some(server) = self.servers.iter_mut().find(|s| s.config.name == name) {
-            server.config.disabled = !enabled;
+    fn set_enabled(&mut self, plugin_type: &PluginType, name: &str, enabled: bool) {
+        match plugin_type {
+            PluginType::Extension => {
+                if let Some(config) = self
+                    .extensions
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                    .and_then(|s| s.config.as_mut())
+                {
+                    config.disabled = !enabled;
+                }
+            },
+            PluginType::Provider => {},
+            PluginType::Mcp => {
+                if let Some(server) = self.servers.iter_mut().find(|s| s.config.name == name) {
+                    server.config.disabled = !enabled;
+                }
+            },
         }
     }
 }
@@ -277,6 +293,29 @@ mod tests {
             status: HealthStatus::Running,
             error: None,
             tools: vec![],
+        }
+    }
+
+    fn extension(name: &str, disabled: bool) -> ExtensionInfo {
+        ExtensionInfo {
+            name: name.into(),
+            description: String::new(),
+            author: None,
+            homepage: None,
+            capabilities: vec![],
+            status: HealthStatus::Running,
+            error: None,
+            config: Some(Plugin {
+                name: name.into(),
+                transport: Transport::Local,
+                timeout: 300,
+                disabled,
+                env: Default::default(),
+                args: PluginArgs::Local {
+                    command: "extension-bin".into(),
+                    args: Vec::new(),
+                },
+            }),
         }
     }
 
@@ -641,14 +680,22 @@ mod tests {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", true)]);
 
-        let cmds = state.update(Msg::McpToggleChanged("fs".into(), true));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::ToggleSwitch(
+            PluginType::Mcp,
+            "fs".into(),
+            true,
+        )));
         assert!(matches!(
             cmds.as_slice(),
-            [Command::SaveMcpToggle(name, true)] if name == "fs"
+            [Command::TogglePlugin(PluginType::Mcp, name, true)] if name == "fs"
         ));
         assert!(!state.servers[0].config.disabled);
 
-        assert!(state.update(Msg::McpToggleFinished(Ok(()))).is_empty());
+        let cmds = state.update(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
+            PluginType::Mcp,
+            Ok(()),
+        )));
+        assert!(cmds.is_empty());
         assert!(!state.servers[0].config.disabled);
     }
 
@@ -656,12 +703,54 @@ mod tests {
     fn toggle_workflow_failure_reloads_and_reports() {
         let mut state = State::default();
         loaded(&mut state, vec![server("fs", true)]);
-        let _ = state.update(Msg::McpToggleChanged("fs".into(), true));
+        let _ = state.update(Msg::General(GeneralPluginMsg::ToggleSwitch(
+            PluginType::Mcp,
+            "fs".into(),
+            true,
+        )));
 
-        let cmds = state.update(Msg::McpToggleFinished(Err(error("nope"))));
+        let cmds = state.update(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
+            PluginType::Mcp,
+            Err(error("nope")),
+        )));
         assert!(matches!(
             cmds.as_slice(),
             [Command::LoadMcpServers, Command::ShowErrorDialog(_)]
         ));
+    }
+
+    #[test]
+    fn extension_toggle_is_optimistic_and_failure_reloads_extensions() {
+        let mut state = State::default();
+        let cmds = state.update(Msg::ExtensionLoaded(Ok(vec![extension("files", true)])));
+        assert!(matches!(cmds.as_slice(), [Command::RenderExtensions]));
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::ToggleSwitch(
+            PluginType::Extension,
+            "files".into(),
+            true,
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::TogglePlugin(PluginType::Extension, name, true)] if name == "files"
+        ));
+        assert!(!state.extensions[0].config.as_ref().unwrap().disabled);
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
+            PluginType::Extension,
+            Err(error("nope")),
+        )));
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::LoadExtensions, Command::ShowErrorDialog(_)]
+        ));
+    }
+
+    #[test]
+    fn taken_names_include_extensions() {
+        let mut state = State::default();
+        let _ = state.update(Msg::ExtensionLoaded(Ok(vec![extension("files", false)])));
+
+        assert!(state.taken_names().contains("files"));
     }
 }

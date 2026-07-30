@@ -189,7 +189,9 @@ impl PluginsPage {
             Command::LoadExtensions => self.refresh_extensions(),
             Command::LoadProviderPlugins => self.refresh_providers(),
             Command::LoadMcpServers => self.refresh_mcp_servers(),
-            Command::SaveMcpToggle(name, enabled) => self.save_mcp_toggle(name, enabled),
+            Command::TogglePlugin(plugin_type, name, enabled) => {
+                self.toggle_plugin(plugin_type, name, enabled)
+            },
             Command::RemovePlugin(plugin_type, name) => self.remove_plugin(plugin_type, name),
             Command::OpenPluginDialog {
                 plugin_type,
@@ -242,12 +244,15 @@ impl PluginsPage {
         }
     }
 
-    fn save_mcp_toggle(&self, name: String, enabled: bool) {
+    fn toggle_plugin(&self, plugin_type: PluginType, name: String, enabled: bool) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
             let result = app_context.toggle_plugin(&name, !enabled).await;
-            let _ = dispatcher.unbounded_send(Msg::McpToggleFinished(result));
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
+                plugin_type.clone(),
+                result,
+            )));
         }));
     }
 
@@ -408,7 +413,11 @@ impl PluginsPage {
 
         fill_on_expand(&row, &extension.capabilities, capability_row);
 
-        let actions = plugin_actions(extension.status, extension.error.as_deref(), None);
+        let switch = extension
+            .config
+            .as_ref()
+            .map(|config| self.toggle_switch(PluginType::Extension, config).upcast());
+        let actions = plugin_actions(extension.status, extension.error.as_deref(), switch);
         if extension.config.is_some() && extension.status != HealthStatus::Starting {
             actions.append(&self.edit_button(PluginType::Extension, &extension.name));
             actions.append(&self.remove_button(PluginType::Extension, &extension.name));
@@ -444,7 +453,7 @@ impl PluginsPage {
         let actions = plugin_actions(
             server.status,
             server.error.as_deref(),
-            Some(self.toggle_switch(config).upcast()),
+            Some(self.toggle_switch(PluginType::Mcp, config).upcast()),
         );
 
         if server.status != HealthStatus::Starting {
@@ -455,7 +464,7 @@ impl PluginsPage {
         row.upcast()
     }
 
-    fn toggle_switch(&self, config: &Plugin) -> Switch {
+    fn toggle_switch(&self, plugin_type: PluginType, config: &Plugin) -> Switch {
         let switch = Switch::builder()
             .active(!config.disabled)
             .valign(Align::Center)
@@ -465,7 +474,11 @@ impl PluginsPage {
         let dispatcher = self.dispatcher.clone();
         let name = config.name.clone();
         switch.connect_state_set(move |_, state| {
-            let _ = dispatcher.unbounded_send(Msg::McpToggleChanged(name.clone(), state));
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::ToggleSwitch(
+                plugin_type.clone(),
+                name.clone(),
+                state,
+            )));
             glib::Propagation::Proceed
         });
         switch
