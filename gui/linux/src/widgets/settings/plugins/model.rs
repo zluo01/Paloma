@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use scry_core::{
-    AppError, ExtensionInfo, McpPluginInfo, OAuthCallbackState, Plugin, PluginType, ProviderInfo,
+    AppError, CapabilityFacet, ExtensionInfo, McpPluginInfo, OAuthCallbackState, Plugin,
+    PluginType, ProviderInfo,
 };
 
 #[derive(Default)]
@@ -30,6 +31,13 @@ pub(super) enum GeneralPluginMsg {
         editing: bool,
     },
     ToggleSwitch(PluginType, String, bool),
+    ToggleCapability {
+        plugin_type: PluginType,
+        plugin: String,
+        capability: String,
+        facet: CapabilityFacet,
+        enabled: bool,
+    },
     SwitchToggledFinish(PluginType, Result<(), AppError>),
     PluginSaveFinished(PluginType, Result<(), AppError>),
     PluginDialogCancelled,
@@ -52,6 +60,13 @@ pub(super) enum Command {
     RenderProviderPlugins,
     RenderMcpServers,
     TogglePlugin(PluginType, String, bool),
+    ToggleCapability {
+        plugin_type: PluginType,
+        plugin: String,
+        capability: String,
+        facet: CapabilityFacet,
+        enabled: bool,
+    },
     RemovePlugin(PluginType, String),
     OpenPluginDialog {
         plugin_type: PluginType,
@@ -86,6 +101,7 @@ impl State {
     /// - Canceled authorization: `McpPlugin(OauthDialogClosed) -> AbortMcpConnection -> ShowPluginDialogError`.
     /// - Dialog cancel: `General(PluginDialogCancelled) -> ClosePluginDialog`.
     /// - Enable switch: `General(ToggleSwitch) -> TogglePlugin -> General(SwitchToggledFinish)`.
+    /// - Capability chip: `General(ToggleCapability) -> ToggleCapability -> General(SwitchToggledFinish)`.
     /// - Failed toggle: `SwitchToggledFinish(Err) -> LoadMcpServers`/`LoadExtensions -> ShowErrorDialog`.
     /// - Remove button: `General(RemovePluginClicked) -> RemovePlugin -> RemovePluginFinished(Ok) -> LoadMcpServers`/`LoadProviderPlugins`.
     pub(super) fn update(&mut self, msg: Msg) -> Vec<Command> {
@@ -177,6 +193,22 @@ impl State {
                 self.set_enabled(&plugin_type, &name, enabled);
                 vec![Command::TogglePlugin(plugin_type, name, enabled)]
             },
+            GeneralPluginMsg::ToggleCapability {
+                plugin_type,
+                plugin,
+                capability,
+                facet,
+                enabled,
+            } => {
+                self.set_capability_enabled(&plugin_type, &plugin, &capability, facet, enabled);
+                vec![Command::ToggleCapability {
+                    plugin_type,
+                    plugin,
+                    capability,
+                    facet,
+                    enabled,
+                }]
+            },
             GeneralPluginMsg::SwitchToggledFinish(plugin_type, result) => match result {
                 Ok(()) => vec![],
                 Err(e) => reload_list(&plugin_type)
@@ -236,6 +268,35 @@ impl State {
         }
     }
 
+    fn set_capability_enabled(
+        &mut self,
+        plugin_type: &PluginType,
+        plugin: &str,
+        capability: &str,
+        facet: CapabilityFacet,
+        enabled: bool,
+    ) {
+        let capabilities = match plugin_type {
+            PluginType::Extension => self
+                .extensions
+                .iter_mut()
+                .find(|e| e.name == plugin)
+                .map(|e| &mut e.capabilities),
+            PluginType::Mcp => self
+                .servers
+                .iter_mut()
+                .find(|s| s.config.name == plugin)
+                .map(|s| &mut s.tools),
+            PluginType::Provider => None,
+        };
+        if let Some(info) = capabilities
+            .and_then(|capabilities| capabilities.iter_mut().find(|c| c.id == capability))
+            && let Some(entry) = info.facets.iter_mut().find(|(f, _)| *f == facet)
+        {
+            entry.1 = !enabled;
+        }
+    }
+
     fn set_enabled(&mut self, plugin_type: &PluginType, name: &str, enabled: bool) {
         match plugin_type {
             PluginType::Extension => {
@@ -268,7 +329,7 @@ fn reload_list(plugin_type: &PluginType) -> Option<Command> {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{HealthStatus, PluginArgs, Transport};
+    use scry_core::{CapabilityInfo, HealthStatus, PluginArgs, Transport};
 
     use super::*;
 
@@ -752,5 +813,73 @@ mod tests {
         let _ = state.update(Msg::ExtensionLoaded(Ok(vec![extension("files", false)])));
 
         assert!(state.taken_names().contains("files"));
+    }
+
+    fn capability(id: &str, facets: Vec<(CapabilityFacet, bool)>) -> CapabilityInfo {
+        CapabilityInfo {
+            id: id.into(),
+            description: String::new(),
+            facets,
+        }
+    }
+
+    fn facet_flag(info: &CapabilityInfo, facet: CapabilityFacet) -> bool {
+        info.facets.iter().find(|(f, _)| *f == facet).unwrap().1
+    }
+
+    #[test]
+    fn capability_toggle_is_optimistic_and_flips_only_its_facet() {
+        let mut state = State::default();
+        let mut ext = extension("files", false);
+        ext.capabilities = vec![capability(
+            "Files",
+            vec![
+                (CapabilityFacet::Search, false),
+                (CapabilityFacet::Tool, false),
+            ],
+        )];
+        let _ = state.update(Msg::ExtensionLoaded(Ok(vec![ext])));
+
+        let cmds = state.update(Msg::General(GeneralPluginMsg::ToggleCapability {
+            plugin_type: PluginType::Extension,
+            plugin: "files".into(),
+            capability: "Files".into(),
+            facet: CapabilityFacet::Tool,
+            enabled: false,
+        }));
+
+        assert!(matches!(
+            cmds.as_slice(),
+            [Command::ToggleCapability {
+                capability,
+                facet: CapabilityFacet::Tool,
+                enabled: false,
+                ..
+            }] if capability == "Files"
+        ));
+        let info = &state.extensions[0].capabilities[0];
+        assert!(facet_flag(info, CapabilityFacet::Tool));
+        assert!(!facet_flag(info, CapabilityFacet::Search));
+    }
+
+    #[test]
+    fn mcp_tool_toggle_updates_the_server_tool() {
+        let mut state = State::default();
+        let mut mcp = server("fs", false);
+        mcp.tools = vec![capability("read_file", vec![(CapabilityFacet::Mcp, true)])];
+        loaded(&mut state, vec![mcp]);
+
+        let _ = state.update(Msg::General(GeneralPluginMsg::ToggleCapability {
+            plugin_type: PluginType::Mcp,
+            plugin: "fs".into(),
+            capability: "read_file".into(),
+            facet: CapabilityFacet::Mcp,
+            enabled: true,
+        }));
+
+        assert!(!facet_flag(
+            &state.servers[0].tools[0],
+            CapabilityFacet::Mcp
+        ));
     }
 }

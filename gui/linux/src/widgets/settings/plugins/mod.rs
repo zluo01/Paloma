@@ -9,15 +9,18 @@ use std::{
 };
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Switch, Widget, glib, prelude::*};
+use gtk4::{
+    Align, Box as GtkBox, Button, Label, Orientation, Switch, ToggleButton, Widget, glib,
+    prelude::*,
+};
 use libadwaita::{
     ActionRow, ApplicationWindow, ButtonRow, Dialog, ExpanderRow, HeaderBar, PreferencesGroup,
     PreferencesPage, PreferencesRow, Spinner, SpinnerPaintable, StatusPage, ToolbarView,
     prelude::*,
 };
 use scry_core::{
-    AppContext, Capability, ExtensionInfo, HealthStatus, McpPluginInfo, OAuthCallbackState, Plugin,
-    PluginType, ProviderInfo, ToolSpec,
+    AppContext, CapabilityFacet, CapabilityInfo, ExtensionInfo, HealthStatus, McpPluginInfo,
+    OAuthCallbackState, Plugin, PluginType, ProviderInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -192,6 +195,13 @@ impl PluginsPage {
             Command::TogglePlugin(plugin_type, name, enabled) => {
                 self.toggle_plugin(plugin_type, name, enabled)
             },
+            Command::ToggleCapability {
+                plugin_type,
+                plugin,
+                capability,
+                facet,
+                enabled,
+            } => self.toggle_capability(plugin_type, plugin, capability, facet, enabled),
             Command::RemovePlugin(plugin_type, name) => self.remove_plugin(plugin_type, name),
             Command::OpenPluginDialog {
                 plugin_type,
@@ -251,6 +261,27 @@ impl PluginsPage {
             let result = app_context.toggle_plugin(&name, !enabled).await;
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
                 plugin_type.clone(),
+                result,
+            )));
+        }));
+    }
+
+    fn toggle_capability(
+        &self,
+        plugin_type: PluginType,
+        plugin: String,
+        capability: String,
+        facet: CapabilityFacet,
+        enabled: bool,
+    ) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(tokio_runtime().spawn(async move {
+            let result = app_context
+                .toggle_capability(&plugin, &capability, facet, !enabled)
+                .await;
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
+                plugin_type,
                 result,
             )));
         }));
@@ -411,7 +442,14 @@ impl PluginsPage {
             .subtitle(&subtitle)
             .build();
 
-        fill_on_expand(&row, &extension.capabilities, capability_row);
+        fill_on_expand(&row, &extension.capabilities, {
+            let dispatcher = self.dispatcher.clone();
+            let plugin = extension.name.clone();
+            let plugin_disabled = extension.config.as_ref().is_some_and(|c| c.disabled);
+            move |capability: &CapabilityInfo| {
+                capability_row(&plugin, plugin_disabled, capability, &dispatcher)
+            }
+        });
 
         let switch = extension
             .config
@@ -448,7 +486,11 @@ impl PluginsPage {
             .subtitle(&server.description)
             .build();
 
-        fill_on_expand(&row, &server.tools, tool_row);
+        fill_on_expand(&row, &server.tools, {
+            let dispatcher = self.dispatcher.clone();
+            let server = config.name.clone();
+            move |tool: &CapabilityInfo| tool_row(&server, tool, &dispatcher)
+        });
 
         let actions = plugin_actions(
             server.status,
@@ -548,24 +590,33 @@ fn starting_spinner() -> Spinner {
         .build()
 }
 
-fn capability_row(capability: &Capability) -> PreferencesRow {
+fn capability_row(
+    plugin: &str,
+    plugin_disabled: bool,
+    capability: &CapabilityInfo,
+    dispatcher: &mpsc::UnboundedSender<Msg>,
+) -> PreferencesRow {
     let title_line = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
         .build();
     title_line.append(
         &Label::builder()
-            .label(&capability.capability_id)
+            .label(&capability.id)
             .css_classes(["title"])
             .halign(Align::Start)
             .xalign(0.0)
             .build(),
     );
-    if capability.search.is_some() {
-        title_line.append(&capability_badge("Search"));
-    }
-    if capability.tool.is_some() {
-        title_line.append(&capability_badge("Tool"));
+    for &(facet, disabled) in &capability.facets {
+        title_line.append(&facet_chip(
+            plugin,
+            &capability.id,
+            facet,
+            disabled,
+            plugin_disabled,
+            dispatcher,
+        ));
     }
 
     let title_box = GtkBox::builder()
@@ -593,19 +644,85 @@ fn capability_row(capability: &Capability) -> PreferencesRow {
     header.append(&title_box);
 
     let row = PreferencesRow::builder()
-        .title(&capability.capability_id)
+        .title(&capability.id)
         .activatable(false)
         .build();
     row.set_child(Some(&header));
     row
 }
 
-fn tool_row(spec: &ToolSpec) -> ActionRow {
-    ActionRow::builder()
-        .title(&spec.tool)
-        .subtitle(&spec.schema.description)
+fn tool_row(
+    server: &str,
+    tool: &CapabilityInfo,
+    dispatcher: &mpsc::UnboundedSender<Msg>,
+) -> ActionRow {
+    let row = ActionRow::builder()
+        .title(&tool.id)
+        .subtitle(&tool.description)
         .subtitle_lines(0)
-        .build()
+        .build();
+
+    let disabled = tool.facets.iter().any(|&(_, disabled)| disabled);
+    let switch = Switch::builder()
+        .active(!disabled)
+        .valign(Align::Center)
+        .build();
+    switch.connect_state_set({
+        let dispatcher = dispatcher.clone();
+        let server = server.to_string();
+        let capability = tool.id.clone();
+        move |_, state| {
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::ToggleCapability {
+                plugin_type: PluginType::Mcp,
+                plugin: server.clone(),
+                capability: capability.clone(),
+                facet: CapabilityFacet::Mcp,
+                enabled: state,
+            }));
+            glib::Propagation::Proceed
+        }
+    });
+    row.add_suffix(&switch);
+    row
+}
+
+fn facet_chip(
+    plugin: &str,
+    capability: &str,
+    facet: CapabilityFacet,
+    disabled: bool,
+    plugin_disabled: bool,
+    dispatcher: &mpsc::UnboundedSender<Msg>,
+) -> ToggleButton {
+    let chip = ToggleButton::builder()
+        .label(facet_label(&facet))
+        .active(!disabled)
+        .sensitive(!plugin_disabled)
+        .valign(Align::Center)
+        .css_classes(["scry-capability-badge"])
+        .build();
+    chip.connect_toggled({
+        let dispatcher = dispatcher.clone();
+        let plugin = plugin.to_string();
+        let capability = capability.to_string();
+        move |chip| {
+            let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::ToggleCapability {
+                plugin_type: PluginType::Extension,
+                plugin: plugin.clone(),
+                capability: capability.clone(),
+                facet,
+                enabled: chip.is_active(),
+            }));
+        }
+    });
+    chip
+}
+
+fn facet_label(facet: &CapabilityFacet) -> &'static str {
+    match facet {
+        CapabilityFacet::Search => "Search",
+        CapabilityFacet::Tool | CapabilityFacet::Mcp => "Tool",
+    }
 }
 
 /// lazy load the sublist
@@ -630,14 +747,6 @@ where
             row.add_row(&build(item));
         }
     });
-}
-
-fn capability_badge(facet: &str) -> Label {
-    Label::builder()
-        .label(facet)
-        .css_classes(["scry-capability-badge"])
-        .valign(Align::Center)
-        .build()
 }
 
 /// Present the "waiting for authorization" popup. Dismissing it cancels the
