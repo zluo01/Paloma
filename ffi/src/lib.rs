@@ -246,7 +246,8 @@ impl ScryApp {
     /// Run a launcher search; results arrive on the returned stream.
     pub async fn search(&self, input: String) -> Result<Arc<EventStream>, ScryError> {
         let inner = Arc::clone(&self.inner);
-        let stream = on_runtime(async move { EventStream::pump(inner.search(&input)) }).await?;
+        let stream =
+            on_runtime(async move { EventStream::pump(inner.search(&input).await) }).await?;
         Ok(Arc::new(stream))
     }
 
@@ -518,5 +519,21 @@ impl ScryApp {
     pub async fn toggle_plugin(&self, name: String, disabled: bool) -> Result<(), ScryError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.toggle_plugin(&name, disabled).await }).await??)
+    }
+
+    pub async fn toggle_capability(
+        &self,
+        name: String,
+        capability: String,
+        facet: CapabilityFacet,
+        disabled: bool,
+    ) -> Result<(), ScryError> {
+        let inner = Arc::clone(&self.inner);
+        Ok(on_runtime(async move {
+            inner
+                .toggle_capability(&name, &capability, facet, disabled)
+                .await
+        })
+        .await??)
     }
 }

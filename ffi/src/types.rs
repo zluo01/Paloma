@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 
 pub use scry_core::{
-    Action, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus, Model,
-    Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
+    Action, CapabilityFacet, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus,
+    Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
     ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
 };
 use uuid::Uuid;
@@ -238,21 +238,36 @@ impl From<scry_core::Connector> for Connector {
     }
 }
 
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct Capability {
-    pub capability_id: String,
-    pub description: String,
-    pub search: bool,
-    pub tool: bool,
+#[uniffi::remote(Enum)]
+pub enum CapabilityFacet {
+    Search,
+    Tool,
+    Mcp,
 }
 
-impl From<scry_core::Capability> for Capability {
-    fn from(value: scry_core::Capability) -> Self {
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct FacetState {
+    pub facet: CapabilityFacet,
+    pub disabled: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct CapabilityInfo {
+    pub id: String,
+    pub description: String,
+    pub facets: Vec<FacetState>,
+}
+
+impl From<scry_core::CapabilityInfo> for CapabilityInfo {
+    fn from(value: scry_core::CapabilityInfo) -> Self {
         Self {
-            capability_id: value.capability_id,
+            id: value.id,
             description: value.description,
-            search: value.search.is_some(),
-            tool: value.tool.is_some(),
+            facets: value
+                .facets
+                .into_iter()
+                .map(|(facet, disabled)| FacetState { facet, disabled })
+                .collect(),
         }
     }
 }
@@ -263,7 +278,7 @@ pub struct ExtensionInfo {
     pub description: String,
     pub author: Option<String>,
     pub homepage: Option<String>,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<CapabilityInfo>,
     pub status: HealthStatus,
     pub error: Option<String>,
     pub config: Option<Plugin>,
@@ -279,26 +294,11 @@ impl From<scry_core::ExtensionInfo> for ExtensionInfo {
             capabilities: value
                 .capabilities
                 .into_iter()
-                .map(Capability::from)
+                .map(CapabilityInfo::from)
                 .collect(),
             status: value.status,
             error: value.error,
             config: value.config,
-        }
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct ToolSpec {
-    pub tool: String,
-    pub description: String,
-}
-
-impl From<scry_core::ToolSpec> for ToolSpec {
-    fn from(value: scry_core::ToolSpec) -> Self {
-        Self {
-            tool: value.tool,
-            description: value.schema.description,
         }
     }
 }
@@ -308,7 +308,7 @@ pub struct McpPluginInfo {
     pub description: String,
     pub status: HealthStatus,
     pub error: Option<String>,
-    pub tools: Vec<ToolSpec>,
+    pub tools: Vec<CapabilityInfo>,
     pub config: Plugin,
 }
 
@@ -318,7 +318,7 @@ impl From<scry_core::McpPluginInfo> for McpPluginInfo {
             description: value.description,
             status: value.status,
             error: value.error,
-            tools: value.tools.into_iter().map(ToolSpec::from).collect(),
+            tools: value.tools.into_iter().map(CapabilityInfo::from).collect(),
             config: value.config,
         }
     }
