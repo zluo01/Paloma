@@ -442,20 +442,25 @@ impl PluginsPage {
             .subtitle(&subtitle)
             .build();
 
-        fill_on_expand(&row, &extension.capabilities, {
-            let dispatcher = self.dispatcher.clone();
-            let plugin = extension.name.clone();
-            let plugin_disabled = extension.config.as_ref().is_some_and(|c| c.disabled);
-            move |capability: &CapabilityInfo| {
-                capability_row(&plugin, plugin_disabled, capability, &dispatcher)
-            }
-        });
-
         let switch = extension
             .config
             .as_ref()
-            .map(|config| self.toggle_switch(PluginType::Extension, config).upcast());
-        let actions = plugin_actions(extension.status, extension.error.as_deref(), switch);
+            .map(|config| self.toggle_switch(PluginType::Extension, config));
+
+        fill_on_expand(&row, &extension.capabilities, {
+            let dispatcher = self.dispatcher.clone();
+            let plugin = extension.name.clone();
+            let switch = switch.clone();
+            move |capability: &CapabilityInfo| {
+                capability_row(&plugin, switch.as_ref(), capability, &dispatcher)
+            }
+        });
+
+        let actions = plugin_actions(
+            extension.status,
+            extension.error.as_deref(),
+            switch.map(|switch| switch.upcast()),
+        );
         if extension.config.is_some() && extension.status != HealthStatus::Starting {
             actions.append(&self.edit_button(PluginType::Extension, &extension.name));
             actions.append(&self.remove_button(PluginType::Extension, &extension.name));
@@ -486,16 +491,19 @@ impl PluginsPage {
             .subtitle(&server.description)
             .build();
 
+        let switch = self.toggle_switch(PluginType::Mcp, config);
+
         fill_on_expand(&row, &server.tools, {
             let dispatcher = self.dispatcher.clone();
             let server = config.name.clone();
-            move |tool: &CapabilityInfo| tool_row(&server, tool, &dispatcher)
+            let plugin_switch = switch.clone();
+            move |tool: &CapabilityInfo| tool_row(&server, &plugin_switch, tool, &dispatcher)
         });
 
         let actions = plugin_actions(
             server.status,
             server.error.as_deref(),
-            Some(self.toggle_switch(PluginType::Mcp, config).upcast()),
+            Some(switch.upcast()),
         );
 
         if server.status != HealthStatus::Starting {
@@ -592,7 +600,7 @@ fn starting_spinner() -> Spinner {
 
 fn capability_row(
     plugin: &str,
-    plugin_disabled: bool,
+    plugin_switch: Option<&Switch>,
     capability: &CapabilityInfo,
     dispatcher: &mpsc::UnboundedSender<Msg>,
 ) -> PreferencesRow {
@@ -614,7 +622,7 @@ fn capability_row(
             &capability.id,
             facet,
             disabled,
-            plugin_disabled,
+            plugin_switch,
             dispatcher,
         ));
     }
@@ -653,6 +661,7 @@ fn capability_row(
 
 fn tool_row(
     server: &str,
+    plugin_switch: &Switch,
     tool: &CapabilityInfo,
     dispatcher: &mpsc::UnboundedSender<Msg>,
 ) -> ActionRow {
@@ -666,6 +675,10 @@ fn tool_row(
     let switch = Switch::builder()
         .active(!disabled)
         .valign(Align::Center)
+        .build();
+    plugin_switch
+        .bind_property("active", &switch, "sensitive")
+        .sync_create()
         .build();
     switch.connect_state_set({
         let dispatcher = dispatcher.clone();
@@ -691,16 +704,21 @@ fn facet_chip(
     capability: &str,
     facet: CapabilityFacet,
     disabled: bool,
-    plugin_disabled: bool,
+    plugin_switch: Option<&Switch>,
     dispatcher: &mpsc::UnboundedSender<Msg>,
 ) -> ToggleButton {
     let chip = ToggleButton::builder()
         .label(facet_label(&facet))
         .active(!disabled)
-        .sensitive(!plugin_disabled)
         .valign(Align::Center)
         .css_classes(["scry-capability-badge"])
         .build();
+    if let Some(plugin_switch) = plugin_switch {
+        plugin_switch
+            .bind_property("active", &chip, "sensitive")
+            .sync_create()
+            .build();
+    }
     chip.connect_toggled({
         let dispatcher = dispatcher.clone();
         let plugin = plugin.to_string();
