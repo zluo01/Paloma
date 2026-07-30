@@ -44,6 +44,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "http2",
     "stream",
 ] }
+schemars = "1.2.1"
 scry-core = { path = "core" }
 scry-extension-base = { path = "extension-base" }
 scry-extension-internal = { path = "plugins/extensions/internal" }

@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use async_trait::async_trait;
 use ignore::{WalkBuilder, WalkState};
 use log::{debug, error, info, warn};
 use notify::{EventKind, RecursiveMode, event::ModifyKind};
@@ -19,10 +20,12 @@ use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
 };
 use rayon::prelude::*;
-use scry_extension_base::{Capability, SearchHandler};
+use schemars::JsonSchema;
+use scry_extension_base::{Capability, SearchHandler, ToolHandler};
 use scry_extension_protocol::v1::{
-    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
+    Action, CapabilityIcon, Hide, Item, ToolContent, ToolFacet, run_action_response::Behavior,
 };
+use serde::Deserialize;
 
 use crate::utils::copy_to_clipboard;
 
@@ -123,6 +126,10 @@ impl Capability for FileSearch {
     fn search_handler(&self) -> Option<&dyn SearchHandler> {
         Some(self)
     }
+
+    fn tool_handler(&self) -> Option<&dyn ToolHandler> {
+        Some(self)
+    }
 }
 
 impl SearchHandler for FileSearch {
@@ -147,6 +154,51 @@ impl SearchHandler for FileSearch {
         }
 
         Behavior::Hide(Hide {})
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FileSearchArgs {
+    /// A literal fragment of the file or directory name to search for,
+    /// at least 2 characters. Matches names only — never paths, globs,
+    /// or regex ("*.pdf" matches nothing; use "pdf" instead).
+    ///
+    /// A single word matches fuzzily: its characters must appear in
+    /// the name in order but need not be adjacent, so "cargtom" finds
+    /// "Cargo.toml". Multiple whitespace-separated words must each
+    /// appear in the name as an exact contiguous substring, in any
+    /// order: "annual report" finds "annual_report_2026.pdf" but not
+    /// "annual_summary.pdf".
+    ///
+    /// Smart case: an all-lowercase word matches case-insensitively; a
+    /// word containing an uppercase letter matches case-sensitively.
+    pub query: String,
+}
+
+#[async_trait]
+impl ToolHandler for FileSearch {
+    fn facet(&self) -> ToolFacet {
+        ToolFacet {
+            description: include_str!("description.md").to_string(),
+            parameters: serde_json::to_string(&schemars::schema_for!(FileSearchArgs))
+                .expect("JsonSchema output is always serializable"),
+        }
+    }
+
+    async fn invoke(
+        &self,
+        _session_id: &str,
+        _call_id: &str,
+        arguments: &str,
+    ) -> Result<ToolContent, String> {
+        let args: FileSearchArgs = serde_json::from_str(arguments).map_err(|e| e.to_string())?;
+        let entries = self.entries.read().unwrap();
+        tool_results(&args.query, &entries)
+    }
+
+    /// Everything synchronize, nothing to cancel.
+    async fn cancel(&self, _session_id: &str) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -606,6 +658,25 @@ fn build_item(home: &Path, entry: &FileEntry) -> Item {
     }
 }
 
+fn tool_results(query: &str, entries: &[FileEntry]) -> Result<ToolContent, String> {
+    let query = query.trim();
+    if query.chars().count() < MIN_QUERY_CHARS {
+        return Err(format!(
+            "query must be at least {MIN_QUERY_CHARS} characters"
+        ));
+    }
+
+    let ranked = rank(query, entries);
+    let mut content = ToolContent::new("file_search_results")
+        .attr("query", query)
+        .attr("count", ranked.len());
+    for entry in ranked {
+        let tag = if entry.is_dir { "dir" } else { "file" };
+        content = content.child(ToolContent::new(tag).attr("path", entry.path.display()));
+    }
+    Ok(content)
+}
+
 /// Parent directory for display, with home abbreviated to `~`.
 fn display_parent(home: &Path, path: &Path) -> String {
     let parent = path.parent().unwrap_or(path);
@@ -916,6 +987,42 @@ mod tests {
         );
 
         assert!(entries.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tool_results_reject_short_queries() {
+        let entries = vec![entry("/home/u/a.txt", false)];
+
+        let error = tool_results("a", &entries).unwrap_err();
+
+        assert!(error.contains("at least"), "got: {error}");
+    }
+
+    #[test]
+    fn tool_results_render_matches_as_children() {
+        let entries = vec![
+            entry("/home/u/notes", true),
+            entry("/home/u/notes.md", false),
+            entry("/home/u/photo.png", false),
+        ];
+
+        let content = tool_results("notes", &entries).unwrap();
+
+        assert_eq!(content.tag, "file_search_results");
+        assert!(
+            content
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "count" && attribute.value == "2"),
+            "got: {content:?}"
+        );
+        let results: Vec<(&str, &str)> = content
+            .children()
+            .iter()
+            .map(|child| (child.tag.as_str(), child.attributes[0].value.as_str()))
+            .collect();
+        assert!(results.contains(&("dir", "/home/u/notes")));
+        assert!(results.contains(&("file", "/home/u/notes.md")));
     }
 
     #[test]

@@ -9,7 +9,7 @@ publish = false
 async-trait = { workspace = true }
 dashmap = { workspace = true }
 log = { workspace = true }
-schemars = "1.2.1"
+schemars = { workspace = true }
 scry-extension-base = { workspace = true }
 scry-extension-protocol = { workspace = true }
 scry-utils = { workspace = true }

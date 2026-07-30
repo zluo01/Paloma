@@ -3320,6 +3320,7 @@ dependencies = [
 name = "scry-extension-internal"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "exmex",
  "freedesktop-desktop-entry",
  "ignore",
@@ -3335,9 +3336,12 @@ dependencies = [
  "plist",
  "rayon",
  "regex",
+ "schemars",
  "scry-extension-base",
  "scry-extension-protocol",
  "scry-utils",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "wl-clipboard-rs",
