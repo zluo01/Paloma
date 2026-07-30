@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     CapabilityFacet::{Mcp, Tool},
-    controller::remote::PermissionWorkflowManagerClient,
+    controller::PermissionWorkflowManagerClient,
     db::Storage,
     entity::{ToolResult, ToolSchema, ToolSpec},
     extension::ExtensionController,

@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     ChatRenderEvent, RenderEvent,
-    controller::{PermissionWorkflowError, remote::PermissionWorkflowManagerClient},
+    controller::{PermissionWorkflowError, PermissionWorkflowManagerClient},
     entity::ProviderBackendId,
     permission::{PermissionState, UserDecision},
     provider::ProviderControllerError,
