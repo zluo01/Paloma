@@ -49,7 +49,7 @@ impl ToolController {
             HashSet::new()
         });
 
-        let mut schemas = self.extension_controller.schemas();
+        let mut schemas = self.extension_controller.schemas(&disabled);
         schemas.extend(self.mcp_controller.schemas(&disabled).await);
         schemas.sort_by(|a, b| a.name.cmp(&b.name));
         schemas

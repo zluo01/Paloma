@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use dashmap::DashMap;
 use futures::{Stream, future::join_all, stream};
@@ -323,9 +326,10 @@ impl ExtensionController {
         }
     }
 
-    pub fn schemas(&self) -> Vec<ToolSchema> {
+    pub fn schemas(&self, disabled: &HashSet<String>) -> Vec<ToolSchema> {
         self.handlers
             .iter()
+            .filter(|entry| !disabled.contains(entry.key()))
             .filter(|entry| entry.connection.health() == HealthStatus::Running)
             .flat_map(|entry| {
                 entry
