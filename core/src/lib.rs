@@ -33,9 +33,9 @@ fn process_entry() {
 pub use constants::RENDER_CHANNEL_CAPACITY;
 pub use db::Permission;
 pub use entity::{
-    ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Plugin, PluginArgs,
-    PluginType, ProviderBackendId, QueryResponse, RenderEvent, SearchRenderEvent, ToolSchema,
-    ToolSpec, Transport,
+    CapabilityFacet, ChatRenderEvent, ExtensionCapabilityId, HealthLevel, HealthStatus, Icon,
+    Plugin, PluginArgs, PluginType, ProviderBackendId, QueryResponse, RenderEvent,
+    SearchRenderEvent, ToolSchema, ToolSpec, Transport,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;
@@ -340,6 +340,19 @@ impl AppContext {
 
     pub async fn toggle_plugin(&self, name: &str, disabled: bool) -> Result<()> {
         self.storage.toggle_plugin(name, disabled).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_capability(
+        &self,
+        name: &str,
+        capability: &str,
+        facet: CapabilityFacet,
+        disabled: bool,
+    ) -> Result<()> {
+        self.storage
+            .toggle_capability(name, capability, facet, disabled)
+            .await?;
         Ok(())
     }
 }

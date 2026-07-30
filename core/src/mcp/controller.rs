@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache};
 use crate::{
-    HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
+    CapabilityFacet, HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
     db::{Storage, StorageError},
     entity::{ToolResult, ToolSchema, ToolSpec},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
@@ -177,11 +177,15 @@ impl McpController {
         Ok(())
     }
 
-    pub async fn schemas(&self, disabled: &HashSet<String>) -> Vec<ToolSchema> {
+    pub async fn schemas(
+        &self,
+        disabled_plugins: &HashSet<String>,
+        disabled_capabilities: &HashSet<(String, String, CapabilityFacet)>,
+    ) -> Vec<ToolSchema> {
         let servers: Vec<(String, Arc<McpPlugin>)> = self
             .handlers
             .iter()
-            .filter(|entry| !disabled.contains(entry.key()))
+            .filter(|entry| !disabled_plugins.contains(entry.key()))
             .filter(|entry| entry.connection.health_status() == HealthStatus::Running)
             .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
             .collect();
@@ -193,7 +197,18 @@ impl McpController {
                 .specs(name.clone(), || async move { connection.specs().await })
                 .await
             {
-                Ok(specs) => schemas.extend(specs.values().map(|spec| spec.schema.clone())),
+                Ok(specs) => schemas.extend(
+                    specs
+                        .values()
+                        .filter(|spec| {
+                            !disabled_capabilities.contains(&(
+                                spec.name.clone(),
+                                spec.tool.clone(),
+                                CapabilityFacet::Mcp,
+                            ))
+                        })
+                        .map(|spec| spec.schema.clone()),
+                ),
                 Err(e) => error!("fail to refresh tool specs for {name}: {e}"),
             }
         }

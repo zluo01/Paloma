@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use super::{BUILTIN_EXTENSIONS, ExtensionConnectionError, ExtensionInfo, ExtensionPlugin};
 use crate::{
-    HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse, RENDER_CHANNEL_CAPACITY,
-    RenderEvent, SearchRenderEvent, Transport,
+    CapabilityFacet, HealthLevel, HealthStatus, Plugin, PluginType, QueryResponse,
+    RENDER_CHANNEL_CAPACITY, RenderEvent, SearchRenderEvent, Transport,
     db::{Storage, StorageError},
     entity::{ExtensionCapabilityId, ToolResult, ToolSchema, ToolSpec},
     utils::ext_tool_name_encode,
@@ -93,12 +93,16 @@ impl ExtensionController {
             return stream;
         }
 
-        let disabled = match self.storage.disabled_plugins().await {
-            Ok(disabled) => disabled,
+        let fetched = tokio::try_join!(
+            self.storage.disabled_plugins(),
+            self.storage.disabled_capabilities(&[CapabilityFacet::Search]),
+        );
+        let (disabled_plugins, disabled_capabilities) = match fetched {
+            Ok(sets) => sets,
             Err(e) => {
                 let _ = render_tx
                     .send(RenderEvent::Error {
-                        message: format!("fail to get disabled plugins: {e}"),
+                        message: format!("fail to get disabled plugins or capabilities: {e}"),
                     })
                     .await;
                 // the GUI resolves a query only on Done
@@ -111,7 +115,7 @@ impl ExtensionController {
         let handlers: Vec<(ExtensionCapabilityId, Arc<ExtensionPlugin>)> = self
             .handlers
             .iter()
-            .filter(|entry| !disabled.contains(entry.key()))
+            .filter(|entry| !disabled_plugins.contains(entry.key()))
             .filter(|entry| entry.connection.health() == HealthStatus::Running)
             .flat_map(|entry| {
                 let handler = entry.value();
@@ -119,6 +123,13 @@ impl ExtensionController {
                     .capabilities
                     .iter()
                     .filter(|capability| capability.search.is_some())
+                    .filter(|capability| {
+                        !disabled_capabilities.contains(&(
+                            entry.key().clone(),
+                            capability.capability_id.clone(),
+                            CapabilityFacet::Search,
+                        ))
+                    })
                     .map(|capability| {
                         (
                             ExtensionCapabilityId {
@@ -342,15 +353,26 @@ impl ExtensionController {
         }
     }
 
-    pub fn schemas(&self, disabled: &HashSet<String>) -> Vec<ToolSchema> {
+    pub fn schemas(
+        &self,
+        disabled_plugins: &HashSet<String>,
+        disabled_capabilities: &HashSet<(String, String, CapabilityFacet)>,
+    ) -> Vec<ToolSchema> {
         self.handlers
             .iter()
-            .filter(|entry| !disabled.contains(entry.key()))
+            .filter(|entry| !disabled_plugins.contains(entry.key()))
             .filter(|entry| entry.connection.health() == HealthStatus::Running)
             .flat_map(|entry| {
                 entry
                     .specs
                     .values()
+                    .filter(|spec| {
+                        !disabled_capabilities.contains(&(
+                            spec.name.clone(),
+                            spec.tool.clone(),
+                            CapabilityFacet::Tool,
+                        ))
+                    })
                     .map(|spec| spec.schema.clone())
                     .collect::<Vec<_>>()
             })

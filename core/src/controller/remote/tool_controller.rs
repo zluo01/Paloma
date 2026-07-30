@@ -5,6 +5,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
+    CapabilityFacet::{Mcp, Tool},
     controller::remote::PermissionWorkflowManagerClient,
     db::Storage,
     entity::{ToolResult, ToolSchema, ToolSpec},
@@ -44,13 +45,28 @@ impl ToolController {
     }
 
     pub async fn tool_schemas(&self) -> Vec<ToolSchema> {
-        let disabled = self.storage.disabled_plugins().await.unwrap_or_else(|e| {
+        let disabled_plugins = self.storage.disabled_plugins().await.unwrap_or_else(|e| {
             error!("fail to get disabled plugins. {}", e);
             HashSet::new()
         });
 
-        let mut schemas = self.extension_controller.schemas(&disabled);
-        schemas.extend(self.mcp_controller.schemas(&disabled).await);
+        let disabled_capabilities = self
+            .storage
+            .disabled_capabilities(&[Tool, Mcp])
+            .await
+            .unwrap_or_else(|e| {
+                error!("fail to get disabled capabilities. {}", e);
+                HashSet::new()
+            });
+
+        let mut schemas = self
+            .extension_controller
+            .schemas(&disabled_plugins, &disabled_capabilities);
+        schemas.extend(
+            self.mcp_controller
+                .schemas(&disabled_plugins, &disabled_capabilities)
+                .await,
+        );
         schemas.sort_by(|a, b| a.name.cmp(&b.name));
         schemas
     }
