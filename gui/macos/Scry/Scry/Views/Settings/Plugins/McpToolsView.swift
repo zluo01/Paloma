@@ -26,7 +26,7 @@ struct McpToolsView: View {
                     Text(server.status == .starting ? "Connecting…" : "No tools.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(server.tools, id: \.tool, content: toolRow)
+                ForEach(server.tools, id: \.id, content: toolRow)
             } header: {
                 Text("Tools")
             }
@@ -43,9 +43,9 @@ struct McpToolsView: View {
         }
     }
 
-    private func toolRow(_ tool: ToolSpec) -> some View {
+    private func toolRow(_ tool: CapabilityInfo) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(tool.tool)
+            Text(tool.id)
             if !tool.description.isEmpty {
                 Text(tool.description)
                     .font(.caption)

@@ -35,14 +35,14 @@ struct ExtensionCapabilitiesView: View {
             }
             if !searchCapabilities.isEmpty {
                 Section {
-                    ForEach(searchCapabilities, id: \.capabilityId, content: capabilityRow)
+                    ForEach(searchCapabilities, id: \.id, content: capabilityRow)
                 } header: {
                     Text("Search")
                 }
             }
             if !toolCapabilities.isEmpty {
                 Section {
-                    ForEach(toolCapabilities, id: \.capabilityId, content: capabilityRow)
+                    ForEach(toolCapabilities, id: \.id, content: capabilityRow)
                 } header: {
                     Text("Tools")
                 }
@@ -60,17 +60,21 @@ struct ExtensionCapabilitiesView: View {
         }
     }
 
-    private var searchCapabilities: [Capability] {
-        extensionInfo.capabilities.filter(\.search)
+    private var searchCapabilities: [CapabilityInfo] {
+        capabilities(with: .search)
     }
 
-    private var toolCapabilities: [Capability] {
-        extensionInfo.capabilities.filter(\.tool)
+    private var toolCapabilities: [CapabilityInfo] {
+        capabilities(with: .tool)
     }
 
-    private func capabilityRow(_ capability: Capability) -> some View {
+    private func capabilities(with facet: CapabilityFacet) -> [CapabilityInfo] {
+        extensionInfo.capabilities.filter { $0.facets.contains { $0.facet == facet } }
+    }
+
+    private func capabilityRow(_ capability: CapabilityInfo) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(capability.capabilityId)
+            Text(capability.id)
             if !capability.description.isEmpty {
                 Text(capability.description)
                     .font(.caption)
