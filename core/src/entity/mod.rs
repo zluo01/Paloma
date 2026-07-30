@@ -41,6 +41,15 @@ pub enum Transport {
     Http,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityFacet {
+    Search,
+    Tool,
+    Mcp,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginArgs {
     Local { command: String, args: Vec<String> },

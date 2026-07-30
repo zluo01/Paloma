@@ -66,3 +66,10 @@ pub const DELETE_PLUGIN_QUERY: &str = include_str!("queries/plugins/delete_plugi
 pub const DISABLE_PLUGIN_QUERY: &str = include_str!("queries/plugins/toggle_plugin.sql");
 
 pub const UPDATE_PLUGIN_QUERY: &str = include_str!("queries/plugins/update_plugin.sql");
+
+pub const DISABLE_CAPABILITY_QUERY: &str = include_str!("queries/plugins/disable_capability.sql");
+
+pub const ENABLE_CAPABILITY_QUERY: &str = include_str!("queries/plugins/enable_capability.sql");
+
+pub const DISABLED_CAPABILITIES_QUERY: &str =
+    include_str!("queries/plugins/disabled_capabilities.sql");

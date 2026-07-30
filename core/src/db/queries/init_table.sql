@@ -119,3 +119,21 @@ BEGIN
     FROM backend_credentials
     WHERE provider_id = OLD.name;
 END;
+
+CREATE TABLE IF NOT EXISTS disabled_capabilities
+(
+    plugin_name   TEXT NOT NULL, -- extension id or mcp name
+    capability_id TEXT NOT NULL, -- capability id or mcp tool name
+    facet         TEXT NOT NULL CHECK (facet IN ('search', 'tool', 'mcp')),
+    PRIMARY KEY (plugin_name, capability_id, facet)
+);
+
+-- deleting a plugin removes its per-capability disable flags
+CREATE TRIGGER IF NOT EXISTS plugins_delete_disabled_capabilities
+    AFTER DELETE
+    ON plugins
+BEGIN
+    DELETE
+    FROM disabled_capabilities
+    WHERE plugin_name = OLD.name;
+END;

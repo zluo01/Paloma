@@ -17,7 +17,7 @@ use crate::{
     db::entity::{
         ConnectedBackend, HistoryEntry, Permission, PreferModelConfig, RestoreEntry, Session,
     },
-    entity::{Plugin, PluginArgs, PluginType, ProviderBackendId, Transport},
+    entity::{CapabilityFacet, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport},
 };
 
 #[derive(Clone)]
@@ -338,6 +338,40 @@ impl Storage {
             .fetch_all(&self.pool)
             .await?;
         Ok(names.into_iter().collect())
+    }
+
+    pub async fn toggle_capability(
+        &self,
+        plugin_name: &str,
+        capability_id: &str,
+        facet: CapabilityFacet,
+        disabled: bool,
+    ) -> Result<()> {
+        let query = if disabled {
+            queries::DISABLE_CAPABILITY_QUERY
+        } else {
+            queries::ENABLE_CAPABILITY_QUERY
+        };
+        sqlx::query(query)
+            .bind(plugin_name)
+            .bind(capability_id)
+            .bind(facet)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn disabled_capabilities(
+        &self,
+        facets: &[CapabilityFacet],
+    ) -> Result<HashSet<(String, String, CapabilityFacet)>> {
+        let rows = sqlx::query_as::<_, (String, String, CapabilityFacet)>(
+            queries::DISABLED_CAPABILITIES_QUERY,
+        )
+        .bind(serde_json::to_string(facets)?)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().collect())
     }
 
     pub async fn is_command_allowed(&self, command: &str) -> Result<bool> {

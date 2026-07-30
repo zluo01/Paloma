@@ -1682,3 +1682,154 @@ mod plugins {
         assert_eq!(plugins[0].name, "MyExtension");
     }
 }
+
+mod capabilities {
+    use super::*;
+
+    async fn plugin(storage: &Storage, name: &str, plugin_type: PluginType) {
+        let args = PluginArgs::Local {
+            command: "bin".to_string(),
+            args: vec![],
+        };
+        storage
+            .insert_plugin(
+                name,
+                plugin_type,
+                Transport::Local,
+                300,
+                &HashMap::new(),
+                &args,
+                None,
+            )
+            .await
+            .expect("insert plugin");
+    }
+
+    fn row(
+        plugin: &str,
+        capability: &str,
+        facet: CapabilityFacet,
+    ) -> (String, String, CapabilityFacet) {
+        (plugin.to_string(), capability.to_string(), facet)
+    }
+
+    #[tokio::test]
+    async fn disabled_capabilities_filter_on_requested_facets() {
+        let storage = fresh_storage().await;
+
+        // "Internal" is a built-in: no plugins row exists, toggling must
+        // still work.
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Tool, true)
+            .await
+            .expect("disable tool facet");
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Search, true)
+            .await
+            .expect("disable search facet");
+        storage
+            .toggle_capability("fs", "read_file", CapabilityFacet::Mcp, true)
+            .await
+            .expect("disable mcp tool");
+
+        let for_tools = storage
+            .disabled_capabilities(&[CapabilityFacet::Tool, CapabilityFacet::Mcp])
+            .await
+            .expect("list tool and mcp");
+        assert_eq!(for_tools.len(), 2);
+        assert!(for_tools.contains(&row("Internal", "Files", CapabilityFacet::Tool)));
+        assert!(for_tools.contains(&row("fs", "read_file", CapabilityFacet::Mcp)));
+
+        let for_search = storage
+            .disabled_capabilities(&[CapabilityFacet::Search])
+            .await
+            .expect("list search");
+        assert_eq!(
+            for_search.into_iter().collect::<Vec<_>>(),
+            [row("Internal", "Files", CapabilityFacet::Search)]
+        );
+    }
+
+    #[tokio::test]
+    async fn toggle_capability_tracks_each_facet_independently() {
+        let storage = fresh_storage().await;
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Tool, true)
+            .await
+            .expect("disable tool facet");
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Search, true)
+            .await
+            .expect("disable search facet");
+
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Tool, false)
+            .await
+            .expect("re-enable tool facet");
+
+        let tools = storage
+            .disabled_capabilities(&[CapabilityFacet::Tool])
+            .await
+            .expect("list tools");
+        assert!(tools.is_empty());
+        let searches = storage
+            .disabled_capabilities(&[CapabilityFacet::Search])
+            .await
+            .expect("list searches");
+        assert!(searches.contains(&row("Internal", "Files", CapabilityFacet::Search)));
+    }
+
+    #[tokio::test]
+    async fn toggle_capability_is_idempotent() {
+        let storage = fresh_storage().await;
+
+        for _ in 0..2 {
+            storage
+                .toggle_capability("fs", "read_file", CapabilityFacet::Mcp, true)
+                .await
+                .expect("disable");
+        }
+        let disabled = storage
+            .disabled_capabilities(&[CapabilityFacet::Mcp])
+            .await
+            .expect("list");
+        assert_eq!(disabled.len(), 1);
+
+        for _ in 0..2 {
+            storage
+                .toggle_capability("fs", "read_file", CapabilityFacet::Mcp, false)
+                .await
+                .expect("enable");
+        }
+        let disabled = storage
+            .disabled_capabilities(&[CapabilityFacet::Mcp])
+            .await
+            .expect("list");
+        assert!(disabled.is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_plugin_removes_its_capability_flags() {
+        let storage = fresh_storage().await;
+        plugin(&storage, "fs", PluginType::Mcp).await;
+        storage
+            .toggle_capability("fs", "read_file", CapabilityFacet::Mcp, true)
+            .await
+            .expect("disable mcp tool");
+        storage
+            .toggle_capability("Internal", "Files", CapabilityFacet::Tool, true)
+            .await
+            .expect("disable extension tool");
+
+        storage.delete_plugin("fs").await.expect("delete plugin");
+
+        let disabled = storage
+            .disabled_capabilities(&[CapabilityFacet::Tool, CapabilityFacet::Mcp])
+            .await
+            .expect("list");
+        assert_eq!(
+            disabled.into_iter().collect::<Vec<_>>(),
+            [row("Internal", "Files", CapabilityFacet::Tool)]
+        );
+    }
+}
