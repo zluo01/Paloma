@@ -13,7 +13,7 @@ pub(super) fn unhealthy_icon(error: Option<&str>) -> Image {
     Image::builder()
         .icon_name("help-about-symbolic")
         .tooltip_text(error.unwrap_or("unknown error"))
-        .css_classes(["scry-unhealthy-icon"])
+        .css_classes(["paloma-unhealthy-icon"])
         .valign(Align::Center)
         .build()
 }

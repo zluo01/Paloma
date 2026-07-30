@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ConversationItem, EncodeMode, MessageContentItem, SummaryItem, conversation_item::Item,
 };
 use serde_json::Value;

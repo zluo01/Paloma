@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	pb "scry/extensions/webfetch/internal/pb/schema/extension"
-	"scry/extensions/webfetch/internal/transport"
+	pb "paloma/extensions/webfetch/internal/pb/schema/extension"
+	"paloma/extensions/webfetch/internal/transport"
 )
 
 // stubTool blocks until released, so a test can observe an invocation that is

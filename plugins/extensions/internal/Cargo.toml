@@ -1,5 +1,5 @@
 [package]
-name = "scry-extension-internal"
+name = "paloma-extension-internal"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -15,12 +15,12 @@ notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
 open = "5.3.6"
+paloma-extension-base = { workspace = true }
+paloma-extension-protocol = { workspace = true }
+paloma-utils = { workspace = true }
 rayon = "1.12.0"
 regex = { workspace = true }
 schemars = { workspace = true }
-scry-extension-base = { workspace = true }
-scry-extension-protocol = { workspace = true }
-scry-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

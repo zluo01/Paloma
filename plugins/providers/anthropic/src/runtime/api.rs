@@ -4,8 +4,8 @@ use std::sync::{
 };
 
 use log::error;
-use scry_provider_base::{Dispatcher, ProviderCache, ProviderClient, Result, cached_models};
-use scry_provider_protocol::v1::{
+use paloma_provider_base::{Dispatcher, ProviderCache, ProviderClient, Result, cached_models};
+use paloma_provider_protocol::v1::{
     ChatRequest, Model, ProviderAuth, ProviderHealthStatus, provider_auth::Payload,
 };
 

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use scry_provider_protocol::v1::{Backend, ProviderAuthMethod};
+use paloma_provider_protocol::v1::{Backend, ProviderAuthMethod};
 
 pub(crate) const PROVIDER_ID: &str = "Anthropic";
 

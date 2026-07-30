@@ -6,11 +6,11 @@
 # Version comes from the workspace version in Cargo.toml. The app is
 # ad-hoc signed: downloaders must approve it once in Privacy &
 # Security, or clear quarantine with
-# `xattr -d com.apple.quarantine Scry.app`.
+# `xattr -d com.apple.quarantine Paloma.app`.
 #
 # Outputs:
-#   target/macos/Scry.xcarchive
-#   target/macos/Scry-<version>.dmg
+#   target/macos/Paloma.xcarchive
+#   target/macos/Paloma-<version>.dmg
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -19,16 +19,16 @@ VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
 BUILD_NUMBER="$(git rev-list --count HEAD)"
 
 OUT="target/macos"
-ARCHIVE="$OUT/Scry.xcarchive"
-APP="$ARCHIVE/Products/Applications/Scry.app"
-DMG="$OUT/Scry-$VERSION.dmg"
+ARCHIVE="$OUT/Paloma.xcarchive"
+APP="$ARCHIVE/Products/Applications/Paloma.app"
+DMG="$OUT/Paloma-$VERSION.dmg"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
 xcodebuild archive \
-    -project gui/macos/Scry/Scry.xcodeproj \
-    -scheme Scry \
+    -project gui/macos/Paloma/Paloma.xcodeproj \
+    -scheme Paloma \
     -configuration Release \
     -archivePath "$ARCHIVE" \
     MARKETING_VERSION="$VERSION" \
@@ -36,9 +36,9 @@ xcodebuild archive \
 
 # Drag-to-install layout: the app next to an /Applications symlink.
 STAGING="$(mktemp -d)"
-ditto "$APP" "$STAGING/Scry.app"
+ditto "$APP" "$STAGING/Paloma.app"
 ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname Scry -srcfolder "$STAGING" -format UDZO -quiet "$DMG"
+hdiutil create -volname Paloma -srcfolder "$STAGING" -format UDZO -quiet "$DMG"
 rm -rf "$STAGING"
 
 echo "version: $VERSION ($BUILD_NUMBER)"

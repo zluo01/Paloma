@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use scry_core::{AppError, Permission};
+use paloma_core::{AppError, Permission};
 
 #[derive(Default)]
 pub(super) struct State {

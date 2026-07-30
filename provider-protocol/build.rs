@@ -34,14 +34,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         "MessageContentItem",
         "SummaryItem",
     ] {
-        config.type_attribute(format!(".scry.provider.runtime.v1.{message}"), SERDE_DERIVE);
+        config.type_attribute(
+            format!(".paloma.provider.runtime.v1.{message}"),
+            SERDE_DERIVE,
+        );
     }
     config.type_attribute(
-        ".scry.provider.runtime.v1.ConversationItem.item",
+        ".paloma.provider.runtime.v1.ConversationItem.item",
         SERDE_DERIVE,
     );
     config.type_attribute(
-        ".scry.provider.runtime.v1.ConversationItem.item",
+        ".paloma.provider.runtime.v1.ConversationItem.item",
         "#[serde(tag = \"kind\", rename_all = \"snake_case\")]",
     );
 
@@ -53,12 +56,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         "MessageContentItem.provider_meta",
     ] {
         config.field_attribute(
-            format!(".scry.provider.runtime.v1.{field}"),
+            format!(".paloma.provider.runtime.v1.{field}"),
             "#[serde(default, skip_serializing_if = \"::std::collections::HashMap::is_empty\")]",
         );
     }
     config.field_attribute(
-        ".scry.provider.runtime.v1.HostedTool.content",
+        ".paloma.provider.runtime.v1.HostedTool.content",
         "#[serde(default, skip_serializing_if = \"::core::option::Option::is_none\")]",
     );
 

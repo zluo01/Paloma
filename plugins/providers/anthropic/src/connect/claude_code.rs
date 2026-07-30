@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 
 use oauth2::PkceCodeChallenge;
-use scry_provider_base::{ProviderAuthenticator, ProviderError, Result};
-use scry_provider_protocol::v1::{
+use paloma_provider_base::{ProviderAuthenticator, ProviderError, Result};
+use paloma_provider_protocol::v1::{
     BrowserRedirect, ConnectionPayload, ProviderAuth, connection_payload,
     finalize_connection_request, provider_auth,
 };

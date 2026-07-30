@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ChatRequest, ConnectionPayload, Model, ProviderAuth, ProviderHealthStatus,
     finalize_connection_request, request_event,
 };

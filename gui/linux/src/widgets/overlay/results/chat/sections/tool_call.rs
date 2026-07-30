@@ -2,14 +2,14 @@ use gtk4::{
     Box as GtkBox, Button, Label, Orientation, Separator, pango,
     prelude::{BoxExt, WidgetExt},
 };
-use scry_core::{PermissionState, UserDecision};
+use paloma_core::{PermissionState, UserDecision};
 
 use crate::{
     helper::Clear,
     widgets::overlay::results::chat::helper::{append_content_label, code_card, new_section},
 };
 
-const TOOL_CLASS: &str = "scry-chat-section-tool";
+const TOOL_CLASS: &str = "paloma-chat-section-tool";
 
 pub(crate) struct ToolCallDecision {
     pub action: Button,
@@ -31,7 +31,7 @@ impl ToolCallSection {
     ) -> (Self, Vec<ToolCallDecision>) {
         let view = new_section(None, TOOL_CLASS);
         if let Some(description) = description.filter(|d| !d.is_empty()) {
-            append_content_label(&view, description, "scry-chat-tool-description");
+            append_content_label(&view, description, "paloma-chat-tool-description");
         }
         view.append(&code_card(tool_name, arguments));
 
@@ -68,13 +68,13 @@ fn decision_button_group(user_decisions: &[UserDecision]) -> (GtkBox, Vec<ToolCa
         .orientation(Orientation::Vertical)
         .spacing(6)
         .build();
-    actions.add_css_class("scry-chat-tool-decisions");
+    actions.add_css_class("paloma-chat-tool-decisions");
 
     let caption = Label::builder()
         .label("Needs your permission")
         .xalign(0.0)
         .build();
-    caption.add_css_class("scry-chat-tool-permission");
+    caption.add_css_class("paloma-chat-tool-permission");
     actions.append(&caption);
 
     // Allow options on top; Deny / "Stop asking" below a divider.
@@ -113,7 +113,7 @@ fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
     if matches!(user_decision, UserDecision::Allow { .. }) {
         button.set_tooltip_text(Some(&text));
     }
-    button.add_css_class("scry-chat-decision");
+    button.add_css_class("paloma-chat-decision");
     match user_decision {
         UserDecision::AllowOnce { .. } => {
             button.add_css_class("suggested-action");
@@ -124,7 +124,7 @@ fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
         },
         UserDecision::IgnorePermission { .. } => {
             button.add_css_class("flat");
-            button.add_css_class("scry-chat-decision-warning");
+            button.add_css_class("paloma-chat-decision-warning");
         },
         _ => {
             button.add_css_class("flat");
@@ -143,7 +143,7 @@ fn resolve_decision(actions: &GtkBox, state: &PermissionState) {
         .label(decision_outcome(state))
         .xalign(0.0)
         .build();
-    outcome.add_css_class("scry-chat-tool-decision-outcome");
+    outcome.add_css_class("paloma-chat-tool-decision-outcome");
     actions.append(&outcome);
 }
 

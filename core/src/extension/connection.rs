@@ -12,7 +12,7 @@ use std::{
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use log::{error, warn};
-use scry_extension_protocol::{
+use paloma_extension_protocol::{
     Bytes, Message, PROTOCOL_VERSION,
     v1::{
         Action, CancelToolRequest, HandshakeRequest, HandshakeResponse, InvokeToolRequest, Item,
@@ -20,7 +20,7 @@ use scry_extension_protocol::{
         response_event::Payload, run_action_response::Behavior, tool_content,
     },
 };
-use scry_utils::{
+use paloma_utils::{
     Element,
     transport::{FramedRead, FramedWrite, VarintDelimitedCodec},
 };
@@ -461,7 +461,7 @@ type Result<T> = std::result::Result<T, ExtensionConnectionError>;
 
 #[cfg(test)]
 mod tests {
-    use scry_extension_protocol::v1::Binary;
+    use paloma_extension_protocol::v1::Binary;
 
     use super::*;
 

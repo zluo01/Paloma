@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, TextView, Widget, prelude::*};
 use log::error;
-use scry_core::{AppContext, PermissionState, ProviderBackendId, UserDecision};
+use paloma_core::{AppContext, PermissionState, ProviderBackendId, UserDecision};
 
 use crate::{
     helper::{Clear, scroll_into_view},
@@ -43,7 +43,7 @@ impl ChatView {
             .halign(Align::Center)
             .valign(Align::Start)
             .width_request(OVERLAY_WIDTH_PX)
-            .css_classes(["scry-chat-card"])
+            .css_classes(["paloma-chat-card"])
             .build();
         widget.append(&turns);
 

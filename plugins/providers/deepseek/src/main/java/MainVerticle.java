@@ -1,6 +1,6 @@
-import com.github.zluo01.scry.proto.v1.ProviderError;
-import com.github.zluo01.scry.proto.v1.RequestEvent;
-import com.github.zluo01.scry.proto.v1.ResponseEvent;
+import com.github.zluo01.paloma.proto.v1.ProviderError;
+import com.github.zluo01.paloma.proto.v1.RequestEvent;
+import com.github.zluo01.paloma.proto.v1.ResponseEvent;
 import constants.Constants;
 import enums.MessageEvent;
 import io.vertx.core.DeploymentOptions;

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use scry_provider_base::{ProviderAuthenticator, ProviderError, Result};
-use scry_provider_protocol::v1::{
+use paloma_provider_base::{ProviderAuthenticator, ProviderError, Result};
+use paloma_provider_protocol::v1::{
     ConnectionPayload, DeviceCode, ProviderAuth, connection_payload, finalize_connection_request,
     provider_auth,
 };

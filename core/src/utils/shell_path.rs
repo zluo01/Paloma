@@ -4,7 +4,7 @@ use log::warn;
 use tokio::{process::Command, sync::OnceCell, time::timeout};
 
 const PRINT_PATH_FLAG: &str = "--print-path";
-const MARKER: &str = "__scry_path__";
+const MARKER: &str = "__paloma_path__";
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
 static LOGIN_PATH: OnceCell<Option<String>> = OnceCell::const_new();

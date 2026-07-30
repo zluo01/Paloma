@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Paloma
+Exec=@BIN@
+Icon=preferences-system
+Terminal=false
+Categories=Utility;
+StartupNotify=false

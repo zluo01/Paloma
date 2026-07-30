@@ -2,8 +2,8 @@ use std::{collections::HashMap, io, time::Duration};
 
 use log::{debug, info};
 use oauth2::TokenResponse;
+use paloma_utils::unix_now;
 use rmcp::transport::{AuthError, StoredCredentials, auth::OAuthState};
-use scry_utils::unix_now;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -13,9 +13,9 @@ use tokio::{
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-const SUCCESS_PAGE: &str = r#"<!doctype html><html><head><title>Scry - Authorization Successful</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb;"><div style="text-align:center;padding:2rem;"><h1 style="margin-bottom:0.75rem;">Authorization Successful</h1><p style="color:#d1d5db;">You can close this window and return to Scry.</p></div><script>setTimeout(()=>window.close(),2000)</script></body></html>"#;
+const SUCCESS_PAGE: &str = r#"<!doctype html><html><head><title>Paloma - Authorization Successful</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb;"><div style="text-align:center;padding:2rem;"><h1 style="margin-bottom:0.75rem;">Authorization Successful</h1><p style="color:#d1d5db;">You can close this window and return to Paloma.</p></div><script>setTimeout(()=>window.close(),2000)</script></body></html>"#;
 
-const FAILURE_PAGE: &str = r#"<!doctype html><html><head><title>Scry - Authorization Failed</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb;"><div style="text-align:center;padding:2rem;"><h1 style="margin-bottom:0.75rem;">Authorization Failed</h1><p style="color:#d1d5db;">You can close this window and return to Scry for details.</p></div></body></html>"#;
+const FAILURE_PAGE: &str = r#"<!doctype html><html><head><title>Paloma - Authorization Failed</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb;"><div style="text-align:center;padding:2rem;"><h1 style="margin-bottom:0.75rem;">Authorization Failed</h1><p style="color:#d1d5db;">You can close this window and return to Paloma for details.</p></div></body></html>"#;
 
 pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackState> {
     let mut oauth_state = OAuthState::new(url, None).await?;
@@ -31,7 +31,7 @@ pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackStat
 
     // empty scopes: rmcp selects them from the 401 header or server metadata
     oauth_state
-        .start_authorization(&[], &redirect_uri, Some("Scry"))
+        .start_authorization(&[], &redirect_uri, Some("Paloma"))
         .await?;
 
     info!("Starting OAuth authentication: {url}; callback server listening on port {port}");

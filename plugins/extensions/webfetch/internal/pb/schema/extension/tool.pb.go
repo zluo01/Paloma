@@ -527,7 +527,7 @@ var File_schema_extension_tool_proto protoreflect.FileDescriptor
 
 const file_schema_extension_tool_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/extension/tool.proto\x12\x11scry.extension.v1\"M\n" +
+	"\x1bschema/extension/tool.proto\x12\x11paloma.extension.v1\"M\n" +
 	"\tToolFacet\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1e\n" +
 	"\n" +
@@ -539,18 +539,18 @@ const file_schema_extension_tool_proto_rawDesc = "" +
 	"\acall_id\x18\x02 \x01(\tR\x06callId\x12\x1c\n" +
 	"\targuments\x18\x03 \x01(\tR\targuments\"N\n" +
 	"\x12InvokeToolResponse\x128\n" +
-	"\acontent\x18\x01 \x01(\v2\x1e.scry.extension.v1.ToolContentR\acontent\"\xeb\x01\n" +
+	"\acontent\x18\x01 \x01(\v2\x1e.paloma.extension.v1.ToolContentR\acontent\"\xeb\x01\n" +
 	"\vToolContent\x12\x10\n" +
 	"\x03tag\x18\x01 \x01(\tR\x03tag\x12<\n" +
 	"\n" +
-	"attributes\x18\x02 \x03(\v2\x1c.scry.extension.v1.AttributeR\n" +
+	"attributes\x18\x02 \x03(\v2\x1c.paloma.extension.v1.AttributeR\n" +
 	"attributes\x12\x14\n" +
 	"\x04text\x18\x03 \x01(\tH\x00R\x04text\x123\n" +
-	"\x06binary\x18\x04 \x01(\v2\x19.scry.extension.v1.BinaryH\x00R\x06binary\x129\n" +
-	"\bchildren\x18\x05 \x01(\v2\x1b.scry.extension.v1.ChildrenH\x00R\bchildrenB\x06\n" +
+	"\x06binary\x18\x04 \x01(\v2\x19.paloma.extension.v1.BinaryH\x00R\x06binary\x129\n" +
+	"\bchildren\x18\x05 \x01(\v2\x1b.paloma.extension.v1.ChildrenH\x00R\bchildrenB\x06\n" +
 	"\x04body\"@\n" +
 	"\bChildren\x124\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x1e.scry.extension.v1.ToolContentR\x05nodes\"3\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1e.paloma.extension.v1.ToolContentR\x05nodes\"3\n" +
 	"\tAttribute\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"9\n" +
@@ -561,7 +561,7 @@ const file_schema_extension_tool_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x14\n" +
 	"\x12CancelToolResponseB\xcb\x01\n" +
-	"\x15com.scry.extension.v1B\tToolProtoP\x01ZAscry/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Scry.Extension.V1\xca\x02\x11Scry\\Extension\\V1\xe2\x02\x1dScry\\Extension\\V1\\GPBMetadata\xea\x02\x13Scry::Extension::V1b\x06proto3"
+	"\x15com.paloma.extension.v1B\tToolProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_tool_proto_rawDescOnce sync.Once
@@ -577,22 +577,22 @@ func file_schema_extension_tool_proto_rawDescGZIP() []byte {
 
 var file_schema_extension_tool_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_schema_extension_tool_proto_goTypes = []any{
-	(*ToolFacet)(nil),          // 0: scry.extension.v1.ToolFacet
-	(*InvokeToolRequest)(nil),  // 1: scry.extension.v1.InvokeToolRequest
-	(*InvokeToolResponse)(nil), // 2: scry.extension.v1.InvokeToolResponse
-	(*ToolContent)(nil),        // 3: scry.extension.v1.ToolContent
-	(*Children)(nil),           // 4: scry.extension.v1.Children
-	(*Attribute)(nil),          // 5: scry.extension.v1.Attribute
-	(*Binary)(nil),             // 6: scry.extension.v1.Binary
-	(*CancelToolRequest)(nil),  // 7: scry.extension.v1.CancelToolRequest
-	(*CancelToolResponse)(nil), // 8: scry.extension.v1.CancelToolResponse
+	(*ToolFacet)(nil),          // 0: paloma.extension.v1.ToolFacet
+	(*InvokeToolRequest)(nil),  // 1: paloma.extension.v1.InvokeToolRequest
+	(*InvokeToolResponse)(nil), // 2: paloma.extension.v1.InvokeToolResponse
+	(*ToolContent)(nil),        // 3: paloma.extension.v1.ToolContent
+	(*Children)(nil),           // 4: paloma.extension.v1.Children
+	(*Attribute)(nil),          // 5: paloma.extension.v1.Attribute
+	(*Binary)(nil),             // 6: paloma.extension.v1.Binary
+	(*CancelToolRequest)(nil),  // 7: paloma.extension.v1.CancelToolRequest
+	(*CancelToolResponse)(nil), // 8: paloma.extension.v1.CancelToolResponse
 }
 var file_schema_extension_tool_proto_depIdxs = []int32{
-	3, // 0: scry.extension.v1.InvokeToolResponse.content:type_name -> scry.extension.v1.ToolContent
-	5, // 1: scry.extension.v1.ToolContent.attributes:type_name -> scry.extension.v1.Attribute
-	6, // 2: scry.extension.v1.ToolContent.binary:type_name -> scry.extension.v1.Binary
-	4, // 3: scry.extension.v1.ToolContent.children:type_name -> scry.extension.v1.Children
-	3, // 4: scry.extension.v1.Children.nodes:type_name -> scry.extension.v1.ToolContent
+	3, // 0: paloma.extension.v1.InvokeToolResponse.content:type_name -> paloma.extension.v1.ToolContent
+	5, // 1: paloma.extension.v1.ToolContent.attributes:type_name -> paloma.extension.v1.Attribute
+	6, // 2: paloma.extension.v1.ToolContent.binary:type_name -> paloma.extension.v1.Binary
+	4, // 3: paloma.extension.v1.ToolContent.children:type_name -> paloma.extension.v1.Children
+	3, // 4: paloma.extension.v1.Children.nodes:type_name -> paloma.extension.v1.ToolContent
 	5, // [5:5] is the sub-list for method output_type
 	5, // [5:5] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name

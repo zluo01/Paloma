@@ -1,6 +1,6 @@
 # Web Fetch
 
-A [Scry](../../..) extension that fetches a URL and returns its content to
+A [Paloma](../../..) extension that fetches a URL and returns its content to
 the model as markdown, plain text, or raw HTML. Advertises itself to the
 host as `WebFetch`; lives in `plugins/extensions/webfetch`.
 

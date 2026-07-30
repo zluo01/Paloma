@@ -15,8 +15,8 @@ use log::{debug, error};
 use objc2::rc::autoreleasepool;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-use scry_extension_base::{Capability, SearchHandler};
-use scry_extension_protocol::v1::{
+use paloma_extension_base::{Capability, SearchHandler};
+use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
@@ -95,7 +95,7 @@ impl Clipboard {
         let history_for_watcher = Arc::clone(&history);
 
         thread::Builder::new()
-            .name("scry-clipboard".into())
+            .name("paloma-clipboard".into())
             .spawn(move || watcher_loop(history_for_watcher))
             .expect("spawn clipboard watcher thread");
 

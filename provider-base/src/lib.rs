@@ -20,7 +20,7 @@ pub use codec::{
 pub use constants::ENVIRONMENT_CONTEXT;
 pub use dispatcher::Dispatcher;
 pub use entity::{OAuthState, RefreshRequest};
-use scry_provider_protocol::v1::Model;
+use paloma_provider_protocol::v1::Model;
 pub use service::{ProviderRuntime, ProviderRuntimeService};
 pub use traits::{ProviderAuthenticator, ProviderClient, ProviderService};
 

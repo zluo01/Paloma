@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build scry-ffi and generate the Swift bindings the macOS app compiles
+# Build paloma-ffi and generate the Swift bindings the macOS app compiles
 # against. Runs standalone or as the app's "Build Rust Bindings" phase.
 #
 #   scripts/build-swift-bindings.sh [--debug]
@@ -8,7 +8,7 @@
 #   target/swift/sources/            generated Swift bindings
 #   target/swift/include/            C header + module.modulemap; the app
 #                                    finds these via SWIFT_INCLUDE_PATHS
-#   gui/macos/Scry/Scry/Generated/   copy of the bindings, picked up by the
+#   gui/macos/Paloma/Paloma/Generated/   copy of the bindings, picked up by the
 #                                    app target's synchronized folder
 set -euo pipefail
 
@@ -22,11 +22,11 @@ if [[ "${1:-}" == "--debug" ]]; then
     PROFILE_FLAG=
 fi
 
-LIB="target/$TARGET/$PROFILE/libscry_ffi.a"
+LIB="target/$TARGET/$PROFILE/libpaloma_ffi.a"
 OUT="target/swift"
-APP_GENERATED="gui/macos/Scry/Scry/Generated"
+APP_GENERATED="gui/macos/Paloma/Paloma/Generated"
 
-cargo build -p scry-ffi --target "$TARGET" ${PROFILE_FLAG}
+cargo build -p paloma-ffi --target "$TARGET" ${PROFILE_FLAG}
 
 rm -rf "$OUT"
 mkdir -p "$OUT/sources" "$OUT/include"
@@ -37,12 +37,12 @@ bindgen() {
 
 bindgen --swift-sources "$LIB" "$OUT/sources"
 # The module name must match what the generated Swift sources import.
-bindgen --headers --modulemap --module-name ScryCoreFFI \
+bindgen --headers --modulemap --module-name PalomaCoreFFI \
     --modulemap-filename module.modulemap "$LIB" "$OUT/include"
 
 mkdir -p "$APP_GENERATED"
-cp "$OUT/sources/ScryCore.swift" "$APP_GENERATED/"
+cp "$OUT/sources/PalomaCore.swift" "$APP_GENERATED/"
 
-echo "bindings:  $APP_GENERATED/ScryCore.swift"
+echo "bindings:  $APP_GENERATED/PalomaCore.swift"
 echo "modulemap: $OUT/include"
 echo "library:   $LIB"

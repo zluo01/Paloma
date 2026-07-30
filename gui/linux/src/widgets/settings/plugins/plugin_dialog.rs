@@ -13,7 +13,7 @@ use libadwaita::{
     Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, SpinRow, SwitchRow, ToolbarView,
     prelude::*,
 };
-use scry_core::{Plugin, PluginArgs, PluginType, Transport};
+use paloma_core::{Plugin, PluginArgs, PluginType, Transport};
 
 use crate::widgets::settings::plugins::model::{GeneralPluginMsg, Msg};
 

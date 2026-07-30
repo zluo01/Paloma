@@ -1,5 +1,5 @@
 [package]
-name = "scry-provider-base"
+name = "paloma-provider-base"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -9,9 +9,9 @@ publish = false
 async-trait = { workspace = true }
 dashmap = { workspace = true }
 log = { workspace = true }
+paloma-provider-protocol = { workspace = true }
+paloma-utils = { workspace = true }
 reqwest = { workspace = true }
-scry-provider-protocol = { workspace = true }
-scry-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

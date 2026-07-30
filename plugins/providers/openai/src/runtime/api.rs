@@ -4,13 +4,13 @@ use std::sync::{
 };
 
 use log::{debug, error};
-use scry_provider_base::{
+use paloma_provider_base::{
     Dispatcher, ProviderCache, ProviderClient, ProviderError, Result, cached_models,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ChatRequest, Model, ProviderAuth, ProviderHealthStatus, provider_auth::Payload,
 };
-use scry_utils::attempt_with_retry;
+use paloma_utils::attempt_with_retry;
 
 use crate::{
     constant::backend_id,
@@ -113,7 +113,7 @@ impl ProviderClient for OpenAIRuntime {
             .request
             .post(RESPONSES_URL)
             .bearer_auth(&self.api_key)
-            .header(reqwest::header::USER_AGENT, "scry-openai")
+            .header(reqwest::header::USER_AGENT, "paloma-openai")
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
             .send()
@@ -154,7 +154,7 @@ async fn health_check(request: &reqwest::Client, api_key: &str) -> Result<()> {
     let response = request
         .get(HEALTH_CHECK_URL)
         .bearer_auth(api_key)
-        .header(reqwest::header::USER_AGENT, "scry-openai")
+        .header(reqwest::header::USER_AGENT, "paloma-openai")
         .send()
         .await?;
 
@@ -178,7 +178,7 @@ async fn fetch_models(request: &reqwest::Client) -> Result<Vec<Model>> {
         || async move {
             Ok(request
                 .get(MODELS_URL)
-                .header(reqwest::header::USER_AGENT, "scry")
+                .header(reqwest::header::USER_AGENT, "paloma")
                 .timeout(MODELS_FETCH_TIMEOUT)
                 .send()
                 .await?

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use scry_utils::{RefreshSlot, ttl_with_jitter};
+use paloma_utils::{RefreshSlot, ttl_with_jitter};
 
 use crate::entity::ToolSpec;
 

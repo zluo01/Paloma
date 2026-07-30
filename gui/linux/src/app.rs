@@ -8,7 +8,7 @@ use std::{
 use gtk4::{gio, glib, prelude::*};
 use libadwaita::Application;
 use log::{error, warn};
-use scry_core::AppContext;
+use paloma_core::AppContext;
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     widgets::{overlay, settings::SettingsWindow},
 };
 
-const APP_ID: &str = "dev.scry.Scry";
+const APP_ID: &str = "dev.paloma.Paloma";
 
 const UI_CHANNEL_CAPACITY: usize = 8;
 
@@ -38,7 +38,7 @@ pub(crate) fn run() -> ExitCode {
 
     let exit = gapp.run_with_args::<&str>(&[]);
     if startup_failed.get() || exit != glib::ExitCode::SUCCESS {
-        error!("scry startup failed");
+        error!("paloma startup failed");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS

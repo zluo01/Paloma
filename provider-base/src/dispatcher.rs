@@ -1,4 +1,4 @@
-use scry_provider_protocol::v1::{ChatResponse, ResponseEvent, chat_response, response_event};
+use paloma_provider_protocol::v1::{ChatResponse, ResponseEvent, chat_response, response_event};
 use tokio::sync::mpsc;
 
 #[derive(Clone)]

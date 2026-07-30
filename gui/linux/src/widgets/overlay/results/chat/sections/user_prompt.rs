@@ -3,7 +3,7 @@ use gtk4::Box;
 use crate::widgets::overlay::results::chat::helper::{append_content_label, new_section};
 
 const USER_TITLE: &str = "You";
-const USER_CLASS: &str = "scry-chat-section-user";
+const USER_CLASS: &str = "paloma-chat-section-user";
 
 pub(crate) struct UserPromptSection {
     view: Box,

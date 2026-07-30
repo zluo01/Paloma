@@ -1,15 +1,15 @@
 use std::collections::{BTreeMap, HashMap};
 
 use log::warn;
-use scry_provider_base::{
+use paloma_provider_base::{
     ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
     provider_meta_to_map,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
     SummaryItem, ToolCall, Unknown, conversation_item,
 };
-use scry_utils::Element;
+use paloma_utils::Element;
 use serde_json::Value;
 
 pub struct ClaudeCodec;

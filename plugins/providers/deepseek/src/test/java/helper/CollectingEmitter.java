@@ -1,6 +1,6 @@
 package helper;
 
-import com.github.zluo01.scry.proto.v1.ChatResponse;
+import com.github.zluo01.paloma.proto.v1.ChatResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;

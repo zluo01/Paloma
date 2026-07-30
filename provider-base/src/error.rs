@@ -16,7 +16,7 @@ pub enum ProviderError {
     /// Process-fatal fault on the host<->plugin stdio transport. Never sent
     /// to the host as a wire-level error; only bubbles out of `serve`.
     #[error("protobuf decode failed: {0}")]
-    Decode(#[from] scry_provider_protocol::DecodeError),
+    Decode(#[from] paloma_provider_protocol::DecodeError),
 
     #[error("device authorization timed out after {0}s")]
     Timeout(u64),
@@ -52,7 +52,7 @@ impl ProviderError {
     }
 }
 
-impl From<ProviderError> for scry_provider_protocol::v1::ProviderError {
+impl From<ProviderError> for paloma_provider_protocol::v1::ProviderError {
     fn from(e: ProviderError) -> Self {
         Self {
             error: e.to_string(),

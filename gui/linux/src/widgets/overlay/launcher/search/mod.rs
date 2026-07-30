@@ -18,7 +18,7 @@ impl Search {
             .placeholder_text(placeholder(Mode::Search))
             .hexpand(true)
             .search_delay(SEARCH_DEBOUNCE_MS)
-            .css_classes(["scry-entry"])
+            .css_classes(["paloma-entry"])
             .build();
 
         let suppress = Rc::new(Cell::new(false));

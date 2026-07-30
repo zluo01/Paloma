@@ -21,8 +21,8 @@ use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
-use scry_extension_base::{Capability, SearchHandler};
-use scry_extension_protocol::v1::{
+use paloma_extension_base::{Capability, SearchHandler};
+use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
 
@@ -168,7 +168,7 @@ impl AppSearch {
         {
             let entries = Arc::clone(&entries);
             thread::Builder::new()
-                .name("scry-appsearch-index".into())
+                .name("paloma-appsearch-index".into())
                 .spawn(move || {
                     let loaded = Platform::load();
                     info!("indexed {} applications", loaded.len());

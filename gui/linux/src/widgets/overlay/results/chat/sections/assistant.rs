@@ -8,14 +8,14 @@ use gtk4::{
     Box as GtkBox, Button, Label, Orientation,
     prelude::{BoxExt, ButtonExt, WidgetExt},
 };
-use scry_core::ProviderBackendId;
+use paloma_core::ProviderBackendId;
 
 use crate::widgets::overlay::results::chat::{
     helper::new_section,
     markdown::{MarkdownView, ParsedMarkdown},
 };
 
-const ASSISTANT_CLASS: &str = "scry-chat-section-assistant";
+const ASSISTANT_CLASS: &str = "paloma-chat-section-assistant";
 
 const RENDER_TIME_BUFFER: Duration = Duration::from_millis(42);
 
@@ -38,7 +38,7 @@ impl AssistantSection {
             .label(provider_backend_id.to_string())
             .xalign(0.0)
             .hexpand(true)
-            .css_classes(["scry-chat-role"])
+            .css_classes(["paloma-chat-role"])
             .build();
         header.append(&role);
         header.append(&copy_button(source.clone()));
@@ -105,7 +105,7 @@ fn copy_button(source: Rc<RefCell<String>>) -> Button {
     let copy = Button::builder()
         .icon_name("edit-copy-symbolic")
         .tooltip_text("Copy markdown")
-        .css_classes(["flat", "scry-code-copy"])
+        .css_classes(["flat", "paloma-code-copy"])
         .build();
     copy.connect_clicked(move |button| {
         button.clipboard().set_text(source.borrow().as_str());

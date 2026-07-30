@@ -13,7 +13,7 @@ use gtk4::{
 };
 use libadwaita::{ActionRow, prelude::*};
 use log::error;
-use scry_core::{AppContext, SessionListItem};
+use paloma_core::{AppContext, SessionListItem};
 use uuid::Uuid;
 
 use super::step_index;
@@ -52,30 +52,30 @@ impl SessionsView {
             .orientation(Orientation::Vertical)
             .halign(Align::Center)
             .width_request(OVERLAY_WIDTH_PX)
-            .css_classes(["scry-result-card"])
+            .css_classes(["paloma-result-card"])
             .build();
 
         let list = ListBox::builder()
             .selection_mode(SelectionMode::Single)
-            .css_classes(["scry-sessions-list"])
+            .css_classes(["paloma-sessions-list"])
             .build();
 
         let empty = Label::builder()
             .label(EMPTY_PLACEHOLDER)
             .justify(gtk4::Justification::Center)
-            .css_classes(["scry-sessions-empty-title"])
+            .css_classes(["paloma-sessions-empty-title"])
             .build();
         let empty_icon = Image::builder()
             .icon_name("document-open-recent-symbolic")
             .pixel_size(32)
-            .css_classes(["scry-sessions-empty-icon"])
+            .css_classes(["paloma-sessions-empty-icon"])
             .build();
         let placeholder = GtkBox::builder()
             .orientation(Orientation::Vertical)
             .spacing(10)
             .halign(Align::Center)
             .valign(Align::Center)
-            .css_classes(["scry-sessions-empty"])
+            .css_classes(["paloma-sessions-empty"])
             .build();
         placeholder.append(&empty_icon);
         placeholder.append(&empty);
@@ -260,7 +260,7 @@ fn set_sessions(
             .icon_name("document-open-recent-symbolic")
             .pixel_size(14)
             .valign(Align::Center)
-            .css_classes(["scry-session-icon"])
+            .css_classes(["paloma-session-icon"])
             .build();
         row.add_prefix(&icon);
 
@@ -295,7 +295,7 @@ fn set_sessions(
         let time = Label::builder()
             .label(relative_time_at(now, session.last_update))
             .valign(Align::Center)
-            .css_classes(["scry-session-time"])
+            .css_classes(["paloma-session-time"])
             .build();
         row.add_suffix(&time);
 

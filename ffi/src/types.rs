@@ -1,4 +1,4 @@
-//! FFI boundary types for `scry-core`.
+//! FFI boundary types for `paloma-core`.
 //!
 //! Types that cross the boundary unchanged are declared as UniFFI *remote*
 //! types: each declaration restates the core type's shape and UniFFI
@@ -9,14 +9,14 @@
 
 use std::collections::HashMap;
 
-pub use scry_core::{
+pub use paloma_core::{
     Action, CapabilityFacet, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus,
     Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
     ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
 };
 use uuid::Uuid;
 
-use crate::error::ScryError;
+use crate::error::PalomaError;
 
 // Swift sees session ids as plain strings.
 uniffi::custom_type!(Uuid, String, {
@@ -179,19 +179,19 @@ pub enum Icon {
     Embedded(Vec<u8>),
 }
 
-impl From<scry_core::Icon> for Icon {
-    fn from(value: scry_core::Icon) -> Self {
+impl From<paloma_core::Icon> for Icon {
+    fn from(value: paloma_core::Icon) -> Self {
         match value {
-            scry_core::Icon::Name(name) => Self::Name(name),
-            scry_core::Icon::Path(path) => Self::Path(path),
-            scry_core::Icon::Embedded(bytes) => Self::Embedded(bytes),
+            paloma_core::Icon::Name(name) => Self::Name(name),
+            paloma_core::Icon::Path(path) => Self::Path(path),
+            paloma_core::Icon::Embedded(bytes) => Self::Embedded(bytes),
         }
     }
 }
 
-impl From<scry_core::capability_icon::Icon> for Icon {
-    fn from(value: scry_core::capability_icon::Icon) -> Self {
-        use scry_core::capability_icon::Icon as CapabilityIcon;
+impl From<paloma_core::capability_icon::Icon> for Icon {
+    fn from(value: paloma_core::capability_icon::Icon) -> Self {
+        use paloma_core::capability_icon::Icon as CapabilityIcon;
         match value {
             CapabilityIcon::Name(name) => Self::Name(name),
             CapabilityIcon::Path(path) => Self::Path(path),
@@ -208,8 +208,8 @@ pub struct Item {
     pub actions: Vec<Action>,
 }
 
-impl From<scry_core::Item> for Item {
-    fn from(value: scry_core::Item) -> Self {
+impl From<paloma_core::Item> for Item {
+    fn from(value: paloma_core::Item) -> Self {
         Self {
             title: value.title,
             subtitle: value.subtitle,
@@ -227,8 +227,8 @@ pub struct Connector {
     pub connection: Option<ConnectorConnection>,
 }
 
-impl From<scry_core::Connector> for Connector {
-    fn from(value: scry_core::Connector) -> Self {
+impl From<paloma_core::Connector> for Connector {
+    fn from(value: paloma_core::Connector) -> Self {
         Self {
             id: value.id,
             description: value.description,
@@ -258,8 +258,8 @@ pub struct CapabilityInfo {
     pub facets: Vec<FacetState>,
 }
 
-impl From<scry_core::CapabilityInfo> for CapabilityInfo {
-    fn from(value: scry_core::CapabilityInfo) -> Self {
+impl From<paloma_core::CapabilityInfo> for CapabilityInfo {
+    fn from(value: paloma_core::CapabilityInfo) -> Self {
         Self {
             id: value.id,
             description: value.description,
@@ -284,8 +284,8 @@ pub struct ExtensionInfo {
     pub config: Option<Plugin>,
 }
 
-impl From<scry_core::ExtensionInfo> for ExtensionInfo {
-    fn from(value: scry_core::ExtensionInfo) -> Self {
+impl From<paloma_core::ExtensionInfo> for ExtensionInfo {
+    fn from(value: paloma_core::ExtensionInfo) -> Self {
         Self {
             name: value.name,
             description: value.description,
@@ -312,8 +312,8 @@ pub struct McpPluginInfo {
     pub config: Plugin,
 }
 
-impl From<scry_core::McpPluginInfo> for McpPluginInfo {
-    fn from(value: scry_core::McpPluginInfo) -> Self {
+impl From<paloma_core::McpPluginInfo> for McpPluginInfo {
+    fn from(value: paloma_core::McpPluginInfo) -> Self {
         Self {
             description: value.description,
             status: value.status,
@@ -331,12 +331,12 @@ pub enum Behavior {
     Replace { input: String },
 }
 
-impl From<scry_core::Behavior> for Behavior {
-    fn from(value: scry_core::Behavior) -> Self {
+impl From<paloma_core::Behavior> for Behavior {
+    fn from(value: paloma_core::Behavior) -> Self {
         match value {
-            scry_core::Behavior::Hide(_) => Self::Hide,
-            scry_core::Behavior::Stay(_) => Self::Stay,
-            scry_core::Behavior::Replace(replace) => Self::Replace {
+            paloma_core::Behavior::Hide(_) => Self::Hide,
+            paloma_core::Behavior::Stay(_) => Self::Stay,
+            paloma_core::Behavior::Replace(replace) => Self::Replace {
                 input: replace.input,
             },
         }
@@ -358,11 +358,11 @@ pub enum ConnectionPayload {
     },
 }
 
-impl TryFrom<scry_core::ConnectionPayload> for ConnectionPayload {
-    type Error = ScryError;
+impl TryFrom<paloma_core::ConnectionPayload> for ConnectionPayload {
+    type Error = PalomaError;
 
-    fn try_from(value: scry_core::ConnectionPayload) -> Result<Self, Self::Error> {
-        use scry_core::connection_payload::Payload;
+    fn try_from(value: paloma_core::ConnectionPayload) -> Result<Self, Self::Error> {
+        use paloma_core::connection_payload::Payload;
         match value.payload {
             Some(Payload::DeviceCode(device_code)) => Ok(Self::DeviceCode {
                 verification_url: device_code.verification_url,
@@ -376,7 +376,7 @@ impl TryFrom<scry_core::ConnectionPayload> for ConnectionPayload {
                 instructions_url: manual_input.instructions_url,
             }),
             // should not happen, this indicates a provider plugin bug.
-            None => Err(ScryError::new(
+            None => Err(PalomaError::new(
                 "provider returned an empty connection payload",
             )),
         }
@@ -397,10 +397,10 @@ pub enum SearchRenderEvent {
     Append { response: QueryResponse },
 }
 
-impl From<scry_core::SearchRenderEvent> for SearchRenderEvent {
-    fn from(value: scry_core::SearchRenderEvent) -> Self {
+impl From<paloma_core::SearchRenderEvent> for SearchRenderEvent {
+    fn from(value: paloma_core::SearchRenderEvent) -> Self {
         match value {
-            scry_core::SearchRenderEvent::Append { response } => Self::Append {
+            paloma_core::SearchRenderEvent::Append { response } => Self::Append {
                 response: QueryResponse {
                     extension_capability_id: response.extension_capability_id,
                     name: response.name,
@@ -431,19 +431,19 @@ pub enum ChatRenderEvent {
     },
 }
 
-impl From<scry_core::ChatRenderEvent> for ChatRenderEvent {
-    fn from(value: scry_core::ChatRenderEvent) -> Self {
+impl From<paloma_core::ChatRenderEvent> for ChatRenderEvent {
+    fn from(value: paloma_core::ChatRenderEvent) -> Self {
         match value {
-            scry_core::ChatRenderEvent::UserPrompt { text } => Self::UserPrompt { text },
-            scry_core::ChatRenderEvent::TextDelta {
+            paloma_core::ChatRenderEvent::UserPrompt { text } => Self::UserPrompt { text },
+            paloma_core::ChatRenderEvent::TextDelta {
                 provider_backend_id,
                 text,
             } => Self::TextDelta {
                 provider_backend_id,
                 text,
             },
-            scry_core::ChatRenderEvent::ReasoningDelta { text } => Self::ReasoningDelta { text },
-            scry_core::ChatRenderEvent::ToolCall {
+            paloma_core::ChatRenderEvent::ReasoningDelta { text } => Self::ReasoningDelta { text },
+            paloma_core::ChatRenderEvent::ToolCall {
                 tool_name,
                 arguments,
                 description,
@@ -467,18 +467,18 @@ pub enum RenderEvent {
     Error { message: String },
 }
 
-impl From<scry_core::RenderEvent> for RenderEvent {
-    fn from(value: scry_core::RenderEvent) -> Self {
+impl From<paloma_core::RenderEvent> for RenderEvent {
+    fn from(value: paloma_core::RenderEvent) -> Self {
         match value {
-            scry_core::RenderEvent::Search(event) => Self::Search {
+            paloma_core::RenderEvent::Search(event) => Self::Search {
                 event: event.into(),
             },
-            scry_core::RenderEvent::Chat(event) => Self::Chat {
+            paloma_core::RenderEvent::Chat(event) => Self::Chat {
                 event: event.into(),
             },
-            scry_core::RenderEvent::Cancel => Self::Cancel,
-            scry_core::RenderEvent::Done => Self::Done,
-            scry_core::RenderEvent::Error { message } => Self::Error { message },
+            paloma_core::RenderEvent::Cancel => Self::Cancel,
+            paloma_core::RenderEvent::Done => Self::Done,
+            paloma_core::RenderEvent::Error { message } => Self::Error { message },
         }
     }
 }

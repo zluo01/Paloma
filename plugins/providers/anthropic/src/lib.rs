@@ -4,12 +4,12 @@ mod runtime;
 
 use std::sync::Arc;
 
-use scry_provider_base::{
+use paloma_provider_base::{
     ApiKeyConnector, Dispatcher, ProviderAuthenticator, ProviderCache, ProviderClient,
     ProviderError, ProviderRuntime, ProviderRuntimeService, Result, request_client,
 };
-use scry_provider_protocol::{v1 as proto, v1::ProviderAuth};
-use scry_utils::init_logging;
+use paloma_provider_protocol::{v1 as proto, v1::ProviderAuth};
+use paloma_utils::init_logging;
 
 use crate::{
     connect::{ClaudeCodeConnector, INSTRUCTION_URL},

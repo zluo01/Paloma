@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gtk4::{Align, MenuButton, PopoverMenu, PopoverMenuFlags, gio, glib, prelude::*};
 use log::error;
-use scry_core::{AppContext, Connector, HealthStatus, ProviderBackendId};
+use paloma_core::{AppContext, Connector, HealthStatus, ProviderBackendId};
 
 use crate::runtime;
 
@@ -221,7 +221,7 @@ fn menu_button() -> MenuButton {
         .valign(Align::Center)
         // keep keyboard focus on the entry so type-to-filter keeps working
         .focus_on_click(false)
-        .css_classes(["flat", "scry-model-dropdown"])
+        .css_classes(["flat", "paloma-model-dropdown"])
         .build()
 }
 

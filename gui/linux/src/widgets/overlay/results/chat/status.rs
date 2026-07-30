@@ -4,9 +4,9 @@ use gtk4::{
 };
 use libadwaita::Spinner;
 
-const PENDING_CLASS: &str = "scry-chat-pending";
-const ERROR_CLASS: &str = "scry-chat-error";
-const CANCEL_CLASS: &str = "scry-chat-cancel";
+const PENDING_CLASS: &str = "paloma-chat-pending";
+const ERROR_CLASS: &str = "paloma-chat-error";
+const CANCEL_CLASS: &str = "paloma-chat-cancel";
 
 const THINKING_TEXT: &str = "Thinking…";
 const CANCELLED_TEXT: &str = "Cancelled";

@@ -446,25 +446,25 @@ var File_schema_extension_main_proto protoreflect.FileDescriptor
 
 const file_schema_extension_main_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/extension/main.proto\x12\x11scry.extension.v1\x1a!schema/extension/capability.proto\x1a\x1bschema/extension/tool.proto\"\x94\x04\n" +
+	"\x1bschema/extension/main.proto\x12\x11paloma.extension.v1\x1a!schema/extension/capability.proto\x1a\x1bschema/extension/tool.proto\"\x94\x04\n" +
 	"\fRequestEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x04R\aeventId\x12(\n" +
 	"\rcapability_id\x18\x02 \x01(\tH\x01R\fcapabilityId\x88\x01\x01\x12R\n" +
-	"\x11handshake_request\x18\x03 \x01(\v2#.scry.extension.v1.HandshakeRequestH\x00R\x10handshakeRequest\x12I\n" +
-	"\x0esearch_request\x18\x04 \x01(\v2 .scry.extension.v1.SearchRequestH\x00R\rsearchRequest\x12S\n" +
-	"\x12run_action_request\x18\x05 \x01(\v2#.scry.extension.v1.RunActionRequestH\x00R\x10runActionRequest\x12V\n" +
-	"\x13invoke_tool_request\x18\x06 \x01(\v2$.scry.extension.v1.InvokeToolRequestH\x00R\x11invokeToolRequest\x12V\n" +
-	"\x13cancel_tool_request\x18\a \x01(\v2$.scry.extension.v1.CancelToolRequestH\x00R\x11cancelToolRequestB\t\n" +
+	"\x11handshake_request\x18\x03 \x01(\v2#.paloma.extension.v1.HandshakeRequestH\x00R\x10handshakeRequest\x12I\n" +
+	"\x0esearch_request\x18\x04 \x01(\v2 .paloma.extension.v1.SearchRequestH\x00R\rsearchRequest\x12S\n" +
+	"\x12run_action_request\x18\x05 \x01(\v2#.paloma.extension.v1.RunActionRequestH\x00R\x10runActionRequest\x12V\n" +
+	"\x13invoke_tool_request\x18\x06 \x01(\v2$.paloma.extension.v1.InvokeToolRequestH\x00R\x11invokeToolRequest\x12V\n" +
+	"\x13cancel_tool_request\x18\a \x01(\v2$.paloma.extension.v1.CancelToolRequestH\x00R\x11cancelToolRequestB\t\n" +
 	"\apayloadB\x10\n" +
 	"\x0e_capability_id\"\xb6\x04\n" +
 	"\rResponseEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x04R\aeventId\x12U\n" +
-	"\x12handshake_response\x18\x02 \x01(\v2$.scry.extension.v1.HandshakeResponseH\x00R\x11handshakeResponse\x12L\n" +
-	"\x0fsearch_response\x18\x03 \x01(\v2!.scry.extension.v1.SearchResponseH\x00R\x0esearchResponse\x12V\n" +
-	"\x13run_action_response\x18\x04 \x01(\v2$.scry.extension.v1.RunActionResponseH\x00R\x11runActionResponse\x12Y\n" +
-	"\x14invoke_tool_response\x18\x05 \x01(\v2%.scry.extension.v1.InvokeToolResponseH\x00R\x12invokeToolResponse\x12Y\n" +
-	"\x14cancel_tool_response\x18\x06 \x01(\v2%.scry.extension.v1.CancelToolResponseH\x00R\x12cancelToolResponse\x12L\n" +
-	"\x0fextension_error\x18\a \x01(\v2!.scry.extension.v1.ExtensionErrorH\x00R\x0eextensionErrorB\t\n" +
+	"\x12handshake_response\x18\x02 \x01(\v2$.paloma.extension.v1.HandshakeResponseH\x00R\x11handshakeResponse\x12L\n" +
+	"\x0fsearch_response\x18\x03 \x01(\v2!.paloma.extension.v1.SearchResponseH\x00R\x0esearchResponse\x12V\n" +
+	"\x13run_action_response\x18\x04 \x01(\v2$.paloma.extension.v1.RunActionResponseH\x00R\x11runActionResponse\x12Y\n" +
+	"\x14invoke_tool_response\x18\x05 \x01(\v2%.paloma.extension.v1.InvokeToolResponseH\x00R\x12invokeToolResponse\x12Y\n" +
+	"\x14cancel_tool_response\x18\x06 \x01(\v2%.paloma.extension.v1.CancelToolResponseH\x00R\x12cancelToolResponse\x12L\n" +
+	"\x0fextension_error\x18\a \x01(\v2!.paloma.extension.v1.ExtensionErrorH\x00R\x0eextensionErrorB\t\n" +
 	"\apayload\"\x12\n" +
 	"\x10HandshakeRequest\"\x8b\x02\n" +
 	"\x11HandshakeResponse\x12\x18\n" +
@@ -473,10 +473,10 @@ const file_schema_extension_main_proto_rawDesc = "" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1b\n" +
 	"\x06author\x18\x04 \x01(\tH\x00R\x06author\x88\x01\x01\x12\x1f\n" +
 	"\bhomepage\x18\x05 \x01(\tH\x01R\bhomepage\x88\x01\x01\x12A\n" +
-	"\fcapabilities\x18\x06 \x03(\v2\x1d.scry.extension.v1.CapabilityR\fcapabilitiesB\t\n" +
+	"\fcapabilities\x18\x06 \x03(\v2\x1d.paloma.extension.v1.CapabilityR\fcapabilitiesB\t\n" +
 	"\a_authorB\v\n" +
 	"\t_homepageB\xcb\x01\n" +
-	"\x15com.scry.extension.v1B\tMainProtoP\x01ZAscry/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Scry.Extension.V1\xca\x02\x11Scry\\Extension\\V1\xe2\x02\x1dScry\\Extension\\V1\\GPBMetadata\xea\x02\x13Scry::Extension::V1b\x06proto3"
+	"\x15com.paloma.extension.v1B\tMainProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_main_proto_rawDescOnce sync.Once
@@ -492,34 +492,34 @@ func file_schema_extension_main_proto_rawDescGZIP() []byte {
 
 var file_schema_extension_main_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_schema_extension_main_proto_goTypes = []any{
-	(*RequestEvent)(nil),       // 0: scry.extension.v1.RequestEvent
-	(*ResponseEvent)(nil),      // 1: scry.extension.v1.ResponseEvent
-	(*HandshakeRequest)(nil),   // 2: scry.extension.v1.HandshakeRequest
-	(*HandshakeResponse)(nil),  // 3: scry.extension.v1.HandshakeResponse
-	(*SearchRequest)(nil),      // 4: scry.extension.v1.SearchRequest
-	(*RunActionRequest)(nil),   // 5: scry.extension.v1.RunActionRequest
-	(*InvokeToolRequest)(nil),  // 6: scry.extension.v1.InvokeToolRequest
-	(*CancelToolRequest)(nil),  // 7: scry.extension.v1.CancelToolRequest
-	(*SearchResponse)(nil),     // 8: scry.extension.v1.SearchResponse
-	(*RunActionResponse)(nil),  // 9: scry.extension.v1.RunActionResponse
-	(*InvokeToolResponse)(nil), // 10: scry.extension.v1.InvokeToolResponse
-	(*CancelToolResponse)(nil), // 11: scry.extension.v1.CancelToolResponse
-	(*ExtensionError)(nil),     // 12: scry.extension.v1.ExtensionError
-	(*Capability)(nil),         // 13: scry.extension.v1.Capability
+	(*RequestEvent)(nil),       // 0: paloma.extension.v1.RequestEvent
+	(*ResponseEvent)(nil),      // 1: paloma.extension.v1.ResponseEvent
+	(*HandshakeRequest)(nil),   // 2: paloma.extension.v1.HandshakeRequest
+	(*HandshakeResponse)(nil),  // 3: paloma.extension.v1.HandshakeResponse
+	(*SearchRequest)(nil),      // 4: paloma.extension.v1.SearchRequest
+	(*RunActionRequest)(nil),   // 5: paloma.extension.v1.RunActionRequest
+	(*InvokeToolRequest)(nil),  // 6: paloma.extension.v1.InvokeToolRequest
+	(*CancelToolRequest)(nil),  // 7: paloma.extension.v1.CancelToolRequest
+	(*SearchResponse)(nil),     // 8: paloma.extension.v1.SearchResponse
+	(*RunActionResponse)(nil),  // 9: paloma.extension.v1.RunActionResponse
+	(*InvokeToolResponse)(nil), // 10: paloma.extension.v1.InvokeToolResponse
+	(*CancelToolResponse)(nil), // 11: paloma.extension.v1.CancelToolResponse
+	(*ExtensionError)(nil),     // 12: paloma.extension.v1.ExtensionError
+	(*Capability)(nil),         // 13: paloma.extension.v1.Capability
 }
 var file_schema_extension_main_proto_depIdxs = []int32{
-	2,  // 0: scry.extension.v1.RequestEvent.handshake_request:type_name -> scry.extension.v1.HandshakeRequest
-	4,  // 1: scry.extension.v1.RequestEvent.search_request:type_name -> scry.extension.v1.SearchRequest
-	5,  // 2: scry.extension.v1.RequestEvent.run_action_request:type_name -> scry.extension.v1.RunActionRequest
-	6,  // 3: scry.extension.v1.RequestEvent.invoke_tool_request:type_name -> scry.extension.v1.InvokeToolRequest
-	7,  // 4: scry.extension.v1.RequestEvent.cancel_tool_request:type_name -> scry.extension.v1.CancelToolRequest
-	3,  // 5: scry.extension.v1.ResponseEvent.handshake_response:type_name -> scry.extension.v1.HandshakeResponse
-	8,  // 6: scry.extension.v1.ResponseEvent.search_response:type_name -> scry.extension.v1.SearchResponse
-	9,  // 7: scry.extension.v1.ResponseEvent.run_action_response:type_name -> scry.extension.v1.RunActionResponse
-	10, // 8: scry.extension.v1.ResponseEvent.invoke_tool_response:type_name -> scry.extension.v1.InvokeToolResponse
-	11, // 9: scry.extension.v1.ResponseEvent.cancel_tool_response:type_name -> scry.extension.v1.CancelToolResponse
-	12, // 10: scry.extension.v1.ResponseEvent.extension_error:type_name -> scry.extension.v1.ExtensionError
-	13, // 11: scry.extension.v1.HandshakeResponse.capabilities:type_name -> scry.extension.v1.Capability
+	2,  // 0: paloma.extension.v1.RequestEvent.handshake_request:type_name -> paloma.extension.v1.HandshakeRequest
+	4,  // 1: paloma.extension.v1.RequestEvent.search_request:type_name -> paloma.extension.v1.SearchRequest
+	5,  // 2: paloma.extension.v1.RequestEvent.run_action_request:type_name -> paloma.extension.v1.RunActionRequest
+	6,  // 3: paloma.extension.v1.RequestEvent.invoke_tool_request:type_name -> paloma.extension.v1.InvokeToolRequest
+	7,  // 4: paloma.extension.v1.RequestEvent.cancel_tool_request:type_name -> paloma.extension.v1.CancelToolRequest
+	3,  // 5: paloma.extension.v1.ResponseEvent.handshake_response:type_name -> paloma.extension.v1.HandshakeResponse
+	8,  // 6: paloma.extension.v1.ResponseEvent.search_response:type_name -> paloma.extension.v1.SearchResponse
+	9,  // 7: paloma.extension.v1.ResponseEvent.run_action_response:type_name -> paloma.extension.v1.RunActionResponse
+	10, // 8: paloma.extension.v1.ResponseEvent.invoke_tool_response:type_name -> paloma.extension.v1.InvokeToolResponse
+	11, // 9: paloma.extension.v1.ResponseEvent.cancel_tool_response:type_name -> paloma.extension.v1.CancelToolResponse
+	12, // 10: paloma.extension.v1.ResponseEvent.extension_error:type_name -> paloma.extension.v1.ExtensionError
+	13, // 11: paloma.extension.v1.HandshakeResponse.capabilities:type_name -> paloma.extension.v1.Capability
 	12, // [12:12] is the sub-list for method output_type
 	12, // [12:12] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name

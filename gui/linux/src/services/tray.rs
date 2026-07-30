@@ -1,6 +1,6 @@
 //! System tray icon (StatusNotifierItem).
 //!
-//! `ScryTray` is moved into `ksni` during registration. `ksni` owns the
+//! `PalomaTray` is moved into `ksni` during registration. `ksni` owns the
 //! long-lived D-Bus service and calls this type for activations and menu
 //! selections; callbacks broadcast `TrayEvent`s for GTK to consume.
 
@@ -18,17 +18,17 @@ pub(crate) enum TrayEvent {
     Quit,
 }
 
-const TRAY_ID: &str = "dev.scry.Scry";
-const TRAY_TITLE: &str = "Scry";
+const TRAY_ID: &str = "dev.paloma.Paloma";
+const TRAY_TITLE: &str = "Paloma";
 /// Freedesktop icon name; panels fall back to the title if the theme lacks it.
 const TRAY_ICON: &str = "preferences-system";
 
 /// State owned by the `ksni` service while the tray is registered.
-struct ScryTray {
+struct PalomaTray {
     events: broadcast::Sender<TrayEvent>,
 }
 
-impl ScryTray {
+impl PalomaTray {
     fn send(&self, ev: TrayEvent) {
         // broadcast::send returns Err only if there are no receivers;
         // that's expected on shutdown and harmless.
@@ -39,7 +39,7 @@ impl ScryTray {
     }
 }
 
-impl Tray for ScryTray {
+impl Tray for PalomaTray {
     fn id(&self) -> String {
         TRAY_ID.into()
     }
@@ -86,7 +86,7 @@ impl Tray for ScryTray {
 /// handle, so the service lives for the process lifetime and cannot be updated
 /// or shut down explicitly.
 pub(crate) async fn run(events: broadcast::Sender<TrayEvent>) {
-    let tray = ScryTray { events };
+    let tray = PalomaTray { events };
     match tray.spawn().await {
         Ok(_handle) => info!("tray icon registered"),
         Err(e) => warn!("tray: spawn failed: {e}"),

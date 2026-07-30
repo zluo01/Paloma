@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
 use log::warn;
-use scry_provider_base::{
+use paloma_provider_base::{
     ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
     provider_meta_to_map,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
     SummaryItem, ToolCall, conversation_item,
 };
-use scry_utils::Element;
+use paloma_utils::Element;
 use serde_json::Value;
 
 pub struct CodexCodec;
@@ -339,7 +339,7 @@ fn decode_hosted_tool_item(response_type: &str, item: &Value) -> Result<Conversa
 
 #[cfg(test)]
 mod encoder_tests {
-    use scry_provider_protocol::v1::EncodeMode;
+    use paloma_provider_protocol::v1::EncodeMode;
 
     use super::*;
 

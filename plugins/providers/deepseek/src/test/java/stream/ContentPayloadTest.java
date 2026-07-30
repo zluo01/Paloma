@@ -3,7 +3,7 @@ package stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.github.zluo01.scry.proto.v1.ChatResponse.PayloadCase;
+import com.github.zluo01.paloma.proto.v1.ChatResponse.PayloadCase;
 import constants.Constants;
 import helper.CollectingEmitter;
 import helper.Fixtures;

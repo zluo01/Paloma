@@ -12,8 +12,8 @@ use crate::{
 };
 
 const PLUGIN_INTERNAL: &str = "Internal";
-pub(crate) const PLUGIN_SHELL: &str = scry_extension_shell::EXTENSION_ID;
-pub(crate) const SHELL_CAPABILITY: &str = scry_extension_shell::CAPABILITY_ID;
+pub(crate) const PLUGIN_SHELL: &str = paloma_extension_shell::EXTENSION_ID;
+pub(crate) const SHELL_CAPABILITY: &str = paloma_extension_shell::CAPABILITY_ID;
 
 const EXTENSION_PLUGIN_FLAG: &str = "--extension-plugin";
 
@@ -47,8 +47,8 @@ pub(crate) fn serve_extension_plugin_and_exit_if_requested() {
         exit(1);
     };
     let result = match name.as_str() {
-        PLUGIN_INTERNAL => scry_extension_internal::run(),
-        PLUGIN_SHELL => scry_extension_shell::run(),
+        PLUGIN_INTERNAL => paloma_extension_internal::run(),
+        PLUGIN_SHELL => paloma_extension_shell::run(),
         _ => {
             eprintln!("unknown extension plugin {name}");
             exit(1);

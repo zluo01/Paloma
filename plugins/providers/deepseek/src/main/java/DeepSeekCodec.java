@@ -1,7 +1,7 @@
-import com.github.zluo01.scry.proto.v1.ChatRequest;
-import com.github.zluo01.scry.proto.v1.ChatRequestMessage;
-import com.github.zluo01.scry.proto.v1.ConversationItem;
-import com.github.zluo01.scry.proto.v1.ToolDefinition;
+import com.github.zluo01.paloma.proto.v1.ChatRequest;
+import com.github.zluo01.paloma.proto.v1.ChatRequestMessage;
+import com.github.zluo01.paloma.proto.v1.ConversationItem;
+import com.github.zluo01.paloma.proto.v1.ToolDefinition;
 import constants.Constants;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;

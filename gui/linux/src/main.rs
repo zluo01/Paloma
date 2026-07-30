@@ -20,6 +20,6 @@ fn main() -> ExitCode {
 
 #[cfg(not(target_os = "linux"))]
 fn main() -> ExitCode {
-    eprintln!("scry (GTK frontend) only supports Linux");
+    eprintln!("paloma (GTK frontend) only supports Linux");
     ExitCode::FAILURE
 }

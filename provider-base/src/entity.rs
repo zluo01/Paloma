@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use scry_provider_protocol::v1::{ProviderAuth, provider_auth::Payload};
+use paloma_provider_protocol::v1::{ProviderAuth, provider_auth::Payload};
 use serde::Serialize;
 
 use crate::error::{ProviderError, Result};

@@ -12,5 +12,5 @@ public final class Constants {
 
   public static final String API_HOST = "api.deepseek.com";
   public static final String INSTRUCTION_URL = "https://platform.deepseek.com/api_keys";
-  public static final String USER_AGENT = "scry-deepseek";
+  public static final String USER_AGENT = "paloma-deepseek";
 }

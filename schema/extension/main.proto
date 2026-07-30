@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package scry.extension.v1;
+package paloma.extension.v1;
 
 import "schema/extension/capability.proto";
 import "schema/extension/tool.proto";

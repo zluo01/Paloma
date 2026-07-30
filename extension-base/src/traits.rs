@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use scry_extension_protocol::v1::{
+use paloma_extension_protocol::v1::{
     Action, Item, ToolContent, ToolFacet, run_action_response::Behavior,
 };
 

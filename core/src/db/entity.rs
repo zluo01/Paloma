@@ -1,4 +1,4 @@
-use scry_provider_protocol::v1::ConversationItem;
+use paloma_provider_protocol::v1::ConversationItem;
 use sqlx::FromRow;
 
 use crate::entity::ProviderBackendId;

@@ -5,14 +5,14 @@ use std::{
 
 use dashmap::DashMap;
 use log::{error, info, warn};
-use scry_provider_protocol::{
+use paloma_provider_protocol::{
     PROTOCOL_VERSION, v1 as proto,
     v1::{
         ProviderAuth, RequestEvent, ResponseEvent, chat_response,
         finalize_connection_request::Input, request_event::Payload, response_event,
     },
 };
-use scry_utils::transport::serve_plugin;
+use paloma_utils::transport::serve_plugin;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use scry_provider_protocol::v1::ConversationItem;
+use paloma_provider_protocol::v1::ConversationItem;
 use serde_json::Value;
 use sqlx::{
     Pool, Sqlite,

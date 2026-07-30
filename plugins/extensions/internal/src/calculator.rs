@@ -1,11 +1,11 @@
 use std::sync::LazyLock;
 
 use log::error;
-use regex::Regex;
-use scry_extension_base::{Capability, SearchHandler};
-use scry_extension_protocol::v1::{
+use paloma_extension_base::{Capability, SearchHandler};
+use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
+use regex::Regex;
 
 use crate::utils::copy_to_clipboard;
 

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use scry_core::{
+use paloma_core::{
     AppError, CapabilityFacet, ExtensionInfo, McpPluginInfo, OAuthCallbackState, Plugin,
     PluginType, ProviderInfo,
 };
@@ -329,7 +329,7 @@ fn reload_list(plugin_type: &PluginType) -> Option<Command> {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{CapabilityInfo, HealthStatus, PluginArgs, Transport};
+    use paloma_core::{CapabilityInfo, HealthStatus, PluginArgs, Transport};
 
     use super::*;
 

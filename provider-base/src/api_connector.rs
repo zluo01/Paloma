@@ -1,4 +1,4 @@
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ConnectionPayload, ManualInput, ProviderAuth, connection_payload, finalize_connection_request,
     provider_auth,
 };

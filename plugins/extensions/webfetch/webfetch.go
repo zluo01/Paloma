@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"scry/extensions/webfetch/internal/content"
-	"scry/extensions/webfetch/internal/fetch"
-	pb "scry/extensions/webfetch/internal/pb/schema/extension"
+	"paloma/extensions/webfetch/internal/content"
+	"paloma/extensions/webfetch/internal/fetch"
+	pb "paloma/extensions/webfetch/internal/pb/schema/extension"
 )
 
 const (

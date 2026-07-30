@@ -1,8 +1,8 @@
 package stream;
 
-import com.github.zluo01.scry.proto.v1.ChatResponse;
-import com.github.zluo01.scry.proto.v1.Done;
-import com.github.zluo01.scry.proto.v1.ResponseEvent;
+import com.github.zluo01.paloma.proto.v1.ChatResponse;
+import com.github.zluo01.paloma.proto.v1.Done;
+import com.github.zluo01.paloma.proto.v1.ResponseEvent;
 import constants.Constants;
 import enums.MessageEvent;
 import io.netty.handler.codec.http.HttpHeaderValues;

@@ -1,5 +1,5 @@
 [package]
-name = "scry-provider-openai"
+name = "paloma-provider-openai"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -12,10 +12,10 @@ chrono = { workspace = true, features = ["serde"] }
 eventsource-stream = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
+paloma-provider-base = { workspace = true }
+paloma-provider-protocol = { workspace = true }
+paloma-utils = { workspace = true }
 reqwest = { workspace = true }
-scry-provider-base = { workspace = true }
-scry-provider-protocol = { workspace = true }
-scry-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "macros", "rt-multi-thread"] }

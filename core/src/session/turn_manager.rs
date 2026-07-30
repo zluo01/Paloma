@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::{error, warn};
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ChatRequest, ChatRequestMessage, ConversationItem, Done, ToolResult, UserPrompt,
     chat_response::Payload, conversation_item::Item,
 };

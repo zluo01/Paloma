@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt};
 
-use scry_extension_protocol::v1::Item;
-use scry_provider_protocol::v1::{ProviderHealthStatus, ToolDefinition};
+use paloma_extension_protocol::v1::Item;
+use paloma_provider_protocol::v1::{ProviderHealthStatus, ToolDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;

@@ -27,7 +27,7 @@ const SESSION_HINTS: &[(BindingId, &str)] = &[
 pub(super) fn build() -> Stack {
     let stack = Stack::builder()
         .transition_type(StackTransitionType::None)
-        .css_classes(["scry-footer"])
+        .css_classes(["paloma-footer"])
         .build();
     for (key, hints) in [
         (SEARCH_VIEW_KEY, SEARCH_HINTS),
@@ -54,7 +54,7 @@ fn hint_row(hints: &[(BindingId, &str)]) -> GtkBox {
             .spacing(5)
             .build();
         let keys = Label::new(Some(&accel_text(keymap::binding(*id).shown)));
-        keys.add_css_class("scry-footer-key");
+        keys.add_css_class("paloma-footer-key");
         item.append(&keys);
         item.append(&Label::new(Some(wording)));
         row.append(&item);

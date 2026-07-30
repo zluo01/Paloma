@@ -8,7 +8,7 @@ Executes a command and returns its stdout, stderr, and exit code.
 
 Output handling:
 - Each stream is captured up to 50 KiB inline; ANSI escape sequences are stripped from the payload.
-- When a stream exceeds 50 KiB, the full untruncated bytes are written to /tmp/scry/<exec_id>/<stdout|stderr> and the path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
+- When a stream exceeds 50 KiB, the full untruncated bytes are written to /tmp/paloma/<exec_id>/<stdout|stderr> and the path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
 - Do NOT pre-truncate output yourself (no head/tail/sed unless the user explicitly asks) — run the command directly and let truncation happen.
 
 Commands time out after 300 seconds.
@@ -21,7 +21,7 @@ The result is an XML envelope shaped like:
     </shell_output>
 
 Attributes:
-- exec_id: the tool-call id; also the spill directory name under /tmp/scry/
+- exec_id: the tool-call id; also the spill directory name under /tmp/paloma/
 - exit_code: numeric exit code, "timed_out", or "terminated_by_signal"
 - duration_ms: wall-clock execution time in milliseconds
 - timed_out: present only when the 300 s timeout fired

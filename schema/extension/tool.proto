@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package scry.extension.v1;
+package paloma.extension.v1;
 
 message ToolFacet {
   string description = 1;

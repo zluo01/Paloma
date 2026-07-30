@@ -1,11 +1,11 @@
-/* Results panel; the card chrome comes from .scry-surface. */
-.scry-result-card {
+/* Results panel; the card chrome comes from .paloma-surface. */
+.paloma-result-card {
     padding: 16px 20px;
 }
 
 /* Per-handler section header (e.g. "Applications"): small and dim so
    the items dominate. */
-.scry-section-header {
+.paloma-section-header {
     color: alpha(currentColor, 0.55);
     font-size: 11px;
     font-weight: 600;
@@ -15,50 +15,50 @@
 /* Item rows are `.flat` buttons (theme provides fill + hover). `.selected`
    is keyboard selection driven by code (a CSS class, not GTK focus; the
    entry keeps focus). */
-.scry-item {
+.paloma-item {
     padding: 6px 8px;
     border-radius: 8px;
 }
 
-.scry-item.selected {
+.paloma-item.selected {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
 /* Chat action keeps normal row styling — the divider carries the distinction;
    only the title is a touch heavier. */
-.scry-chat-action .scry-item-title {
+.paloma-chat-action .paloma-item-title {
     font-weight: 600;
 }
 
-.scry-item-icon {
+.paloma-item-icon {
     margin-right: 4px;
 }
 
-.scry-item-title {
+.paloma-item-title {
     font-size: 14px;
 }
 
 /* Secondary line under the title (e.g. file paths, app generic names). */
-.scry-item-subtitle {
+.paloma-item-subtitle {
     font-size: 11px;
     color: alpha(currentColor, 0.55);
 }
 
 /* "Show N more": a compact centered affordance, not a result row. */
-.scry-show-more {
+.paloma-show-more {
     padding: 3px 8px;
 }
 
-.scry-show-more label,
-.scry-show-more image {
+.paloma-show-more label,
+.paloma-show-more image {
     font-size: 12px;
     color: alpha(currentColor, 0.6);
 }
 
 /* `Ctrl K` hint keycap for multi-action rows; scoped so generic keycap styling
    cannot leak into the Shortcuts page. */
-.scry-item .scry-keycap {
+.paloma-item .paloma-keycap {
     min-width: 14px;
     padding: 1px 6px;
     border-radius: 6px;
@@ -68,84 +68,84 @@
     margin-left: 8px;
 }
 
-.scry-item.selected .scry-keycap {
+.paloma-item.selected .paloma-keycap {
     color: var(--accent-fg-color);
     border-color: alpha(currentColor, 0.4);
 }
 
-.scry-actions {
+.paloma-actions {
     padding: 4px;
 }
 
-.scry-action {
+.paloma-action {
     padding: 6px 10px;
     border-radius: 6px;
 }
 
-.scry-action.selected {
+.paloma-action.selected {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
 /* ================================ Remote ===================== */
-/* Chat panel; the card chrome comes from .scry-surface. */
-.scry-chat-card {
+/* Chat panel; the card chrome comes from .paloma-surface. */
+.paloma-chat-card {
     padding: 16px 20px;
 }
 
 /* Role sections: a colored left rule per role, using libadwaita's
    standalone colors (contrast-safe in both light and dark). */
-.scry-chat-section {
+.paloma-chat-section {
     border-left: 2px solid alpha(currentColor, 0.15);
     padding-left: 10px;
     margin-bottom: 12px;
 }
 
-.scry-chat-section:last-child {
+.paloma-chat-section:last-child {
     margin-bottom: 0;
 }
 
-.scry-chat-section-user {
+.paloma-chat-section-user {
     border-left-color: var(--accent-color);
 }
 
-.scry-chat-section-thinking {
+.paloma-chat-section-thinking {
     border-left-color: var(--warning-color);
 }
 
-.scry-chat-section-assistant {
+.paloma-chat-section-assistant {
     border-left-color: var(--success-color);
 }
 
-.scry-chat-section-tool {
+.paloma-chat-section-tool {
     border-left-color: var(--purple-3);
 }
 
-.scry-chat-role {
+.paloma-chat-role {
     font-size: 11px;
     font-weight: 700;
     margin-bottom: 4px;
     color: alpha(currentColor, 0.55);
 }
 
-.scry-chat-section-user .scry-chat-role {
+.paloma-chat-section-user .paloma-chat-role {
     color: var(--accent-color);
 }
 
-.scry-chat-section-thinking .scry-chat-role {
+.paloma-chat-section-thinking .paloma-chat-role {
     color: var(--warning-color);
 }
 
-.scry-chat-section-assistant .scry-chat-role {
+.paloma-chat-section-assistant .paloma-chat-role {
     color: var(--success-color);
 }
 
-.scry-chat-section-tool .scry-chat-role {
+.paloma-chat-section-tool .paloma-chat-role {
     color: var(--purple-3);
 }
 
 /* Spinner + label at the bottom of the in-progress turn. */
-.scry-chat-pending {
+.paloma-chat-pending {
     font-size: 12px;
     font-style: italic;
     color: alpha(currentColor, 0.55);
@@ -153,16 +153,16 @@
 }
 
 /* Terminal states replacing "Thinking…" once the turn ends. */
-.scry-chat-pending.scry-chat-error,
-.scry-chat-pending.scry-chat-cancel {
+.paloma-chat-pending.paloma-chat-error,
+.paloma-chat-pending.paloma-chat-cancel {
     font-style: normal;
 }
 
-.scry-chat-pending.scry-chat-error {
+.paloma-chat-pending.paloma-chat-error {
     color: var(--error-color);
 }
 
-.scry-chat-pending.scry-chat-cancel {
+.paloma-chat-pending.paloma-chat-cancel {
     color: var(--warning-color);
 }
 
@@ -170,45 +170,45 @@
    no focus ring.
    TextView node tree: textview.view > text > selection.
    Label exposes its selection node directly: label > selection. */
-.scry-chat-text,
-.scry-chat-text > text {
+.paloma-chat-text,
+.paloma-chat-text > text {
     background: transparent;
     font-size: 15px;
     caret-color: transparent;
 }
 
-.scry-chat-text:focus,
-.scry-chat-text:focus-visible {
+.paloma-chat-text:focus,
+.paloma-chat-text:focus-visible {
     outline: none;
     box-shadow: none;
 }
 
-.scry-chat-text > selection,
-.scry-chat-text > text > selection,
-.scry-chat-text > text:selected {
+.paloma-chat-text > selection,
+.paloma-chat-text > text > selection,
+.paloma-chat-text > text:selected {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
-.scry-chat-section-thinking.scry-chat-text,
-.scry-chat-section-thinking.scry-chat-text > text {
+.paloma-chat-section-thinking.paloma-chat-text,
+.paloma-chat-section-thinking.paloma-chat-text > text {
     color: alpha(currentColor, 0.75);
     font-style: italic;
 }
 
 /* Tool call summary line above the arguments code card. */
-.scry-chat-tool-description {
+.paloma-chat-tool-description {
     font-size: 14px;
     margin-bottom: 6px;
 }
 
 /* Pending permission prompt. `.selected` is a keyboard highlight because the
    buttons never take real focus. */
-.scry-chat-tool-decisions {
+.paloma-chat-tool-decisions {
     margin-top: 10px;
 }
 
-.scry-chat-tool-permission {
+.paloma-chat-tool-permission {
     font-size: 11px;
     font-weight: 700;
     color: var(--warning-color);
@@ -216,7 +216,7 @@
 
 /* Compact, native-weight buttons; the theme's default min-height/size reads
    oversized next to the chat text. */
-.scry-chat-decision {
+.paloma-chat-decision {
     min-height: 0;
     padding: 5px 12px;
     font-size: 13px;
@@ -225,17 +225,17 @@
 
 /* Secondary actions are flat: Deny uses the theme's .destructive-action.
    Only "Stop asking" needs custom color; libadwaita has no warning button. */
-.scry-chat-decision-warning {
+.paloma-chat-decision-warning {
     color: var(--warning-color);
 }
 
-.scry-chat-decision.selected {
+.paloma-chat-decision.selected {
     outline: 2px solid var(--accent-color);
     outline-offset: 1px;
 }
 
 /* Resolved prompt: the buttons are swapped for an outcome label. */
-.scry-chat-tool-decision-outcome {
+.paloma-chat-tool-decision-outcome {
     font-size: 12px;
     font-style: italic;
     color: alpha(currentColor, 0.6);
@@ -243,39 +243,39 @@
 
 /* Markdown blocks (assistant output). Headings use libadwaita's .title-N
    classes (applied in code). */
-.scry-md-text {
+.paloma-md-text {
     font-size: 15px;
 }
 
-/* Headings skip .scry-chat-text (its font-size would override .title-N), so they
+/* Headings skip .paloma-chat-text (its font-size would override .title-N), so they
    carry its non-font read-only/selectable chrome here: transparent caret, no
    focus ring, and the accent selection highlight — matching paragraphs. */
-.scry-md-heading {
+.paloma-md-heading {
     background: transparent;
     caret-color: transparent;
 }
 
-.scry-md-heading:focus,
-.scry-md-heading:focus-visible {
+.paloma-md-heading:focus,
+.paloma-md-heading:focus-visible {
     outline: none;
     box-shadow: none;
 }
 
-.scry-md-heading > selection {
+.paloma-md-heading > selection {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
 /* List bullet / ordinal column (the content column wraps beside it). Pin the
-   size to the item text (.scry-md-text) so markers don't fall back to the theme
+   size to the item text (.paloma-md-text) so markers don't fall back to the theme
    default and mismatch the adjacent content. */
-.scry-md-marker {
+.paloma-md-marker {
     font-size: 15px;
     color: alpha(currentColor, 0.55);
 }
 
 /* Blockquote: a container with a left rule and dimmed text (no italics). */
-.scry-md-quote {
+.paloma-md-quote {
     border-left: 3px solid alpha(currentColor, 0.25);
     padding-left: 10px;
     color: alpha(currentColor, 0.72);
@@ -283,81 +283,81 @@
 
 /* Code card: caption + copy header over a monospace body. Shared by
    markdown code blocks and tool-call arguments. */
-.scry-code {
+.paloma-code {
     background: alpha(currentColor, 0.07);
     border-radius: 8px;
     padding: 8px 10px;
 }
 
-.scry-code-caption {
+.paloma-code-caption {
     font-size: 11px;
     color: alpha(currentColor, 0.55);
 }
 
-.scry-code-copy {
+.paloma-code-copy {
     padding: 2px;
     min-height: 0;
     min-width: 0;
 }
 
-.scry-code-body {
+.paloma-code-body {
     font-size: 13px;
 }
 
-.scry-md-th {
+.paloma-md-th {
     font-weight: 700;
 }
 
 /* Markdown table: a thin horizontal rule under each row (no vertical lines), a
    stronger one under the header; cells get vertical padding so text clears the
    rules. Horizontal spacing comes from the grid's column-spacing. */
-.scry-md-td {
+.paloma-md-td {
     padding: 4px 0;
 }
 
-.scry-md-table-rule {
+.paloma-md-table-rule {
     min-height: 1px;
     background: alpha(currentColor, 0.12);
 }
 
-.scry-md-table-rule-head {
+.paloma-md-table-rule-head {
     background: alpha(currentColor, 0.3);
 }
 
 /* Sessions list: launcher-style rows — icon badge, single-line title,
    relative time and a hover/selection-revealed delete on the right. */
-.scry-sessions-list {
+.paloma-sessions-list {
     background: transparent;
 }
 
-.scry-sessions-list > row {
+.paloma-sessions-list > row {
     border-radius: 8px;
     padding: 3px 8px;
     margin: 1px 0;
 }
 
 /* the row padding above is the single inset; drop the ActionRow's own */
-.scry-sessions-list > row > box.header {
+.paloma-sessions-list > row > box.header {
     min-height: 30px;
     padding: 0;
 }
 
-.scry-sessions-list > row label.title {
+.paloma-sessions-list > row label.title {
     font-size: 14px;
     font-weight: 400;
 }
 
-.scry-sessions-list > row:hover {
+.paloma-sessions-list > row:hover {
     background: alpha(currentColor, 0.06);
 }
 
-.scry-sessions-list > row:selected,
-.scry-sessions-list > row:selected:hover {
+.paloma-sessions-list > row:selected,
+.paloma-sessions-list > row:selected:hover {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
-.scry-session-icon {
+.paloma-session-icon {
     color: alpha(currentColor, 0.6);
     background: alpha(currentColor, 0.08);
     border-radius: 6px;
@@ -365,30 +365,30 @@
     min-height: 24px;
 }
 
-.scry-sessions-list > row:selected .scry-session-icon {
+.paloma-sessions-list > row:selected .paloma-session-icon {
     color: var(--accent-fg-color);
     background: alpha(currentColor, 0.15);
 }
 
-.scry-session-time {
+.paloma-session-time {
     font-size: 11px;
     font-feature-settings: "tnum";
     color: alpha(currentColor, 0.55);
 }
 
-.scry-sessions-list > row:selected .scry-session-time {
+.paloma-sessions-list > row:selected .paloma-session-time {
     color: alpha(var(--accent-fg-color), 0.8);
 }
 
-.scry-sessions-empty {
+.paloma-sessions-empty {
     padding: 24px 0 28px 0;
 }
 
-.scry-sessions-empty-icon {
+.paloma-sessions-empty-icon {
     color: alpha(currentColor, 0.3);
 }
 
-.scry-sessions-empty-title {
+.paloma-sessions-empty-title {
     color: alpha(currentColor, 0.45);
     font-size: 13px;
 }

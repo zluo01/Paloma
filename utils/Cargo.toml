@@ -1,5 +1,5 @@
 [package]
-name = "scry-utils"
+name = "paloma-utils"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }

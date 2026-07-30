@@ -151,6 +151,6 @@ Temporary Items
 .apdisk
 
 # xcode generated bindings
-gui/macos/Scry/Scry/Generated/
+gui/macos/Paloma/Paloma/Generated/
 
 **/target/

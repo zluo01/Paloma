@@ -19,12 +19,12 @@ use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
 };
-use rayon::prelude::*;
-use schemars::JsonSchema;
-use scry_extension_base::{Capability, SearchHandler, ToolHandler};
-use scry_extension_protocol::v1::{
+use paloma_extension_base::{Capability, SearchHandler, ToolHandler};
+use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, ToolContent, ToolFacet, run_action_response::Behavior,
 };
+use rayon::prelude::*;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::utils::copy_to_clipboard;
@@ -235,7 +235,7 @@ impl FileSearch {
             let watcher = Arc::clone(&watcher);
             let home = home.clone();
             thread::Builder::new()
-                .name("scry-file-index".into())
+                .name("paloma-file-index".into())
                 .spawn(move || {
                     let (found, dirs) = scan(&home);
                     info!("file_search: indexed {} entries", found.len());
@@ -250,7 +250,7 @@ impl FileSearch {
             let watcher = Arc::clone(&watcher);
             let home = home.clone();
             thread::Builder::new()
-                .name("scry-file-watch".into())
+                .name("paloma-file-watch".into())
                 .spawn(move || {
                     while let Ok(first) = dirty_rx.recv() {
                         // coalesce the whole backlog into one rescan cycle

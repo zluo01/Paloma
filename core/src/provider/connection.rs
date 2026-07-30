@@ -14,7 +14,7 @@ use futures::{
     stream::{self, BoxStream},
 };
 use log::{error, warn};
-use scry_provider_protocol::{
+use paloma_provider_protocol::{
     Bytes, Message, PROTOCOL_VERSION,
     v1::{
         BackendAuth, BackendHealthStatusRequest, BackendInitErrorRequest, CancelChatRequest,
@@ -26,7 +26,7 @@ use scry_provider_protocol::{
         response_event::Payload,
     },
 };
-use scry_utils::transport::{FramedRead, FramedWrite, VarintDelimitedCodec};
+use paloma_utils::transport::{FramedRead, FramedWrite, VarintDelimitedCodec};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},

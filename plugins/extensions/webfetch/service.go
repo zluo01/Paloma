@@ -8,8 +8,8 @@ import (
 	"log"
 	"sync"
 
-	pb "scry/extensions/webfetch/internal/pb/schema/extension"
-	"scry/extensions/webfetch/internal/transport"
+	pb "paloma/extensions/webfetch/internal/pb/schema/extension"
+	"paloma/extensions/webfetch/internal/transport"
 )
 
 const protocolVersion = 1

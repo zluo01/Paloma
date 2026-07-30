@@ -8,7 +8,7 @@ use libadwaita::{
     Dialog, EntryRow, HeaderBar, PasswordEntryRow, PreferencesGroup, Spinner, ToolbarView,
     prelude::*,
 };
-use scry_core::{ProviderAuthMethod, ProviderBackendId};
+use paloma_core::{ProviderAuthMethod, ProviderBackendId};
 
 use crate::widgets::settings::{helper::launch_url, services::model::Msg};
 
@@ -158,9 +158,9 @@ fn challenge_page(verification_uri: &str, user_code: &str) -> GtkBox {
     for ch in user_code.chars() {
         let cell = Label::new(Some(&ch.to_string()));
         if ch == '-' {
-            cell.set_css_classes(&["scry-otp-sep", "dim-label"]);
+            cell.set_css_classes(&["paloma-otp-sep", "dim-label"]);
         } else {
-            cell.set_css_classes(&["scry-otp-cell", "monospace"]);
+            cell.set_css_classes(&["paloma-otp-cell", "monospace"]);
             cell.set_size_request(36, 44);
         }
         code.append(&cell);
@@ -265,7 +265,7 @@ fn success_page() -> GtkBox {
     let check = Label::builder()
         .label("✓")
         .halign(Align::Center)
-        .css_classes(["scry-connect-check"])
+        .css_classes(["paloma-connect-check"])
         .build();
     body.append(&check);
     body.append(&heading("Connected"));

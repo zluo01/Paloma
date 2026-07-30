@@ -1,5 +1,5 @@
 [package]
-name = "scry-provider-protocol"
+name = "paloma-provider-protocol"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -14,6 +14,6 @@ prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
-scry-utils = { workspace = true }
+paloma-utils = { workspace = true }
 serde_json = { workspace = true }
 tokio-util = { workspace = true }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gtk4::{Align, Box as GtkBox, Label, Orientation, prelude::*};
-use scry_core::{AppContext, HealthLevel};
+use paloma_core::{AppContext, HealthLevel};
 
 use crate::runtime;
 
@@ -40,11 +40,11 @@ impl Status {
 
         let dot = GtkBox::builder()
             .valign(Align::Center)
-            .css_classes(["scry-status-dot", "scry-status-inactive"])
+            .css_classes(["paloma-status-dot", "paloma-status-inactive"])
             .build();
 
         let label = Label::new(Some(label));
-        label.add_css_class("scry-status-label");
+        label.add_css_class("paloma-status-label");
 
         view.append(&dot);
         view.append(&label);
@@ -76,10 +76,10 @@ impl Status {
 
 fn set_health_dot(dot: &GtkBox, health: HealthLevel) {
     let status_css = match health {
-        HealthLevel::Inactive => "scry-status-inactive",
-        HealthLevel::Healthy => "scry-status-healthy",
-        HealthLevel::Degraded => "scry-status-degraded",
-        HealthLevel::Down => "scry-status-down",
+        HealthLevel::Inactive => "paloma-status-inactive",
+        HealthLevel::Healthy => "paloma-status-healthy",
+        HealthLevel::Degraded => "paloma-status-degraded",
+        HealthLevel::Down => "paloma-status-down",
     };
-    dot.set_css_classes(&["scry-status-dot", status_css]);
+    dot.set_css_classes(&["paloma-status-dot", status_css]);
 }

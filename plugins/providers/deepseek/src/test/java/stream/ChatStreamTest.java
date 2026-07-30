@@ -7,8 +7,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-import com.github.zluo01.scry.proto.v1.ChatResponse.PayloadCase;
-import com.github.zluo01.scry.proto.v1.ResponseEvent;
+import com.github.zluo01.paloma.proto.v1.ChatResponse.PayloadCase;
+import com.github.zluo01.paloma.proto.v1.ResponseEvent;
 import enums.MessageEvent;
 import helper.Fixtures;
 import helper.MockSseVerticle;

@@ -26,7 +26,7 @@ const (
 	MaxBytes = 5 << 20
 
 	maxRedirects = 5
-	userAgent    = "Mozilla/5.0 (compatible; ScryWebFetch/1.0)"
+	userAgent    = "Mozilla/5.0 (compatible; PalomaWebFetch/1.0)"
 )
 
 // ErrBlockedAddress is returned when a host resolves into private or loopback

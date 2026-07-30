@@ -6,7 +6,7 @@ use gtk4::{
 use crate::widgets::overlay::results::chat::helper::new_section;
 
 const REASONING_TITLE: &str = "Thinking";
-const REASONING_CLASS: &str = "scry-chat-section-thinking";
+const REASONING_CLASS: &str = "paloma-chat-section-thinking";
 
 pub(crate) struct ReasoningSection {
     view: GtkBox,
@@ -31,7 +31,7 @@ impl ReasoningSection {
             .right_margin(0)
             .top_margin(0)
             .bottom_margin(0)
-            .css_classes(["scry-chat-text", REASONING_CLASS])
+            .css_classes(["paloma-chat-text", REASONING_CLASS])
             .build();
         view.append(&text_view);
 

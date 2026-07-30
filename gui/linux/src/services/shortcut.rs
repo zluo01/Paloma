@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 /// so changing this prompts users to bind the shortcut again.
 const SHORTCUT_ID: &str = "summon";
 /// Label shown in the portal bind dialog and desktop shortcut settings.
-const SHORTCUT_DESCRIPTION: &str = "Summon Scry";
+const SHORTCUT_DESCRIPTION: &str = "Summon Paloma";
 /// Suggested key combination; users may override it in the portal dialog.
 const DEFAULT_TRIGGER: &str = "CTRL+SPACE";
 

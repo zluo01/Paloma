@@ -1,7 +1,7 @@
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use scry_extension_protocol::v1::ToolContent;
+use paloma_extension_protocol::v1::ToolContent;
 use tokio::{
     io::AsyncReadExt,
     process::{Child, Command},
@@ -234,7 +234,7 @@ fn strip_ansi(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use scry_extension_protocol::v1::tool_content;
+    use paloma_extension_protocol::v1::tool_content;
 
     use super::*;
 

@@ -751,13 +751,13 @@ var File_schema_extension_capability_proto protoreflect.FileDescriptor
 
 const file_schema_extension_capability_proto_rawDesc = "" +
 	"\n" +
-	"!schema/extension/capability.proto\x12\x11scry.extension.v1\x1a\x1bschema/extension/tool.proto\"\xdb\x01\n" +
+	"!schema/extension/capability.proto\x12\x11paloma.extension.v1\x1a\x1bschema/extension/tool.proto\"\xdb\x01\n" +
 	"\n" +
 	"Capability\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12;\n" +
-	"\x06search\x18\x03 \x01(\v2\x1e.scry.extension.v1.SearchFacetH\x00R\x06search\x88\x01\x01\x125\n" +
-	"\x04tool\x18\x04 \x01(\v2\x1c.scry.extension.v1.ToolFacetH\x01R\x04tool\x88\x01\x01B\t\n" +
+	"\x06search\x18\x03 \x01(\v2\x1e.paloma.extension.v1.SearchFacetH\x00R\x06search\x88\x01\x01\x125\n" +
+	"\x04tool\x18\x04 \x01(\v2\x1c.paloma.extension.v1.ToolFacetH\x01R\x04tool\x88\x01\x01B\t\n" +
 	"\a_searchB\a\n" +
 	"\x05_tool\"\r\n" +
 	"\vSearchFacet\"b\n" +
@@ -769,12 +769,12 @@ const file_schema_extension_capability_proto_rawDesc = "" +
 	"\rSearchRequest\x12\x14\n" +
 	"\x05input\x18\x01 \x01(\tR\x05input\"?\n" +
 	"\x0eSearchResponse\x12-\n" +
-	"\x05items\x18\x01 \x03(\v2\x17.scry.extension.v1.ItemR\x05items\"\xc4\x01\n" +
+	"\x05items\x18\x01 \x03(\v2\x17.paloma.extension.v1.ItemR\x05items\"\xc4\x01\n" +
 	"\x04Item\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x1f\n" +
 	"\bsubtitle\x18\x02 \x01(\tH\x00R\bsubtitle\x88\x01\x01\x12:\n" +
-	"\x04icon\x18\x03 \x01(\v2!.scry.extension.v1.CapabilityIconH\x01R\x04icon\x88\x01\x01\x123\n" +
-	"\aactions\x18\x04 \x03(\v2\x19.scry.extension.v1.ActionR\aactionsB\v\n" +
+	"\x04icon\x18\x03 \x01(\v2!.paloma.extension.v1.CapabilityIconH\x01R\x04icon\x88\x01\x01\x123\n" +
+	"\aactions\x18\x04 \x03(\v2\x19.paloma.extension.v1.ActionR\aactionsB\v\n" +
 	"\t_subtitleB\a\n" +
 	"\x05_icon\"P\n" +
 	"\x06Action\x12\x14\n" +
@@ -782,11 +782,11 @@ const file_schema_extension_capability_proto_rawDesc = "" +
 	"\x06params\x18\x02 \x03(\tR\x06params\x12\x18\n" +
 	"\aprimary\x18\x03 \x01(\bR\aprimary\"E\n" +
 	"\x10RunActionRequest\x121\n" +
-	"\x06action\x18\x01 \x01(\v2\x19.scry.extension.v1.ActionR\x06action\"\xb5\x01\n" +
+	"\x06action\x18\x01 \x01(\v2\x19.paloma.extension.v1.ActionR\x06action\"\xb5\x01\n" +
 	"\x11RunActionResponse\x12-\n" +
-	"\x04hide\x18\x01 \x01(\v2\x17.scry.extension.v1.HideH\x00R\x04hide\x12-\n" +
-	"\x04stay\x18\x02 \x01(\v2\x17.scry.extension.v1.StayH\x00R\x04stay\x126\n" +
-	"\areplace\x18\x03 \x01(\v2\x1a.scry.extension.v1.ReplaceH\x00R\areplaceB\n" +
+	"\x04hide\x18\x01 \x01(\v2\x17.paloma.extension.v1.HideH\x00R\x04hide\x12-\n" +
+	"\x04stay\x18\x02 \x01(\v2\x17.paloma.extension.v1.StayH\x00R\x04stay\x126\n" +
+	"\areplace\x18\x03 \x01(\v2\x1a.paloma.extension.v1.ReplaceH\x00R\areplaceB\n" +
 	"\n" +
 	"\bbehavior\"\x06\n" +
 	"\x04Hide\"\x06\n" +
@@ -795,7 +795,7 @@ const file_schema_extension_capability_proto_rawDesc = "" +
 	"\x05input\x18\x01 \x01(\tR\x05input\"&\n" +
 	"\x0eExtensionError\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05errorB\xd1\x01\n" +
-	"\x15com.scry.extension.v1B\x0fCapabilityProtoP\x01ZAscry/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Scry.Extension.V1\xca\x02\x11Scry\\Extension\\V1\xe2\x02\x1dScry\\Extension\\V1\\GPBMetadata\xea\x02\x13Scry::Extension::V1b\x06proto3"
+	"\x15com.paloma.extension.v1B\x0fCapabilityProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_capability_proto_rawDescOnce sync.Once
@@ -811,31 +811,31 @@ func file_schema_extension_capability_proto_rawDescGZIP() []byte {
 
 var file_schema_extension_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_schema_extension_capability_proto_goTypes = []any{
-	(*Capability)(nil),        // 0: scry.extension.v1.Capability
-	(*SearchFacet)(nil),       // 1: scry.extension.v1.SearchFacet
-	(*CapabilityIcon)(nil),    // 2: scry.extension.v1.CapabilityIcon
-	(*SearchRequest)(nil),     // 3: scry.extension.v1.SearchRequest
-	(*SearchResponse)(nil),    // 4: scry.extension.v1.SearchResponse
-	(*Item)(nil),              // 5: scry.extension.v1.Item
-	(*Action)(nil),            // 6: scry.extension.v1.Action
-	(*RunActionRequest)(nil),  // 7: scry.extension.v1.RunActionRequest
-	(*RunActionResponse)(nil), // 8: scry.extension.v1.RunActionResponse
-	(*Hide)(nil),              // 9: scry.extension.v1.Hide
-	(*Stay)(nil),              // 10: scry.extension.v1.Stay
-	(*Replace)(nil),           // 11: scry.extension.v1.Replace
-	(*ExtensionError)(nil),    // 12: scry.extension.v1.ExtensionError
-	(*ToolFacet)(nil),         // 13: scry.extension.v1.ToolFacet
+	(*Capability)(nil),        // 0: paloma.extension.v1.Capability
+	(*SearchFacet)(nil),       // 1: paloma.extension.v1.SearchFacet
+	(*CapabilityIcon)(nil),    // 2: paloma.extension.v1.CapabilityIcon
+	(*SearchRequest)(nil),     // 3: paloma.extension.v1.SearchRequest
+	(*SearchResponse)(nil),    // 4: paloma.extension.v1.SearchResponse
+	(*Item)(nil),              // 5: paloma.extension.v1.Item
+	(*Action)(nil),            // 6: paloma.extension.v1.Action
+	(*RunActionRequest)(nil),  // 7: paloma.extension.v1.RunActionRequest
+	(*RunActionResponse)(nil), // 8: paloma.extension.v1.RunActionResponse
+	(*Hide)(nil),              // 9: paloma.extension.v1.Hide
+	(*Stay)(nil),              // 10: paloma.extension.v1.Stay
+	(*Replace)(nil),           // 11: paloma.extension.v1.Replace
+	(*ExtensionError)(nil),    // 12: paloma.extension.v1.ExtensionError
+	(*ToolFacet)(nil),         // 13: paloma.extension.v1.ToolFacet
 }
 var file_schema_extension_capability_proto_depIdxs = []int32{
-	1,  // 0: scry.extension.v1.Capability.search:type_name -> scry.extension.v1.SearchFacet
-	13, // 1: scry.extension.v1.Capability.tool:type_name -> scry.extension.v1.ToolFacet
-	5,  // 2: scry.extension.v1.SearchResponse.items:type_name -> scry.extension.v1.Item
-	2,  // 3: scry.extension.v1.Item.icon:type_name -> scry.extension.v1.CapabilityIcon
-	6,  // 4: scry.extension.v1.Item.actions:type_name -> scry.extension.v1.Action
-	6,  // 5: scry.extension.v1.RunActionRequest.action:type_name -> scry.extension.v1.Action
-	9,  // 6: scry.extension.v1.RunActionResponse.hide:type_name -> scry.extension.v1.Hide
-	10, // 7: scry.extension.v1.RunActionResponse.stay:type_name -> scry.extension.v1.Stay
-	11, // 8: scry.extension.v1.RunActionResponse.replace:type_name -> scry.extension.v1.Replace
+	1,  // 0: paloma.extension.v1.Capability.search:type_name -> paloma.extension.v1.SearchFacet
+	13, // 1: paloma.extension.v1.Capability.tool:type_name -> paloma.extension.v1.ToolFacet
+	5,  // 2: paloma.extension.v1.SearchResponse.items:type_name -> paloma.extension.v1.Item
+	2,  // 3: paloma.extension.v1.Item.icon:type_name -> paloma.extension.v1.CapabilityIcon
+	6,  // 4: paloma.extension.v1.Item.actions:type_name -> paloma.extension.v1.Action
+	6,  // 5: paloma.extension.v1.RunActionRequest.action:type_name -> paloma.extension.v1.Action
+	9,  // 6: paloma.extension.v1.RunActionResponse.hide:type_name -> paloma.extension.v1.Hide
+	10, // 7: paloma.extension.v1.RunActionResponse.stay:type_name -> paloma.extension.v1.Stay
+	11, // 8: paloma.extension.v1.RunActionResponse.replace:type_name -> paloma.extension.v1.Replace
 	9,  // [9:9] is the sub-list for method output_type
 	9,  // [9:9] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name

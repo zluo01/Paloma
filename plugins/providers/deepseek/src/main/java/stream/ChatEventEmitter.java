@@ -1,6 +1,6 @@
 package stream;
 
-import com.github.zluo01.scry.proto.v1.ChatResponse;
+import com.github.zluo01.paloma.proto.v1.ChatResponse;
 import java.util.function.Consumer;
 
 @FunctionalInterface

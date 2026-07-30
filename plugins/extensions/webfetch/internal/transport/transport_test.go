@@ -9,7 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	pb "scry/extensions/webfetch/internal/pb/schema/extension"
+	pb "paloma/extensions/webfetch/internal/pb/schema/extension"
 )
 
 func handshake(id uint64) *pb.RequestEvent {

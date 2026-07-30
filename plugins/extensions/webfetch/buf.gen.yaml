@@ -3,7 +3,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: scry/extensions/webfetch/internal/pb
+      value: paloma/extensions/webfetch/internal/pb
 inputs:
   - directory: ../../..
     paths:

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io, sync::Arc};
 
 use dashmap::DashMap;
-use scry_extension_protocol::{
+use paloma_extension_protocol::{
     PROTOCOL_VERSION,
     v1::{
         CancelToolResponse, Capability as CapabilityMeta, ExtensionError, HandshakeResponse,
@@ -9,7 +9,7 @@ use scry_extension_protocol::{
         SearchResponse, request_event, response_event,
     },
 };
-use scry_utils::transport::serve_plugin;
+use paloma_utils::transport::serve_plugin;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -265,7 +265,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use async_trait::async_trait;
-    use scry_extension_protocol::v1::{
+    use paloma_extension_protocol::v1::{
         Action, CancelToolRequest, HandshakeRequest, Hide, InvokeToolRequest, Item,
         RunActionRequest, SearchRequest, Stay, ToolContent, ToolFacet,
         run_action_response::Behavior,

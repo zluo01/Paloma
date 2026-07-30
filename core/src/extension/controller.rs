@@ -6,7 +6,7 @@ use std::{
 use dashmap::DashMap;
 use futures::{Stream, future::join_all, stream};
 use log::{error, warn};
-use scry_extension_protocol::v1::{
+use paloma_extension_protocol::v1::{
     Action, Capability, HandshakeResponse, run_action_response::Behavior,
 };
 use serde_json::Value;

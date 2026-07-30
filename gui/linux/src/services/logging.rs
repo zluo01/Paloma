@@ -12,7 +12,7 @@ pub(crate) fn init_logging() {
             builder.target(env_logger::Target::Pipe(Box::new(Tee(file))));
         },
         Err(e) => {
-            eprintln!("failed to open scry log file: {e}");
+            eprintln!("failed to open paloma log file: {e}");
         },
     }
 
@@ -22,7 +22,7 @@ pub(crate) fn init_logging() {
 }
 
 fn log_file() -> std::io::Result<std::fs::File> {
-    let dir = user_state_dir().join("scry/logs");
+    let dir = user_state_dir().join("paloma/logs");
     std::fs::create_dir_all(&dir)?;
 
     std::fs::OpenOptions::new()
@@ -47,7 +47,7 @@ fn log_file_name() -> String {
             "unknown-date".to_string()
         });
 
-    format!("scry-{stamp}.log")
+    format!("paloma-{stamp}.log")
 }
 
 struct Tee(std::fs::File);

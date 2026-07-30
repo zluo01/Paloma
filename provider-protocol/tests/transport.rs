@@ -1,9 +1,9 @@
 mod test_support {
     use std::collections::HashMap;
 
+    use paloma_provider_protocol::v1::{self, conversation_item::Item, request_event::Payload};
+    use paloma_utils::transport::VarintDelimitedCodec;
     use prost::bytes::BytesMut;
-    use scry_provider_protocol::v1::{self, conversation_item::Item, request_event::Payload};
-    use scry_utils::transport::VarintDelimitedCodec;
     use tokio_util::codec::Decoder;
 
     pub const JAVA_FIXTURE: &[u8] = include_bytes!("testdata/fixture_java.bin");
@@ -76,11 +76,11 @@ mod test_support {
 }
 
 mod encoder_tests {
+    use paloma_utils::transport::VarintDelimitedCodec;
     use prost::{
         Message,
         bytes::{Bytes, BytesMut},
     };
-    use scry_utils::transport::VarintDelimitedCodec;
     use tokio_util::codec::Encoder;
 
     use super::test_support::{JAVA_FIXTURE, expected_events};
@@ -114,8 +114,8 @@ mod encoder_tests {
 }
 
 mod decoder_tests {
+    use paloma_provider_protocol::v1::RequestEvent;
     use prost::Message;
-    use scry_provider_protocol::v1::RequestEvent;
 
     use super::test_support::{JAVA_FIXTURE, decode_all, expected_events};
 

@@ -1,7 +1,7 @@
 package stream;
 
-import com.github.zluo01.scry.proto.v1.ConversationItem;
-import com.github.zluo01.scry.proto.v1.ToolCall;
+import com.github.zluo01.paloma.proto.v1.ConversationItem;
+import com.github.zluo01.paloma.proto.v1.ToolCall;
 import io.vertx.core.json.JsonObject;
 import java.util.Objects;
 

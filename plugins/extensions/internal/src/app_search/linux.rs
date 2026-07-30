@@ -7,7 +7,7 @@ use std::{
 
 use freedesktop_desktop_entry::{self as fde, DesktopEntry};
 use log::{debug, error};
-use scry_extension_protocol::v1::CapabilityIcon;
+use paloma_extension_protocol::v1::CapabilityIcon;
 
 use super::{AppEntry, AppSearchBackend};
 

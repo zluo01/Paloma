@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use futures::channel::mpsc;
 use gtk4::{Align, Box as GtkBox, Button, Orientation, prelude::*};
-use scry_core::{ExtensionCapabilityId, Item};
+use paloma_core::{ExtensionCapabilityId, Item};
 
 use crate::{
     helper::{Clear, scroll_selection_into_view},
@@ -37,7 +37,7 @@ impl SearchView {
             .halign(Align::Center)
             .visible(false)
             .width_request(OVERLAY_WIDTH_PX)
-            .css_classes(["scry-result-card"])
+            .css_classes(["paloma-result-card"])
             .build();
         Self {
             widget,

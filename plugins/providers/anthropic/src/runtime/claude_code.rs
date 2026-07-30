@@ -4,14 +4,14 @@ use std::sync::{
 };
 
 use log::error;
-use scry_provider_base::{
+use paloma_provider_base::{
     Dispatcher, OAuthState, ProviderCache, ProviderClient, ProviderError, RefreshRequest, Result,
     cached_models,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     AuthUpdateRequest, ChatRequest, Model, ProviderAuth, ProviderHealthStatus, response_event,
 };
-use scry_utils::unix_now;
+use paloma_utils::unix_now;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 

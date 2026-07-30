@@ -1,15 +1,15 @@
-use scry_core::AppError;
+use paloma_core::AppError;
 
 /// Core failure crossing the FFI boundary. The frontend only ever cares
 /// whether a call failed and what the message is, so the whole [`AppError`]
 /// tree flattens into a single message-carrying case.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum ScryError {
+pub enum PalomaError {
     #[error("{message}")]
     Failure { message: String },
 }
 
-impl ScryError {
+impl PalomaError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self::Failure {
             message: message.into(),
@@ -17,7 +17,7 @@ impl ScryError {
     }
 }
 
-impl From<AppError> for ScryError {
+impl From<AppError> for PalomaError {
     fn from(err: AppError) -> Self {
         Self::new(err.to_string())
     }

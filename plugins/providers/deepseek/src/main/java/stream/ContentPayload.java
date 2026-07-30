@@ -1,11 +1,11 @@
 package stream;
 
-import com.github.zluo01.scry.proto.v1.ConversationItem;
-import com.github.zluo01.scry.proto.v1.ConversationMessage;
-import com.github.zluo01.scry.proto.v1.MessageContentItem;
-import com.github.zluo01.scry.proto.v1.Reasoning;
-import com.github.zluo01.scry.proto.v1.SummaryItem;
-import com.github.zluo01.scry.proto.v1.TextDelta;
+import com.github.zluo01.paloma.proto.v1.ConversationItem;
+import com.github.zluo01.paloma.proto.v1.ConversationMessage;
+import com.github.zluo01.paloma.proto.v1.MessageContentItem;
+import com.github.zluo01.paloma.proto.v1.Reasoning;
+import com.github.zluo01.paloma.proto.v1.SummaryItem;
+import com.github.zluo01.paloma.proto.v1.TextDelta;
 import constants.Constants;
 import io.vertx.core.json.JsonObject;
 import java.util.Optional;

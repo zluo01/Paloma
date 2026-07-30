@@ -18,7 +18,7 @@ use libadwaita::{
     PreferencesPage, PreferencesRow, Spinner, SpinnerPaintable, StatusPage, ToolbarView,
     prelude::*,
 };
-use scry_core::{
+use paloma_core::{
     AppContext, CapabilityFacet, CapabilityInfo, ExtensionInfo, HealthStatus, McpPluginInfo,
     OAuthCallbackState, Plugin, PluginType, ProviderInfo,
 };
@@ -711,7 +711,7 @@ fn facet_chip(
         .label(facet_label(&facet))
         .active(!disabled)
         .valign(Align::Center)
-        .css_classes(["scry-capability-badge"])
+        .css_classes(["paloma-capability-badge"])
         .build();
     if let Some(plugin_switch) = plugin_switch {
         plugin_switch

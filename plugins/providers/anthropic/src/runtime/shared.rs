@@ -1,11 +1,11 @@
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures::StreamExt;
 use log::{error, warn};
-use scry_provider_base::{
+use paloma_provider_base::{
     Dispatcher, ENVIRONMENT_CONTEXT, ProviderDecoder, ProviderEncoder, ProviderError, Result,
     SSE_IDLE_TIMEOUT,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ChatRequest, ConversationItem, Done, EncodeMode, Model, TextDelta, chat_response,
 };
 use serde_json::Value;
@@ -509,7 +509,7 @@ fn parse_model_response(data: Value) -> Vec<Model> {
 
 #[cfg(test)]
 mod build_request_body_tests {
-    use scry_provider_protocol::v1::{
+    use paloma_provider_protocol::v1::{
         ChatRequestMessage, ConversationMessage, MessageContentItem, Reasoning, SummaryItem,
         conversation_item::Item,
     };
@@ -1393,7 +1393,7 @@ mod parse_content_delta_tests {
 
 #[cfg(test)]
 mod parse_stream_error_tests {
-    use scry_provider_base::ProviderError;
+    use paloma_provider_base::ProviderError;
 
     use super::*;
 

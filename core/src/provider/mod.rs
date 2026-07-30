@@ -42,8 +42,8 @@ pub(crate) fn serve_plugin_and_exit_if_requested() {
         exit(1);
     };
     let result = match name.as_str() {
-        PLUGIN_ANTHROPIC => scry_provider_anthropic::run(),
-        PLUGIN_OPENAI => scry_provider_openai::run(),
+        PLUGIN_ANTHROPIC => paloma_provider_anthropic::run(),
+        PLUGIN_OPENAI => paloma_provider_openai::run(),
         _ => {
             eprintln!("unknown provider plugin {name}");
             exit(1);

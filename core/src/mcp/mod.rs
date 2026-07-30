@@ -11,6 +11,7 @@ use std::{
 pub use cache::McpToolSpecCache;
 pub use controller::{McpController, McpControllerError};
 use log::{error, warn};
+use paloma_utils::{Element, attempt_with_retry};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequest, CallToolRequestParams, ClientRequest, ServerResult, Tool},
@@ -20,7 +21,6 @@ use rmcp::{
         TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
-use scry_utils::{Element, attempt_with_retry};
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},

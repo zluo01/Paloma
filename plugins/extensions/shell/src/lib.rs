@@ -2,11 +2,11 @@ mod process_controller;
 
 use std::{io, path::PathBuf, str::FromStr};
 
+use paloma_extension_base::{Capability, ExtensionService, ToolHandler};
+use paloma_extension_protocol::v1::{ToolContent, ToolFacet};
+use paloma_utils::init_logging;
 use process_controller::{ProcessController, ProcessExecRequest};
 use schemars::JsonSchema;
-use scry_extension_base::{Capability, ExtensionService, ToolHandler};
-use scry_extension_protocol::v1::{ToolContent, ToolFacet};
-use scry_utils::init_logging;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -168,7 +168,7 @@ fn resolve_workdir(workdir: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use scry_extension_protocol::v1::tool_content;
+    use paloma_extension_protocol::v1::tool_content;
 
     use super::*;
 

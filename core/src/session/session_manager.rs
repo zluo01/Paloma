@@ -4,7 +4,7 @@ use std::{
 };
 
 use log::error;
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     ConversationItem, UserPrompt, chat_response, conversation_item::Item,
 };
 use tokio::sync::{mpsc, oneshot};

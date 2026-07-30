@@ -2444,6 +2444,224 @@ dependencies = [
 ]
 
 [[package]]
+name = "paloma-core"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "ctor",
+ "dashmap",
+ "futures",
+ "log",
+ "oauth2",
+ "paloma-extension-internal",
+ "paloma-extension-protocol",
+ "paloma-extension-shell",
+ "paloma-provider-anthropic",
+ "paloma-provider-openai",
+ "paloma-provider-protocol",
+ "paloma-utils",
+ "regex",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "uuid",
+]
+
+[[package]]
+name = "paloma-extension-base"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "paloma-extension-protocol",
+ "paloma-utils",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "paloma-extension-internal"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "exmex",
+ "freedesktop-desktop-entry",
+ "ignore",
+ "log",
+ "mime_guess",
+ "notify",
+ "notify-debouncer-full",
+ "nucleo-matcher",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "open",
+ "paloma-extension-base",
+ "paloma-extension-protocol",
+ "paloma-utils",
+ "plist",
+ "rayon",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "wl-clipboard-rs",
+]
+
+[[package]]
+name = "paloma-extension-protocol"
+version = "0.0.1"
+dependencies = [
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+]
+
+[[package]]
+name = "paloma-extension-shell"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "log",
+ "nix",
+ "paloma-extension-base",
+ "paloma-extension-protocol",
+ "paloma-utils",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "paloma-ffi"
+version = "0.0.1"
+dependencies = [
+ "chrono",
+ "env_logger",
+ "futures",
+ "log",
+ "paloma-core",
+ "thiserror 2.0.18",
+ "tokio",
+ "uniffi",
+ "uuid",
+]
+
+[[package]]
+name = "paloma-linux"
+version = "0.0.1"
+dependencies = [
+ "ashpd",
+ "env_logger",
+ "futures",
+ "gtk4",
+ "gtk4-layer-shell",
+ "ksni",
+ "libadwaita",
+ "log",
+ "paloma-core",
+ "pulldown-cmark",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "paloma-provider-anthropic"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "eventsource-stream",
+ "futures",
+ "log",
+ "oauth2",
+ "paloma-provider-base",
+ "paloma-provider-protocol",
+ "paloma-utils",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "paloma-provider-base"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "log",
+ "paloma-provider-protocol",
+ "paloma-utils",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "paloma-provider-openai"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "eventsource-stream",
+ "futures",
+ "log",
+ "paloma-provider-base",
+ "paloma-provider-protocol",
+ "paloma-utils",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "paloma-provider-protocol"
+version = "0.0.1"
+dependencies = [
+ "paloma-utils",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "tokio-util",
+]
+
+[[package]]
+name = "paloma-utils"
+version = "0.0.1"
+dependencies = [
+ "backon",
+ "env_logger",
+ "futures",
+ "log",
+ "prost",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "pango"
 version = "0.22.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3269,224 +3487,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "scry-core"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "ctor",
- "dashmap",
- "futures",
- "log",
- "oauth2",
- "regex",
- "reqwest",
- "rmcp",
- "scry-extension-internal",
- "scry-extension-protocol",
- "scry-extension-shell",
- "scry-provider-anthropic",
- "scry-provider-openai",
- "scry-provider-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "sha1",
- "sqlx",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tree-sitter",
- "tree-sitter-bash",
- "uuid",
-]
-
-[[package]]
-name = "scry-extension-base"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "dashmap",
- "scry-extension-protocol",
- "scry-utils",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "scry-extension-internal"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "exmex",
- "freedesktop-desktop-entry",
- "ignore",
- "log",
- "mime_guess",
- "notify",
- "notify-debouncer-full",
- "nucleo-matcher",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "open",
- "plist",
- "rayon",
- "regex",
- "schemars",
- "scry-extension-base",
- "scry-extension-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "wl-clipboard-rs",
-]
-
-[[package]]
-name = "scry-extension-protocol"
-version = "0.0.1"
-dependencies = [
- "prost",
- "prost-build",
- "protoc-bin-vendored",
-]
-
-[[package]]
-name = "scry-extension-shell"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "dashmap",
- "log",
- "nix",
- "schemars",
- "scry-extension-base",
- "scry-extension-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "scry-ffi"
-version = "0.0.1"
-dependencies = [
- "chrono",
- "env_logger",
- "futures",
- "log",
- "scry-core",
- "thiserror 2.0.18",
- "tokio",
- "uniffi",
- "uuid",
-]
-
-[[package]]
-name = "scry-linux"
-version = "0.0.1"
-dependencies = [
- "ashpd",
- "env_logger",
- "futures",
- "gtk4",
- "gtk4-layer-shell",
- "ksni",
- "libadwaita",
- "log",
- "pulldown-cmark",
- "scry-core",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "scry-provider-anthropic"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "eventsource-stream",
- "futures",
- "log",
- "oauth2",
- "reqwest",
- "scry-provider-base",
- "scry-provider-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "scry-provider-base"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "dashmap",
- "log",
- "reqwest",
- "scry-provider-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "scry-provider-openai"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "base64",
- "chrono",
- "eventsource-stream",
- "futures",
- "log",
- "reqwest",
- "scry-provider-base",
- "scry-provider-protocol",
- "scry-utils",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "scry-provider-protocol"
-version = "0.0.1"
-dependencies = [
- "prost",
- "prost-build",
- "protoc-bin-vendored",
- "scry-utils",
- "serde",
- "serde_json",
- "tokio-util",
-]
-
-[[package]]
-name = "scry-utils"
-version = "0.0.1"
-dependencies = [
- "backon",
- "env_logger",
- "futures",
- "log",
- "prost",
- "tokio",
- "tokio-util",
 ]
 
 [[package]]

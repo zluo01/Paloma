@@ -22,7 +22,7 @@ mod model;
 mod results;
 mod window;
 
-use scry_core::{
+use paloma_core::{
     Action, AppContext, ChatRenderEvent, ExtensionCapabilityId, ProviderBackendId, RenderEvent,
     SearchRenderEvent,
 };
@@ -92,11 +92,11 @@ impl Overlay {
     ) -> Rc<Self> {
         let launcher_window = layer_window(
             app,
-            "scry-launcher",
+            "paloma-launcher",
             OVERLAY_WIDTH_PX,
             KeyboardMode::Exclusive,
         );
-        launcher_window.set_title(Some("Scry"));
+        launcher_window.set_title(Some("Paloma"));
 
         let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
 
@@ -126,7 +126,7 @@ impl Overlay {
             // Avoid competing with TextView drag selection in chat output.
             .kinetic_scrolling(false)
             .overflow(Overflow::Hidden)
-            .css_classes(["scry-scroller"])
+            .css_classes(["paloma-scroller"])
             .build();
         scroller.set_child(Some(&content_stack));
 
@@ -139,14 +139,14 @@ impl Overlay {
         let panel = GtkBox::builder()
             .orientation(Orientation::Vertical)
             .overflow(Overflow::Hidden)
-            .css_classes(["scry-surface"])
+            .css_classes(["paloma-surface"])
             .build();
         panel.append(&scroller);
         panel.append(&Separator::new(Orientation::Horizontal));
         panel.append(&footer);
 
         let content_window =
-            layer_window(app, "scry-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
+            layer_window(app, "paloma-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
         content_window.set_child(Some(&panel));
 
         let overlay = Rc::new(Self {
@@ -590,7 +590,7 @@ fn layer_window(
         .default_width(width)
         .decorated(false)
         .resizable(false)
-        .css_classes(["scry-window"])
+        .css_classes(["paloma-window"])
         .build();
 
     window.init_layer_shell();

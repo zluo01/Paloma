@@ -6,7 +6,7 @@ use std::{
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::error;
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     Backend, BackendAuth, ChatRequest, ConnectionPayload, HandshakeResponse, Model, ProviderAuth,
     ProviderAuthMethod, provider_auth,
 };

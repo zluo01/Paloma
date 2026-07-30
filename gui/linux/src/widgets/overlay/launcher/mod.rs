@@ -7,7 +7,7 @@ mod picker;
 mod search;
 mod status;
 
-use scry_core::AppContext;
+use paloma_core::AppContext;
 
 use crate::widgets::overlay::{
     OVERLAY_WIDTH_PX,
@@ -36,7 +36,7 @@ impl LauncherView {
             .valign(Align::Start)
             .spacing(6)
             .width_request(OVERLAY_WIDTH_PX)
-            .css_classes(["scry-surface", "scry-card"])
+            .css_classes(["paloma-surface", "paloma-card"])
             .build();
 
         let search = Search::new(dispatcher.clone());

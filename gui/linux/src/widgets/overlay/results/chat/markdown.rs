@@ -178,8 +178,8 @@ fn gap_above(prev: Option<&Block>, next: &Block) -> i32 {
 fn build_text(children: &[Block]) -> Widget {
     let label = base_label(&inline_markup(children));
     label.set_attributes(Some(&prose_attrs()));
-    label.add_css_class("scry-md-text");
-    label.add_css_class("scry-chat-text");
+    label.add_css_class("paloma-md-text");
+    label.add_css_class("paloma-chat-text");
     label.upcast()
 }
 
@@ -193,12 +193,12 @@ fn prose_attrs() -> pango::AttrList {
 }
 
 /// Headings reuse libadwaita's `.title-N` sizes; our app-priority base font rules
-/// would override them, so headings skip `.scry-chat-text`. `.scry-md-heading`
+/// would override them, so headings skip `.paloma-chat-text`. `.paloma-md-heading`
 /// carries the selection styling instead (see style.css).
 fn build_heading(level: HeadingLevel, children: &[Block]) -> Widget {
     let label = base_label(&inline_markup(children));
     label.add_css_class(heading_class(level));
-    label.add_css_class("scry-md-heading");
+    label.add_css_class("paloma-md-heading");
     label.upcast()
 }
 
@@ -220,7 +220,7 @@ fn base_label(markup: &str) -> Label {
 
 fn build_quote(children: &[Block]) -> Widget {
     let container = build_blocks(children);
-    container.add_css_class("scry-md-quote");
+    container.add_css_class("paloma-md-quote");
     container.upcast()
 }
 
@@ -261,7 +261,7 @@ fn marker_label(text: &str) -> Widget {
         .halign(Align::End)
         .valign(Align::Start)
         .build();
-    label.add_css_class("scry-md-marker");
+    label.add_css_class("paloma-md-marker");
     label.upcast()
 }
 
@@ -315,9 +315,9 @@ fn build_table(alignments: &[Alignment], rows: &[Block]) -> Widget {
                 .wrap_mode(pango::WrapMode::WordChar)
                 .selectable(true)
                 .css_classes(if is_header {
-                    &["scry-md-th", "scry-md-td", "scry-chat-text"][..]
+                    &["paloma-md-th", "paloma-md-td", "paloma-chat-text"][..]
                 } else {
-                    &["scry-md-td", "scry-chat-text"][..]
+                    &["paloma-md-td", "paloma-chat-text"][..]
                 })
                 .build();
             grid.attach(&label, column as i32, grid_row, 1, 1);
@@ -328,9 +328,9 @@ fn build_table(alignments: &[Alignment], rows: &[Block]) -> Widget {
         // the header row. Spanning all columns keeps the line continuous across the
         // column gaps.
         let rule = GtkBox::new(Orientation::Horizontal, 0);
-        rule.add_css_class("scry-md-table-rule");
+        rule.add_css_class("paloma-md-table-rule");
         if is_header {
-            rule.add_css_class("scry-md-table-rule-head");
+            rule.add_css_class("paloma-md-table-rule-head");
         }
         grid.attach(&rule, 0, grid_row, columns, 1);
         grid_row += 1;

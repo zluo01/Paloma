@@ -5,13 +5,13 @@ use gtk4::{
 
 pub(crate) fn new_section(header: Option<&str>, classname: &str) -> GtkBox {
     let section = GtkBox::builder()
-        .css_classes(["scry-chat-section", classname])
+        .css_classes(["paloma-chat-section", classname])
         .orientation(Orientation::Vertical)
         .build();
 
     if let Some(header) = header {
         let role = Label::builder().label(header).xalign(0.0).build();
-        role.add_css_class("scry-chat-role");
+        role.add_css_class("paloma-chat-role");
         section.append(&role);
     }
 
@@ -28,7 +28,7 @@ pub(crate) fn append_content_label(parent: &GtkBox, text: &str, classname: &str)
         .selectable(true)
         .hexpand(true)
         .width_chars(1)
-        .css_classes(["scry-chat-text", classname])
+        .css_classes(["paloma-chat-text", classname])
         .build();
     parent.append(&content);
 }
@@ -38,7 +38,7 @@ pub(crate) fn code_card(caption: &str, body: &str) -> GtkBox {
         .orientation(Orientation::Vertical)
         .spacing(4)
         .build();
-    card.add_css_class("scry-code");
+    card.add_css_class("paloma-code");
 
     let header = GtkBox::new(Orientation::Horizontal, 8);
     header.append(
@@ -46,13 +46,13 @@ pub(crate) fn code_card(caption: &str, body: &str) -> GtkBox {
             .label(caption)
             .xalign(0.0)
             .hexpand(true)
-            .css_classes(["scry-code-caption"])
+            .css_classes(["paloma-code-caption"])
             .build(),
     );
     let copy = Button::builder()
         .icon_name("edit-copy-symbolic")
         .tooltip_text("Copy")
-        .css_classes(["flat", "scry-code-copy"])
+        .css_classes(["flat", "paloma-code-copy"])
         .build();
     {
         let body = body.to_string();
@@ -70,7 +70,7 @@ pub(crate) fn code_card(caption: &str, body: &str) -> GtkBox {
         .wrap_mode(pango::WrapMode::WordChar)
         .selectable(true)
         .width_chars(1)
-        .css_classes(["scry-code-body", "scry-chat-text", "monospace"])
+        .css_classes(["paloma-code-body", "paloma-chat-text", "monospace"])
         .build();
     card.append(&content);
 

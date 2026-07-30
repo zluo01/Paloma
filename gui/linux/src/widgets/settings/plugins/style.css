@@ -1,4 +1,4 @@
-.scry-capability-badge {
+.paloma-capability-badge {
     font-size: 0.75em;
     font-weight: 700;
     padding: 1px 8px;
@@ -9,22 +9,22 @@
     transition: background 150ms ease, opacity 150ms ease;
 }
 
-.scry-capability-badge:hover {
+.paloma-capability-badge:hover {
     background: alpha(currentColor, 0.24);
 }
 
-.scry-capability-badge:not(:checked) {
+.paloma-capability-badge:not(:checked) {
     opacity: 0.5;
 }
 
-.scry-capability-badge:not(:checked):hover {
+.paloma-capability-badge:not(:checked):hover {
     opacity: 0.75;
 }
 
-.scry-capability-badge:checked {
+.paloma-capability-badge:checked {
     background: alpha(@accent_bg_color, 0.3);
 }
 
-.scry-capability-badge:checked:hover {
+.paloma-capability-badge:checked:hover {
     background: alpha(@accent_bg_color, 0.45);
 }

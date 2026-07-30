@@ -1,4 +1,4 @@
-use scry_core::{
+use paloma_core::{
     AppError, ConnectionPayload, Connector, ProviderAuthMethod, ProviderBackendId,
     connection_payload,
 };
@@ -234,7 +234,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{BrowserRedirect, DeviceCode, ManualInput};
+    use paloma_core::{BrowserRedirect, DeviceCode, ManualInput};
 
     use super::*;
 

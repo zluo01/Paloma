@@ -1,4 +1,4 @@
-// Command webfetch is a Scry extension that fetches a URL for the model.
+// Command webfetch is a Paloma extension that fetches a URL for the model.
 //
 // It speaks the extension protocol over stdio: varint-delimited RequestEvent
 // frames in on stdin, ResponseEvent frames out on stdout. Stdout carries
@@ -9,7 +9,7 @@ import (
 	"log"
 	"os"
 
-	"scry/extensions/webfetch/internal/transport"
+	"paloma/extensions/webfetch/internal/transport"
 )
 
 func main() {

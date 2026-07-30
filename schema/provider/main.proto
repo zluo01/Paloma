@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package scry.provider.runtime.v1;
+package paloma.provider.runtime.v1;
 
-option java_package = "com.github.zluo01.scry.proto.v1";
+option java_package = "com.github.zluo01.paloma.proto.v1";
 option java_multiple_files = true;
 
 import "schema/provider/connection.proto";

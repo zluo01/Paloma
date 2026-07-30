@@ -13,7 +13,7 @@ use libadwaita::{
     SidebarItem, SidebarSection, ToolbarView, prelude::*,
 };
 use log::error;
-use scry_core::AppContext;
+use paloma_core::AppContext;
 
 use crate::widgets::settings::{
     general::GeneralPage, permissions::PermissionsPage, plugins::PluginsPage,

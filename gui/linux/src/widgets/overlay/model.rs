@@ -1,4 +1,4 @@
-use scry_core::{
+use paloma_core::{
     Action, AppError, ExtensionCapabilityId, ProviderBackendId, RenderEvent, SearchRenderEvent,
 };
 use uuid::Uuid;
@@ -428,7 +428,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use scry_core::{ChatRenderEvent, ProviderBackendId, QueryResponse, RenderEvent};
+    use paloma_core::{ChatRenderEvent, ProviderBackendId, QueryResponse, RenderEvent};
 
     use super::*;
 

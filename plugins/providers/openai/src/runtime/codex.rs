@@ -8,14 +8,14 @@ use std::{
 
 use base64::Engine;
 use log::error;
-use scry_provider_base::{
+use paloma_provider_base::{
     Dispatcher, OAuthState, ProviderCache, ProviderClient, ProviderError, RefreshRequest, Result,
     cached_models,
 };
-use scry_provider_protocol::v1::{
+use paloma_provider_protocol::v1::{
     AuthUpdateRequest, ChatRequest, Model, ProviderAuth, ProviderHealthStatus, response_event,
 };
-use scry_utils::{attempt_with_retry, unix_now};
+use paloma_utils::{attempt_with_retry, unix_now};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
@@ -192,8 +192,8 @@ impl ProviderClient for CodexRuntime {
             .post(RESPONSES_URL)
             .bearer_auth(&token.access_token)
             .header("chatgpt-account-id", &token.chatgpt_account_id)
-            .header("originator", "scry")
-            .header(reqwest::header::USER_AGENT, "scry-codex")
+            .header("originator", "paloma")
+            .header(reqwest::header::USER_AGENT, "paloma-codex")
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(&body)
             .send()
@@ -349,7 +349,7 @@ async fn client_version(cache: &ProviderCache, request: &reqwest::Client) -> Str
 async fn fetch_client_version(request: &reqwest::Client) -> Result<String> {
     let release: serde_json::Value = request
         .get(CLIENT_VERSION_URL)
-        .header(reqwest::header::USER_AGENT, "scry")
+        .header(reqwest::header::USER_AGENT, "paloma")
         .timeout(CLIENT_VERSION_FETCH_TIMEOUT)
         .send()
         .await?

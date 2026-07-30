@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::LazyLock};
 
-pub(crate) const APP_NAME: &str = "scry";
+pub(crate) const APP_NAME: &str = "paloma";
 pub(crate) const DATABASE_FILE: &str = "main.db";
 
 pub const RENDER_CHANNEL_CAPACITY: usize = 32;

@@ -1,10 +1,10 @@
-.scry-window {
+.paloma-window {
     background: transparent;
 }
 
 /* Shared floating-card chrome, built on libadwaita's design tokens so
    the overlay follows the system light/dark scheme. */
-.scry-surface {
+.paloma-surface {
     background: var(--popover-bg-color);
     color: var(--popover-fg-color);
     border: 1px solid var(--popover-shade-color);
@@ -14,18 +14,18 @@
 
 /* The panel box carries the surface chrome for the result/chat content;
    the scroller viewport stays transparent so only the rounded frame paints. */
-.scry-scroller > viewport {
+.paloma-scroller > viewport {
     background: transparent;
     border: none;
     box-shadow: none;
 }
 
-.scry-footer {
+.paloma-footer {
     padding: 5px 12px;
     font-size: 11px;
     color: alpha(currentColor, 0.55);
 }
 
-.scry-footer-key {
+.paloma-footer-key {
     color: alpha(var(--popover-fg-color), 0.85);
 }

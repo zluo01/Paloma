@@ -6,8 +6,8 @@ mod utils;
 
 use std::io;
 
-use scry_extension_base::{Capability, ExtensionService};
-use scry_utils::init_logging;
+use paloma_extension_base::{Capability, ExtensionService};
+use paloma_utils::init_logging;
 
 use crate::{
     app_search::AppSearch, calculator::Calculator, clipboard::Clipboard, file_search::FileSearch,

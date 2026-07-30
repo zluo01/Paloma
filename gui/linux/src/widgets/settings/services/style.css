@@ -1,20 +1,20 @@
-.scry-unhealthy-icon {
+.paloma-unhealthy-icon {
     color: var(--error-color);
 }
 
 /* Device-code cells use custom styling because Adwaita has no OTP widget. */
-.scry-otp-cell {
+.paloma-otp-cell {
     font-size: 20px;
     font-weight: 700;
     background: alpha(currentColor, 0.08);
     border: 1px solid alpha(currentColor, 0.15);
     border-radius: 8px;
 }
-.scry-otp-sep {
+.paloma-otp-sep {
     font-size: 20px;
 }
 
-.scry-connect-check {
+.paloma-connect-check {
     font-size: 36px;
     color: var(--success-color);
 }

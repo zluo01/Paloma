@@ -9,10 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"scry/extensions/webfetch/internal/content"
-	"scry/extensions/webfetch/internal/fetch"
-	pb "scry/extensions/webfetch/internal/pb/schema/extension"
-	"scry/extensions/webfetch/internal/transport"
+	"paloma/extensions/webfetch/internal/content"
+	"paloma/extensions/webfetch/internal/fetch"
+	pb "paloma/extensions/webfetch/internal/pb/schema/extension"
+	"paloma/extensions/webfetch/internal/transport"
 )
 
 // stubGetter returns a canned result and records the timeout it was handed.

@@ -1,13 +1,13 @@
-/* .scry-surface owns the card chrome; this class only adds interior padding. */
-.scry-card {
+/* .paloma-surface owns the card chrome; this class only adds interior padding. */
+.paloma-card {
     padding: 10px 14px;
 }
 
 /* Flatten the search entry: no border, no focus ring, transparent
    fill. The entry node and its inner `text` node both need overriding
    because the theme styles both. */
-.scry-entry,
-.scry-entry > text {
+.paloma-entry,
+.paloma-entry > text {
     background: transparent;
     border: none;
     outline: none;
@@ -19,44 +19,44 @@
 
 /* Zero the entry's own horizontal padding so the magnifier position
    is fully determined by the icon rule below. */
-.scry-entry {
+.paloma-entry {
     padding-left: 0;
     padding-right: 0;
 }
 
-.scry-entry > image {
+.paloma-entry > image {
     color: alpha(currentColor, 0.5);
     margin: 0 6px;
     -gtk-icon-size: 18px;
 }
 
-.scry-entry > text > placeholder {
+.paloma-entry > text > placeholder {
     color: alpha(currentColor, 0.45);
 }
 
-.scry-entry > text > selection {
+.paloma-entry > text > selection {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
 
 /* Lit dots share the same highlight/glow treatment; health classes only
    change the theme color token. */
-.scry-status-dot {
+.paloma-status-dot {
     min-width: 8px;
     min-height: 8px;
     border-radius: 9999px;
 }
 
-.scry-status-label {
+.paloma-status-label {
     font-size: 11px;
     color: alpha(currentColor, 0.55);
 }
 
-.scry-status-inactive {
+.paloma-status-inactive {
     background: alpha(currentColor, 0.28);
 }
 
-.scry-status-healthy {
+.paloma-status-healthy {
     background: radial-gradient(
         circle at 35% 30%,
         color-mix(in srgb, var(--success-bg-color) 45%, white),
@@ -67,7 +67,7 @@
         0 0 3px 0 var(--success-bg-color);
 }
 
-.scry-status-degraded {
+.paloma-status-degraded {
     background: radial-gradient(
         circle at 35% 30%,
         color-mix(in srgb, var(--warning-bg-color) 45%, white),
@@ -78,7 +78,7 @@
         0 0 3px 0 var(--warning-bg-color);
 }
 
-.scry-status-down {
+.paloma-status-down {
     background: radial-gradient(
         circle at 35% 30%,
         color-mix(in srgb, var(--error-bg-color) 45%, white),
@@ -91,14 +91,14 @@
 
 /* Model selector styled as plain text plus chevron. The transparent base is at
    APPLICATION priority, so hover and open states are restated here. */
-.scry-model-dropdown > button {
+.paloma-model-dropdown > button {
     background: transparent;
     border: none;
     box-shadow: none;
     border-radius: 9999px;
 }
 
-.scry-model-dropdown > button:hover,
-.scry-model-dropdown > button:checked {
+.paloma-model-dropdown > button:hover,
+.paloma-model-dropdown > button:checked {
     background-color: alpha(currentColor, 0.08);
 }

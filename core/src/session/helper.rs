@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use log::error;
-use scry_extension_shell::ShellArgs;
+use paloma_extension_shell::ShellArgs;
 use serde_json::Value;
 
 use crate::{

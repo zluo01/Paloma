@@ -10,7 +10,7 @@ use gtk4::{Align, Box as GtkBox, Button, Orientation, SearchEntry, glib, prelude
 use libadwaita::{
     ActionRow, ApplicationWindow, Clamp, PreferencesGroup, PreferencesPage, prelude::*,
 };
-use scry_core::{AppContext, Permission};
+use paloma_core::{AppContext, Permission};
 
 use self::model::{Command, Msg, State};
 use crate::{

@@ -4,7 +4,7 @@ use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Button, Label, Orientation, Popover, PositionType, Widget, prelude::*,
 };
-use scry_core::{Action, ExtensionCapabilityId};
+use paloma_core::{Action, ExtensionCapabilityId};
 
 use crate::widgets::overlay::{
     SELECTED_CLASS,
@@ -40,7 +40,7 @@ impl ActionPanel {
             .orientation(Orientation::Vertical)
             .spacing(2)
             .build();
-        list.add_css_class("scry-actions");
+        list.add_css_class("paloma-actions");
 
         let mut buttons = Vec::with_capacity(actions.len());
         for action in actions {
@@ -56,7 +56,7 @@ impl ActionPanel {
                 .child(&label)
                 .focusable(false)
                 .can_focus(false)
-                .css_classes(["flat", "scry-action"])
+                .css_classes(["flat", "paloma-action"])
                 .build();
 
             let action_popover = popover.clone();

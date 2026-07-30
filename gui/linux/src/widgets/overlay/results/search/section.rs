@@ -3,7 +3,7 @@ use gtk4::{
     Align, Box as GtkBox, Button, Image, Label, Orientation, Revealer, RevealerTransitionType,
     Separator, Widget, prelude::*,
 };
-use scry_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item, capability_icon};
+use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item, capability_icon};
 
 use crate::widgets::overlay::model::{ChatMsg, Msg, SearchMsg};
 
@@ -37,7 +37,7 @@ impl Section {
             .label(handler_name)
             .xalign(0.0)
             .halign(Align::Start)
-            .css_classes(["scry-section-header"])
+            .css_classes(["paloma-section-header"])
             .build();
         view.append(&header);
 
@@ -107,7 +107,7 @@ impl Section {
             icon: Some(CapabilityIcon::name("dialog-question-symbolic")),
             actions: Vec::new(),
         };
-        let button = flat_button(&item_content_row(&item), Some("scry-chat-action"));
+        let button = flat_button(&item_content_row(&item), Some("paloma-chat-action"));
         let action_dispatcher = dispatcher.clone();
         button.connect_clicked(move |_| {
             let _ = action_dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
@@ -203,7 +203,7 @@ fn build_actionable_row(
     let chip = Label::builder()
         .label("Ctrl ↵")
         .valign(Align::Center)
-        .css_classes(["scry-keycap"])
+        .css_classes(["paloma-keycap"])
         .build();
     content.append(&chip);
 
@@ -236,7 +236,7 @@ fn build_show_more_row(hidden: usize) -> SearchAction {
     content.append(&Label::new(Some(&format!("Show {hidden} more"))));
 
     SearchAction {
-        button: flat_button(&content, Some("scry-show-more")),
+        button: flat_button(&content, Some("paloma-show-more")),
         extension_capability_id: ExtensionCapabilityId::default(),
         panel_actions: vec![],
     }
@@ -247,7 +247,7 @@ fn flat_button(content: &impl IsA<Widget>, extra_class: Option<&str>) -> Button 
         .child(content)
         .focusable(false)
         .can_focus(false)
-        .css_classes(["flat", "scry-item"])
+        .css_classes(["flat", "paloma-item"])
         .build();
     if let Some(class) = extra_class {
         button.add_css_class(class);
@@ -266,7 +266,7 @@ fn item_content_row(item: &Item) -> GtkBox {
         Some(capability_icon::Icon::Path(path)) => Image::from_file(path),
         Some(capability_icon::Icon::Embedded(_)) | None => Image::new(),
     };
-    image.add_css_class("scry-item-icon");
+    image.add_css_class("paloma-item-icon");
     image.set_pixel_size(28);
     row.append(&image);
 
@@ -282,7 +282,7 @@ fn item_content_row(item: &Item) -> GtkBox {
         .halign(Align::Start)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .single_line_mode(true)
-        .css_classes(["scry-item-title"])
+        .css_classes(["paloma-item-title"])
         .build();
     text.append(&title);
 
@@ -293,7 +293,7 @@ fn item_content_row(item: &Item) -> GtkBox {
             .halign(Align::Start)
             .ellipsize(gtk4::pango::EllipsizeMode::Middle)
             .single_line_mode(true)
-            .css_classes(["scry-item-subtitle"])
+            .css_classes(["paloma-item-subtitle"])
             .build();
         text.append(&subtitle);
     }

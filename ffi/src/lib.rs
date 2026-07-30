@@ -1,4 +1,4 @@
-//! UniFFI bindings for `scry-core`.
+//! UniFFI bindings for `paloma-core`.
 //!
 //! The core spawns Tokio tasks and drives sockets internally, while UniFFI
 //! polls exported futures on foreign (Swift) threads that have no ambient
@@ -21,7 +21,7 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use scry_core::AppContext;
+use paloma_core::AppContext;
 use tokio::{
     runtime::Runtime,
     sync::{Mutex as AsyncMutex, mpsc},
@@ -29,13 +29,13 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub use crate::{error::ScryError, types::*};
+pub use crate::{error::PalomaError, types::*};
 
-uniffi::setup_scaffolding!("scry");
+uniffi::setup_scaffolding!("paloma");
 
-/// Route `log` records to ~/Library/Logs/Scry/scry-YYYY-MM-DD.log
+/// Route `log` records to ~/Library/Logs/Paloma/paloma-YYYY-MM-DD.log
 /// (per-day files, appended) and to stderr for Xcode/terminal runs. Call
-/// once at app startup, before [`ScryApp::new`]; extra calls are no-ops.
+/// once at app startup, before [`PalomaApp::new`]; extra calls are no-ops.
 /// `RUST_LOG` overrides the default filter.
 #[uniffi::export]
 pub fn init_logging(log_path: String) {
@@ -56,9 +56,9 @@ pub fn log_error(target: String, message: String) {
 }
 
 fn log_file(log_path: String) -> Option<std::fs::File> {
-    let dir = PathBuf::from(log_path).join("Scry");
+    let dir = PathBuf::from(log_path).join("Paloma");
     std::fs::create_dir_all(&dir).ok()?;
-    let name = format!("scry-{}.log", chrono::Local::now().format("%Y-%m-%d"));
+    let name = format!("paloma-{}.log", chrono::Local::now().format("%Y-%m-%d"));
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -82,19 +82,19 @@ impl std::io::Write for Tee {
 }
 
 /// Matches core's render channel so the pump adds no extra slack.
-const EVENT_BUFFER: usize = scry_core::RENDER_CHANNEL_CAPACITY;
+const EVENT_BUFFER: usize = paloma_core::RENDER_CHANNEL_CAPACITY;
 
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_name("scry-core")
+        .thread_name("paloma-core")
         .build()
-        .expect("failed to start the scry tokio runtime")
+        .expect("failed to start the paloma tokio runtime")
 });
 
 /// Run `task` to completion on [`RUNTIME`]; the returned future is safe to
 /// poll from any thread.
-async fn on_runtime<T, F>(task: F) -> Result<T, ScryError>
+async fn on_runtime<T, F>(task: F) -> Result<T, PalomaError>
 where
     T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
@@ -102,7 +102,7 @@ where
     RUNTIME
         .spawn(task)
         .await
-        .map_err(|e| ScryError::new(e.to_string()))
+        .map_err(|e| PalomaError::new(e.to_string()))
 }
 
 /// Like [`on_runtime`], but parks the task's abort handle in `slot` so a
@@ -113,7 +113,7 @@ where
 /// support cancelling async futures, so dropping the future cancels the
 /// task instead (tracked in mozilla/uniffi-rs#2771; the docs currently
 /// recommend exactly this kind of side-channel cancel).
-async fn run_abortable<T, F>(slot: &Mutex<Option<AbortHandle>>, task: F) -> Result<T, ScryError>
+async fn run_abortable<T, F>(slot: &Mutex<Option<AbortHandle>>, task: F) -> Result<T, PalomaError>
 where
     T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
@@ -123,7 +123,7 @@ where
     let outcome = handle.await;
     slot.lock().expect("abort slot lock poisoned").take();
     outcome.map_err(|join_error| {
-        ScryError::new(if join_error.is_cancelled() {
+        PalomaError::new(if join_error.is_cancelled() {
             "cancelled".to_owned()
         } else {
             join_error.to_string()
@@ -142,7 +142,7 @@ impl EventStream {
     /// Forward `stream` into a channel from a task inside [`RUNTIME`], so the
     /// core stream is always polled with a reactor available. Must be called
     /// from within the runtime.
-    fn pump(stream: impl Stream<Item = scry_core::RenderEvent> + Send + 'static) -> Self {
+    fn pump(stream: impl Stream<Item = paloma_core::RenderEvent> + Send + 'static) -> Self {
         let (tx, rx) = mpsc::channel(EVENT_BUFFER);
         RUNTIME.spawn(async move {
             let mut stream = pin!(stream);
@@ -191,7 +191,7 @@ impl ChatStream {
 /// once; [`Self::cancel`] aborts a finalize already in flight.
 #[derive(uniffi::Object)]
 pub struct McpOauthSession {
-    inner: Mutex<Option<scry_core::OAuthCallbackState>>,
+    inner: Mutex<Option<paloma_core::OAuthCallbackState>>,
     auth_url: String,
     abort: Mutex<Option<AbortHandle>>,
 }
@@ -214,12 +214,12 @@ impl McpOauthSession {
 }
 
 impl McpOauthSession {
-    fn take(&self) -> Result<scry_core::OAuthCallbackState, ScryError> {
+    fn take(&self) -> Result<paloma_core::OAuthCallbackState, PalomaError> {
         self.inner
             .lock()
             .expect("MCP OAuth session lock poisoned")
             .take()
-            .ok_or_else(|| ScryError::new("MCP OAuth session was already consumed"))
+            .ok_or_else(|| PalomaError::new("MCP OAuth session was already consumed"))
     }
 
     fn abort_slot(&self) -> std::sync::MutexGuard<'_, Option<AbortHandle>> {
@@ -227,24 +227,24 @@ impl McpOauthSession {
     }
 }
 
-/// FFI entry point wrapping [`scry_core::AppContext`].
+/// FFI entry point wrapping [`paloma_core::AppContext`].
 #[derive(uniffi::Object)]
-pub struct ScryApp {
+pub struct PalomaApp {
     inner: Arc<AppContext>,
 }
 
 #[uniffi::export]
-impl ScryApp {
+impl PalomaApp {
     /// Build the whole core: storage, providers, and the plugin/session/turn
     /// event loops, all living on the FFI-owned runtime.
     #[uniffi::constructor]
-    pub async fn new(app_data_path: String) -> Result<Arc<Self>, ScryError> {
+    pub async fn new(app_data_path: String) -> Result<Arc<Self>, PalomaError> {
         let inner = on_runtime(AppContext::build(PathBuf::from(app_data_path))).await??;
         Ok(Arc::new(Self { inner }))
     }
 
     /// Run a launcher search; results arrive on the returned stream.
-    pub async fn search(&self, input: String) -> Result<Arc<EventStream>, ScryError> {
+    pub async fn search(&self, input: String) -> Result<Arc<EventStream>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         let stream =
             on_runtime(async move { EventStream::pump(inner.search(&input).await) }).await?;
@@ -257,7 +257,7 @@ impl ScryApp {
         &self,
         extension_capability_id: ExtensionCapabilityId,
         action: Action,
-    ) -> Result<Behavior, ScryError> {
+    ) -> Result<Behavior, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner
@@ -275,7 +275,7 @@ impl ScryApp {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
-    ) -> Result<Arc<ChatStream>, ScryError> {
+    ) -> Result<Arc<ChatStream>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         let stream = on_runtime(async move {
             let chat = inner.chat(session_id, provider_backend_id, prompt).await;
@@ -288,19 +288,19 @@ impl ScryApp {
         Ok(Arc::new(stream))
     }
 
-    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, ScryError> {
+    pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.available_sessions().await }).await??)
     }
 
     /// Ids of stored sessions whose user prompts or assistant messages
     /// contain `needle`.
-    pub async fn search_sessions(&self, needle: String) -> Result<Vec<Uuid>, ScryError> {
+    pub async fn search_sessions(&self, needle: String) -> Result<Vec<Uuid>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.search_sessions(needle).await }).await??)
     }
 
-    pub async fn restore_session(&self, session_id: Uuid) -> Result<Arc<EventStream>, ScryError> {
+    pub async fn restore_session(&self, session_id: Uuid) -> Result<Arc<EventStream>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         let stream = on_runtime(async move {
             inner
@@ -312,12 +312,12 @@ impl ScryApp {
         Ok(Arc::new(stream))
     }
 
-    pub async fn remove_session(&self, session_id: Uuid) -> Result<(), ScryError> {
+    pub async fn remove_session(&self, session_id: Uuid) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.remove_session(session_id).await }).await??)
     }
 
-    pub async fn cancel_session(&self, session_id: Uuid) -> Result<(), ScryError> {
+    pub async fn cancel_session(&self, session_id: Uuid) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.cancel_session(session_id).await }).await??)
     }
@@ -325,7 +325,7 @@ impl ScryApp {
     pub async fn decide_toolcall_permissions(
         &self,
         user_decision: UserDecision,
-    ) -> Result<PermissionState, ScryError> {
+    ) -> Result<PermissionState, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(
             on_runtime(async move { inner.decide_toolcall_permissions(user_decision).await })
@@ -333,12 +333,12 @@ impl ScryApp {
         )
     }
 
-    pub async fn get_permissions(&self) -> Result<Vec<Permission>, ScryError> {
+    pub async fn get_permissions(&self) -> Result<Vec<Permission>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.get_permissions().await }).await??)
     }
 
-    pub async fn delete_permission(&self, prefix: String) -> Result<(), ScryError> {
+    pub async fn delete_permission(&self, prefix: String) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.delete_permission(&prefix).await }).await??)
     }
@@ -346,7 +346,7 @@ impl ScryApp {
     pub async fn init_connection(
         &self,
         provider_backend_id: ProviderBackendId,
-    ) -> Result<ConnectionPayload, ScryError> {
+    ) -> Result<ConnectionPayload, PalomaError> {
         let inner = Arc::clone(&self.inner);
         on_runtime(async move { inner.init_connection(provider_backend_id).await })
             .await??
@@ -358,7 +358,7 @@ impl ScryApp {
         provider_auth_method: ProviderAuthMethod,
         provider_backend_id: ProviderBackendId,
         payload: String,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner
@@ -371,7 +371,7 @@ impl ScryApp {
     pub async fn cancel_connection(
         &self,
         provider_backend_id: ProviderBackendId,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.cancel_connection(provider_backend_id).await }).await??)
     }
@@ -379,7 +379,7 @@ impl ScryApp {
     pub async fn disconnect_connector(
         &self,
         provider_backend_id: ProviderBackendId,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(
             on_runtime(async move { inner.disconnect_connector(provider_backend_id).await })
@@ -393,7 +393,7 @@ impl ScryApp {
         model: String,
         effort: String,
         set_default: bool,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner
@@ -403,12 +403,12 @@ impl ScryApp {
         .await??)
     }
 
-    pub async fn prefer_model(&self) -> Result<Option<ProviderBackendId>, ScryError> {
+    pub async fn prefer_model(&self) -> Result<Option<ProviderBackendId>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.prefer_model().await }).await??)
     }
 
-    pub async fn available_connectors(&self) -> Result<Vec<Connector>, ScryError> {
+    pub async fn available_connectors(&self) -> Result<Vec<Connector>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(
             on_runtime(async move { inner.available_connectors().await })
@@ -419,17 +419,17 @@ impl ScryApp {
         )
     }
 
-    pub async fn connectors_health_level(&self) -> Result<HealthLevel, ScryError> {
+    pub async fn connectors_health_level(&self) -> Result<HealthLevel, PalomaError> {
         let inner = Arc::clone(&self.inner);
         on_runtime(async move { inner.connectors_health_level().await }).await
     }
 
-    pub async fn plugins_health_level(&self) -> Result<HealthLevel, ScryError> {
+    pub async fn plugins_health_level(&self) -> Result<HealthLevel, PalomaError> {
         let inner = Arc::clone(&self.inner);
         on_runtime(async move { inner.plugins_health_level().await }).await
     }
 
-    pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>, ScryError> {
+    pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(
             on_runtime(async move { inner.list_extension_plugins().await })
@@ -440,22 +440,22 @@ impl ScryApp {
         )
     }
 
-    pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>, ScryError> {
+    pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.list_provider_plugins().await }).await??)
     }
 
-    pub async fn add_extension_plugin(&self, config: Plugin) -> Result<(), ScryError> {
+    pub async fn add_extension_plugin(&self, config: Plugin) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.add_extension_plugin(config).await }).await??)
     }
 
-    pub async fn add_provider_plugin(&self, config: Plugin) -> Result<(), ScryError> {
+    pub async fn add_provider_plugin(&self, config: Plugin) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.add_provider_plugin(config).await }).await??)
     }
 
-    pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>, ScryError> {
+    pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.list_mcps().await })
             .await??
@@ -470,7 +470,7 @@ impl ScryApp {
     pub async fn init_mcp_connection(
         &self,
         config: Plugin,
-    ) -> Result<Option<Arc<McpOauthSession>>, ScryError> {
+    ) -> Result<Option<Arc<McpOauthSession>>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         let state = on_runtime(async move { inner.init_mcp_connection(config).await }).await??;
         Ok(state.map(|state| {
@@ -488,7 +488,7 @@ impl ScryApp {
         &self,
         config: Plugin,
         session: Option<Arc<McpOauthSession>>,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let state = session.as_ref().map(|session| session.take()).transpose()?;
         let inner = Arc::clone(&self.inner);
         let task = async move { inner.finalize_mcp_connection(config, state).await };
@@ -502,7 +502,7 @@ impl ScryApp {
         &self,
         plugin_type: PluginType,
         plugin: Plugin,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.update_plugin(plugin_type, plugin).await }).await??)
     }
@@ -511,12 +511,12 @@ impl ScryApp {
         &self,
         plugin_type: PluginType,
         name: String,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.remove_plugin(plugin_type, &name).await }).await??)
     }
 
-    pub async fn toggle_plugin(&self, name: String, disabled: bool) -> Result<(), ScryError> {
+    pub async fn toggle_plugin(&self, name: String, disabled: bool) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move { inner.toggle_plugin(&name, disabled).await }).await??)
     }
@@ -527,7 +527,7 @@ impl ScryApp {
         capability: String,
         facet: CapabilityFacet,
         disabled: bool,
-    ) -> Result<(), ScryError> {
+    ) -> Result<(), PalomaError> {
         let inner = Arc::clone(&self.inner);
         Ok(on_runtime(async move {
             inner

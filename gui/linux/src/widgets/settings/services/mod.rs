@@ -16,7 +16,7 @@ use libadwaita::{
     glib::{Bytes, WeakRef},
     prelude::*,
 };
-use scry_core::{
+use paloma_core::{
     AppContext, ConnectorConnection, HealthStatus, Icon, ProviderAuthMethod, ProviderBackendId,
 };
 use tokio::task::JoinHandle;

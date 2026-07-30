@@ -8,7 +8,7 @@ use std::{
 
 use gtk4::glib;
 
-const DESKTOP_FILE: &str = "dev.scry.Scry.desktop";
+const DESKTOP_FILE: &str = "dev.paloma.Paloma.desktop";
 
 static AUTOSTART_DESKTOP_ENTRY: LazyLock<PathBuf> =
     LazyLock::new(|| glib::user_config_dir().join("autostart").join(DESKTOP_FILE));
@@ -39,7 +39,7 @@ fn render_desktop_entry(executable: &Path) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name=Scry\n\
+         Name=Paloma\n\
          Exec={}\n\
          Icon=preferences-system\n\
          Terminal=false\n\

@@ -17,7 +17,7 @@ pub(crate) fn tokio_runtime() -> &'static Runtime {
         Builder::new_multi_thread()
             .enable_all()
             .worker_threads(4)
-            .thread_name("scry-tokio")
+            .thread_name("paloma-tokio")
             .build()
             .expect("failed to build tokio runtime")
     })
@@ -35,7 +35,7 @@ where
     T: Send + 'static,
 {
     let handle = tokio_runtime().spawn(work);
-    async move { handle.await.expect("scry-tokio task panicked") }
+    async move { handle.await.expect("paloma-tokio task panicked") }
 }
 
 /// Spawn `work` on tokio and run `done` with its result on the GTK main

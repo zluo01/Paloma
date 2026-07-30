@@ -1,5 +1,5 @@
 [package]
-name = "scry-extension-base"
+name = "paloma-extension-base"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 async-trait = { workspace = true }
 dashmap = { workspace = true }
-scry-extension-protocol = { workspace = true }
-scry-utils = { workspace = true }
+paloma-extension-protocol = { workspace = true }
+paloma-utils = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tokio-util = { workspace = true }

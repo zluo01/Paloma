@@ -1,8 +1,8 @@
 use std::{fmt::Display, future::Future, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use scry_provider_protocol::v1::Model;
-use scry_utils::{RefreshSlot, ttl_with_jitter};
+use paloma_provider_protocol::v1::Model;
+use paloma_utils::{RefreshSlot, ttl_with_jitter};
 
 const MODELS_CACHE_TTL_SECS: u64 = Duration::from_hours(8).as_secs();
 const MODELS_CACHE_JITTER_SECS: u64 = Duration::from_mins(30).as_secs();

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use scry_provider_protocol::v1::{self, conversation_item::Item};
+use paloma_provider_protocol::v1::{self, conversation_item::Item};
 use serde_json::json;
 use sqlx::Row;
 
@@ -44,7 +44,7 @@ mod storage {
 
     #[tokio::test]
     async fn new_is_idempotent_across_reopens() {
-        let uri = "file:scry_reopen_idempotent?mode=memory&cache=shared";
+        let uri = "file:paloma_reopen_idempotent?mode=memory&cache=shared";
         let keepalive = SqlitePoolOptions::new()
             .max_connections(1)
             .connect(uri)
@@ -253,7 +253,7 @@ mod providers {
                 300,
                 &HashMap::new(),
                 &PluginArgs::Local {
-                    command: "scry".into(),
+                    command: "paloma".into(),
                     args: vec![],
                 },
                 None,
