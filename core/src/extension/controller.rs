@@ -84,13 +84,34 @@ impl ExtensionController {
         Ok(Self { handlers, storage })
     }
 
-    pub(crate) fn search(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
+    pub(crate) async fn search(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
         let (render_tx, mut render_rx) = mpsc::channel(RENDER_CHANNEL_CAPACITY);
+        let stream = stream::poll_fn(move |cx| render_rx.poll_recv(cx));
 
-        // every capability whose facet allows search, with its connection
+        if input.trim().is_empty() {
+            let _ = render_tx.send(RenderEvent::Done).await;
+            return stream;
+        }
+
+        let disabled = match self.storage.disabled_plugins().await {
+            Ok(disabled) => disabled,
+            Err(e) => {
+                let _ = render_tx
+                    .send(RenderEvent::Error {
+                        message: format!("fail to get disabled plugins: {e}"),
+                    })
+                    .await;
+                // the GUI resolves a query only on Done
+                let _ = render_tx.send(RenderEvent::Done).await;
+                return stream;
+            },
+        };
+
+        // every enabled capability whose facet allows search, with its connection
         let handlers: Vec<(ExtensionCapabilityId, Arc<ExtensionPlugin>)> = self
             .handlers
             .iter()
+            .filter(|entry| !disabled.contains(entry.key()))
             .filter(|entry| entry.connection.health() == HealthStatus::Running)
             .flat_map(|entry| {
                 let handler = entry.value();
@@ -113,11 +134,6 @@ impl ExtensionController {
         let input = input.to_owned();
 
         tokio::spawn(async move {
-            if input.trim().is_empty() {
-                let _ = render_tx.send(RenderEvent::Done).await;
-                return;
-            }
-
             let mut set = JoinSet::new();
             for (extension_capability_id, extension) in handlers {
                 let input = input.clone();
@@ -154,7 +170,7 @@ impl ExtensionController {
             }
         });
 
-        stream::poll_fn(move |cx| render_rx.poll_recv(cx))
+        stream
     }
 
     pub async fn run_search_action(

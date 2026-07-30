@@ -154,8 +154,8 @@ impl AppContext {
         ))
     }
 
-    pub fn search(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
-        self.extensions.search(input)
+    pub async fn search(&self, input: &str) -> impl Stream<Item = RenderEvent> + use<> {
+        self.extensions.search(input).await
     }
 
     pub async fn run_search_action(

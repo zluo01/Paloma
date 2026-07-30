@@ -368,7 +368,7 @@ impl Overlay {
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let mut has_result = false;
-            let mut render_stream = app_context.search(&content);
+            let mut render_stream = app_context.search(&content).await;
             while let Some(event) = render_stream.next().await {
                 match event {
                     RenderEvent::Search(event) => {
