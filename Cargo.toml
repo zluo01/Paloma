@@ -22,6 +22,7 @@ default-members = ["core", "gui/linux"]
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.93.0"
+license = "GPL-3.0-or-later"
 
 [workspace.lints.clippy]
 redundant_clone = "warn"
