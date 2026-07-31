@@ -36,12 +36,9 @@ impl ExtensionService {
     ) -> Self {
         let mut handlers = HashMap::new();
         for handler in capabilities {
-            let capability_id = handler.id().to_string();
-            let previous = handlers.insert(capability_id.clone(), handler);
-            assert!(
-                previous.is_none(),
-                "duplicate capability id: {capability_id}"
-            );
+            if let Some(previous) = handlers.insert(handler.id().to_string(), handler) {
+                panic!("duplicate capability id: {}", previous.id());
+            }
         }
         Self {
             extension_id: extension_id.into(),
