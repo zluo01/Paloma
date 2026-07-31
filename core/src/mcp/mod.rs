@@ -203,7 +203,10 @@ impl McpPlugin {
             return Err(McpPluginError::Disconnected(self.name.clone()));
         };
 
-        let arguments = args.as_object().cloned().unwrap_or_default();
+        let arguments = match args {
+            Value::Object(map) => map,
+            _ => serde_json::Map::new(),
+        };
 
         let outcome = timeout(
             Duration::from_secs(self.timeout as u64),

@@ -347,14 +347,15 @@ impl TurnManager {
             let Some(mut state) = self.turn_map.get_mut(&session_id) else {
                 return Ok(false);
             };
-            match &*state {
+            match std::mem::replace(&mut *state, TurnState::Cancelled) {
                 TurnState::Running(handle, provider_backend_id) => {
                     handle.abort();
-                    let id = provider_backend_id.clone();
-                    *state = TurnState::Cancelled;
-                    id
+                    provider_backend_id
                 },
-                TurnState::Cancelled | TurnState::Done => return Ok(false),
+                other => {
+                    *state = other;
+                    return Ok(false);
+                },
             }
         };
 

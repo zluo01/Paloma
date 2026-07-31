@@ -308,14 +308,14 @@ impl ExtensionPlugin {
 }
 
 async fn execute_plugin(plugin: &Plugin) -> Result<Child> {
-    let PluginArgs::Local { command, args } = plugin.args.clone() else {
+    let PluginArgs::Local { command, args } = &plugin.args else {
         return Err(ExtensionConnectionError::Extension(format!(
             "extension plugin {} must be a local command",
             plugin.name
         )));
     };
 
-    let mut cmd = Command::new(&command);
+    let mut cmd = Command::new(command);
     if let Some(path) = shell_path().await {
         cmd.env("PATH", path);
     }

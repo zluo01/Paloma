@@ -183,7 +183,7 @@ impl ProviderController {
         let connection = self.handler(&provider_backend_id.provider_id)?;
 
         Ok(connection
-            .init_connection(provider_backend_id.backend_id.clone())
+            .init_connection(provider_backend_id.backend_id)
             .await?)
     }
 
@@ -297,7 +297,7 @@ impl ProviderController {
     }
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>> {
-        let connected: HashMap<ProviderBackendId, ConnectedBackend> = self
+        let mut connected: HashMap<ProviderBackendId, ConnectedBackend> = self
             .storage
             .connected_backends()
             .await?
@@ -316,11 +316,11 @@ impl ProviderController {
                 let id = entry.key();
                 let backend = entry.value();
                 // A connection needs both the stored prefs and a live runtime status.
-                let connection = match (connected.get(id), statuses.remove(id)) {
+                let connection = match (connected.remove(id), statuses.remove(id)) {
                     (Some(cred), Some(status)) => Some(ConnectorConnection {
                         preferred: cred.preferred,
-                        prefer_model: cred.model.clone(),
-                        prefer_effort: cred.effort.clone(),
+                        prefer_model: cred.model,
+                        prefer_effort: cred.effort,
                         status,
                     }),
                     _ => None,
@@ -363,7 +363,7 @@ impl ProviderController {
 impl ProviderController {
     pub async fn available_backends(
         &self,
-        connected: Option<Vec<ProviderBackendId>>,
+        connected: Option<HashSet<ProviderBackendId>>,
     ) -> Result<HashMap<ProviderBackendId, ProviderStatus>> {
         let connected: HashSet<ProviderBackendId> = match connected {
             None => self
@@ -373,7 +373,7 @@ impl ProviderController {
                 .into_iter()
                 .map(|o| o.id)
                 .collect(),
-            Some(connected) => connected.into_iter().collect(),
+            Some(connected) => connected,
         };
 
         let backends: Vec<(ProviderBackendId, Arc<ProviderPlugin>)> = self

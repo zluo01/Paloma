@@ -531,14 +531,14 @@ fn resolve_unary(routes: &DashMap<u64, Pending>, event_id: u64, payload: Payload
 }
 
 async fn execute_plugin(plugin: &Plugin) -> Result<Child> {
-    let PluginArgs::Local { command, args } = plugin.args.clone() else {
+    let PluginArgs::Local { command, args } = &plugin.args else {
         return Err(ProviderConnectionError::Provider(format!(
             "provider plugin {} must be a local command",
             plugin.name
         )));
     };
 
-    let mut cmd = Command::new(&command);
+    let mut cmd = Command::new(command);
     if let Some(path) = shell_path().await {
         cmd.env("PATH", path);
     }

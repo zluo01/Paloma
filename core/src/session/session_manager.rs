@@ -358,15 +358,15 @@ impl SessionManager {
                     }
                 },
                 Some(Item::Message(message)) => {
-                    let parts: Vec<String> =
-                        message.message.iter().map(|c| c.content.clone()).collect();
-                    if parts.is_empty() {
+                    if message.message.is_empty() {
                         error!(
                             "OutputItem (type=message) yielded no text from value: {:?}",
                             message
                         );
                         continue;
                     }
+                    let parts: Vec<String> =
+                        message.message.into_iter().map(|c| c.content).collect();
                     RenderEvent::Chat(ChatRenderEvent::TextDelta {
                         text: parts.join("\n"),
                         provider_backend_id: entry.provider_backend_id,
