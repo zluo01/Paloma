@@ -26,7 +26,7 @@ pub struct ExtensionCapabilityId {
     pub capability_id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
 #[sqlx(rename_all = "snake_case")]
 pub enum PluginType {
     Extension,

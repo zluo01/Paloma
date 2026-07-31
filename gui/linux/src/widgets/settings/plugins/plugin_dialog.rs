@@ -34,12 +34,9 @@ impl PluginDialog {
         taken: HashSet<String>,
         dispatcher: mpsc::UnboundedSender<Msg>,
     ) -> Self {
-        let initial = plugin
-            .as_ref()
-            .map(FormData::from_plugin)
-            .unwrap_or_default();
         let editing = plugin.is_some();
         let disabled = plugin.as_ref().is_some_and(|p| p.disabled);
+        let initial = plugin.map(FormData::from_plugin).unwrap_or_default();
         let remote = initial.kind == Kind::Remote;
 
         let frame = DialogFrame::new(
@@ -204,11 +201,8 @@ impl PluginDialog {
         plugin: Option<Plugin>,
         dispatcher: mpsc::UnboundedSender<Msg>,
     ) -> Self {
-        let initial = plugin
-            .as_ref()
-            .map(FormData::from_plugin)
-            .unwrap_or_default();
         let editing = plugin.is_some();
+        let initial = plugin.map(FormData::from_plugin).unwrap_or_default();
 
         let noun = match plugin_type {
             PluginType::Extension => "Extension",
@@ -273,7 +267,7 @@ impl PluginDialog {
                 );
                 let _ = dispatcher.unbounded_send(Msg::General(
                     GeneralPluginMsg::PluginDialogSubmitted {
-                        plugin_type: plugin_type.clone(),
+                        plugin_type,
                         config: data.to_plugin(false),
                         editing,
                     },
@@ -513,9 +507,9 @@ impl FormData {
         }
     }
 
-    fn from_plugin(initial: &Plugin) -> Self {
+    fn from_plugin(initial: Plugin) -> Self {
         let mut form = Self {
-            name: initial.name.clone(),
+            name: initial.name,
             timeout: initial.timeout,
             ..Self::default()
         };
@@ -523,18 +517,18 @@ impl FormData {
         if !initial.env.is_empty() {
             form.env = serde_json::to_string(&initial.env).unwrap_or_default();
         }
-        match &initial.args {
+        match initial.args {
             PluginArgs::Local { command, args } => {
                 form.kind = Kind::Local;
-                form.command = command.clone();
                 if !args.is_empty() {
-                    form.args = serde_json::to_string(args).unwrap_or_default();
+                    form.args = serde_json::to_string(&args).unwrap_or_default();
                 }
+                form.command = command;
             },
             PluginArgs::Remote { url, requires_auth } => {
                 form.kind = Kind::Remote;
-                form.url = url.clone();
-                form.requires_auth = *requires_auth;
+                form.url = url;
+                form.requires_auth = requires_auth;
             },
         }
 

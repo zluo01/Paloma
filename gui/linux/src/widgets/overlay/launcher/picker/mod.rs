@@ -114,6 +114,7 @@ impl ModelPicker {
             let current = selection
                 .as_ref()
                 .filter(|s| s.provider_backend_id == connector.id);
+            let provider_json = serde_json::to_string(&connector.id).expect("serializable id");
 
             let models = gio::Menu::new();
             for model in &conn.status.models {
@@ -123,7 +124,7 @@ impl ModelPicker {
 
                 let efforts = gio::Menu::new();
                 for effort in &model.supported_reasoning_efforts {
-                    efforts.append_item(&effort_item(connector.id.clone(), &model.id, effort));
+                    efforts.append_item(&effort_item(&provider_json, &model.id, effort));
                 }
 
                 let is_current_model = current.is_some_and(|s| s.model_id == model.id);
@@ -231,14 +232,9 @@ fn dropdown_popover() -> PopoverMenu {
     popover
 }
 
-fn effort_item(provider: ProviderBackendId, model: &str, effort: &str) -> gio::MenuItem {
+fn effort_item(provider_json: &str, model: &str, effort: &str) -> gio::MenuItem {
     let item = gio::MenuItem::new(Some(effort), None);
-    let target = (
-        serde_json::to_string(&provider).expect("serializable id"),
-        model,
-        effort,
-    )
-        .to_variant();
+    let target = (provider_json, model, effort).to_variant();
     item.set_action_and_target_value(Some(SELECT_ACTION), Some(&target));
     item
 }

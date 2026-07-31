@@ -156,8 +156,8 @@ impl Model {
                         payload: Some(connection_payload::Payload::DeviceCode(device_code)),
                     }) => vec![
                         Command::ShowChallenge {
-                            verification_uri: device_code.verification_url.clone(),
-                            user_code: device_code.user_code.clone(),
+                            verification_uri: device_code.verification_url,
+                            user_code: device_code.user_code,
                         },
                         Command::FinalizeConnection {
                             provider_auth_method: ProviderAuthMethod::DeviceCode,

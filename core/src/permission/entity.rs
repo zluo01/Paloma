@@ -56,7 +56,7 @@ impl PermissionDecision {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum PermissionState {
     Allow,
     Deny,

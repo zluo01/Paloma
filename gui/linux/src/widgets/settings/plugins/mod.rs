@@ -2,6 +2,7 @@ mod model;
 mod plugin_dialog;
 
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     collections::HashSet,
     rc::Rc,
@@ -260,7 +261,7 @@ impl PluginsPage {
         drop(tokio_runtime().spawn(async move {
             let result = app_context.toggle_plugin(&name, !enabled).await;
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::SwitchToggledFinish(
-                plugin_type.clone(),
+                plugin_type,
                 result,
             )));
         }));
@@ -345,7 +346,7 @@ impl PluginsPage {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
-            let result = app_context.update_plugin(plugin_type.clone(), config).await;
+            let result = app_context.update_plugin(plugin_type, config).await;
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::PluginSaveFinished(
                 plugin_type,
                 result,
@@ -357,7 +358,7 @@ impl PluginsPage {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(tokio_runtime().spawn(async move {
-            let result = app_context.remove_plugin(plugin_type.clone(), &name).await;
+            let result = app_context.remove_plugin(plugin_type, &name).await;
             let _ = dispatcher.unbounded_send(Msg::General(
                 GeneralPluginMsg::RemovePluginFinished(plugin_type, result),
             ));
@@ -425,12 +426,13 @@ impl PluginsPage {
             extension
                 .author
                 .as_deref()
-                .map(|author| format!("Author: {author}")),
+                .map(|author| Cow::Owned(format!("Author: {author}"))),
             extension
                 .homepage
                 .as_deref()
-                .map(|homepage| format!("Homepage: {homepage}")),
-            Some(extension.description.clone()).filter(|description| !description.is_empty()),
+                .map(|homepage| Cow::Owned(format!("Homepage: {homepage}"))),
+            (!extension.description.is_empty())
+                .then_some(Cow::Borrowed(extension.description.as_str())),
         ]
         .into_iter()
         .flatten()
@@ -525,7 +527,7 @@ impl PluginsPage {
         let name = config.name.clone();
         switch.connect_state_set(move |_, state| {
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::ToggleSwitch(
-                plugin_type.clone(),
+                plugin_type,
                 name.clone(),
                 state,
             )));
@@ -546,7 +548,7 @@ impl PluginsPage {
         let name = name.to_owned();
         button.connect_clicked(move |_| {
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::EditPluginClicked(
-                plugin_type.clone(),
+                plugin_type,
                 name.clone(),
             )));
         });
@@ -565,7 +567,7 @@ impl PluginsPage {
         let name = name.to_owned();
         button.connect_clicked(move |_| {
             let _ = dispatcher.unbounded_send(Msg::General(GeneralPluginMsg::RemovePluginClicked(
-                plugin_type.clone(),
+                plugin_type,
                 name.clone(),
             )));
         });

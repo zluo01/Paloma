@@ -318,7 +318,7 @@ impl PendingDecisionsState {
         let mut clear = false;
         for group in &self.groups {
             if !group.finished {
-                (group.finish)(permission_state.clone());
+                (group.finish)(permission_state);
                 clear = true;
             }
         }
