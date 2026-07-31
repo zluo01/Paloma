@@ -93,7 +93,7 @@ impl McpPlugin {
                     .trim()
                     .to_string();
                 let tool = Self {
-                    name: config.name.to_string(),
+                    name: config.name.clone(),
                     description,
                     timeout: config.timeout,
                     client: Some(client),
@@ -120,7 +120,7 @@ impl McpPlugin {
     /// unhealthy constructor
     fn unhealthy(config: &Plugin, error: &McpPluginError) -> Self {
         Self {
-            name: config.name.to_string(),
+            name: config.name.clone(),
             description: String::new(),
             timeout: config.timeout,
             client: None,

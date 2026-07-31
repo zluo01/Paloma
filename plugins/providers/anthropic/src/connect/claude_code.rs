@@ -43,7 +43,7 @@ impl ProviderAuthenticator for ClaudeCodeConnector {
 
     async fn init_connection(&self) -> Result<ConnectionPayload> {
         let (code_challenge, code_verifier) = PkceCodeChallenge::new_random_sha256();
-        let code_verifier = code_verifier.secret().to_string();
+        let code_verifier = code_verifier.secret().clone();
         let mut url = reqwest::Url::parse(AUTH_URL).map_err(|error| {
             ProviderError::Other(format!("invalid Claude Code auth URL: {error}"))
         })?;

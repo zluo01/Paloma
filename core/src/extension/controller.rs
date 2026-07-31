@@ -196,12 +196,12 @@ impl ExtensionController {
             .map(|handler| Arc::clone(&handler.connection))
             .ok_or_else(|| {
                 ExtensionControllerError::UnknownExtension(
-                    extension_capability_id.extension_id.to_string(),
+                    extension_capability_id.extension_id.clone(),
                 )
             })?;
 
         Ok(connection
-            .run_search_action(extension_capability_id.capability_id.to_string(), action)
+            .run_search_action(extension_capability_id.capability_id.clone(), action)
             .await?)
     }
 

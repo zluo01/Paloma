@@ -68,7 +68,7 @@ impl AppSearchBackend for Platform {
 fn keep(de: &DesktopEntry, current_desktop: Option<&[String]>, seen: &mut HashSet<String>) -> bool {
     let appid = match de.flatpak() {
         Some(base) => format!("{}.{}", base, de.appid),
-        None => de.appid.to_string(),
+        None => de.appid.clone(),
     };
     if seen.contains(&appid) {
         return false;
