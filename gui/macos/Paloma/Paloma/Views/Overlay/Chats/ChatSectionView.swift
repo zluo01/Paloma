@@ -318,6 +318,8 @@ private struct ToolCallView: View {
     let tool: ToolCallState
     let model: ChatModel
 
+    @State private var expanded = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -332,6 +334,10 @@ private struct ToolCallView: View {
                 Text(description)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    .lineLimit(expanded ? nil : 2)
+                    .contentShape(.rect)
+                    .onTapGesture { expanded.toggle() }
+                    .help(expanded ? "Collapse" : "Expand")
             }
             if !tool.arguments.isEmpty {
                 Text(tool.arguments)
