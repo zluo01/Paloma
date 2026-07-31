@@ -198,6 +198,11 @@ impl McpController {
             .map(|entry| (entry.key().clone(), Arc::clone(&entry.connection)))
             .collect();
 
+        let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled_capabilities
+            .iter()
+            .map(|(name, tool, facet)| (name.as_str(), tool.as_str(), *facet))
+            .collect();
+
         let mut schemas = Vec::new();
         for (name, connection) in servers {
             match self
@@ -209,9 +214,9 @@ impl McpController {
                     specs
                         .values()
                         .filter(|spec| {
-                            !disabled_capabilities.contains(&(
-                                spec.name.clone(),
-                                spec.tool.clone(),
+                            !disabled.contains(&(
+                                spec.name.as_str(),
+                                spec.tool.as_str(),
                                 CapabilityFacet::Mcp,
                             ))
                         })
@@ -278,11 +283,14 @@ fn tool_infos(
     specs: Vec<ToolSpec>,
     disabled: &HashSet<(String, String, CapabilityFacet)>,
 ) -> Vec<CapabilityInfo> {
+    let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled
+        .iter()
+        .map(|(server, tool, facet)| (server.as_str(), tool.as_str(), *facet))
+        .collect();
     specs
         .into_iter()
         .map(|spec| {
-            let flag =
-                disabled.contains(&(server.to_string(), spec.tool.clone(), CapabilityFacet::Mcp));
+            let flag = disabled.contains(&(server, spec.tool.as_str(), CapabilityFacet::Mcp));
             CapabilityInfo {
                 id: spec.tool,
                 description: spec.schema.description,

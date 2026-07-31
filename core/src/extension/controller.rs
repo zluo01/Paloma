@@ -112,6 +112,11 @@ impl ExtensionController {
             },
         };
 
+        let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled_capabilities
+            .iter()
+            .map(|(plugin, capability, facet)| (plugin.as_str(), capability.as_str(), *facet))
+            .collect();
+
         // every enabled capability whose facet allows search, with its connection
         let handlers: Vec<(ExtensionCapabilityId, Arc<ExtensionPlugin>)> = self
             .handlers
@@ -125,9 +130,9 @@ impl ExtensionController {
                     .iter()
                     .filter(|capability| capability.search.is_some())
                     .filter(|capability| {
-                        !disabled_capabilities.contains(&(
-                            entry.key().clone(),
-                            capability.capability_id.clone(),
+                        !disabled.contains(&(
+                            entry.key().as_str(),
+                            capability.capability_id.as_str(),
                             CapabilityFacet::Search,
                         ))
                     })
@@ -150,12 +155,19 @@ impl ExtensionController {
             for (extension_capability_id, extension) in handlers {
                 let input = input.clone();
                 set.spawn(async move {
+                    let ExtensionCapabilityId {
+                        extension_id,
+                        capability_id,
+                    } = extension_capability_id;
                     extension
-                        .search(extension_capability_id.capability_id.clone(), input)
+                        .search(capability_id.clone(), input)
                         .await
                         .map(|items| QueryResponse {
-                            extension_capability_id: extension_capability_id.clone(),
-                            name: extension_capability_id.capability_id,
+                            extension_capability_id: ExtensionCapabilityId {
+                                extension_id,
+                                capability_id: capability_id.clone(),
+                            },
+                            name: capability_id,
                             items,
                         })
                 });
@@ -368,6 +380,10 @@ impl ExtensionController {
         disabled_plugins: &HashSet<String>,
         disabled_capabilities: &HashSet<(String, String, CapabilityFacet)>,
     ) -> Vec<ToolSchema> {
+        let disabled: HashSet<(&str, &str, CapabilityFacet)> = disabled_capabilities
+            .iter()
+            .map(|(name, tool, facet)| (name.as_str(), tool.as_str(), *facet))
+            .collect();
         self.handlers
             .iter()
             .filter(|entry| !disabled_plugins.contains(entry.key()))
@@ -377,9 +393,9 @@ impl ExtensionController {
                     .specs
                     .values()
                     .filter(|spec| {
-                        !disabled_capabilities.contains(&(
-                            spec.name.clone(),
-                            spec.tool.clone(),
+                        !disabled.contains(&(
+                            spec.name.as_str(),
+                            spec.tool.as_str(),
                             CapabilityFacet::Tool,
                         ))
                     })
