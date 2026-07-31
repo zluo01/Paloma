@@ -127,22 +127,20 @@ impl ServicesPage {
         self.connected_group.clear();
         self.available_group.clear();
 
-        let connectors = self.model.borrow().connectors.clone();
-        for connector in connectors {
-            let id = connector.id;
-            let backend_description = connector.description;
-            let icon = connector.icon;
-            match connector.connection {
+        let model = self.model.borrow();
+        for connector in &model.connectors {
+            match &connector.connection {
                 Some(conn) => self.connected_group.add(&self.connected_row(
-                    &id,
-                    &backend_description,
-                    icon,
-                    &conn,
+                    &connector.id,
+                    &connector.description,
+                    connector.icon.as_ref(),
+                    conn,
                 )),
-                None => {
-                    self.available_group
-                        .add(&self.available_row(&id, &backend_description, icon))
-                },
+                None => self.available_group.add(&self.available_row(
+                    &connector.id,
+                    &connector.description,
+                    connector.icon.as_ref(),
+                )),
             }
         }
 
@@ -160,7 +158,7 @@ impl ServicesPage {
         &self,
         provider_backend_id: &ProviderBackendId,
         backend_description: &str,
-        icon: Option<Icon>,
+        icon: Option<&Icon>,
     ) -> ActionRow {
         let row = ActionRow::builder()
             .title(provider_backend_id.to_string())
@@ -175,7 +173,7 @@ impl ServicesPage {
         &self,
         provider_backend_id: &ProviderBackendId,
         backend_description: &str,
-        icon: Option<Icon>,
+        icon: Option<&Icon>,
         conn: &ConnectorConnection,
     ) -> ExpanderRow {
         let row = ExpanderRow::builder()
@@ -492,9 +490,9 @@ fn build_view() -> (PreferencesPage, PreferencesGroup, PreferencesGroup) {
     (view, connected, available)
 }
 
-fn logo(icon: Option<Icon>) -> Image {
+fn logo(icon: Option<&Icon>) -> Image {
     let image = match icon {
-        Some(Icon::Embedded(data)) => match Texture::from_bytes(&Bytes::from_owned(data)) {
+        Some(Icon::Embedded(data)) => match Texture::from_bytes(&Bytes::from(&data[..])) {
             Ok(texture) => Image::from_paintable(Some(&texture)),
             Err(e) => {
                 log::warn!("failed to load embedded logo: {e}");
@@ -502,7 +500,7 @@ fn logo(icon: Option<Icon>) -> Image {
             },
         },
         Some(Icon::Path(path)) => Image::from_file(path),
-        Some(Icon::Name(name)) => Image::from_icon_name(&name),
+        Some(Icon::Name(name)) => Image::from_icon_name(name),
         None => fallback_logo(),
     };
     image.set_pixel_size(40);

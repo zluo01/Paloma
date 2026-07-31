@@ -394,8 +394,8 @@ impl PluginsPage {
 
     fn render_mcp_servers(&self) {
         self.mcp_view.clear();
-        let servers = self.model.borrow().servers.clone();
-        for server in &servers {
+        let model = self.model.borrow();
+        for server in &model.servers {
             self.mcp_view.add(&self.mcp_row(server));
         }
         // The add row sits last so new servers appear above it.
@@ -404,8 +404,8 @@ impl PluginsPage {
 
     fn render_provider_plugins(&self) {
         self.provider_view.clear();
-        let providers = self.model.borrow().providers.clone();
-        for provider in &providers {
+        let model = self.model.borrow();
+        for provider in &model.providers {
             self.provider_view.add(&self.provider_row(provider));
         }
         self.provider_view.add(&self.add_provider);
@@ -413,8 +413,8 @@ impl PluginsPage {
 
     fn render_extension_plugins(&self) {
         self.extension_view.clear();
-        let extensions = self.model.borrow().extensions.clone();
-        for extension in &extensions {
+        let model = self.model.borrow();
+        for extension in &model.extensions {
             self.extension_view.add(&self.extension_row(extension));
         }
         self.extension_view.add(&self.add_extension);

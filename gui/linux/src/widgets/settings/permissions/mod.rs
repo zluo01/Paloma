@@ -127,28 +127,11 @@ impl PermissionsPage {
     fn render(self: &Rc<Self>) {
         self.permission_view.clear();
 
-        let (sections, has_query) = {
-            let state = self.state.borrow();
-            let sections = state
-                .visible_sections()
-                .into_iter()
-                .map(|section| {
-                    let rows = section
-                        .permissions
-                        .into_iter()
-                        .map(|permission| {
-                            let deleting = state.is_deleting(&permission.prefix);
-                            (permission, deleting)
-                        })
-                        .collect::<Vec<_>>();
-                    (section.title, rows)
-                })
-                .collect::<Vec<_>>();
-            (sections, state.has_query())
-        };
+        let state = self.state.borrow();
+        let sections = state.visible_sections();
 
         if sections.is_empty() {
-            let text = if has_query {
+            let text = if state.has_query() {
                 "No permissions match the search."
             } else {
                 "No saved permissions."
@@ -157,10 +140,11 @@ impl PermissionsPage {
             group.add(&placeholder(text));
             self.permission_view.add(&group);
         } else {
-            for (title, rows) in sections {
-                let group = PreferencesGroup::builder().title(&title).build();
-                for (permission, deleting) in rows {
-                    group.add(&self.permission_row(&permission, deleting));
+            for section in sections {
+                let group = PreferencesGroup::builder().title(&section.title).build();
+                for permission in section.permissions {
+                    let deleting = state.is_deleting(&permission.prefix);
+                    group.add(&self.permission_row(permission, deleting));
                 }
                 self.permission_view.add(&group);
             }

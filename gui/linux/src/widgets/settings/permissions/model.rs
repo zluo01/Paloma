@@ -9,9 +9,9 @@ pub(super) struct State {
     deleting: HashSet<String>,
 }
 
-pub(super) struct Section {
+pub(super) struct Section<'a> {
     pub(super) title: String,
-    pub(super) permissions: Vec<Permission>,
+    pub(super) permissions: Vec<&'a Permission>,
 }
 
 pub(super) enum Msg {
@@ -75,7 +75,7 @@ impl State {
     }
 
     /// Permissions matching the search, grouped into sections by leading command.
-    pub(super) fn visible_sections(&self) -> Vec<Section> {
+    pub(super) fn visible_sections(&self) -> Vec<Section<'_>> {
         let query = self.query.trim().to_lowercase();
         let mut sections: Vec<Section> = Vec::new();
         for permission in self
@@ -85,10 +85,10 @@ impl State {
         {
             let title = section_title(&permission.prefix);
             match sections.iter_mut().find(|section| section.title == title) {
-                Some(section) => section.permissions.push(permission.clone()),
+                Some(section) => section.permissions.push(permission),
                 None => sections.push(Section {
                     title,
-                    permissions: vec![permission.clone()],
+                    permissions: vec![permission],
                 }),
             }
         }
@@ -154,7 +154,7 @@ mod tests {
         state
             .visible_sections()
             .into_iter()
-            .flat_map(|section| section.permissions.into_iter().map(|p| p.prefix))
+            .flat_map(|section| section.permissions.into_iter().map(|p| p.prefix.clone()))
             .collect()
     }
 
