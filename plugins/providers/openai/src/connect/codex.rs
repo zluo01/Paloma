@@ -92,11 +92,12 @@ impl ProviderAuthenticator for CodexConnector {
             .json()
             .await?;
 
+        let transaction_payload = serde_json::to_string(&resp)?;
         Ok(ConnectionPayload {
             payload: Some(connection_payload::Payload::DeviceCode(DeviceCode {
                 verification_url: VERIFICATION_URI.into(),
-                user_code: resp.user_code.clone(),
-                transaction_payload: serde_json::to_string(&resp)?,
+                user_code: resp.user_code,
+                transaction_payload,
             })),
         })
     }

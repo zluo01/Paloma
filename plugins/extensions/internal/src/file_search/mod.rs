@@ -237,10 +237,10 @@ impl FileSearch {
             thread::Builder::new()
                 .name("paloma-file-index".into())
                 .spawn(move || {
-                    let (found, dirs) = scan(&home);
+                    let found = scan(&home);
                     info!("file_search: indexed {} entries", found.len());
+                    watch_initial(&home, &found, &watcher);
                     *entries.write().unwrap() = found;
-                    watch_initial(&home, &dirs, &watcher);
                 })
                 .expect("spawn file index thread");
         }
@@ -309,7 +309,7 @@ fn walker(root: &Path) -> WalkBuilder {
 
 /// Walk `root` in parallel; returns the entries below it and every directory
 /// to watch (including `root` itself).
-fn scan(root: &Path) -> (Vec<FileEntry>, Vec<PathBuf>) {
+fn scan(root: &Path) -> Vec<FileEntry> {
     let (tx, rx) = mpsc::channel::<FileEntry>();
     let count = AtomicUsize::new(0);
 
@@ -339,16 +339,19 @@ fn scan(root: &Path) -> (Vec<FileEntry>, Vec<PathBuf>) {
     if found.len() >= MAX_ENTRIES {
         warn!("file_search: entry cap {MAX_ENTRIES} reached; index is partial");
     }
+    found
+}
 
-    let dirs = std::iter::once(root.to_path_buf())
-        .chain(found.iter().filter(|e| e.is_dir).map(|e| e.path.clone()))
-        .collect();
-    (found, dirs)
+fn dir_paths(entries: &[FileEntry]) -> impl Iterator<Item = &Path> {
+    entries
+        .iter()
+        .filter(|entry| entry.is_dir)
+        .map(|entry| entry.path.as_path())
 }
 
 // FSEvents is recursive natively
 #[cfg(target_os = "macos")]
-fn watch_initial(root: &Path, _dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
+fn watch_initial(root: &Path, _entries: &[FileEntry], watcher: &Mutex<FsWatcher>) {
     let watched = watcher
         .lock()
         .unwrap()
@@ -360,19 +363,18 @@ fn watch_initial(root: &Path, _dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
 }
 
 #[cfg(target_os = "linux")]
-fn watch_initial(_root: &Path, dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
-    watch_dirs(dirs, watcher);
+fn watch_initial(root: &Path, entries: &[FileEntry], watcher: &Mutex<FsWatcher>) {
+    watch_dirs(std::iter::once(root).chain(dir_paths(entries)), watcher);
 }
 
 /// The recursive root watch already covers directories created later.
 #[cfg(target_os = "macos")]
-fn watch_dirs(_dirs: &[PathBuf], _watcher: &Mutex<FsWatcher>) {}
+fn watch_dirs<'a>(_dirs: impl Iterator<Item = &'a Path>, _watcher: &Mutex<FsWatcher>) {}
 
 #[cfg(target_os = "linux")]
-fn watch_dirs(dirs: &[PathBuf], watcher: &Mutex<FsWatcher>) {
+fn watch_dirs<'a>(dirs: impl Iterator<Item = &'a Path>, watcher: &Mutex<FsWatcher>) {
     let mut guard = watcher.lock().unwrap();
     let failures = dirs
-        .iter()
         .filter(|dir| guard.watch(dir, RecursiveMode::NonRecursive).is_err())
         .count();
     if failures > 0 {
@@ -524,9 +526,12 @@ fn rescan_dirs(
 
     for entry in additions {
         if entry.is_dir {
-            let (found, dirs) = scan(&entry.path);
+            let found = scan(&entry.path);
+            watch_dirs(
+                std::iter::once(entry.path.as_path()).chain(dir_paths(&found)),
+                watcher,
+            );
             entries.write().unwrap().extend(found);
-            watch_dirs(&dirs, watcher);
         }
         entries.write().unwrap().push(entry);
     }
@@ -791,13 +796,13 @@ mod tests {
         fs::create_dir(root.path().join("docs")).unwrap();
         touch(&root.path().join("docs/report.txt"));
 
-        let (found, dirs) = scan(root.path());
+        let found = scan(root.path());
 
         let names: Vec<String> = found.iter().map(|e| e.name().into_owned()).collect();
         assert!(names.iter().any(|n| n == "docs"));
         assert!(names.iter().any(|n| n == "report.txt"));
-        assert!(dirs.contains(&root.path().to_path_buf()));
-        assert!(dirs.contains(&root.path().join("docs")));
+        let dirs: Vec<&Path> = dir_paths(&found).collect();
+        assert!(dirs.contains(&root.path().join("docs").as_path()));
     }
 
     #[test]
@@ -805,7 +810,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         touch(&root.path().join(".hidden_zzq"));
 
-        let (found, _) = scan(root.path());
+        let found = scan(root.path());
 
         assert!(found.is_empty());
     }
@@ -816,7 +821,7 @@ mod tests {
         fs::create_dir(root.path().join("node_modules")).unwrap();
         touch(&root.path().join("node_modules/package.json"));
 
-        let (found, _) = scan(root.path());
+        let found = scan(root.path());
 
         assert!(found.is_empty());
     }
