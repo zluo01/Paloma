@@ -60,7 +60,7 @@ impl LauncherView {
             .valign(Align::Center)
             .build();
 
-        let model_picker = ModelPicker::new(app_context.clone());
+        let model_picker = ModelPicker::new(app_context);
         controls.append(model_picker.widget());
 
         let settings_button = icon_button("emblem-system-symbolic", "Settings");
@@ -71,7 +71,7 @@ impl LauncherView {
         });
 
         let sessions_button = icon_button("document-open-recent-symbolic", "Sessions");
-        let sessions_dispatcher = dispatcher.clone();
+        let sessions_dispatcher = dispatcher;
         sessions_button.connect_clicked(move |_| {
             let _ =
                 sessions_dispatcher.unbounded_send(Msg::Session(SessionMsg::ToggleViewRequested));

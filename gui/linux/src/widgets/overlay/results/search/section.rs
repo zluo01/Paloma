@@ -108,7 +108,7 @@ impl Section {
             actions: Vec::new(),
         };
         let button = flat_button(&item_content_row(&item), Some("paloma-chat-action"));
-        let action_dispatcher = dispatcher.clone();
+        let action_dispatcher = dispatcher;
         button.connect_clicked(move |_| {
             let _ = action_dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
         });
@@ -175,7 +175,7 @@ fn build_row(
     let button = flat_button(&content, None);
     let action = item.actions.first().unwrap().clone();
 
-    let action_dispatcher = dispatcher.clone();
+    let action_dispatcher = dispatcher;
     let id = extension_capability_id.clone();
     button.connect_clicked(move |_| {
         let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
@@ -209,8 +209,8 @@ fn build_actionable_row(
 
     let button = flat_button(&content, None);
 
-    let primary_action = primary.clone();
-    let action_dispatcher = dispatcher.clone();
+    let primary_action = primary;
+    let action_dispatcher = dispatcher;
     let id = extension_capability_id.clone();
     button.connect_clicked(move |_| {
         let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {

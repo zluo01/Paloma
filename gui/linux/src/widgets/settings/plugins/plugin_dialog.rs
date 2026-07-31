@@ -58,7 +58,6 @@ impl PluginDialog {
             [false, false, false, true]
         }));
         let update_status = {
-            let status = status.clone();
             let add = frame.submit_button().clone();
             move |index: usize, ok: bool| {
                 let mut slots = status.get();
@@ -168,14 +167,6 @@ impl PluginDialog {
         // page's event loop.
         {
             let dispatcher = dispatcher.clone();
-            let name = name.clone();
-            let kind = kind.clone();
-            let command = command.clone();
-            let args = args.clone();
-            let url = url.clone();
-            let requires_auth = requires_auth.clone();
-            let timeout = timeout.clone();
-            let env = env.clone();
             frame.connect_submit(move || {
                 let data = FormData {
                     name: name.text().into(),
@@ -235,7 +226,6 @@ impl PluginDialog {
         // [command, args, env]
         let status = Rc::new(Cell::new([!initial.command.is_empty(), true, true]));
         let update_status = {
-            let status = status.clone();
             let add = frame.submit_button().clone();
             move |index: usize, ok: bool| {
                 let mut slots = status.get();
@@ -275,9 +265,6 @@ impl PluginDialog {
 
         {
             let dispatcher = dispatcher.clone();
-            let command = command.clone();
-            let args = args.clone();
-            let env = env.clone();
             frame.connect_submit(move || {
                 let data = FormData::provider(
                     command.text().into(),

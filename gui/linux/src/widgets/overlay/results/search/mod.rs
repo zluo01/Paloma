@@ -221,7 +221,7 @@ impl SearchView {
     }
 
     fn selected_button(&self) -> Option<Button> {
-        self.selected_action().map(|a| a.button.clone())
+        self.selected_action().map(|a| a.button)
     }
 
     fn selected_action(&self) -> Option<SearchAction> {

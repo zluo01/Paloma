@@ -94,10 +94,8 @@ impl ChatView {
             ToolCallSection::new(tool_name, arguments, description, decisions);
         self.turns.append(toolcall_section.widgets());
 
-        let on_finish: Rc<dyn Fn(PermissionState)> = {
-            let toolcall_section = toolcall_section.clone();
-            Rc::new(move |state| toolcall_section.on_finish(&state))
-        };
+        let on_finish: Rc<dyn Fn(PermissionState)> =
+            Rc::new(move |state| toolcall_section.on_finish(&state));
 
         self.pending_decisions
             .append_decisions(&decisions, on_finish);

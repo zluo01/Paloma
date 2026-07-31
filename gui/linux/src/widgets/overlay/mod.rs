@@ -187,7 +187,7 @@ impl Overlay {
         });
 
         let mut rx = hotkey.subscribe();
-        let hotkey_dispatcher = dispatcher.clone();
+        let hotkey_dispatcher = dispatcher;
         glib::spawn_future_local(async move {
             loop {
                 match rx.recv().await {

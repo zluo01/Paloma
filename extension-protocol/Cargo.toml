@@ -11,3 +11,6 @@ prost = { workspace = true }
 [build-dependencies]
 prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }
+
+[lints]
+workspace = true

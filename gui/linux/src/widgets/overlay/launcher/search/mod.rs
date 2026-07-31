@@ -23,7 +23,7 @@ impl Search {
 
         let suppress = Rc::new(Cell::new(false));
 
-        let search_dispatcher = dispatcher.clone();
+        let search_dispatcher = dispatcher;
         let suppress_changed = suppress.clone();
         entry.connect_search_changed(move |entry| {
             if suppress_changed.replace(false) {

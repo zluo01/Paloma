@@ -203,7 +203,7 @@ fn manual_page(
     group.add(&key_entry);
     body.append(&group);
 
-    if let Some(url) = instructions_url.clone() {
+    if let Some(url) = instructions_url {
         let instructions = Button::builder()
             .label("Get an API key")
             .halign(Align::Center)

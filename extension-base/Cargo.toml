@@ -12,3 +12,6 @@ paloma-extension-protocol = { workspace = true }
 paloma-utils = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tokio-util = { workspace = true }
+
+[lints]
+workspace = true

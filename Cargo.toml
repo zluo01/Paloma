@@ -23,6 +23,9 @@ version = "0.0.1"
 edition = "2024"
 rust-version = "1.93.0"
 
+[workspace.lints.clippy]
+redundant_clone = "warn"
+
 [workspace.dependencies]
 async-trait = "0.1.89"
 backon = "1.6.0"
