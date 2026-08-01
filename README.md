@@ -14,6 +14,19 @@ find and do.
 > Paloma is under active development. Expect changes to the interface, plugin
 > protocols, and stored data before the first stable release.
 
+<details>
+<summary><strong>Preview Paloma on macOS</strong></summary>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/macos/dark/paloma-preview.gif">
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/macos/light/paloma-preview.gif">
+    <img src="docs/screenshots/macos/light/paloma-preview.gif" width="760" alt="Animated preview of Paloma's launcher, search, tool permissions, chat, session history, plugins, and services">
+  </picture>
+</p>
+
+</details>
+
 ## Highlights
 
 - **Work in parallel.** Run multiple AI tasks at the same time without one
