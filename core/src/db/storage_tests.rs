@@ -1112,7 +1112,7 @@ mod history {
                 "kind": "tool_result",
                 "call_id": "call_123",
                 "name": "shell",
-                "output": "/home/mike/Documents/_playground/gate"
+                "output": "/home/user/project"
             })),
             conversation_item(json!({
                 "kind": "hosted_tool",

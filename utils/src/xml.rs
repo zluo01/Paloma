@@ -196,8 +196,8 @@ mod tests {
 
     #[test]
     fn plain_text_body_renders_inline() {
-        let actual = Element::new("cwd").plain_text("/home/mike").to_string();
-        let expected = "<cwd>/home/mike</cwd>";
+        let actual = Element::new("cwd").plain_text("/home/user").to_string();
+        let expected = "<cwd>/home/user</cwd>";
         assert_eq!(actual, expected);
     }
 
@@ -287,7 +287,7 @@ mod tests {
         // Sanity check for the actual planned shell payload shape.
         let actual = Element::new("shell_output")
             .attr("command", "ls -la")
-            .attr("workdir", "/home/mike")
+            .attr("workdir", "/home/user")
             .attr("exit_code", 0)
             .attr("duration_ms", 12)
             .child(
@@ -307,7 +307,7 @@ mod tests {
 
         assert!(actual.starts_with("<shell_output"));
         assert!(actual.contains("command=\"ls -la\""));
-        assert!(actual.contains("workdir=\"/home/mike\""));
+        assert!(actual.contains("workdir=\"/home/user\""));
         assert!(actual.contains("<![CDATA[file1]]>"));
         assert!(actual.contains("<stderr"));
         assert!(actual.ends_with("</shell_output>"));
