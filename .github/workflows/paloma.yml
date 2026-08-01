@@ -68,6 +68,9 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --locked
 
+      - name: Generate Swift bindings
+        run: scripts/build-swift-bindings.sh --debug
+
       - name: Build macOS application
         working-directory: gui/macos/Paloma
         run: xcodebuild -scheme Paloma CODE_SIGNING_ALLOWED=NO build

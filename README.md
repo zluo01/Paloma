@@ -109,14 +109,16 @@ cargo run
 
 ### macOS
 
-Rust 1.94 or later and Xcode are required. Open the project:
+Rust 1.94 or later and Xcode are required. Generate the Swift bindings, then
+open the project:
 
 ```sh
+scripts/build-swift-bindings.sh --debug
 open gui/macos/Paloma/Paloma.xcodeproj
 ```
 
-Build and run the `Paloma` scheme in Xcode. The project builds the Rust library
-and generates its Swift bindings automatically.
+Build and run the `Paloma` scheme in Xcode. Subsequent builds refresh the Rust
+library and Swift bindings automatically.
 
 ### Checks
 
