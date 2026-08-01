@@ -109,7 +109,7 @@ cargo run
 
 ### macOS
 
-Rust 1.94 or later and Xcode 26.6 or later are required. Open the project:
+Rust 1.94 or later and Xcode are required. Open the project:
 
 ```sh
 open gui/macos/Paloma/Paloma.xcodeproj

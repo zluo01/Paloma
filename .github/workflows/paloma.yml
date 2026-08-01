@@ -1,0 +1,73 @@
+name: Paloma
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "plugins/extensions/webfetch/**"
+      - "plugins/providers/deepseek/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "plugins/extensions/webfetch/**"
+      - "plugins/providers/deepseek/**"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libadwaita-1-dev \
+            libgtk-4-dev \
+            libgtk4-layer-shell-dev \
+            pkg-config
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: clippy
+
+      - name: Format, lint, test, and build
+        run: |
+          cargo +nightly fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+          cargo build --package paloma-linux --locked
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
+
+      - name: Build macOS application
+        working-directory: gui/macos/Paloma
+        run: xcodebuild -scheme Paloma CODE_SIGNING_ALLOWED=NO build
