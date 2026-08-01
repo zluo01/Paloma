@@ -4,11 +4,19 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
+      - ".github/workflows/deepseek-plugin.yml"
+      - ".github/workflows/deepseek-plugin-release.yml"
+      - ".github/workflows/webfetch-plugin.yml"
+      - ".github/workflows/webfetch-plugin-release.yml"
       - "plugins/extensions/webfetch/**"
       - "plugins/providers/deepseek/**"
   push:
     branches: [main]
     paths-ignore:
+      - ".github/workflows/deepseek-plugin.yml"
+      - ".github/workflows/deepseek-plugin-release.yml"
+      - ".github/workflows/webfetch-plugin.yml"
+      - ".github/workflows/webfetch-plugin-release.yml"
       - "plugins/extensions/webfetch/**"
       - "plugins/providers/deepseek/**"
 
@@ -44,12 +52,11 @@ jobs:
         with:
           components: clippy
 
-      - name: Format, lint, test, and build
+      - name: Check formatting, lint, and test
         run: |
           cargo +nightly fmt --all -- --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test --workspace --locked
-          cargo build --package paloma-linux --locked
 
   macos:
     name: macOS

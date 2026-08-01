@@ -1,0 +1,101 @@
+name: WebFetch plugin release
+
+on:
+  push:
+    tags:
+      - "webfetch-plugin-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: plugins/extensions/webfetch/go.mod
+          cache-dependency-path: plugins/extensions/webfetch/go.sum
+
+      - name: Lint and test
+        working-directory: plugins/extensions/webfetch
+        run: |
+          make lint
+          make test
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: macos-arm64
+            runner: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: plugins/extensions/webfetch/go.mod
+          cache-dependency-path: plugins/extensions/webfetch/go.sum
+
+      - name: Build release binary
+        working-directory: plugins/extensions/webfetch
+        run: make release
+
+      - name: Package release artifact
+        working-directory: plugins/extensions/webfetch
+        run: tar -czf "webfetch-${{ matrix.name }}.tar.gz" webfetch
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: webfetch-${{ matrix.name }}
+          path: plugins/extensions/webfetch/webfetch-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: webfetch-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum webfetch-*.tar.gz > SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#webfetch-plugin-}"
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --latest=false \
+            --notes "WebFetch extension plugin ${version}." \
+            --title "WebFetch plugin ${version}" \
+            --verify-tag
