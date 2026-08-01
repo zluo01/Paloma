@@ -52,7 +52,7 @@ Linux support is currently tested on Fedora with KDE Plasma.
 
 The Linux application requires:
 
-- Rust 1.93 or later;
+- Rust 1.94 or later;
 - GTK 4.22 or later, libadwaita 1.9 or later, and GTK4 Layer Shell;
 - a Wayland compositor with Layer Shell support;
 - an XDG desktop portal backend with Global Shortcuts support; and
@@ -99,7 +99,7 @@ sudo dnf install gcc pkgconf-pkg-config \
   gtk4-devel libadwaita-devel gtk4-layer-shell-devel
 ```
 
-Rust 1.93 or later is required. Build the default workspace and start the
+Rust 1.94 or later is required. Build the default workspace and start the
 Linux application:
 
 ```sh
@@ -109,7 +109,7 @@ cargo run
 
 ### macOS
 
-Rust 1.93 or later and Xcode 26.6 or later are required. Open the project:
+Rust 1.94 or later and Xcode 26.6 or later are required. Open the project:
 
 ```sh
 open gui/macos/Paloma/Paloma.xcodeproj

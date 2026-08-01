@@ -21,7 +21,7 @@ default-members = ["core", "gui/linux"]
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 license = "GPL-3.0-or-later"
 
 [workspace.lints.clippy]
