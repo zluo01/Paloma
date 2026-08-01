@@ -42,15 +42,18 @@ jobs:
             libgtk4-layer-shell-dev \
             pkg-config
 
-      - name: Install nightly Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-
       - name: Install Rust 1.94
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
 
       - name: Check formatting, lint, and test
         run: |
@@ -71,6 +74,9 @@ jobs:
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Run Rust tests
         run: cargo test --workspace --locked
