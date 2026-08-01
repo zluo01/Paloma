@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "webfetch-plugin-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the v prefix
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,11 +18,21 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: bash .github/scripts/resolve-release.sh webfetch-plugin-v
 
       - name: Install Go
         uses: actions/setup-go@v6
@@ -74,7 +90,7 @@ jobs:
 
   release:
     name: Release
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -94,9 +110,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#webfetch-plugin-}"
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          tag="${{ needs.test.outputs.tag }}"
+          version="${{ needs.test.outputs.version }}"
+          release_target=(--verify-tag)
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            release_target=(--target "$GITHUB_SHA")
+          fi
+
+          gh release create "$tag" dist/* \
             --latest=false \
-            --notes "WebFetch extension plugin ${version}." \
-            --title "WebFetch plugin ${version}" \
-            --verify-tag
+            --notes "WebFetch extension plugin v${version}." \
+            --title "WebFetch plugin v${version}" \
+            "${release_target[@]}"
