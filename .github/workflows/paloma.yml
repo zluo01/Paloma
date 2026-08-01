@@ -58,8 +58,8 @@ jobs:
       - name: Check formatting, lint, and test
         run: |
           cargo +nightly fmt --all -- --check
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --locked
+          cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
+          cargo +1.94.0 test --workspace --locked
 
   macos:
     name: macOS
