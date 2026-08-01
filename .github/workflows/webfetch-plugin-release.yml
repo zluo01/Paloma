@@ -35,6 +35,7 @@ jobs:
     needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: true
       matrix:
         include:
           - name: linux-amd64

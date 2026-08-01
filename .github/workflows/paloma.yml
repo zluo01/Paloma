@@ -24,9 +24,19 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    name: Linux
-    runs-on: ubuntu-26.04
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Linux
+            platform: linux
+            runner: ubuntu-26.04
+          - name: macOS
+            platform: macos
+            runner: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -34,6 +44,7 @@ jobs:
           persist-credentials: false
 
       - name: Install system dependencies
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
@@ -43,34 +54,13 @@ jobs:
             pkg-config
 
       - name: Install Rust 1.94
+        if: matrix.platform == 'linux'
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: clippy
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install nightly Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-
-      - name: Check formatting, lint, and test
-        run: |
-          cargo +nightly fmt --all -- --check
-          cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
-          cargo +1.94.0 test --workspace --locked
-
-  macos:
-    name: macOS
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Install Rust 1.94
+        if: matrix.platform == 'macos'
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: aarch64-apple-darwin
@@ -78,12 +68,28 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Install nightly Rust
+        if: matrix.platform == 'linux'
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Check formatting, lint, and test
+        if: matrix.platform == 'linux'
+        run: |
+          cargo +nightly fmt --all -- --check
+          cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
+          cargo +1.94.0 test --workspace --locked
+
       - name: Run Rust tests
+        if: matrix.platform == 'macos'
         run: cargo test --workspace --locked
 
       - name: Generate Swift bindings
+        if: matrix.platform == 'macos'
         run: scripts/build-swift-bindings.sh --debug
 
       - name: Build macOS application
+        if: matrix.platform == 'macos'
         working-directory: gui/macos/Paloma
         run: xcodebuild -scheme Paloma CODE_SIGNING_ALLOWED=NO build
