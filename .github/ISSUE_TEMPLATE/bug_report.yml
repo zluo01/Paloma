@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a problem with Paloma
+title: "[Bug] "
+labels:
+  - bug
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Search existing issues before continuing, and remove credentials or other sensitive information from anything you share.
+
+  - type: input
+    id: version
+    attributes:
+      label: Paloma version
+      description: Enter the release version or commit. Write "Unknown" if you are unsure.
+      placeholder: "For example: v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: System information
+      description: Include your operating-system version. On Linux, also include your distribution and desktop environment.
+      placeholder: "For example: Fedora KDE Plasma or macOS 15.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you were doing when it occurred.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the steps needed to reproduce the problem.
+      placeholder: |
+        1. Open Paloma
+        2. Search for ...
+        3. Select ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant logs here after removing credentials and other sensitive information.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional information
+      description: Add screenshots or any other information that may help explain the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this problem.
+          required: true
+        - label: I removed credentials and other sensitive information from this report.
+          required: true
