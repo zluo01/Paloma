@@ -23,6 +23,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_QUIET: "true"
+
 jobs:
   build-and-test:
     name: ${{ matrix.name }}
