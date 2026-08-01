@@ -446,37 +446,37 @@ var File_schema_extension_main_proto protoreflect.FileDescriptor
 
 const file_schema_extension_main_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/extension/main.proto\x12\x11paloma.extension.v1\x1a!schema/extension/capability.proto\x1a\x1bschema/extension/tool.proto\"\x94\x04\n" +
+	"\x1bschema/extension/main.proto\x12\x13paloma.extension.v1\x1a!schema/extension/capability.proto\x1a\x1bschema/extension/tool.proto\"\x9e\x04\n" +
 	"\fRequestEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x04R\aeventId\x12(\n" +
-	"\rcapability_id\x18\x02 \x01(\tH\x01R\fcapabilityId\x88\x01\x01\x12R\n" +
-	"\x11handshake_request\x18\x03 \x01(\v2#.paloma.extension.v1.HandshakeRequestH\x00R\x10handshakeRequest\x12I\n" +
-	"\x0esearch_request\x18\x04 \x01(\v2 .paloma.extension.v1.SearchRequestH\x00R\rsearchRequest\x12S\n" +
-	"\x12run_action_request\x18\x05 \x01(\v2#.paloma.extension.v1.RunActionRequestH\x00R\x10runActionRequest\x12V\n" +
-	"\x13invoke_tool_request\x18\x06 \x01(\v2$.paloma.extension.v1.InvokeToolRequestH\x00R\x11invokeToolRequest\x12V\n" +
-	"\x13cancel_tool_request\x18\a \x01(\v2$.paloma.extension.v1.CancelToolRequestH\x00R\x11cancelToolRequestB\t\n" +
+	"\rcapability_id\x18\x02 \x01(\tH\x01R\fcapabilityId\x88\x01\x01\x12T\n" +
+	"\x11handshake_request\x18\x03 \x01(\v2%.paloma.extension.v1.HandshakeRequestH\x00R\x10handshakeRequest\x12K\n" +
+	"\x0esearch_request\x18\x04 \x01(\v2\".paloma.extension.v1.SearchRequestH\x00R\rsearchRequest\x12U\n" +
+	"\x12run_action_request\x18\x05 \x01(\v2%.paloma.extension.v1.RunActionRequestH\x00R\x10runActionRequest\x12X\n" +
+	"\x13invoke_tool_request\x18\x06 \x01(\v2&.paloma.extension.v1.InvokeToolRequestH\x00R\x11invokeToolRequest\x12X\n" +
+	"\x13cancel_tool_request\x18\a \x01(\v2&.paloma.extension.v1.CancelToolRequestH\x00R\x11cancelToolRequestB\t\n" +
 	"\apayloadB\x10\n" +
-	"\x0e_capability_id\"\xb6\x04\n" +
+	"\x0e_capability_id\"\xc2\x04\n" +
 	"\rResponseEvent\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\x04R\aeventId\x12U\n" +
-	"\x12handshake_response\x18\x02 \x01(\v2$.paloma.extension.v1.HandshakeResponseH\x00R\x11handshakeResponse\x12L\n" +
-	"\x0fsearch_response\x18\x03 \x01(\v2!.paloma.extension.v1.SearchResponseH\x00R\x0esearchResponse\x12V\n" +
-	"\x13run_action_response\x18\x04 \x01(\v2$.paloma.extension.v1.RunActionResponseH\x00R\x11runActionResponse\x12Y\n" +
-	"\x14invoke_tool_response\x18\x05 \x01(\v2%.paloma.extension.v1.InvokeToolResponseH\x00R\x12invokeToolResponse\x12Y\n" +
-	"\x14cancel_tool_response\x18\x06 \x01(\v2%.paloma.extension.v1.CancelToolResponseH\x00R\x12cancelToolResponse\x12L\n" +
-	"\x0fextension_error\x18\a \x01(\v2!.paloma.extension.v1.ExtensionErrorH\x00R\x0eextensionErrorB\t\n" +
+	"\bevent_id\x18\x01 \x01(\x04R\aeventId\x12W\n" +
+	"\x12handshake_response\x18\x02 \x01(\v2&.paloma.extension.v1.HandshakeResponseH\x00R\x11handshakeResponse\x12N\n" +
+	"\x0fsearch_response\x18\x03 \x01(\v2#.paloma.extension.v1.SearchResponseH\x00R\x0esearchResponse\x12X\n" +
+	"\x13run_action_response\x18\x04 \x01(\v2&.paloma.extension.v1.RunActionResponseH\x00R\x11runActionResponse\x12[\n" +
+	"\x14invoke_tool_response\x18\x05 \x01(\v2'.paloma.extension.v1.InvokeToolResponseH\x00R\x12invokeToolResponse\x12[\n" +
+	"\x14cancel_tool_response\x18\x06 \x01(\v2'.paloma.extension.v1.CancelToolResponseH\x00R\x12cancelToolResponse\x12N\n" +
+	"\x0fextension_error\x18\a \x01(\v2#.paloma.extension.v1.ExtensionErrorH\x00R\x0eextensionErrorB\t\n" +
 	"\apayload\"\x12\n" +
-	"\x10HandshakeRequest\"\x8b\x02\n" +
+	"\x10HandshakeRequest\"\x8d\x02\n" +
 	"\x11HandshakeResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x12!\n" +
 	"\fextension_id\x18\x02 \x01(\tR\vextensionId\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1b\n" +
 	"\x06author\x18\x04 \x01(\tH\x00R\x06author\x88\x01\x01\x12\x1f\n" +
-	"\bhomepage\x18\x05 \x01(\tH\x01R\bhomepage\x88\x01\x01\x12A\n" +
-	"\fcapabilities\x18\x06 \x03(\v2\x1d.paloma.extension.v1.CapabilityR\fcapabilitiesB\t\n" +
+	"\bhomepage\x18\x05 \x01(\tH\x01R\bhomepage\x88\x01\x01\x12C\n" +
+	"\fcapabilities\x18\x06 \x03(\v2\x1f.paloma.extension.v1.CapabilityR\fcapabilitiesB\t\n" +
 	"\a_authorB\v\n" +
-	"\t_homepageB\xcb\x01\n" +
-	"\x15com.paloma.extension.v1B\tMainProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
+	"\t_homepageB\xd7\x01\n" +
+	"\x17com.paloma.extension.v1B\tMainProtoP\x01ZCpaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03PEX\xaa\x02\x13Paloma.Extension.V1\xca\x02\x13Paloma\\Extension\\V1\xe2\x02\x1fPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x15Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_main_proto_rawDescOnce sync.Once

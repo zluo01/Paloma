@@ -4,6 +4,8 @@
 
 .PHONY: build release test lint proto
 
+BUF_VERSION := v1.72.0
+
 build:
 	go build -o webfetch .
 
@@ -14,12 +16,19 @@ test:
 	go test -race ./...
 
 lint:
-	gofmt -l . && go vet ./...
+	@files="$$(gofmt -l .)"; \
+	if [ -n "$$files" ]; then \
+		echo "The following files need gofmt:"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
+	go vet ./...
 
 # Generated code is committed; run this only after changing the schema.
 # protoc-gen-go is installed without @version so it resolves to go.mod's
-# protobuf version, keeping the generator and runtime in lockstep.
+# protobuf version, keeping the generator and runtime in lockstep. Buf is
+# pinned so regeneration is reproducible locally and in CI.
 proto:
 	GOBIN=$(CURDIR)/.tools go install google.golang.org/protobuf/cmd/protoc-gen-go
-	GOBIN=$(CURDIR)/.tools go install github.com/bufbuild/buf/cmd/buf@latest
+	GOBIN=$(CURDIR)/.tools go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 	PATH=$(CURDIR)/.tools:$$PATH $(CURDIR)/.tools/buf generate

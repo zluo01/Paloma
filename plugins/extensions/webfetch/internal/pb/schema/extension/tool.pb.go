@@ -527,7 +527,7 @@ var File_schema_extension_tool_proto protoreflect.FileDescriptor
 
 const file_schema_extension_tool_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/extension/tool.proto\x12\x11paloma.extension.v1\"M\n" +
+	"\x1bschema/extension/tool.proto\x12\x13paloma.extension.v1\"M\n" +
 	"\tToolFacet\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1e\n" +
 	"\n" +
@@ -537,20 +537,20 @@ const file_schema_extension_tool_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
 	"\acall_id\x18\x02 \x01(\tR\x06callId\x12\x1c\n" +
-	"\targuments\x18\x03 \x01(\tR\targuments\"N\n" +
-	"\x12InvokeToolResponse\x128\n" +
-	"\acontent\x18\x01 \x01(\v2\x1e.paloma.extension.v1.ToolContentR\acontent\"\xeb\x01\n" +
+	"\targuments\x18\x03 \x01(\tR\targuments\"P\n" +
+	"\x12InvokeToolResponse\x12:\n" +
+	"\acontent\x18\x01 \x01(\v2 .paloma.extension.v1.ToolContentR\acontent\"\xf1\x01\n" +
 	"\vToolContent\x12\x10\n" +
-	"\x03tag\x18\x01 \x01(\tR\x03tag\x12<\n" +
+	"\x03tag\x18\x01 \x01(\tR\x03tag\x12>\n" +
 	"\n" +
-	"attributes\x18\x02 \x03(\v2\x1c.paloma.extension.v1.AttributeR\n" +
+	"attributes\x18\x02 \x03(\v2\x1e.paloma.extension.v1.AttributeR\n" +
 	"attributes\x12\x14\n" +
-	"\x04text\x18\x03 \x01(\tH\x00R\x04text\x123\n" +
-	"\x06binary\x18\x04 \x01(\v2\x19.paloma.extension.v1.BinaryH\x00R\x06binary\x129\n" +
-	"\bchildren\x18\x05 \x01(\v2\x1b.paloma.extension.v1.ChildrenH\x00R\bchildrenB\x06\n" +
-	"\x04body\"@\n" +
-	"\bChildren\x124\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x1e.paloma.extension.v1.ToolContentR\x05nodes\"3\n" +
+	"\x04text\x18\x03 \x01(\tH\x00R\x04text\x125\n" +
+	"\x06binary\x18\x04 \x01(\v2\x1b.paloma.extension.v1.BinaryH\x00R\x06binary\x12;\n" +
+	"\bchildren\x18\x05 \x01(\v2\x1d.paloma.extension.v1.ChildrenH\x00R\bchildrenB\x06\n" +
+	"\x04body\"B\n" +
+	"\bChildren\x126\n" +
+	"\x05nodes\x18\x01 \x03(\v2 .paloma.extension.v1.ToolContentR\x05nodes\"3\n" +
 	"\tAttribute\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"9\n" +
@@ -560,8 +560,8 @@ const file_schema_extension_tool_proto_rawDesc = "" +
 	"\x11CancelToolRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x14\n" +
-	"\x12CancelToolResponseB\xcb\x01\n" +
-	"\x15com.paloma.extension.v1B\tToolProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
+	"\x12CancelToolResponseB\xd7\x01\n" +
+	"\x17com.paloma.extension.v1B\tToolProtoP\x01ZCpaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03PEX\xaa\x02\x13Paloma.Extension.V1\xca\x02\x13Paloma\\Extension\\V1\xe2\x02\x1fPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x15Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_tool_proto_rawDescOnce sync.Once

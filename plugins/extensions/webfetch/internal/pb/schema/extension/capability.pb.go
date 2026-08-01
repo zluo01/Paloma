@@ -751,13 +751,13 @@ var File_schema_extension_capability_proto protoreflect.FileDescriptor
 
 const file_schema_extension_capability_proto_rawDesc = "" +
 	"\n" +
-	"!schema/extension/capability.proto\x12\x11paloma.extension.v1\x1a\x1bschema/extension/tool.proto\"\xdb\x01\n" +
+	"!schema/extension/capability.proto\x12\x13paloma.extension.v1\x1a\x1bschema/extension/tool.proto\"\xdf\x01\n" +
 	"\n" +
 	"Capability\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\x12;\n" +
-	"\x06search\x18\x03 \x01(\v2\x1e.paloma.extension.v1.SearchFacetH\x00R\x06search\x88\x01\x01\x125\n" +
-	"\x04tool\x18\x04 \x01(\v2\x1c.paloma.extension.v1.ToolFacetH\x01R\x04tool\x88\x01\x01B\t\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12=\n" +
+	"\x06search\x18\x03 \x01(\v2 .paloma.extension.v1.SearchFacetH\x00R\x06search\x88\x01\x01\x127\n" +
+	"\x04tool\x18\x04 \x01(\v2\x1e.paloma.extension.v1.ToolFacetH\x01R\x04tool\x88\x01\x01B\t\n" +
 	"\a_searchB\a\n" +
 	"\x05_tool\"\r\n" +
 	"\vSearchFacet\"b\n" +
@@ -767,26 +767,26 @@ const file_schema_extension_capability_proto_rawDesc = "" +
 	"\bembedded\x18\x03 \x01(\fH\x00R\bembeddedB\x06\n" +
 	"\x04icon\"%\n" +
 	"\rSearchRequest\x12\x14\n" +
-	"\x05input\x18\x01 \x01(\tR\x05input\"?\n" +
-	"\x0eSearchResponse\x12-\n" +
-	"\x05items\x18\x01 \x03(\v2\x17.paloma.extension.v1.ItemR\x05items\"\xc4\x01\n" +
+	"\x05input\x18\x01 \x01(\tR\x05input\"A\n" +
+	"\x0eSearchResponse\x12/\n" +
+	"\x05items\x18\x01 \x03(\v2\x19.paloma.extension.v1.ItemR\x05items\"\xc8\x01\n" +
 	"\x04Item\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x1f\n" +
-	"\bsubtitle\x18\x02 \x01(\tH\x00R\bsubtitle\x88\x01\x01\x12:\n" +
-	"\x04icon\x18\x03 \x01(\v2!.paloma.extension.v1.CapabilityIconH\x01R\x04icon\x88\x01\x01\x123\n" +
-	"\aactions\x18\x04 \x03(\v2\x19.paloma.extension.v1.ActionR\aactionsB\v\n" +
+	"\bsubtitle\x18\x02 \x01(\tH\x00R\bsubtitle\x88\x01\x01\x12<\n" +
+	"\x04icon\x18\x03 \x01(\v2#.paloma.extension.v1.CapabilityIconH\x01R\x04icon\x88\x01\x01\x125\n" +
+	"\aactions\x18\x04 \x03(\v2\x1b.paloma.extension.v1.ActionR\aactionsB\v\n" +
 	"\t_subtitleB\a\n" +
 	"\x05_icon\"P\n" +
 	"\x06Action\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x16\n" +
 	"\x06params\x18\x02 \x03(\tR\x06params\x12\x18\n" +
-	"\aprimary\x18\x03 \x01(\bR\aprimary\"E\n" +
-	"\x10RunActionRequest\x121\n" +
-	"\x06action\x18\x01 \x01(\v2\x19.paloma.extension.v1.ActionR\x06action\"\xb5\x01\n" +
-	"\x11RunActionResponse\x12-\n" +
-	"\x04hide\x18\x01 \x01(\v2\x17.paloma.extension.v1.HideH\x00R\x04hide\x12-\n" +
-	"\x04stay\x18\x02 \x01(\v2\x17.paloma.extension.v1.StayH\x00R\x04stay\x126\n" +
-	"\areplace\x18\x03 \x01(\v2\x1a.paloma.extension.v1.ReplaceH\x00R\areplaceB\n" +
+	"\aprimary\x18\x03 \x01(\bR\aprimary\"G\n" +
+	"\x10RunActionRequest\x123\n" +
+	"\x06action\x18\x01 \x01(\v2\x1b.paloma.extension.v1.ActionR\x06action\"\xbb\x01\n" +
+	"\x11RunActionResponse\x12/\n" +
+	"\x04hide\x18\x01 \x01(\v2\x19.paloma.extension.v1.HideH\x00R\x04hide\x12/\n" +
+	"\x04stay\x18\x02 \x01(\v2\x19.paloma.extension.v1.StayH\x00R\x04stay\x128\n" +
+	"\areplace\x18\x03 \x01(\v2\x1c.paloma.extension.v1.ReplaceH\x00R\areplaceB\n" +
 	"\n" +
 	"\bbehavior\"\x06\n" +
 	"\x04Hide\"\x06\n" +
@@ -794,8 +794,8 @@ const file_schema_extension_capability_proto_rawDesc = "" +
 	"\aReplace\x12\x14\n" +
 	"\x05input\x18\x01 \x01(\tR\x05input\"&\n" +
 	"\x0eExtensionError\x12\x14\n" +
-	"\x05error\x18\x01 \x01(\tR\x05errorB\xd1\x01\n" +
-	"\x15com.paloma.extension.v1B\x0fCapabilityProtoP\x01ZApaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03SEX\xaa\x02\x11Paloma.Extension.V1\xca\x02\x11Paloma\\Extension\\V1\xe2\x02\x1dPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x13Paloma::Extension::V1b\x06proto3"
+	"\x05error\x18\x01 \x01(\tR\x05errorB\xdd\x01\n" +
+	"\x17com.paloma.extension.v1B\x0fCapabilityProtoP\x01ZCpaloma/extensions/webfetch/internal/pb/schema/extension;extensionv1\xa2\x02\x03PEX\xaa\x02\x13Paloma.Extension.V1\xca\x02\x13Paloma\\Extension\\V1\xe2\x02\x1fPaloma\\Extension\\V1\\GPBMetadata\xea\x02\x15Paloma::Extension::V1b\x06proto3"
 
 var (
 	file_schema_extension_capability_proto_rawDescOnce sync.Once

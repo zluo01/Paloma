@@ -1,4 +1,4 @@
-module scry/extensions/webfetch
+module paloma/extensions/webfetch
 
 go 1.26.3
 
