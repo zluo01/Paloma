@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
+      - "docs/**"
+      - "LICENSES/**"
       - ".github/workflows/deepseek-plugin.yml"
       - ".github/workflows/deepseek-plugin-release.yml"
       - ".github/workflows/webfetch-plugin.yml"
@@ -13,6 +15,8 @@ on:
   push:
     branches: [main]
     paths-ignore:
+      - "docs/**"
+      - "LICENSES/**"
       - ".github/workflows/deepseek-plugin.yml"
       - ".github/workflows/deepseek-plugin-release.yml"
       - ".github/workflows/webfetch-plugin.yml"
