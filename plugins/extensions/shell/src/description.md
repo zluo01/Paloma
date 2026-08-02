@@ -17,7 +17,7 @@ Current date/time:
 
 Output handling:
 - Each stream is captured up to 50 KiB inline; ANSI escape sequences are stripped from the payload.
-- When a stream exceeds 50 KiB, the full untruncated bytes are written to /tmp/paloma/<exec_id>/<stdout|stderr> and the path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
+- When a stream exceeds 50 KiB, the full untruncated bytes are written to a file under /tmp/paloma/<exec_id>/ and its path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
 - Do NOT pre-truncate output yourself (no head/tail/sed unless the user explicitly asks) — run the command directly and let truncation happen.
 
 Commands time out after 300 seconds.
