@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "binding-protocol",
     "core",
     "extension-base",
     "extension-protocol",
@@ -38,6 +39,7 @@ eventsource-stream = "0.2.3"
 futures = "0.3.32"
 log = "0.4.33"
 oauth2 = { version = "5.0.0", default-features = false }
+paloma-binding-protocol = { path = "binding-protocol" }
 paloma-core = { path = "core" }
 paloma-extension-base = { path = "extension-base" }
 paloma-extension-internal = { path = "plugins/extensions/internal" }
@@ -66,6 +68,9 @@ tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", default-features = false }
 tokio-util = { version = "0.7.18", features = ["codec"] }
+tonic = "0.14.3"
+tonic-prost = "0.14.3"
+tonic-prost-build = "0.14.3"
 uniffi = "0.32.0"
 uuid = { version = "1.23.4", default-features = false, features = ["v7", "std"] }
 
