@@ -166,7 +166,7 @@ Logs are written to:
 
 Paloma is still taking shape, so development currently follows the project's
 planned work. Accepting ad hoc features at this stage would make it harder to
-keep the product focused, so feature requests are not being accepted for now.
+keep the product focused, so feature requests are not being accepted for now unless they are related to any of the epic topic.
 
 If you would like to contribute, choose an issue marked as available, comment
 that you would like to work on it, and wait for it to be assigned before you
