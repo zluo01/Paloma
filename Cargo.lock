@@ -2749,6 +2749,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "paloma-windows-core"
+version = "0.0.1"
+dependencies = [
+ "dashmap",
+ "env_logger",
+ "futures",
+ "hyper-util",
+ "log",
+ "paloma-binding-protocol",
+ "paloma-core",
+ "paloma-extension-protocol",
+ "tokio",
+ "tonic",
+ "tower",
+ "uuid",
+]
+
+[[package]]
 name = "pango"
 version = "0.22.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
