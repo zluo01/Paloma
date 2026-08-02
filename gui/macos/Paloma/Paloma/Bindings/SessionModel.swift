@@ -16,6 +16,8 @@ final class SessionModel {
     /// Keyboard cursor over `filtered`; nil until the user navigates.
     private(set) var selection: Int?
 
+    private(set) var pendingDeletion: SessionListItem?
+
     @ObservationIgnored private var searchTask: Task<Void, Never>?
 
     var filtered: [SessionListItem] {
@@ -33,13 +35,33 @@ final class SessionModel {
         searchTask?.cancel()
         searchResult = nil
         selection = nil
+        pendingDeletion = nil
     }
 
     func navigate(by delta: Int) {
+        pendingDeletion = nil
         let sessions = filtered
         guard !sessions.isEmpty else { return }
         let anchor = selection ?? (delta > 0 ? -1 : sessions.count)
         selection = min(max(anchor + delta, 0), sessions.count - 1)
+    }
+
+    /// set pending delete item then update the selection index
+    func pendingDelete(_ item: SessionListItem) {
+        pendingDeletion = item
+        if let index = filtered.firstIndex(where: { $0.sessionId == item.sessionId }) {
+            selection = index
+        }
+    }
+
+    func cancelDelete() {
+        pendingDeletion = nil
+    }
+
+    /// Hands back the session to remove and resets the confirmation state.
+    func confirmDelete() -> SessionListItem? {
+        defer { pendingDeletion = nil }
+        return pendingDeletion
     }
 
     func refresh() {
@@ -51,6 +73,7 @@ final class SessionModel {
     func search(_ needle: String) {
         searchTask?.cancel()
         selection = nil
+        pendingDeletion = nil
 
         let input = needle.trimmingCharacters(in: .whitespaces)
         guard !input.isEmpty else {

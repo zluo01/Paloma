@@ -8,8 +8,11 @@ import SwiftUI
 struct SessionsView: View {
     let sessions: [SessionListItem]
     let selection: Int?
+    let pendingDeletion: SessionListItem?
     let onRestore: (SessionListItem) -> Void
-    let onDelete: (SessionListItem) -> Void
+    let onPendingDelete: (SessionListItem) -> Void
+    let onConfirmDelete: () -> Void
+    let onCancelDelete: () -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -28,7 +31,7 @@ struct SessionsView: View {
                         ) {
                             onRestore(session)
                         } onDelete: {
-                            onDelete(session)
+                            onPendingDelete(session)
                         }
                     }
                 }
@@ -46,6 +49,18 @@ struct SessionsView: View {
                     proxy.scrollTo(sessions[selection].sessionId)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let pendingDeletion {
+                    DeleteConfirmView(
+                        session: pendingDeletion,
+                        onConfirm: onConfirmDelete,
+                        onCancel: onCancelDelete
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.opacity.combined(with: .scale(0.96, anchor: .bottom)))
+                }
+            }
+            .animation(.snappy(duration: 0.15), value: pendingDeletion)
         }
     }
 }

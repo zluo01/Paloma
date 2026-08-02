@@ -66,16 +66,12 @@ struct OverlayView: View {
                     return .ignored
                 }
                 .onKeyPress(.deleteForward) {
-                    guard mode == .session, let item = sessions.selected else { return .ignored }
-                    removeSession(item)
-                    return .handled
+                    handleDeleteKey()
                 }
                 .onKeyPress(keys: [.delete]) { press in
                     // ⌘⌫ mirrors del for keyboards(macbook) without a forward-delete key.
                     guard press.modifiers.contains(.command) else { return .ignored }
-                    guard mode == .session, let item = sessions.selected else { return .ignored }
-                    removeSession(item)
-                    return .handled
+                    return handleDeleteKey()
                 }
                 .onKeyPress(phases: .down) { press in
                     // Text edits are blocked while the action panel is open.
@@ -109,6 +105,7 @@ struct OverlayView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .onReceive(NotificationCenter.default.publisher(for: .panelDidHide)) { _ in
             operationError = nil
+            sessions.cancelDelete()
         }
         .onChange(of: mode) { previous, current in
             // Chat submissions capture the prompt before the transition clears the field.
@@ -147,8 +144,11 @@ struct OverlayView: View {
             SessionsView(
                 sessions: sessions.filtered,
                 selection: sessions.selection,
+                pendingDeletion: sessions.pendingDeletion,
                 onRestore: restoreSession,
-                onDelete: removeSession
+                onPendingDelete: sessions.pendingDelete,
+                onConfirmDelete: confirmDeletion,
+                onCancelDelete: sessions.cancelDelete
             )
         }
     }
@@ -250,7 +250,9 @@ struct OverlayView: View {
                 query.removeAll()
             }
         case .session:
-            if let item = sessions.selected {
+            if sessions.pendingDeletion != nil {
+                confirmDeletion()
+            } else if let item = sessions.selected {
                 restoreSession(item)
             }
         }
@@ -266,8 +268,27 @@ struct OverlayView: View {
             query.removeAll()
             searches.clear()
             onHide()
-        case .chat, .session:
+        case .chat:
             mode = .search
+        case .session:
+            if sessions.pendingDeletion != nil {
+                sessions.cancelDelete()
+            } else {
+                mode = .search
+            }
         }
+    }
+
+    /// delete on session should only show the pop up
+    private func handleDeleteKey() -> KeyPress.Result {
+        guard mode == .session else { return .ignored }
+        guard let item = sessions.selected else { return .ignored }
+        sessions.pendingDelete(item)
+        return .handled
+    }
+
+    private func confirmDeletion() {
+        guard let item = sessions.confirmDelete() else { return }
+        removeSession(item)
     }
 }

@@ -20,7 +20,7 @@ struct SessionRowView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.title.isEmpty ? "Untitled session" : session.title)
+                Text(session.displayTitle)
                     .font(.system(size: 14))
                     .lineLimit(1)
                 Text(relativeDate)
@@ -33,8 +33,7 @@ struct SessionRowView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 12))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .buttonStyle(.ghostIcon)
             }
         }
         .padding(.horizontal, 8)
