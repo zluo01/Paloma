@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package paloma.binding.v1;
+
+import "schema/binding/common.proto";
+import "schema/binding/connector.proto";
+import "schema/binding/plugin.proto";
+import "schema/binding/render.proto";
+import "schema/binding/session.proto";
+import "schema/extension/capability.proto";
+import "schema/provider/connection.proto";
+
+service Binding {
+  rpc Search(SearchRequest) returns (stream RenderEvent);
+  rpc RunSearchAction(RunSearchActionRequest) returns (RunSearchActionResponse);
+
+  rpc Chat(ChatRequest) returns (stream ChatEvent);
+  rpc RestoreSession(RestoreSessionRequest) returns (stream RenderEvent);
+  rpc AvailableSessions(AvailableSessionsRequest) returns (AvailableSessionsResponse);
+  rpc SearchSessions(SearchSessionsRequest) returns (SearchSessionsResponse);
+  rpc RemoveSession(RemoveSessionRequest) returns (RemoveSessionResponse);
+  rpc CancelSession(CancelSessionRequest) returns (CancelSessionResponse);
+
+  rpc DecideToolcallPermissions(DecideToolcallPermissionsRequest) returns (DecideToolcallPermissionsResponse);
+  rpc GetPermissions(GetPermissionsRequest) returns (GetPermissionsResponse);
+  rpc DeletePermission(DeletePermissionRequest) returns (DeletePermissionResponse);
+
+  rpc InitConnection(InitConnectionRequest) returns (InitConnectionResponse);
+  rpc FinalizeConnection(FinalizeConnectionRequest) returns (FinalizeConnectionResponse);
+  rpc CancelConnection(CancelConnectionRequest) returns (CancelConnectionResponse);
+  rpc DisconnectConnector(DisconnectConnectorRequest) returns (DisconnectConnectorResponse);
+  rpc SetModelPreference(SetModelPreferenceRequest) returns (SetModelPreferenceResponse);
+  rpc PreferModel(PreferModelRequest) returns (PreferModelResponse);
+  rpc AvailableConnectors(AvailableConnectorsRequest) returns (AvailableConnectorsResponse);
+  rpc ConnectorsHealthLevel(ConnectorsHealthLevelRequest) returns (ConnectorsHealthLevelResponse);
+
+  rpc PluginsHealthLevel(PluginsHealthLevelRequest) returns (PluginsHealthLevelResponse);
+  rpc ListExtensionPlugins(ListExtensionPluginsRequest) returns (ListExtensionPluginsResponse);
+  rpc ListProviderPlugins(ListProviderPluginsRequest) returns (ListProviderPluginsResponse);
+  rpc ListMcps(ListMcpsRequest) returns (ListMcpsResponse);
+  rpc AddExtensionPlugin(AddExtensionPluginRequest) returns (AddExtensionPluginResponse);
+  rpc AddProviderPlugin(AddProviderPluginRequest) returns (AddProviderPluginResponse);
+  rpc InitMcpConnection(InitMcpConnectionRequest) returns (InitMcpConnectionResponse);
+  rpc FinalizeMcpConnection(FinalizeMcpConnectionRequest) returns (FinalizeMcpConnectionResponse);
+  rpc UpdatePlugin(UpdatePluginRequest) returns (UpdatePluginResponse);
+  rpc RemovePlugin(RemovePluginRequest) returns (RemovePluginResponse);
+  rpc TogglePlugin(TogglePluginRequest) returns (TogglePluginResponse);
+  rpc ToggleCapability(ToggleCapabilityRequest) returns (ToggleCapabilityResponse);
+
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SearchRequest {
+  string input = 1;
+}
+
+message RunSearchActionRequest {
+  ExtensionCapabilityId extension_capability_id = 1;
+  paloma.extension.v1.Action action = 2;
+}
+
+message RunSearchActionResponse {
+  paloma.extension.v1.RunActionResponse behavior = 1;
+}
+
+message ChatRequest {
+  optional string session_id = 1;
+  ProviderBackendId provider_backend_id = 2;
+  string prompt = 3;
+}
+
+message ChatEvent {
+  oneof payload {
+    // id of the session this turn runs in, sent before any render event
+    string session_started = 1;
+    RenderEvent event = 2;
+  }
+}
+
+message RestoreSessionRequest {
+  string session_id = 1;
+}
+
+message AvailableSessionsRequest {}
+
+message AvailableSessionsResponse {
+  repeated SessionListItem sessions = 1;
+}
+
+message SearchSessionsRequest {
+  string needle = 1;
+}
+
+message SearchSessionsResponse {
+  repeated string session_ids = 1;
+}
+
+message RemoveSessionRequest {
+  string session_id = 1;
+}
+
+message RemoveSessionResponse {}
+
+message CancelSessionRequest {
+  string session_id = 1;
+}
+
+message CancelSessionResponse {}
+
+message DecideToolcallPermissionsRequest {
+  UserDecision user_decision = 1;
+}
+
+message DecideToolcallPermissionsResponse {
+  PermissionState state = 1;
+}
+
+message GetPermissionsRequest {}
+
+message GetPermissionsResponse {
+  repeated Permission permissions = 1;
+}
+
+message DeletePermissionRequest {
+  string prefix = 1;
+}
+
+message DeletePermissionResponse {}
+
+message InitConnectionRequest {
+  ProviderBackendId provider_backend_id = 1;
+}
+
+message InitConnectionResponse {
+  paloma.provider.runtime.v1.ConnectionPayload connection = 1;
+}
+
+message FinalizeConnectionRequest {
+  paloma.provider.runtime.v1.ProviderAuthMethod provider_auth_method = 1;
+  ProviderBackendId provider_backend_id = 2;
+  string payload = 3;
+}
+
+message FinalizeConnectionResponse {}
+
+message CancelConnectionRequest {
+  ProviderBackendId provider_backend_id = 1;
+}
+
+message CancelConnectionResponse {}
+
+message DisconnectConnectorRequest {
+  ProviderBackendId provider_backend_id = 1;
+}
+
+message DisconnectConnectorResponse {}
+
+message SetModelPreferenceRequest {
+  ProviderBackendId provider_backend_id = 1;
+  string model = 2;
+  string effort = 3;
+  bool as_default = 4;
+}
+
+message SetModelPreferenceResponse {}
+
+message PreferModelRequest {}
+
+message PreferModelResponse {
+  optional ProviderBackendId provider_backend_id = 1;
+}
+
+message AvailableConnectorsRequest {}
+
+message AvailableConnectorsResponse {
+  repeated Connector connectors = 1;
+}
+
+message ConnectorsHealthLevelRequest {}
+
+message ConnectorsHealthLevelResponse {
+  HealthLevel health_level = 1;
+}
+
+message PluginsHealthLevelRequest {}
+
+message PluginsHealthLevelResponse {
+  HealthLevel health_level = 1;
+}
+
+message ListExtensionPluginsRequest {}
+
+message ListExtensionPluginsResponse {
+  repeated ExtensionInfo extensions = 1;
+}
+
+message ListProviderPluginsRequest {}
+
+message ListProviderPluginsResponse {
+  repeated ProviderInfo providers = 1;
+}
+
+message ListMcpsRequest {}
+
+message ListMcpsResponse {
+  repeated McpPluginInfo mcps = 1;
+}
+
+message AddExtensionPluginRequest {
+  Plugin config = 1;
+}
+
+message AddExtensionPluginResponse {}
+
+message AddProviderPluginRequest {
+  Plugin config = 1;
+}
+
+message AddProviderPluginResponse {}
+
+message InitMcpConnectionRequest {
+  Plugin config = 1;
+}
+
+message InitMcpConnectionResponse {
+  optional string oauth_session_id = 1;
+  optional string auth_url = 2;
+}
+
+message FinalizeMcpConnectionRequest {
+  Plugin config = 1;
+  optional string oauth_session_id = 2;
+}
+
+message FinalizeMcpConnectionResponse {}
+
+message UpdatePluginRequest {
+  PluginType plugin_type = 1;
+  Plugin plugin = 2;
+}
+
+message UpdatePluginResponse {}
+
+message RemovePluginRequest {
+  PluginType plugin_type = 1;
+  string name = 2;
+}
+
+message RemovePluginResponse {}
+
+message TogglePluginRequest {
+  string name = 1;
+  bool disabled = 2;
+}
+
+message TogglePluginResponse {}
+
+message ToggleCapabilityRequest {
+  string name = 1;
+  string capability = 2;
+  CapabilityFacet facet = 3;
+  bool disabled = 4;
+}
+
+message ToggleCapabilityResponse {}
+
+message HealthRequest {}
+
+message HealthResponse {}

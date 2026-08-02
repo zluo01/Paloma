@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package paloma.binding.v1;
+
+import "schema/binding/common.proto";
+
+message ExtensionInfo {
+  string name = 1;
+  string description = 2;
+  optional string author = 3;
+  optional string homepage = 4;
+  repeated CapabilityInfo capabilities = 5;
+  HealthStatus status = 6;
+  optional string error = 7;
+  optional Plugin config = 8;
+}
+
+message ProviderInfo {
+  string name = 1;
+  string description = 2;
+  HealthStatus status = 3;
+  optional string error = 4;
+  optional Plugin config = 5;
+}
+
+message McpPluginInfo {
+  string description = 1;
+  HealthStatus status = 2;
+  optional string error = 3;
+  repeated CapabilityInfo tools = 4;
+  Plugin config = 5;
+}

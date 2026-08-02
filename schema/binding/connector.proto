@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package paloma.binding.v1;
+
+import "schema/binding/common.proto";
+import "schema/provider/runtime.proto";
+
+message ProviderStatus {
+  repeated paloma.provider.runtime.v1.Model models = 1;
+  HealthStatus status = 2;
+  optional string error = 3;
+}
+
+message ConnectorConnection {
+  bool preferred = 1;
+  string prefer_model = 2;
+  string prefer_effort = 3;
+  ProviderStatus status = 4;
+}
+
+message Connector {
+  ProviderBackendId id = 1;
+  string description = 2;
+  optional Icon icon = 3;
+  optional ConnectorConnection connection = 4;
+}

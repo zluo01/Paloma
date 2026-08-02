@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package paloma.binding.v1;
+
+message SessionListItem {
+  string session_id = 1;
+  string title = 2;
+  int64 last_update = 3;
+}
+
+message AllowOnce {
+  string call_id = 1;
+}
+
+message Allow {
+  string call_id = 1;
+  string command = 2;
+  bool glob = 3;
+}
+
+message AllowSession {
+  string session_id = 1;
+  string call_id = 2;
+}
+
+message IgnorePermission {
+  string session_id = 1;
+  string call_id = 2;
+}
+
+message Deny {
+  string call_id = 1;
+}
+
+message UserDecision {
+  oneof decision {
+    AllowOnce allow_once = 1;
+    Allow allow = 2;
+    AllowSession allow_session = 3;
+    IgnorePermission ignore_permission = 4;
+    Deny deny = 5;
+  }
+}
+
+enum PermissionState {
+  PERMISSION_STATE_ALLOW = 0;
+  PERMISSION_STATE_DENY = 1;
+  PERMISSION_STATE_ERROR = 2;
+}
+
+message Permission {
+  string prefix = 1;
+  bool with_glob = 2;
+  int64 updated_at = 3;
+}
