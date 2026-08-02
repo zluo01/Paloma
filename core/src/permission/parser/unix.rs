@@ -8,7 +8,7 @@ use tree_sitter_bash::LANGUAGE as BASH;
 
 use crate::permission::{PermissionError, Result, constants::SHELLS};
 
-pub(crate) fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String>>>> {
+pub fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String>>>> {
     if command.is_empty() {
         return Err(PermissionError::EmptyCommand);
     }
@@ -26,7 +26,7 @@ pub(crate) fn parse_commands(command: &[String]) -> Result<Option<Vec<Vec<String
 
 /// Parse the provided bash source using tree-sitter-bash, returning a `Tree`
 /// on success or `None` if parsing failed.
-pub(crate) fn try_parse_shell(shell_lc_arg: &str) -> Option<Tree> {
+pub fn try_parse_shell(shell_lc_arg: &str) -> Option<Tree> {
     let lang = BASH.into();
     let mut parser = Parser::new();
     parser
@@ -125,11 +125,8 @@ fn try_parse_word_only_commands_sequence(tree: &Tree, src: &str) -> Option<Vec<V
 
     let mut commands = Vec::new();
     for node in command_nodes {
-        if let Some(words) = parse_plain_command_from_node(node, src) {
-            commands.push(words);
-        } else {
-            return None;
-        }
+        let words = parse_plain_command_from_node(node, src)?;
+        commands.push(words);
     }
     Some(commands)
 }

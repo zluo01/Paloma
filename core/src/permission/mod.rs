@@ -1,19 +1,16 @@
+#[cfg(unix)]
 mod constants;
 mod entity;
 mod error;
 mod parser;
 mod safety;
-mod transparent;
 
 pub use entity::{ArgvDecision, CommandType, PermissionDecision, PermissionState, UserDecision};
 pub use error::{PermissionError, Result};
 
 use crate::{
     db::Storage,
-    permission::{
-        parser::try_parse_shell,
-        transparent::{StripTransparentWrapperError, strip_transparent_command},
-    },
+    permission::safety::{StripTransparentWrapperError, strip_transparent_command},
 };
 
 pub struct PermissionController {
@@ -23,18 +20,27 @@ pub struct PermissionController {
 impl PermissionController {
     pub fn new(storage: Storage) -> Self {
         // call on start up to panic on any tree-sitter parser config issues.
-        let _ = try_parse_shell("true");
+        #[cfg(unix)]
+        let _ = parser::try_parse_shell("true");
 
         Self { storage }
     }
 
     pub async fn classify(&self, command: &[String]) -> Result<PermissionDecision> {
-        let Some(commands) = parser::parse_commands(command)? else {
-            // Unparseable composite: always ask, never persist globally.
+        #[cfg(unix)]
+        let parsed = parser::parse_commands(command)?;
+        #[cfg(windows)]
+        let parsed = parser::parse_commands(command).await?;
+        let Some(commands) = parsed else {
+            // Unparseable composite: always ask, never persist globally if it is not hard blocked.
+            let decision = match safety::safety_check(command) {
+                Ok(ArgvDecision::NotExecutable) => ArgvDecision::NotExecutable,
+                _ => ArgvDecision::AskNoPersist,
+            };
             return Ok(PermissionDecision::new(
                 CommandType::Composite,
                 vec![command.to_vec()],
-                ArgvDecision::AskNoPersist,
+                decision,
             ));
         };
 
@@ -132,196 +138,255 @@ mod tests {
         controller.classify(&argv(parts)).await
     }
 
-    #[tokio::test]
-    async fn classifies_bash_lc_single_atom_as_simple_unknown() {
-        let controller = PermissionController::new(fresh_storage().await);
-        let decision = controller
-            .classify(&argv(&[
-                "bash",
-                "-lc",
-                "timeout 75 aria2c --dir=/tmp 'magnet:?xt=urn:btih:123456'",
-            ]))
-            .await
-            .expect("classify");
+    #[cfg(windows)]
+    mod windows {
+        use super::*;
 
-        assert!(matches!(decision.command_type(), CommandType::Simple));
-        assert_eq!(decision.decision(), ArgvDecision::Unknown);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&[
-                "aria2c",
-                "--dir=/tmp",
-                "magnet:?xt=urn:btih:123456"
-            ])]
-        );
+        #[tokio::test]
+        async fn plain_argv_is_classified_unchanged() {
+            let decision = classify(&["python", "-c", "print(1)"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::Unknown);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["python", "-c", "print(1)"])]
+            );
+        }
+
+        #[tokio::test]
+        async fn plain_argv_metacharacters_are_literal() {
+            // Without a shell in the spawn path `$x` never expands, so the
+            // allowlist verdict for the head is sound.
+            let decision = classify(&["echo", "$x"]).await.expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::Allow);
+        }
+
+        #[tokio::test]
+        async fn unparseable_powershell_string_is_ask_no_persist() {
+            let decision = classify(&["powershell", "-Command", "if ($?) { ls }"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+
+            let decision = classify(&["powershell", "-Command", "echo $env:USERNAME"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+        }
+
+        #[tokio::test]
+        async fn fused_runas_verb_is_denied() {
+            let decision = classify(&["start-process", "cmd", "-Verb:RunAs"])
+                .await
+                .expect("classify");
+            assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+        }
+
+        #[tokio::test]
+        async fn banned_shell_is_denied() {
+            let decision = classify(&["bash", "-lc", "for d in /tmp/*; do echo \"$d\"; done"])
+                .await
+                .expect("classify");
+            assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+        }
     }
 
-    #[tokio::test]
-    async fn classifies_pkexec_single_command_should_ask_no_persist() {
-        let controller = PermissionController::new(fresh_storage().await);
-        let decision = controller
-            .classify(&argv(&["pkexec", "systemctl", "restart", "aria2"]))
-            .await
-            .expect("classify");
+    #[cfg(unix)]
+    mod unix {
+        use super::*;
 
-        assert!(matches!(decision.command_type(), CommandType::Simple));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["pkexec", "systemctl", "restart", "aria2"])]
-        );
-    }
+        #[tokio::test]
+        async fn unparseable_complex_command_is_ask_no_persist() {
+            // A complex script (control flow, substitutions, …) can't be split
+            // into atoms, so it always asks and never persists.
+            let decision = classify(&["bash", "-lc", "for d in /tmp/*; do echo \"$d\"; done"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            // Unparseable: the raw command is kept as a single atom.
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&[
+                    "bash",
+                    "-lc",
+                    "for d in /tmp/*; do echo \"$d\"; done"
+                ])]
+            );
+        }
 
-    #[tokio::test]
-    async fn classifies_sudo_with_wrapper_should_be_not_executable() {
-        let controller = PermissionController::new(fresh_storage().await);
-        let decision = controller
-            .classify(&argv(&["bash", "-lc", "timeout 75 sudo a b"]))
-            .await
-            .expect("classify");
+        #[tokio::test]
+        async fn classifies_pkexec_single_command_should_ask_no_persist() {
+            let controller = PermissionController::new(fresh_storage().await);
+            let decision = controller
+                .classify(&argv(&["pkexec", "systemctl", "restart", "aria2"]))
+                .await
+                .expect("classify");
 
-        assert!(matches!(decision.command_type(), CommandType::Simple));
-        assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
-        assert_eq!(decision.parsed_commands(), &[argv(&["sudo", "a", "b"])]);
-    }
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["pkexec", "systemctl", "restart", "aria2"])]
+            );
+        }
 
-    #[tokio::test]
-    async fn unparseable_complex_command_is_ask_no_persist() {
-        // A complex script (control flow, substitutions, …) can't be split
-        // into atoms, so it always asks and never persists.
-        let decision = classify(&["bash", "-lc", "for d in /tmp/*; do echo \"$d\"; done"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        // Unparseable: the raw command is kept as a single atom.
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&[
-                "bash",
-                "-lc",
-                "for d in /tmp/*; do echo \"$d\"; done"
-            ])]
-        );
-    }
+        // --------------------------------------------------------------
+        // single command: stripping outcomes
+        // --------------------------------------------------------------
 
-    // ------------------------------------------------------------------
-    // composite folding
-    // ------------------------------------------------------------------
+        #[tokio::test]
+        async fn simple_wrapped_safe_command_is_allow() {
+            let decision = classify(&["timeout", "5", "ls"]).await.expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::Allow);
+            // The stripped inner command, not the wrapped original.
+            assert_eq!(decision.parsed_commands(), &[argv(&["ls"])]);
+        }
 
-    #[tokio::test]
-    async fn composite_all_safe_is_allow() {
-        let decision = classify(&["bash", "-lc", "ls && pwd"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::Allow);
-        assert_eq!(decision.parsed_commands(), &[argv(&["ls"]), argv(&["pwd"])]);
-    }
+        #[tokio::test]
+        async fn simple_missing_flag_value_is_invalid_command() {
+            let result = classify(&["timeout", "-s"]).await;
+            assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
+        }
 
-    #[tokio::test]
-    async fn composite_with_unknown_is_ask_no_persist() {
-        let decision = classify(&["bash", "-lc", "ls && cargo build"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["ls"]), argv(&["cargo", "build"])]
-        );
-    }
+        #[tokio::test]
+        async fn simple_invalid_flag_value_is_invalid_command() {
+            let result = classify(&["timeout", "-s", "cargo", "test"]).await;
+            assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
+        }
 
-    #[tokio::test]
-    async fn composite_with_dangerous_is_ask_no_persist() {
-        let decision = classify(&["bash", "-lc", "ls && rm -rf x"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["ls"]), argv(&["rm", "-rf", "x"])]
-        );
-    }
+        #[tokio::test]
+        async fn simple_invalid_inner_command_is_invalid_command() {
+            let result = classify(&["timeout", "5x", "ls"]).await;
+            assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
+        }
 
-    #[tokio::test]
-    async fn composite_with_not_executable_is_not_executable() {
-        let decision = classify(&["bash", "-lc", "ls && sudo rm x"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["ls"]), argv(&["sudo", "rm", "x"])]
-        );
-    }
+        #[tokio::test]
+        async fn simple_unknown_option_is_ask_no_persist() {
+            let decision = classify(&["timeout", "--frobnicate", "5", "ls"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["timeout", "--frobnicate", "5", "ls"])]
+            );
+        }
 
-    // ------------------------------------------------------------------
-    // single command: stripping outcomes
-    // ------------------------------------------------------------------
+        #[tokio::test]
+        async fn simple_unsafe_to_strip_is_ask_no_persist() {
+            let decision = classify(&["env", "-C", "/tmp", "make"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["env", "-C", "/tmp", "make"])]
+            );
+        }
 
-    #[tokio::test]
-    async fn simple_wrapped_safe_command_is_allow() {
-        let decision = classify(&["timeout", "5", "ls"]).await.expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Simple));
-        assert_eq!(decision.decision(), ArgvDecision::Allow);
-        // The stripped inner command, not the wrapped original.
-        assert_eq!(decision.parsed_commands(), &[argv(&["ls"])]);
-    }
+        #[tokio::test]
+        async fn simple_depth_exceeded_is_ask_no_persist() {
+            let mut parts = vec!["nohup"; 9];
+            parts.push("ls");
+            let decision = classify(&parts).await.expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(decision.parsed_commands(), &[argv(&parts)]);
+        }
 
-    #[tokio::test]
-    async fn simple_missing_flag_value_is_invalid_command() {
-        let result = classify(&["timeout", "-s"]).await;
-        assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
-    }
+        #[tokio::test]
+        async fn classifies_bash_lc_single_atom_as_simple_unknown() {
+            let controller = PermissionController::new(fresh_storage().await);
+            let decision = controller
+                .classify(&argv(&[
+                    "bash",
+                    "-lc",
+                    "timeout 75 aria2c --dir=/tmp 'magnet:?xt=urn:btih:123456'",
+                ]))
+                .await
+                .expect("classify");
 
-    #[tokio::test]
-    async fn simple_invalid_flag_value_is_invalid_command() {
-        let result = classify(&["timeout", "-s", "cargo", "test"]).await;
-        assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
-    }
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::Unknown);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&[
+                    "aria2c",
+                    "--dir=/tmp",
+                    "magnet:?xt=urn:btih:123456"
+                ])]
+            );
+        }
 
-    #[tokio::test]
-    async fn simple_invalid_inner_command_is_invalid_command() {
-        let result = classify(&["timeout", "5x", "ls"]).await;
-        assert!(matches!(result, Err(PermissionError::InvalidCommand(_))));
-    }
+        #[tokio::test]
+        async fn classifies_sudo_with_wrapper_should_be_not_executable() {
+            let controller = PermissionController::new(fresh_storage().await);
+            let decision = controller
+                .classify(&argv(&["bash", "-lc", "timeout 75 sudo a b"]))
+                .await
+                .expect("classify");
 
-    #[tokio::test]
-    async fn simple_unknown_option_is_ask_no_persist() {
-        let decision = classify(&["timeout", "--frobnicate", "5", "ls"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["timeout", "--frobnicate", "5", "ls"])]
-        );
-    }
+            assert!(matches!(decision.command_type(), CommandType::Simple));
+            assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+            assert_eq!(decision.parsed_commands(), &[argv(&["sudo", "a", "b"])]);
+        }
 
-    #[tokio::test]
-    async fn simple_unsafe_to_strip_is_ask_no_persist() {
-        let decision = classify(&["env", "-C", "/tmp", "make"])
-            .await
-            .expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(
-            decision.parsed_commands(),
-            &[argv(&["env", "-C", "/tmp", "make"])]
-        );
-    }
+        #[tokio::test]
+        async fn composite_all_safe_is_allow() {
+            let decision = classify(&["bash", "-lc", "ls && pwd"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::Allow);
+            assert_eq!(decision.parsed_commands(), &[argv(&["ls"]), argv(&["pwd"])]);
+        }
 
-    #[tokio::test]
-    async fn simple_depth_exceeded_is_ask_no_persist() {
-        let mut parts = vec!["nohup"; 9];
-        parts.push("ls");
-        let decision = classify(&parts).await.expect("classify");
-        assert!(matches!(decision.command_type(), CommandType::Composite));
-        assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
-        assert_eq!(decision.parsed_commands(), &[argv(&parts)]);
+        #[tokio::test]
+        async fn composite_with_unknown_is_ask_no_persist() {
+            let decision = classify(&["bash", "-lc", "ls && cargo build"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["ls"]), argv(&["cargo", "build"])]
+            );
+        }
+
+        #[tokio::test]
+        async fn composite_with_dangerous_is_ask_no_persist() {
+            let decision = classify(&["bash", "-lc", "ls && rm -rf x"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["ls"]), argv(&["rm", "-rf", "x"])]
+            );
+        }
+
+        #[tokio::test]
+        async fn composite_with_not_executable_is_not_executable() {
+            let decision = classify(&["bash", "-lc", "ls && sudo rm x"])
+                .await
+                .expect("classify");
+            assert!(matches!(decision.command_type(), CommandType::Composite));
+            assert_eq!(decision.decision(), ArgvDecision::NotExecutable);
+            assert_eq!(
+                decision.parsed_commands(),
+                &[argv(&["ls"]), argv(&["sudo", "rm", "x"])]
+            );
+        }
     }
 }

@@ -5,6 +5,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::permission::safety::StripTransparentWrapperError;
+
 /// Wrapper layers a command may realistically nest before we refuse.
 const MAX_DEPTH: usize = 8;
 
@@ -332,36 +334,6 @@ fn strip_nohup(args: &[String]) -> Result<&[String]> {
         }),
         _ => Ok(args),
     }
-}
-
-#[derive(Debug, PartialEq, thiserror::Error)]
-pub(crate) enum StripTransparentWrapperError {
-    #[error("{wrapper}: option {flag} requires a value")]
-    MissingFlagValue { wrapper: &'static str, flag: String },
-    #[error("{wrapper}: invalid value {value:?} for option {flag}")]
-    InvalidFlagValue {
-        wrapper: &'static str,
-        flag: String,
-        value: String,
-    },
-    #[error("{wrapper}: unrecognized option {option}")]
-    UnknownOption {
-        wrapper: &'static str,
-        option: String,
-    },
-    #[error("invalid {wrapper} command, found: {found:?}")]
-    InvalidCommand {
-        wrapper: &'static str,
-        /// The offending token; empty when the command ends too early.
-        found: String,
-    },
-    #[error("{wrapper}: {construct} cannot be safely stripped")]
-    UnsafeToStrip {
-        wrapper: &'static str,
-        construct: String,
-    },
-    #[error("wrapper nesting exceeds depth limit")]
-    DepthExceeded,
 }
 
 type Result<T> = std::result::Result<T, StripTransparentWrapperError>;

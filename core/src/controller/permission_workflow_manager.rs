@@ -215,7 +215,7 @@ impl PermissionWorkflowManager {
             Err(e) => {
                 error!(
                     "Error happen when try to classify permission for command {:?}. {}",
-                    &command, e
+                    command, e
                 );
                 self.permission_tracker.insert(
                     call_id,
@@ -622,34 +622,110 @@ mod tests {
             .always = true;
     }
 
-    const SUDO_COMPOSITE: &[&str] = &["bash", "-lc", "sudo systemctl stop firewalld && echo done"];
-    const BENIGN_COMPOSITE: &[&str] = &["bash", "-lc", "cargo build && ls"];
+    #[cfg(unix)]
+    mod unix {
+        use super::*;
 
-    #[tokio::test]
-    async fn not_executable_composite_is_denied_outright() {
-        let mut manager = manager().await;
-        let session_id = Uuid::from_u128(1);
+        const BENIGN_COMPOSITE: &[&str] = &["bash", "-lc", "cargo build && ls"];
+        const SUDO_COMPOSITE: &[&str] =
+            &["bash", "-lc", "sudo systemctl stop firewalld && echo done"];
 
-        init(&mut manager, session_id, SUDO_COMPOSITE).await;
+        #[tokio::test]
+        async fn session_bypass_auto_allows_ordinary_composite() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(2);
+            ignore_permission_for(&mut manager, session_id);
 
-        assert!(matches!(
-            resolution(&manager, "c").await,
-            Some(PermissionState::Deny)
-        ));
+            init(&mut manager, session_id, BENIGN_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Allow)
+            ));
+        }
+
+        #[tokio::test]
+        async fn not_executable_composite_is_denied_outright() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(1);
+
+            init(&mut manager, session_id, SUDO_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Deny)
+            ));
+        }
+
+        #[tokio::test]
+        async fn session_bypass_does_not_override_not_executable() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(4);
+            ignore_permission_for(&mut manager, session_id);
+
+            init(&mut manager, session_id, SUDO_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Deny)
+            ));
+        }
     }
 
-    #[tokio::test]
-    async fn session_bypass_auto_allows_ordinary_composite() {
-        let mut manager = manager().await;
-        let session_id = Uuid::from_u128(2);
-        ignore_permission_for(&mut manager, session_id);
+    #[cfg(windows)]
+    mod windows {
+        use super::*;
 
-        init(&mut manager, session_id, BENIGN_COMPOSITE).await;
+        const BENIGN_COMPOSITE: &[&str] =
+            &["powershell", "-NoProfile", "-Command", "cargo build; ls"];
+        const RUNAS_COMPOSITE: &[&str] = &[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "runas /user:admin cmd; echo done",
+        ];
 
-        assert!(matches!(
-            resolution(&manager, "c").await,
-            Some(PermissionState::Allow)
-        ));
+        #[tokio::test]
+        async fn session_bypass_auto_allows_ordinary_composite() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(2);
+            ignore_permission_for(&mut manager, session_id);
+
+            init(&mut manager, session_id, BENIGN_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Allow)
+            ));
+        }
+
+        #[tokio::test]
+        async fn not_executable_composite_is_denied_outright() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(5);
+
+            init(&mut manager, session_id, RUNAS_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Deny)
+            ));
+        }
+
+        #[tokio::test]
+        async fn session_bypass_does_not_override_not_executable() {
+            let mut manager = manager().await;
+            let session_id = Uuid::from_u128(6);
+            ignore_permission_for(&mut manager, session_id);
+
+            init(&mut manager, session_id, RUNAS_COMPOSITE).await;
+
+            assert!(matches!(
+                resolution(&manager, "c").await,
+                Some(PermissionState::Deny)
+            ));
+        }
     }
 
     #[tokio::test]
@@ -661,20 +737,6 @@ mod tests {
         init(&mut manager, session_id, &["some-unknown-program"]).await;
 
         assert!(resolution(&manager, "c").await.is_none());
-    }
-
-    #[tokio::test]
-    async fn session_bypass_does_not_override_not_executable() {
-        let mut manager = manager().await;
-        let session_id = Uuid::from_u128(4);
-        ignore_permission_for(&mut manager, session_id);
-
-        init(&mut manager, session_id, SUDO_COMPOSITE).await;
-
-        assert!(matches!(
-            resolution(&manager, "c").await,
-            Some(PermissionState::Deny)
-        ));
     }
 
     /// A glob `Allow` with call_id "c" — asserting against it checks all

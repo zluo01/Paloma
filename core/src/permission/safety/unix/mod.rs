@@ -1,7 +1,11 @@
 //! Per-argv safety check. Logic partially ported from openai/codex
 //! (`codex-rs/shell-command/src/command_safety/is_safe_command.rs`).
 
-use std::{collections::HashSet, path::Path, sync::LazyLock};
+mod transparent;
+
+use std::{borrow::Cow, collections::HashSet, path::Path, sync::LazyLock};
+
+pub(crate) use transparent::strip_transparent_command;
 
 use crate::permission::{ArgvDecision, PermissionError, Result, constants::SHELLS};
 
@@ -26,12 +30,12 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
     if command
         .iter()
-        .any(|a| executable_name_lookup_key(a) == Some("sudo"))
+        .any(|a| executable_name_lookup_key(a).as_deref() == Some("sudo"))
     {
         return Ok(ArgvDecision::NotExecutable);
     }
 
-    match executable_name_lookup_key(cmd0) {
+    match executable_name_lookup_key(cmd0).as_deref() {
         // Require a controlling tty; cannot be driven non-interactively.
         Some("su" | "passwd" | "ssh-add") => Ok(ArgvDecision::NotExecutable),
 
@@ -123,35 +127,7 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
         },
 
         // Ripgrep
-        Some("rg") => {
-            const UNSAFE_RIPGREP_OPTIONS_WITH_ARGS: &[&str] = &[
-                // Takes an arbitrary command that is executed for each match.
-                "--pre",
-                // Takes a command that can be used to obtain the local hostname.
-                "--hostname-bin",
-            ];
-            const UNSAFE_RIPGREP_OPTIONS_WITHOUT_ARGS: &[&str] = &[
-                // Calls out to other decompression tools, so do not auto-approve
-                // out of an abundance of caution.
-                "--search-zip",
-                "-z",
-            ];
-
-            let has = |opts: &[&str]| {
-                command.iter().any(|a| {
-                    opts.contains(&a.as_str())
-                        || opts.iter().any(|o| a.starts_with(&format!("{o}=")))
-                })
-            };
-
-            if has(UNSAFE_RIPGREP_OPTIONS_WITH_ARGS) {
-                Ok(ArgvDecision::AskNoPersist)
-            } else if has(UNSAFE_RIPGREP_OPTIONS_WITHOUT_ARGS) {
-                Ok(ArgvDecision::Unknown)
-            } else {
-                Ok(ArgvDecision::Allow)
-            }
-        },
+        Some("rg") => Ok(super::ripgrep_check(command)),
 
         // `sed -n {N|M,N}p <file>` read-only shape.
         Some("sed")
@@ -202,27 +178,11 @@ fn has_recursive_short_flag(argv: &[String]) -> bool {
     })
 }
 
-fn executable_name_lookup_key(raw: &str) -> Option<&str> {
-    #[cfg(windows)]
-    {
-        Path::new(raw)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| {
-                let name = name.to_ascii_lowercase();
-                for suffix in [".exe", ".cmd", ".bat", ".com"] {
-                    if let Some(stripped) = name.strip_suffix(suffix) {
-                        return stripped.to_string();
-                    }
-                }
-                name
-            })
-    }
-
-    #[cfg(not(windows))]
-    {
-        Path::new(raw).file_name().and_then(|name| name.to_str())
-    }
+fn executable_name_lookup_key(raw: &str) -> Option<Cow<'_, str>> {
+    Path::new(raw)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(Cow::Borrowed)
 }
 
 /// Matches `^(\d+,)?\d+p$` — the conservative read-only shape for `sed -n`.
