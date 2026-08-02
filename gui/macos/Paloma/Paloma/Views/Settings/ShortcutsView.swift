@@ -25,7 +25,7 @@ struct ShortcutsView: View {
             }
             Section("Sessions") {
                 LabeledContent("Restore session", value: "⏎")
-                LabeledContent("Delete session", value: "⌦")
+                LabeledContent("Delete session", value: "⌦ / ⌘⌫")
             }
         }
         .formStyle(.grouped)

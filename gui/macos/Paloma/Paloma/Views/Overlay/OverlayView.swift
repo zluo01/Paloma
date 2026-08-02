@@ -70,6 +70,13 @@ struct OverlayView: View {
                     removeSession(item)
                     return .handled
                 }
+                .onKeyPress(keys: [.delete]) { press in
+                    // ⌘⌫ mirrors del for keyboards(macbook) without a forward-delete key.
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    guard mode == .session, let item = sessions.selected else { return .ignored }
+                    removeSession(item)
+                    return .handled
+                }
                 .onKeyPress(phases: .down) { press in
                     // Text edits are blocked while the action panel is open.
                     guard mode == .search, searches.panelSelection != nil else {

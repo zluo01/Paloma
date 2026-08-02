@@ -17,7 +17,7 @@ struct FooterView: View {
         switch mode {
         case .search: "⏎ open · ⌘⏎ actions · ⇧↓ sessions"
         case .chat: "⏎ send · ⌃C stop · ⇧↓ sessions"
-        case .session: "⏎ restore · ⌦ delete"
+        case .session: "⏎ restore · ⌦ / ⌘⌫ delete"
         }
     }
 
