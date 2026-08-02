@@ -10,6 +10,11 @@ Each call spawns a fresh process, so nothing persists between calls — not the 
 
 stdin is /dev/null. A command that waits for input never receives any: editors and pagers (`vim`, `less`, `top`), confirmation prompts, and `ssh` without key auth block until the timeout and return nothing useful. Use the non-interactive form instead — `apt-get -y`, `git --no-pager`, `ssh -o BatchMode=yes` — or read the file rather than opening it.
 
+Current date/time:
+- Local time: run exactly `["date", "+%Y-%m-%dT%H:%M:%S%z"]` (e.g. 2026-08-01T14:32:05-0700).
+- UTC: run exactly `["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]` (e.g. 2026-08-01T21:32:05Z).
+- Do not use bare `date` (locale-dependent output) or improvise other formats; these two work identically on Linux and macOS.
+
 Output handling:
 - Each stream is captured up to 50 KiB inline; ANSI escape sequences are stripped from the payload.
 - When a stream exceeds 50 KiB, the full untruncated bytes are written to /tmp/paloma/<exec_id>/<stdout|stderr> and the path is surfaced via the `full_output` attribute. Follow up with a separate shell call (tail, head, grep) on that path to inspect more.
