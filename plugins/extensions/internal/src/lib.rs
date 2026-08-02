@@ -2,7 +2,6 @@ mod app_search;
 mod calculator;
 mod clipboard;
 mod file_search;
-mod utils;
 
 use std::io;
 

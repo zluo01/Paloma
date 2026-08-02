@@ -1,3 +1,4 @@
+mod backend;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -5,78 +6,37 @@ use linux::Platform;
 
 #[cfg(target_os = "macos")]
 mod macos;
+
+#[cfg(windows)]
+mod windows;
 use std::{
-    path::{Path, PathBuf},
+    any::Any,
     sync::{Arc, RwLock},
     thread,
-    time::Duration,
 };
 
-use log::{debug, info, warn};
+use backend::{AppEntry, AppSearchBackend};
+use log::info;
 #[cfg(target_os = "macos")]
 use macos::Platform;
-use notify::{EventKind, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 use nucleo_matcher::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
 };
 use paloma_extension_base::{Capability, SearchHandler};
-use paloma_extension_protocol::v1::{
-    Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
-};
-
-/// Contract each platform backend implements on its `Platform` struct.
-/// Porting to a new OS means adding a module above and implementing this.
-trait AppSearchBackend {
-    /// Discover installed applications.
-    fn load() -> Vec<AppEntry>;
-    /// Directories to watch (non-recursively) for application
-    /// install/uninstall changes.
-    fn watch_paths() -> Vec<PathBuf>;
-    /// Whether a filesystem event path is relevant to the application
-    /// index and should trigger a rescan.
-    fn is_app_file(path: &Path) -> bool;
-    /// Launch the application referenced by an action's params.
-    fn launch(params: &[String]);
-}
+use paloma_extension_protocol::v1::{Action, Hide, Item, run_action_response::Behavior};
+#[cfg(windows)]
+use windows::Platform;
 
 const NAME_WEIGHT: u32 = 10_000;
 const GENERIC_NAME_WEIGHT: u32 = 7_000;
 const KEYWORD_WEIGHT: u32 = 5_000;
 const EXEC_WEIGHT: u32 = 3_000;
 
-struct AppEntry {
-    name: String,
-    generic_name: Option<String>,
-    keywords: Vec<String>,
-    /// Params passed to `AppSearchBackend::launch`; not used for matching.
-    exec: Vec<String>,
-    /// Extra low-weight haystack for matching (e.g. the binary or bundle
-    /// name) — kept separate from `exec` so shared path prefixes like
-    /// "/Applications" don't make every entry match.
-    exec_interest: Option<String>,
-    icon: Option<CapabilityIcon>,
-}
-
-impl AppEntry {
-    fn to_item(&self) -> Item {
-        Item {
-            title: self.name.clone(),
-            subtitle: self.generic_name.clone(),
-            icon: self.icon.clone(),
-            actions: vec![Action {
-                label: "Open".to_string(),
-                params: self.exec.clone(),
-                primary: true,
-            }],
-        }
-    }
-}
-
 pub struct AppSearch {
     entries: Arc<RwLock<Vec<AppEntry>>>,
-    _watcher: Debouncer<notify::RecommendedWatcher, RecommendedCache>,
+    /// Change-detection guard; dropping it stops watching.
+    _watcher: Box<dyn Any + Send + Sync>,
 }
 
 impl Capability for AppSearch {
@@ -131,39 +91,17 @@ impl SearchHandler for AppSearch {
 impl AppSearch {
     pub fn new() -> notify::Result<Self> {
         let entries: Arc<RwLock<Vec<AppEntry>>> = Arc::new(RwLock::new(Vec::new()));
-        let entries_for_watcher = Arc::clone(&entries);
 
-        let mut debouncer = new_debouncer(
-            Duration::from_millis(300),
-            None,
-            move |result: DebounceEventResult| {
-                let Ok(events) = result else { return };
-                let should_load = events.iter().any(|e| {
-                    matches!(
-                        e.kind,
-                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-                    ) && e.paths.iter().any(|p| Platform::is_app_file(p))
-                });
-                if !should_load {
-                    return;
-                }
+        let trigger = {
+            let entries = Arc::clone(&entries);
+            move || {
                 let fresh = Platform::load();
-                if let Ok(mut guard) = entries_for_watcher.write() {
+                if let Ok(mut guard) = entries.write() {
                     *guard = fresh;
                 }
-            },
-        )?;
-
-        for path in Platform::watch_paths() {
-            if !path.is_dir() {
-                debug!("skipping missing watch path {path:?}");
-                continue;
             }
-            match debouncer.watch(&path, RecursiveMode::NonRecursive) {
-                Ok(_) => info!("watching {path:?}"),
-                Err(e) => warn!("failed to watch {path:?}: {e}"),
-            }
-        }
+        };
+        let watcher = Platform::watch(trigger)?;
 
         {
             let entries = Arc::clone(&entries);
@@ -179,7 +117,7 @@ impl AppSearch {
 
         Ok(Self {
             entries,
-            _watcher: debouncer,
+            _watcher: watcher,
         })
     }
 }

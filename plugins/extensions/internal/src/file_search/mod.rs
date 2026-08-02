@@ -27,7 +27,7 @@ use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::utils::copy_to_clipboard;
+use crate::clipboard::copy_to_clipboard;
 
 const MIN_QUERY_CHARS: usize = 2;
 const MAX_RESULTS: usize = 30;
@@ -110,7 +110,7 @@ impl Eq for Candidate<'_> {}
 
 pub struct FileSearch {
     entries: Arc<RwLock<Vec<FileEntry>>>,
-    home: PathBuf,
+    roots: Vec<PathBuf>,
     _watcher: Arc<Mutex<FsWatcher>>,
 }
 
@@ -120,7 +120,7 @@ impl Capability for FileSearch {
     }
 
     fn description(&self) -> &str {
-        "Search files in your home directory."
+        "Search files in your personal folders."
     }
 
     fn search_handler(&self) -> Option<&dyn SearchHandler> {
@@ -137,7 +137,7 @@ impl SearchHandler for FileSearch {
         let entries = self.entries.read().unwrap();
         rank(input, &entries)
             .into_iter()
-            .map(|entry| build_item(&self.home, entry))
+            .map(|entry| build_item(&self.roots, entry))
             .collect()
     }
 
@@ -204,9 +204,7 @@ impl ToolHandler for FileSearch {
 
 impl FileSearch {
     pub fn new() -> notify::Result<Self> {
-        let Some(home) = std::env::home_dir() else {
-            return Err(notify::Error::generic("home directory is not set"));
-        };
+        let roots = roots()?;
 
         let entries: Arc<RwLock<Vec<FileEntry>>> = Arc::new(RwLock::new(Vec::new()));
 
@@ -229,18 +227,23 @@ impl FileSearch {
         )?;
         let watcher = Arc::new(Mutex::new(debouncer));
 
-        // initial index in the background; queries see an empty index until done
+        // initial index in the background
         {
             let entries = Arc::clone(&entries);
             let watcher = Arc::clone(&watcher);
-            let home = home.clone();
+            let roots = roots.clone();
             thread::Builder::new()
                 .name("paloma-file-index".into())
                 .spawn(move || {
-                    let found = scan(&home);
-                    info!("file_search: indexed {} entries", found.len());
-                    watch_initial(&home, &found, &watcher);
-                    *entries.write().unwrap() = found;
+                    let mut total = 0;
+                    let count = AtomicUsize::new(0);
+                    for root in &roots {
+                        let scanned = scan(root, &count);
+                        watch_initial(root, &scanned, &watcher);
+                        total += scanned.len();
+                        entries.write().unwrap().extend(scanned);
+                    }
+                    info!("file_search: indexed {total} entries");
                 })
                 .expect("spawn file index thread");
         }
@@ -248,7 +251,7 @@ impl FileSearch {
         {
             let entries = Arc::clone(&entries);
             let watcher = Arc::clone(&watcher);
-            let home = home.clone();
+            let roots = roots.clone();
             thread::Builder::new()
                 .name("paloma-file-watch".into())
                 .spawn(move || {
@@ -260,7 +263,7 @@ impl FileSearch {
                         }
                         dirty.sort();
                         dirty.dedup();
-                        rescan_dirs(&dirty, &home, &entries, &watcher);
+                        rescan_dirs(&dirty, &roots, &entries, &watcher);
                     }
                 })
                 .expect("spawn file watch thread");
@@ -268,10 +271,72 @@ impl FileSearch {
 
         Ok(Self {
             entries,
-            home,
+            roots,
             _watcher: watcher,
         })
     }
+}
+
+#[cfg(not(windows))]
+fn roots() -> notify::Result<Vec<PathBuf>> {
+    match std::env::home_dir() {
+        Some(home) => Ok(vec![home]),
+        None => Err(notify::Error::generic("home directory is not set")),
+    }
+}
+
+#[cfg(windows)]
+fn roots() -> notify::Result<Vec<PathBuf>> {
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Music,
+        FOLDERID_Pictures, FOLDERID_Profile, FOLDERID_Videos,
+    };
+
+    let found = [
+        &FOLDERID_Profile,
+        &FOLDERID_Desktop,
+        &FOLDERID_Documents,
+        &FOLDERID_Downloads,
+        &FOLDERID_Music,
+        &FOLDERID_Pictures,
+        &FOLDERID_Videos,
+    ]
+    .into_iter()
+    .filter_map(known_folder_path)
+    .collect();
+
+    let roots = dedupe_roots(found);
+    if roots.is_empty() {
+        return Err(notify::Error::generic("no user folders resolved"));
+    }
+    Ok(roots)
+}
+
+#[cfg(windows)]
+pub(crate) fn known_folder_path(id: &windows::core::GUID) -> Option<PathBuf> {
+    use windows::Win32::{
+        System::Com::CoTaskMemFree,
+        UI::Shell::{KF_FLAG_DEFAULT, SHGetKnownFolderPath},
+    };
+
+    let pw = unsafe { SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None) }.ok()?;
+    let path = unsafe { pw.to_string() }.ok();
+    unsafe { CoTaskMemFree(Some(pw.as_ptr() as *const std::ffi::c_void)) };
+    path.map(PathBuf::from)
+}
+
+/// Only keep the common share roots
+#[cfg(windows)]
+fn dedupe_roots(roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut kept: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        if kept.iter().any(|k| root.starts_with(k)) {
+            continue;
+        }
+        kept.retain(|k| !k.starts_with(&root));
+        kept.push(root);
+    }
+    kept
 }
 
 fn dirty_dirs(events: &[DebouncedEvent]) -> Vec<PathBuf> {
@@ -308,14 +373,13 @@ fn walker(root: &Path) -> WalkBuilder {
 }
 
 /// Walk `root` in parallel; returns the entries below it and every directory
-/// to watch (including `root` itself).
-fn scan(root: &Path) -> Vec<FileEntry> {
+/// to watch (including `root` itself). `count` carries the [`MAX_ENTRIES`]
+/// budget so multi-root callers share one global cap.
+fn scan(root: &Path, count: &AtomicUsize) -> Vec<FileEntry> {
     let (tx, rx) = mpsc::channel::<FileEntry>();
-    let count = AtomicUsize::new(0);
 
     walker(root).build_parallel().run(|| {
         let tx = tx.clone();
-        let count = &count;
         Box::new(move |result| {
             let Ok(entry) = result else {
                 return WalkState::Continue;
@@ -336,7 +400,7 @@ fn scan(root: &Path) -> Vec<FileEntry> {
 
     let mut found: Vec<FileEntry> = rx.iter().collect();
     found.shrink_to_fit();
-    if found.len() >= MAX_ENTRIES {
+    if count.load(atomic::Ordering::Relaxed) >= MAX_ENTRIES {
         warn!("file_search: entry cap {MAX_ENTRIES} reached; index is partial");
     }
     found
@@ -349,8 +413,8 @@ fn dir_paths(entries: &[FileEntry]) -> impl Iterator<Item = &Path> {
         .map(|entry| entry.path.as_path())
 }
 
-// FSEvents is recursive natively
-#[cfg(target_os = "macos")]
+// FSEvents and ReadDirectoryChangesW are recursive natively
+#[cfg(any(target_os = "macos", windows))]
 fn watch_initial(root: &Path, _entries: &[FileEntry], watcher: &Mutex<FsWatcher>) {
     let watched = watcher
         .lock()
@@ -368,7 +432,7 @@ fn watch_initial(root: &Path, entries: &[FileEntry], watcher: &Mutex<FsWatcher>)
 }
 
 /// The recursive root watch already covers directories created later.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 fn watch_dirs<'a>(_dirs: impl Iterator<Item = &'a Path>, _watcher: &Mutex<FsWatcher>) {}
 
 #[cfg(target_os = "linux")]
@@ -382,7 +446,7 @@ fn watch_dirs<'a>(dirs: impl Iterator<Item = &'a Path>, watcher: &Mutex<FsWatche
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 fn unwatch_dirs(_dirs: &[PathBuf], _watcher: &Mutex<FsWatcher>) {}
 
 #[cfg(target_os = "linux")]
@@ -415,13 +479,26 @@ fn parent_bytes(path: &Path) -> Option<&[u8]> {
     if bytes.len() <= 1 {
         return None;
     }
-    let idx = bytes.iter().rposition(|&b| b == b'/')?;
-    Some(&bytes[..idx.max(1)])
+    let idx = bytes
+        .iter()
+        .rposition(|&b| std::path::is_separator(b as char))?;
+    // keep the separator when the parent is a filesystem root ("/", "D:\")
+    let end = if idx == 0 || (idx == 2 && bytes[1] == b':') {
+        idx + 1
+    } else {
+        idx
+    };
+    Some(&bytes[..end])
 }
 
 /// `bytes` is `prefix` itself or a path below it.
 fn in_subtree(bytes: &[u8], prefix: &[u8]) -> bool {
-    bytes.starts_with(prefix) && (bytes.len() == prefix.len() || bytes[prefix.len()] == b'/')
+    bytes.starts_with(prefix)
+        && (bytes.len() == prefix.len()
+            || prefix
+                .last()
+                .is_some_and(|&b| std::path::is_separator(b as char))
+            || std::path::is_separator(bytes[prefix.len()] as char))
 }
 
 /// Re-list changed directories and diff them against the index. The whole
@@ -429,7 +506,7 @@ fn in_subtree(bytes: &[u8], prefix: &[u8]) -> bool {
 /// are dirty.
 fn rescan_dirs(
     dirty: &[PathBuf],
-    home: &Path,
+    roots: &[PathBuf],
     entries: &RwLock<Vec<FileEntry>>,
     watcher: &Mutex<FsWatcher>,
 ) {
@@ -439,13 +516,13 @@ fn rescan_dirs(
 
     // Single read pass: which dirty dirs are indexed, and their known
     // children. Only indexed directories are rescanned; events can name
-    // ancestors of home (e.g. an event on home itself), and rescanning those
-    // would re-index the whole tree as "new".
+    // ancestors of a root (e.g. an event on the root itself), and rescanning
+    // those would re-index the whole tree as "new".
     let mut states: HashMap<&[u8], DirState> = dirty
         .iter()
         .map(|dir| {
             let state = DirState {
-                indexed: dir.as_path() == home,
+                indexed: roots.iter().any(|root| dir.as_path() == root),
                 known: Vec::new(),
             };
             (path_bytes(dir), state)
@@ -526,7 +603,7 @@ fn rescan_dirs(
 
     for entry in additions {
         if entry.is_dir {
-            let found = scan(&entry.path);
+            let found = scan(&entry.path, &AtomicUsize::new(0));
             watch_dirs(
                 std::iter::once(entry.path.as_path()).chain(dir_paths(&found)),
                 watcher,
@@ -628,7 +705,7 @@ fn top_matches<'a>(pattern: &Pattern, entries: &'a [FileEntry]) -> Vec<Candidate
         .collect()
 }
 
-fn build_item(home: &Path, entry: &FileEntry) -> Item {
+fn build_item(roots: &[PathBuf], entry: &FileEntry) -> Item {
     let path = entry.path.to_string_lossy().into_owned();
 
     let mut actions = vec![Action {
@@ -657,7 +734,7 @@ fn build_item(home: &Path, entry: &FileEntry) -> Item {
 
     Item {
         title: entry.name().into_owned(),
-        subtitle: Some(display_parent(home, &entry.path)),
+        subtitle: Some(display_parent(roots, &entry.path)),
         icon: Some(CapabilityIcon::name(icon_name(entry))),
         actions,
     }
@@ -682,13 +759,19 @@ fn tool_results(query: &str, entries: &[FileEntry]) -> Result<ToolContent, Strin
     Ok(content)
 }
 
+#[cfg(windows)]
+fn display_parent(_roots: &[PathBuf], path: &Path) -> String {
+    path.parent().unwrap_or(path).display().to_string()
+}
+
 /// Parent directory for display, with home abbreviated to `~`.
-fn display_parent(home: &Path, path: &Path) -> String {
+#[cfg(not(windows))]
+fn display_parent(roots: &[PathBuf], path: &Path) -> String {
     let parent = path.parent().unwrap_or(path);
-    match parent.strip_prefix(home) {
-        Ok(rel) if rel.as_os_str().is_empty() => "~".to_string(),
-        Ok(rel) => format!("~/{}", rel.display()),
-        Err(_) => parent.display().to_string(),
+    match roots.first().map(|home| parent.strip_prefix(home)) {
+        Some(Ok(rel)) if rel.as_os_str().is_empty() => "~".to_string(),
+        Some(Ok(rel)) => format!("~/{}", rel.display()),
+        _ => parent.display().to_string(),
     }
 }
 
@@ -796,7 +879,7 @@ mod tests {
         fs::create_dir(root.path().join("docs")).unwrap();
         touch(&root.path().join("docs/report.txt"));
 
-        let found = scan(root.path());
+        let found = scan(root.path(), &AtomicUsize::new(0));
 
         let names: Vec<String> = found.iter().map(|e| e.name().into_owned()).collect();
         assert!(names.iter().any(|n| n == "docs"));
@@ -810,7 +893,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         touch(&root.path().join(".hidden_zzq"));
 
-        let found = scan(root.path());
+        let found = scan(root.path(), &AtomicUsize::new(0));
 
         assert!(found.is_empty());
     }
@@ -821,9 +904,19 @@ mod tests {
         fs::create_dir(root.path().join("node_modules")).unwrap();
         touch(&root.path().join("node_modules/package.json"));
 
-        let found = scan(root.path());
+        let found = scan(root.path(), &AtomicUsize::new(0));
 
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn scan_honors_a_shared_cap_spent_by_earlier_roots() {
+        let root = TempDir::new().unwrap();
+        touch(&root.path().join("a.txt"));
+
+        let count = AtomicUsize::new(MAX_ENTRIES);
+
+        assert!(scan(root.path(), &count).is_empty());
     }
 
     #[test]
@@ -899,7 +992,7 @@ mod tests {
         touch(&root.path().join("new.txt"));
         rescan_dirs(
             &[root.path().to_path_buf()],
-            root.path(),
+            &[root.path().to_path_buf()],
             &entries,
             &watcher,
         );
@@ -921,7 +1014,7 @@ mod tests {
 
         rescan_dirs(
             &[root.path().to_path_buf()],
-            root.path(),
+            &[root.path().to_path_buf()],
             &entries,
             &watcher,
         );
@@ -940,7 +1033,7 @@ mod tests {
 
         rescan_dirs(
             &[root.path().to_path_buf()],
-            root.path(),
+            &[root.path().to_path_buf()],
             &entries,
             &watcher,
         );
@@ -965,7 +1058,7 @@ mod tests {
 
         rescan_dirs(
             &[root.path().join("a"), root.path().join("b")],
-            root.path(),
+            &[root.path().to_path_buf()],
             &entries,
             &watcher,
         );
@@ -986,12 +1079,71 @@ mod tests {
 
         rescan_dirs(
             &[outside.path().to_path_buf()],
-            root.path(),
+            &[root.path().to_path_buf()],
             &entries,
             &watcher,
         );
 
         assert!(entries.read().unwrap().is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parent_bytes_of_a_drive_root_child_matches_the_drive_root_key() {
+        assert_eq!(
+            parent_bytes(Path::new(r"D:\file.txt")),
+            Some(path_bytes(Path::new(r"D:\")))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn in_subtree_accepts_a_drive_root_prefix() {
+        assert!(in_subtree(
+            path_bytes(Path::new(r"D:\sub")),
+            path_bytes(Path::new(r"D:\"))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn roots_resolve_nonempty_and_disjoint() {
+        let roots = roots().unwrap();
+        assert!(!roots.is_empty());
+        for (i, a) in roots.iter().enumerate() {
+            for (j, b) in roots.iter().enumerate() {
+                assert!(i == j || !a.starts_with(b), "{a:?} nested in {b:?}");
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dedupe_drops_roots_nested_in_earlier_ones() {
+        let roots = vec![
+            PathBuf::from("/home/u/Documents"),
+            PathBuf::from("/home/u/Downloads"),
+            PathBuf::from("/home/u"),
+            PathBuf::from("/data/docs"),
+            PathBuf::from("/data/images"),
+        ];
+
+        assert_eq!(
+            dedupe_roots(roots),
+            [
+                PathBuf::from("/home/u"),
+                PathBuf::from("/data/docs"),
+                PathBuf::from("/data/images")
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dedupe_keeps_prefix_siblings_apart() {
+        let roots = vec![PathBuf::from("/home/u"), PathBuf::from("/home/u2")];
+
+        assert_eq!(dedupe_roots(roots.clone()), roots);
     }
 
     #[test]
@@ -1032,7 +1184,10 @@ mod tests {
 
     #[test]
     fn files_offer_open_folder_action() {
-        let item = build_item(Path::new("/home/u"), &entry("/home/u/docs/a.txt", false));
+        let item = build_item(
+            &[PathBuf::from("/home/u")],
+            &entry("/home/u/docs/a.txt", false),
+        );
 
         let labels: Vec<_> = item.actions.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(
@@ -1048,21 +1203,48 @@ mod tests {
 
     #[test]
     fn directories_omit_open_folder_action() {
-        let item = build_item(Path::new("/home/u"), &entry("/home/u/docs", true));
+        let item = build_item(&[PathBuf::from("/home/u")], &entry("/home/u/docs", true));
 
         let labels: Vec<_> = item.actions.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(labels, [OPEN_ACTION_LABEL, COPY_PATH_ACTION_LABEL]);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn display_parent_abbreviates_home() {
-        let home = Path::new("/home/u");
+        let roots = [PathBuf::from("/home/u")];
 
         assert_eq!(
-            display_parent(home, Path::new("/home/u/docs/report.txt")),
+            display_parent(&roots, Path::new("/home/u/docs/report.txt")),
             "~/docs"
         );
-        assert_eq!(display_parent(home, Path::new("/home/u/report.txt")), "~");
+        assert_eq!(display_parent(&roots, Path::new("/home/u/report.txt")), "~");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn display_parent_shows_full_parent_path() {
+        let roots = [PathBuf::from(r"C:\Users\u")];
+
+        assert_eq!(
+            display_parent(&roots, Path::new(r"C:\Users\u\docs\report.txt")),
+            r"C:\Users\u\docs"
+        );
+        assert_eq!(
+            display_parent(&roots, Path::new(r"D:\archive\report.pdf")),
+            r"D:\archive"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn display_parent_falls_back_to_full_path_outside_roots() {
+        let roots = [PathBuf::from("/home/u")];
+
+        assert_eq!(
+            display_parent(&roots, Path::new("/srv/shared/report.txt")),
+            "/srv/shared"
+        );
     }
 
     #[test]

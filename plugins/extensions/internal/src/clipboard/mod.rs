@@ -1,3 +1,10 @@
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(windows)]
+mod windows;
+
 use std::{
     collections::VecDeque,
     sync::{Arc, RwLock},
@@ -10,7 +17,11 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(target_os = "linux")]
+pub use linux::copy_to_clipboard;
 use log::{debug, error};
+#[cfg(target_os = "macos")]
+pub use macos::copy_to_clipboard;
 #[cfg(target_os = "macos")]
 use objc2::rc::autoreleasepool;
 #[cfg(target_os = "macos")]
@@ -19,8 +30,8 @@ use paloma_extension_base::{Capability, SearchHandler};
 use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
 };
-
-use crate::utils::copy_to_clipboard;
+#[cfg(windows)]
+pub use windows::copy_to_clipboard;
 
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
@@ -122,6 +133,11 @@ fn watcher_loop(history: Arc<RwLock<VecDeque<String>>>) {
         }
         thread::sleep(RESPAWN_BACKOFF);
     }
+}
+
+#[cfg(windows)]
+fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
+    windows::watch_clipboard(history)
 }
 
 #[cfg(target_os = "linux")]

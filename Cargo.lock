@@ -2413,6 +2413,7 @@ version = "5.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd8d3b65c44123a56e0133d2cd06ce4361bd3ca99d41198b2f25e3c3db9b8b4a"
 dependencies = [
+ "dunce",
  "is-wsl",
  "libc",
 ]
@@ -2516,6 +2517,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "windows",
+ "windows-sys 0.61.2",
  "wl-clipboard-rs",
 ]
 
@@ -2545,6 +2548,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

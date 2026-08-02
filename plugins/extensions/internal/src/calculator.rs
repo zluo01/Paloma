@@ -7,7 +7,7 @@ use paloma_extension_protocol::v1::{
 };
 use regex::Regex;
 
-use crate::utils::copy_to_clipboard;
+use crate::clipboard::copy_to_clipboard;
 
 const MAX_EXPRESSION_BYTES: usize = 1024;
 const ICON_NAME: &str = "accessories-calculator";
