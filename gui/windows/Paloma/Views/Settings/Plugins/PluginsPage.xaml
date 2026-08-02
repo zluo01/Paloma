@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Page
+    x:Class="Paloma.Views.Settings.Plugins.PluginsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:viewmodels="using:Paloma.ViewModels.Settings"
+    Loaded="OnLoaded"
+    Unloaded="OnUnloaded"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <DataTemplate x:Key="PluginHeaderTemplate" x:DataType="viewmodels:PluginViewModel">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,4,0" Spacing="2">
+                    <TextBlock Style="{ThemeResource BaseTextBlockStyle}" Text="{x:Bind Name}" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Description}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Error}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind Error, Converter={StaticResource EmptyToCollapsed}}" />
+                </StackPanel>
+                <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind HealthLabel}"
+                    Visibility="{x:Bind HealthLabel, Converter={StaticResource EmptyToCollapsed}}" />
+                <Button
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Edit"
+                    Click="OnEditPlugin"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Edit"
+                    Visibility="{x:Bind CanManage}">
+                    <FontIcon FontSize="13" Glyph="&#xE70F;" />
+                </Button>
+                <Button
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Remove"
+                    Click="OnRemovePlugin"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Remove"
+                    Visibility="{x:Bind CanManage}">
+                    <FontIcon FontSize="13" Glyph="&#xE74D;" />
+                </Button>
+                <ToggleSwitch
+                    Grid.Column="4"
+                    MinWidth="0"
+                    VerticalAlignment="Center"
+                    IsOn="{x:Bind Enabled, Mode=TwoWay}"
+                    OffContent=""
+                    OnContent=""
+                    Visibility="{x:Bind CanManage}" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ProviderTemplate" x:DataType="viewmodels:PluginViewModel">
+            <Grid
+                Padding="16,12"
+                Margin="0,0,0,8"
+                Style="{StaticResource SettingsCard}">
+                <ContentPresenter Content="{x:Bind}" ContentTemplate="{StaticResource PluginHeaderTemplate}" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CapabilityTemplate" x:DataType="viewmodels:CapabilityToggleViewModel">
+            <Grid Padding="0,8" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{x:Bind Id}" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Description}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind Description, Converter={StaticResource EmptyToCollapsed}}" />
+                </StackPanel>
+                <ToggleSwitch
+                    Grid.Column="1"
+                    MinWidth="0"
+                    IsOn="{x:Bind Enabled, Mode=TwoWay}"
+                    OffContent=""
+                    OnContent="" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ExtensionTemplate" x:DataType="viewmodels:ExtensionViewModel">
+            <Expander
+                Margin="0,0,0,8"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <ContentPresenter
+                        Padding="0,12"
+                        Content="{x:Bind}"
+                        ContentTemplate="{StaticResource PluginHeaderTemplate}" />
+                </Expander.Header>
+                <StackPanel Spacing="8">
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="No capabilities available."
+                        Visibility="{x:Bind HasCapabilities, Converter={StaticResource InverseBoolToVisibility}}" />
+                    <TextBlock
+                        AutomationProperties.HeadingLevel="Level3"
+                        Style="{ThemeResource BodyStrongTextBlockStyle}"
+                        Text="Search"
+                        Visibility="{x:Bind HasSearchCapabilities}" />
+                    <Border
+                        Padding="12,4"
+                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        CornerRadius="{ThemeResource OverlayCornerRadius}"
+                        Visibility="{x:Bind HasSearchCapabilities}">
+                        <ItemsControl
+                            IsEnabled="{x:Bind Enabled, Mode=OneWay}"
+                            ItemTemplate="{StaticResource CapabilityTemplate}"
+                            ItemsSource="{x:Bind SearchCapabilities}" />
+                    </Border>
+                    <TextBlock
+                        Margin="0,8,0,0"
+                        AutomationProperties.HeadingLevel="Level3"
+                        Style="{ThemeResource BodyStrongTextBlockStyle}"
+                        Text="Tools"
+                        Visibility="{x:Bind HasToolCapabilities}" />
+                    <Border
+                        Padding="12,4"
+                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        CornerRadius="{ThemeResource OverlayCornerRadius}"
+                        Visibility="{x:Bind HasToolCapabilities}">
+                        <ItemsControl
+                            IsEnabled="{x:Bind Enabled, Mode=OneWay}"
+                            ItemTemplate="{StaticResource CapabilityTemplate}"
+                            ItemsSource="{x:Bind ToolCapabilities}" />
+                    </Border>
+                </StackPanel>
+            </Expander>
+        </DataTemplate>
+
+        <DataTemplate x:Key="McpTemplate" x:DataType="viewmodels:McpViewModel">
+            <Expander
+                Margin="0,0,0,8"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <ContentPresenter
+                        Padding="0,12"
+                        Content="{x:Bind}"
+                        ContentTemplate="{StaticResource PluginHeaderTemplate}" />
+                </Expander.Header>
+                <StackPanel Spacing="8">
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="No tools available."
+                        Visibility="{x:Bind HasTools, Converter={StaticResource InverseBoolToVisibility}}" />
+                    <ItemsControl
+                        IsEnabled="{x:Bind Enabled, Mode=OneWay}"
+                        ItemTemplate="{StaticResource CapabilityTemplate}"
+                        ItemsSource="{x:Bind Tools}"
+                        Visibility="{x:Bind HasTools}" />
+                </StackPanel>
+            </Expander>
+        </DataTemplate>
+    </Page.Resources>
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="720" Spacing="16">
+            <TextBlock
+                AutomationProperties.HeadingLevel="Level1"
+                Style="{ThemeResource TitleTextBlockStyle}"
+                Text="Plugins" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind ViewModel.HasStatus, Mode=OneWay}"
+                Message="{x:Bind ViewModel.Status, Mode=OneWay}"
+                Severity="Error" />
+
+            <Grid Style="{StaticResource SettingsSectionHeaderPanel}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    VerticalAlignment="Center"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{ThemeResource BodyStrongTextBlockStyle}"
+                    Text="Extensions" />
+                <Button
+                    Grid.Column="1"
+                    Width="28"
+                    Height="28"
+                    AutomationProperties.Name="Add extension"
+                    Click="OnAddExtension"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Add an extension">
+                    <FontIcon FontSize="12" Glyph="&#xE710;" />
+                </Button>
+            </Grid>
+            <ItemsControl ItemTemplate="{StaticResource ExtensionTemplate}"
+                          ItemsSource="{x:Bind ViewModel.Extensions, Mode=OneWay}" />
+
+            <Grid Style="{StaticResource SettingsSectionHeaderPanel}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    VerticalAlignment="Center"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{ThemeResource BodyStrongTextBlockStyle}"
+                    Text="Providers" />
+                <Button
+                    Grid.Column="1"
+                    Width="28"
+                    Height="28"
+                    AutomationProperties.Name="Add provider"
+                    Click="OnAddProvider"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Add a provider">
+                    <FontIcon FontSize="12" Glyph="&#xE710;" />
+                </Button>
+            </Grid>
+            <ItemsControl ItemTemplate="{StaticResource ProviderTemplate}"
+                          ItemsSource="{x:Bind ViewModel.Providers, Mode=OneWay}" />
+
+            <Grid Style="{StaticResource SettingsSectionHeaderPanel}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    VerticalAlignment="Center"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{ThemeResource BodyStrongTextBlockStyle}"
+                    Text="MCP Servers" />
+                <Button
+                    Grid.Column="1"
+                    Width="28"
+                    Height="28"
+                    AutomationProperties.Name="Add MCP server"
+                    Click="OnAddMcp"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Add an MCP server">
+                    <FontIcon FontSize="12" Glyph="&#xE710;" />
+                </Button>
+            </Grid>
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="No MCP servers configured."
+                Visibility="{x:Bind ViewModel.HasMcps, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
+            <ItemsControl ItemTemplate="{StaticResource McpTemplate}"
+                          ItemsSource="{x:Bind ViewModel.Mcps, Mode=OneWay}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

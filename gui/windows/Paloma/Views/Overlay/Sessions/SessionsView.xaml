@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+    x:Class="Paloma.Views.Overlay.Sessions.SessionsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:extensions="using:Paloma.Extensions"
+    xmlns:local="using:Paloma.Views.Overlay.Sessions"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:shared="using:Paloma.Views.Overlay.Shared"
+    xmlns:viewmodels="using:Paloma.ViewModels.Overlay"
+    mc:Ignorable="d">
+
+    <ScrollViewer
+        x:Name="SessionsScroller"
+        Padding="8,6,8,6"
+        VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <StackPanel
+                Padding="0,26,0,30"
+                HorizontalAlignment="Center"
+                Spacing="8"
+                Visibility="{x:Bind ViewModel.Status, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    FontSize="20"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    Glyph="&#xE81C;" />
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.Status, Mode=OneWay}" />
+            </StackPanel>
+            <ItemsControl x:Name="SessionsItems" ItemsSource="{x:Bind ViewModel.Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="viewmodels:SessionRow">
+                        <shared:RowItem
+                            Hovered="{x:Bind IsHovered, Mode=TwoWay}"
+                            Selected="{x:Bind IsSelected, Mode=OneWay}"
+                            Tapped="OnSessionTapped">
+                            <Grid Padding="12,7" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon
+                                    Width="24"
+                                    VerticalAlignment="Center"
+                                    FontSize="16"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Glyph="&#xE8BD;" />
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="1">
+                                    <TextBlock
+                                        Text="{x:Bind Item.Title}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{ThemeResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind extensions:Display.RelativeTime(Item.LastUpdate)}" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    Style="{ThemeResource CaptionTextBlockStyle}"
+                                    Text="confirm delete"
+                                    Visibility="{x:Bind PendingDeletion, Mode=OneWay}" />
+                                <Button
+                                    Grid.Column="3"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Delete session"
+                                    Click="OnSessionDeleteClick"
+                                    Style="{StaticResource IconButton}"
+                                    Tapped="OnSessionDeleteTapped"
+                                    ToolTipService.ToolTip="Delete"
+                                    Visibility="{x:Bind local:SessionsView.WhenAny(IsHovered, PendingDeletion), Mode=OneWay}">
+                                    <FontIcon
+                                        FontSize="13"
+                                        Foreground="{x:Bind local:SessionsView.DeleteTint(PendingDeletion), Mode=OneWay}"
+                                        Glyph="&#xE74D;" />
+                                </Button>
+                            </Grid>
+                        </shared:RowItem>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

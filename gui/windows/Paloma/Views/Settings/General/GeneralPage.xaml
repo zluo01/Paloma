@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Page
+    x:Class="Paloma.Views.Settings.General.GeneralPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="720" Spacing="16">
+            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="General" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.Error, Mode=OneWay}"
+                Severity="Error" />
+            <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Startup" />
+            <Grid
+                Padding="16,12"
+                ColumnSpacing="12"
+                Style="{StaticResource SettingsCard}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="Launch at login" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Start Paloma automatically when you sign in" />
+                </StackPanel>
+                <ToggleSwitch
+                    Grid.Column="1"
+                    MinWidth="0"
+                    VerticalAlignment="Center"
+                    IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}"
+                    OffContent=""
+                    OnContent="" />
+            </Grid>
+
+            <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Shortcut" />
+            <Grid
+                Padding="16,12"
+                ColumnSpacing="12"
+                Style="{StaticResource SettingsCard}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="Toggle Paloma" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Summon or dismiss the launcher from anywhere" />
+                </StackPanel>
+                <Border
+                    Grid.Column="1"
+                    Padding="8,3"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{ThemeResource ControlCornerRadius}">
+                    <TextBlock
+                        FontFamily="{StaticResource PalomaMonoFontFamily}"
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind ViewModel.ShortcutLabel, Mode=OneWay}" />
+                </Border>
+                <ToggleButton
+                    x:Name="RecordButton"
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Checked="OnRecordChecked"
+                    Content="Record"
+                    LostFocus="OnRecordLostFocus"
+                    PreviewKeyDown="OnRecordKeyDown"
+                    Unchecked="OnRecordUnchecked" />
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

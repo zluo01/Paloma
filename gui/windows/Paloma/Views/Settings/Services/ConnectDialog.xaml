@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentDialog
+    x:Class="Paloma.Views.Settings.Services.ConnectDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="{x:Bind ViewModel.Title}"
+    CloseButtonClick="OnCloseButtonClick"
+    CloseButtonText="{x:Bind ViewModel.CloseLabel, Mode=OneWay}"
+    DefaultButton="Primary"
+    IsPrimaryButtonEnabled="{x:Bind ViewModel.HasInput, Mode=OneWay}"
+    Opened="OnOpened"
+    PrimaryButtonClick="OnPrimaryButtonClick"
+    PrimaryButtonText="{x:Bind ViewModel.PrimaryLabel, Mode=OneWay}"
+    mc:Ignorable="d">
+
+    <StackPanel MinWidth="400" Spacing="12">
+        <InfoBar
+            IsClosable="False"
+            IsOpen="{x:Bind ViewModel.IsFailed, Mode=OneWay}"
+            Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+            Severity="Error"
+            Title="Connection failed" />
+        <TextBlock
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="{x:Bind ViewModel.Description}"
+            TextWrapping="Wrap" />
+
+        <StackPanel
+            Orientation="Horizontal"
+            Spacing="8"
+            Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay}">
+            <ProgressRing
+                Width="18"
+                Height="18"
+                IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" />
+            <TextBlock
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Preparing connection…" />
+        </StackPanel>
+
+        <StackPanel
+            Spacing="10"
+            Visibility="{x:Bind ViewModel.IsChallenge, Mode=OneWay}">
+            <TextBlock Text="Enter this code in your browser" />
+            <Border
+                Padding="16,12"
+                HorizontalAlignment="Stretch"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                CornerRadius="{ThemeResource OverlayCornerRadius}">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    CharacterSpacing="120"
+                    FontFamily="{StaticResource PalomaMonoFontFamily}"
+                    FontSize="22"
+                    FontWeight="SemiBold"
+                    IsTextSelectionEnabled="True"
+                    Text="{x:Bind ViewModel.UserCode, Mode=OneWay}" />
+            </Border>
+            <HyperlinkButton
+                Padding="0"
+                Content="Open in browser"
+                FontSize="12"
+                NavigateUri="{x:Bind ViewModel.VerificationUri, Mode=OneWay}" />
+            <StackPanel
+                Margin="0,2,0,0"
+                Orientation="Horizontal"
+                Spacing="8">
+                <ProgressRing
+                    Width="18"
+                    Height="18"
+                    IsActive="{x:Bind ViewModel.IsChallenge, Mode=OneWay}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Waiting for approval…" />
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel
+            Spacing="8"
+            Visibility="{x:Bind ViewModel.IsManual, Mode=OneWay}">
+            <PasswordBox Header="API key" Password="{x:Bind ViewModel.Input, Mode=TwoWay}" />
+            <HyperlinkButton
+                Padding="0"
+                Content="Get an API key"
+                FontSize="12"
+                NavigateUri="{x:Bind ViewModel.InstructionsUri, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasInstructions, Mode=OneWay}" />
+        </StackPanel>
+
+        <StackPanel
+            Spacing="8"
+            Visibility="{x:Bind ViewModel.IsOauth, Mode=OneWay}">
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Finish the sign-in in your browser, then paste the returned code or callback URL."
+                TextWrapping="Wrap" />
+            <TextBox
+                Header="Authorization code"
+                Text="{x:Bind ViewModel.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <HyperlinkButton
+                Padding="0"
+                Content="Open the authorization page"
+                FontSize="12"
+                NavigateUri="{x:Bind ViewModel.AuthorizationUri, Mode=OneWay}" />
+        </StackPanel>
+
+        <StackPanel
+            HorizontalAlignment="Center"
+            Orientation="Horizontal"
+            Spacing="8"
+            Visibility="{x:Bind ViewModel.IsSuccess, Mode=OneWay}">
+            <FontIcon Foreground="{ThemeResource SystemFillColorSuccessBrush}" Glyph="&#xE73E;" />
+            <TextBlock Text="Connected" />
+        </StackPanel>
+
+    </StackPanel>
+</ContentDialog>

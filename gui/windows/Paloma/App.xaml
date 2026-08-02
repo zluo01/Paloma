@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Application
+    x:Class="Paloma.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:extensions="using:Paloma.Extensions">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <CornerRadius x:Key="RowCornerRadius">6</CornerRadius>
+            <FontFamily x:Key="PalomaMonoFontFamily">Cascadia Mono,Consolas</FontFamily>
+            <!--  Settings idiom: the trailing -8 pulls the header to within
+                  8px of its card against the pages' 16px stack spacing; the
+                  1px left inset aligns text with the card border.  -->
+            <Style
+                x:Key="SettingsSectionHeader"
+                BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+                TargetType="TextBlock">
+                <Setter Property="Margin" Value="1,8,0,-8" />
+            </Style>
+            <Style x:Key="SettingsSectionHeaderPanel" TargetType="Grid">
+                <Setter Property="Margin" Value="1,8,0,-8" />
+            </Style>
+            <Style x:Key="SettingsCard" TargetType="Grid">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+            </Style>
+            <Style x:Key="IconButton" TargetType="Button">
+                <Setter Property="Width" Value="30" />
+                <Setter Property="Height" Value="30" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+            </Style>
+            <extensions:EmptyStringToCollapsedConverter x:Key="EmptyToCollapsed" />
+            <extensions:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+            <extensions:HealthToLabelConverter x:Key="HealthToLabel" />
+            <extensions:IconToIconElementConverter x:Key="IconToIconElement" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

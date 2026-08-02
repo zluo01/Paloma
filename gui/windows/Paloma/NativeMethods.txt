@@ -1,0 +1,68 @@
+// App.xaml.cs
+MessageBox
+
+// Core/Job.cs
+CreateJobObject
+SetInformationJobObject
+AssignProcessToJobObject
+JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+
+// Views/Overlay/OverlayWindow.xaml.cs
+DWMNCRENDERINGPOLICY
+DWM_WINDOW_CORNER_PREFERENCE
+EnumThreadWindows
+IsWindowVisible
+SetWindowsHookEx
+UnhookWindowsHookEx
+CallNextHookEx
+GetWindowRect
+MSLLHOOKSTRUCT
+WM_ACTIVATE
+WM_LBUTTONDOWN
+WM_RBUTTONDOWN
+WM_MBUTTONDOWN
+WA_INACTIVE
+SendInput
+GetWindowLongPtr
+SetWindowLongPtr
+SetWindowPos
+WINDOW_STYLE
+SetForegroundWindow
+GetForegroundWindow
+GetWindowThreadProcessId
+GetCurrentThreadId
+AttachThreadInput
+BringWindowToTop
+
+// Models/KeyBinding.cs
+MapVirtualKey
+GetKeyNameText
+
+// Settings/GlobalHotkey.cs
+RegisterHotKey
+UnregisterHotKey
+SetWindowSubclass
+RemoveWindowSubclass
+DefSubclassProc
+WM_HOTKEY
+CreateWindowEx
+DestroyWindow
+HWND_MESSAGE
+
+// Helpers/Keyboard.cs
+GetAsyncKeyState
+
+// Helpers/WindowFrame.cs
+DwmSetWindowAttribute
+
+// Helpers/WindowPlacement.cs
+GetCursorPos
+GetDpiForMonitor
+
+// Helpers/CapabilityIcons.cs
+GetObject
+BITMAP
+GetDIBits
+DeleteObject
+GetDC
+ReleaseDC

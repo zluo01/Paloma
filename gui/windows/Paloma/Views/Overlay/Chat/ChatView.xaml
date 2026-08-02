@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+    x:Class="Paloma.Views.Overlay.Chat.ChatView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:extensions="using:Paloma.Extensions"
+    xmlns:local="using:Paloma.Views.Overlay.Chat"
+    xmlns:viewmodels="using:Paloma.ViewModels.Overlay">
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="UserSection" x:DataType="viewmodels:UserSectionViewModel">
+            <Border
+                Margin="0,6"
+                Padding="12,8"
+                CanBeScrollAnchor="True"
+                HorizontalAlignment="Right"
+                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{ThemeResource OverlayCornerRadius}">
+                <TextBlock
+                    MaxWidth="440"
+                    IsTextSelectionEnabled="True"
+                    Text="{x:Bind Text}"
+                    TextWrapping="Wrap" />
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="AssistantSection" x:DataType="viewmodels:AssistantSectionViewModel">
+            <StackPanel
+                Margin="0,6"
+                HorizontalAlignment="Stretch"
+                CanBeScrollAnchor="True"
+                Spacing="3">
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind extensions:Display.Backend(Backend)}" />
+                <local:MarkdownView Text="{x:Bind Text, Mode=OneWay}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ReasoningSection" x:DataType="viewmodels:ReasoningSectionViewModel">
+            <StackPanel
+                Margin="0,6"
+                HorizontalAlignment="Left"
+                CanBeScrollAnchor="True">
+                <HyperlinkButton
+                    Padding="4,3"
+                    Margin="-4,0,0,0"
+                    Click="OnReasoningToggle"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon
+                            VerticalAlignment="Center"
+                            FontSize="10"
+                            Glyph="{x:Bind local:ChatView.ChevronGlyph(IsExpanded), Mode=OneWay}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Thinking" />
+                    </StackPanel>
+                </HyperlinkButton>
+                <TextBlock
+                    Margin="18,2,0,0"
+                    FontSize="12"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    IsTextSelectionEnabled="True"
+                    Text="{x:Bind Text, Mode=OneWay}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind IsExpanded, Mode=OneWay}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ToolSection" x:DataType="viewmodels:ToolSectionViewModel">
+            <Border
+                Margin="0,6"
+                Padding="12,10"
+                CanBeScrollAnchor="True"
+                HorizontalAlignment="Stretch"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{ThemeResource OverlayCornerRadius}">
+                <StackPanel Spacing="6">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Glyph="&#xE756;" />
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            FontFamily="{StaticResource PalomaMonoFontFamily}"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind ToolName}" />
+                        <TextBlock
+                            Grid.Column="3"
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            Foreground="{x:Bind local:ChatView.ResolutionBrush(Resolution), Mode=OneWay}"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="{x:Bind local:ChatView.ResolutionLabel(Resolution), Mode=OneWay}"
+                            Visibility="{x:Bind local:ChatView.WhenResolved(Resolution), Mode=OneWay}" />
+                    </Grid>
+                    <TextBlock
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        MaxLines="2"
+                        Tapped="OnToolDescriptionTapped"
+                        Text="{x:Bind ToolDescription}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap"
+                        ToolTipService.ToolTip="Show more or less"
+                        Visibility="{x:Bind ToolDescription, Converter={StaticResource EmptyToCollapsed}}" />
+                    <TextBlock
+                        FontFamily="{StaticResource PalomaMonoFontFamily}"
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        IsTextSelectionEnabled="True"
+                        MaxLines="6"
+                        Tapped="OnToolArgsTapped"
+                        Text="{x:Bind Arguments}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind Arguments, Converter={StaticResource EmptyToCollapsed}}" />
+                    <StackPanel
+                        Margin="0,4,0,0"
+                        Spacing="8"
+                        Visibility="{x:Bind Unresolved, Mode=OneWay}">
+                        <ItemsControl IsEnabled="{x:Bind CanDecide, Mode=OneWay}" ItemsSource="{x:Bind AllowDecisions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Spacing="4" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="viewmodels:DecisionViewModel">
+                                    <Grid HorizontalAlignment="Left">
+                                        <Button
+                                            Padding="10,4"
+                                            BorderBrush="{ThemeResource ButtonBorderBrush}"
+                                            Click="OnDecisionClick"
+                                            FontSize="12"
+                                            ToolTipService.ToolTip="{x:Bind extensions:Display.Decision(Decision)}">
+                                            <TextBlock
+                                                MaxWidth="520"
+                                                Text="{x:Bind extensions:Display.Decision(Decision)}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </Button>
+                                        <!--  Accent outline marks the keyboard-cursored decision.  -->
+                                        <Border
+                                            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                                            IsHitTestVisible="False"
+                                            Visibility="{x:Bind IsSelected, Mode=OneWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Border
+                            Height="1"
+                            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            Visibility="{x:Bind HasTerminalDecisions}" />
+                        <ItemsControl IsEnabled="{x:Bind CanDecide, Mode=OneWay}"
+                                      ItemsSource="{x:Bind TerminalDecisions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="6" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="viewmodels:DecisionViewModel">
+                                    <Grid>
+                                        <Button
+                                            Padding="10,4"
+                                            BorderBrush="{ThemeResource ButtonBorderBrush}"
+                                            Click="OnDecisionClick"
+                                            Content="{x:Bind extensions:Display.Decision(Decision)}"
+                                            FontSize="12"
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                        <Border
+                                            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                                            IsHitTestVisible="False"
+                                            Visibility="{x:Bind IsSelected, Mode=OneWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <local:ChatSectionTemplateSelector
+            x:Key="SectionSelector"
+            Assistant="{StaticResource AssistantSection}"
+            Reasoning="{StaticResource ReasoningSection}"
+            Tool="{StaticResource ToolSection}"
+            User="{StaticResource UserSection}" />
+    </UserControl.Resources>
+
+    <ScrollViewer
+        x:Name="SectionsScroller"
+        Padding="16,10,22,10"
+        VerticalAnchorRatio="1.0"
+        VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <ItemsControl
+                x:Name="SectionsItems"
+                ItemTemplateSelector="{StaticResource SectionSelector}"
+                ItemsSource="{x:Bind ViewModel.Sections}"
+                SizeChanged="OnSectionsSizeChanged" />
+            <StackPanel Spacing="4">
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="{x:Bind ViewModel.Streaming, Mode=OneWay}">
+                    <ProgressRing
+                        Width="14"
+                        Height="14"
+                        IsActive="{x:Bind ViewModel.Streaming, Mode=OneWay}" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Thinking…" />
+                </StackPanel>
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="Cancelled"
+                    Visibility="{x:Bind local:ChatView.WhenCancelled(ViewModel.Status), Mode=OneWay}" />
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind ViewModel.StatusMessage, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

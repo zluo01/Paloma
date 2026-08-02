@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ContentDialog
+    x:Class="Paloma.Views.Settings.Plugins.PluginDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="{x:Bind ViewModel.Title}"
+    CloseButtonText="Cancel"
+    Closing="OnClosing"
+    DefaultButton="Primary"
+    IsPrimaryButtonEnabled="{x:Bind ViewModel.CanSubmit, Mode=OneWay}"
+    PrimaryButtonClick="OnPrimaryButtonClick"
+    PrimaryButtonText="{x:Bind ViewModel.PrimaryLabel}"
+    mc:Ignorable="d">
+
+    <ContentDialog.Resources>
+        <DataTemplate x:Key="FieldHeader">
+            <TextBlock FontFamily="{ThemeResource ContentControlThemeFontFamily}" Text="{Binding}" />
+        </DataTemplate>
+    </ContentDialog.Resources>
+
+    <Grid MinWidth="400">
+        <StackPanel Spacing="12"
+                    Visibility="{x:Bind ViewModel.Authorizing, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind ViewModel.HasSubmitError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.SubmitError, Mode=OneWay}"
+                Severity="Error"
+                Title="{x:Bind ViewModel.SubmitErrorTitle}" />
+            <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.IsMcp}">
+                <TextBox
+                    Header="Name"
+                    IsEnabled="{x:Bind ViewModel.NameEditable}"
+                    PlaceholderText="my-server"
+                    Text="{x:Bind ViewModel.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.NameError, Mode=OneWay}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind ViewModel.NameError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+            </StackPanel>
+
+            <RadioButtons
+                Header="Type"
+                MaxColumns="2"
+                SelectedIndex="{x:Bind ViewModel.TypeIndex, Mode=TwoWay}"
+                Visibility="{x:Bind ViewModel.IsMcp}">
+                <RadioButton Content="Local command" />
+                <RadioButton Content="Remote server" />
+            </RadioButtons>
+
+            <TextBox
+                FontFamily="{StaticResource PalomaMonoFontFamily}"
+                Header="Command"
+                HeaderTemplate="{StaticResource FieldHeader}"
+                PlaceholderText="{x:Bind ViewModel.CommandPlaceholder}"
+                Text="{x:Bind ViewModel.Command, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                Visibility="{x:Bind ViewModel.IsLocal, Mode=OneWay}" />
+
+            <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.IsLocal, Mode=OneWay}">
+                <TextBox
+                    FontFamily="{StaticResource PalomaMonoFontFamily}"
+                    Header="Arguments"
+                    HeaderTemplate="{StaticResource FieldHeader}"
+                    PlaceholderText="[&quot;--flag&quot;, &quot;value&quot;]"
+                    Text="{x:Bind ViewModel.Args, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.ArgsError, Mode=OneWay}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind ViewModel.ArgsError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+            </StackPanel>
+
+            <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.IsRemote, Mode=OneWay}">
+                <TextBox
+                    Header="URL"
+                    PlaceholderText="https://example.com/mcp"
+                    Text="{x:Bind ViewModel.Url, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.UrlError, Mode=OneWay}"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind ViewModel.UrlError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+                <CheckBox Content="Requires authentication" IsChecked="{x:Bind ViewModel.RequiresAuth, Mode=TwoWay}" />
+            </StackPanel>
+
+            <Expander
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Header="Advanced"
+                IsExpanded="{x:Bind ViewModel.AdvancedExpanded, Mode=TwoWay}">
+                <StackPanel Spacing="12">
+                    <NumberBox
+                        Header="Timeout (seconds)"
+                        Maximum="3600"
+                        Minimum="1"
+                        SpinButtonPlacementMode="Compact"
+                        Value="{x:Bind ViewModel.Timeout, Mode=TwoWay}"
+                        Visibility="{x:Bind ViewModel.IsMcp}" />
+                    <StackPanel Spacing="4">
+                        <TextBox
+                            FontFamily="{StaticResource PalomaMonoFontFamily}"
+                            Header="Environment"
+                            HeaderTemplate="{StaticResource FieldHeader}"
+                            Text="{x:Bind ViewModel.Env, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                            <TextBox.PlaceholderText>{"KEY": "value"}</TextBox.PlaceholderText>
+                        </TextBox>
+                        <TextBlock
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.EnvError, Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind ViewModel.EnvError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+
+        <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.Authorizing, Mode=OneWay}">
+            <TextBlock Style="{ThemeResource BodyStrongTextBlockStyle}" Text="Waiting for authorization" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Approve the connection in your browser to finish adding this server."
+                TextWrapping="Wrap" />
+            <HyperlinkButton
+                Padding="0"
+                Content="Open the authorization page"
+                NavigateUri="{x:Bind ViewModel.AuthUri, Mode=OneWay}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ProgressRing
+                    Width="16"
+                    Height="16"
+                    IsActive="{x:Bind ViewModel.Authorizing, Mode=OneWay}" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Listening for the response…" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</ContentDialog>

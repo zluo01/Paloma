@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Page
+    x:Class="Paloma.Views.Settings.Services.ServicesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:binding="using:Paloma.Binding.V1"
+    xmlns:extensions="using:Paloma.Extensions"
+    xmlns:viewmodels="using:Paloma.ViewModels.Settings"
+    Loaded="OnLoaded"
+    Unloaded="OnUnloaded"
+    mc:Ignorable="d">
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="720" Spacing="16">
+            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="Services" />
+
+            <StackPanel
+                Margin="0,8,0,0"
+                Orientation="Horizontal"
+                Spacing="8"
+                Visibility="{x:Bind ViewModel.Loading, Mode=OneWay}">
+                <ProgressRing
+                    Width="18"
+                    Height="18"
+                    IsActive="{x:Bind ViewModel.Loading, Mode=OneWay}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Loading services…" />
+            </StackPanel>
+
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.Error, Mode=OneWay}"
+                Severity="Error" />
+
+            <TextBlock
+                Style="{StaticResource SettingsSectionHeader}"
+                Text="Connected"
+                Visibility="{x:Bind ViewModel.Ready, Mode=OneWay}" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="No services connected."
+                Visibility="{x:Bind ViewModel.ShowNoConnected, Mode=OneWay}" />
+            <ItemsControl ItemsSource="{x:Bind ViewModel.Connected, Mode=OneWay}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="viewmodels:ConnectorViewModel">
+                        <Grid
+                            Padding="16,12"
+                            Margin="0,0,0,8"
+                            RowSpacing="12"
+                            Style="{StaticResource SettingsCard}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter
+                                    Grid.Column="0"
+                                    Width="28"
+                                    Height="28"
+                                    VerticalAlignment="Center"
+                                    Content="{x:Bind Icon, Converter={StaticResource IconToIconElement}}" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock
+                                        Style="{ThemeResource BaseTextBlockStyle}"
+                                        Text="{x:Bind BackendLabel}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{ThemeResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Description}" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Grid.Row="1" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox
+                                    Grid.Column="0"
+                                    MinWidth="200"
+                                    DisplayMemberPath="Name"
+                                    ItemsSource="{x:Bind Models}"
+                                    SelectedItem="{x:Bind SelectedModel, Mode=TwoWay}"
+                                    Visibility="{x:Bind ShowPickers}" />
+                                <ComboBox
+                                    Grid.Column="1"
+                                    MinWidth="110"
+                                    ItemsSource="{x:Bind Efforts, Mode=OneWay}"
+                                    SelectedItem="{x:Bind SelectedEffort, Mode=TwoWay}"
+                                    Visibility="{x:Bind ShowPickers}" />
+                                <TextBlock
+                                    Grid.Column="0"
+                                    Grid.ColumnSpan="3"
+                                    VerticalAlignment="Center"
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    Style="{ThemeResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind Error}"
+                                    TextWrapping="Wrap"
+                                    Visibility="{x:Bind Error, Converter={StaticResource EmptyToCollapsed}}" />
+                                <Button
+                                    Grid.Column="3"
+                                    Command="{x:Bind DisconnectCommand}"
+                                    Content="Disconnect" />
+                            </Grid>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock
+                Style="{StaticResource SettingsSectionHeader}"
+                Text="Available"
+                Visibility="{x:Bind ViewModel.Ready, Mode=OneWay}" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="All supported services are connected."
+                Visibility="{x:Bind ViewModel.ShowNoAvailable, Mode=OneWay}" />
+            <ItemsControl ItemsSource="{x:Bind ViewModel.Available, Mode=OneWay}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="binding:Connector">
+                        <Grid
+                            Padding="16,12"
+                            Margin="0,0,0,8"
+                            ColumnSpacing="12"
+                            Style="{StaticResource SettingsCard}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter
+                                    Grid.Column="0"
+                                    Width="28"
+                                    Height="28"
+                                    VerticalAlignment="Center"
+                                    Content="{x:Bind Icon, Converter={StaticResource IconToIconElement}}" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Style="{ThemeResource BaseTextBlockStyle}"
+                                               Text="{x:Bind extensions:Display.Backend(Id)}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{ThemeResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Description}" />
+                                </StackPanel>
+                            </Grid>
+                            <Button
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Click="OnConnectClick"
+                                Content="Connect" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
