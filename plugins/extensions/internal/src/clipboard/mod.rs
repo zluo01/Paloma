@@ -11,21 +11,12 @@ use std::{
     thread,
     time::Duration,
 };
-#[cfg(target_os = "linux")]
-use std::{
-    io::{BufRead, BufReader},
-    process::{Command, Stdio},
-};
 
 #[cfg(target_os = "linux")]
 pub use linux::copy_to_clipboard;
 use log::{debug, error};
 #[cfg(target_os = "macos")]
 pub use macos::copy_to_clipboard;
-#[cfg(target_os = "macos")]
-use objc2::rc::autoreleasepool;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 use paloma_extension_base::{Capability, SearchHandler};
 use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Hide, Item, run_action_response::Behavior,
@@ -33,18 +24,15 @@ use paloma_extension_protocol::v1::{
 #[cfg(windows)]
 pub use windows::copy_to_clipboard;
 
+#[cfg(target_os = "linux")]
+use crate::clipboard::linux::watch_clipboard;
+#[cfg(target_os = "macos")]
+use crate::clipboard::macos::watch_clipboard;
+#[cfg(windows)]
+use crate::clipboard::windows::watch_clipboard;
+
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
-#[cfg(target_os = "macos")]
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
-
-/// De-facto standard markers (<https://nspasteboard.org>) set by password
-/// managers and similar tools on entries that must stay out of history.
-#[cfg(target_os = "macos")]
-const PRIVATE_TYPE_MARKERS: &[&str] = &[
-    "org.nspasteboard.ConcealedType",
-    "org.nspasteboard.TransientType",
-];
 const ICON_NAME: &str = "edit-paste";
 
 const COPY_ACTION_LABEL: &str = "Copy";
@@ -135,107 +123,6 @@ fn watcher_loop(history: Arc<RwLock<VecDeque<String>>>) {
     }
 }
 
-#[cfg(windows)]
-fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
-    windows::watch_clipboard(history)
-}
-
-#[cfg(target_os = "linux")]
-fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
-    // wl-paste --watch runs the inner command on every clipboard change.
-    // The inner command writes the new selection followed by a NUL byte so
-    // we can frame entries that themselves contain newlines.
-    let mut child = Command::new("wl-paste")
-        .args(["--watch", "sh", "-c", "wl-paste --no-newline; printf '\\0'"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    let stdout = child.stdout.take().expect("piped stdout");
-    let mut reader = BufReader::new(stdout);
-    let mut buf = Vec::with_capacity(4096);
-
-    loop {
-        buf.clear();
-        match reader.read_until(0u8, &mut buf) {
-            Ok(0) => {
-                let _ = child.wait();
-                return Ok(());
-            },
-            Ok(_) => {
-                if buf.last() == Some(&0u8) {
-                    buf.pop();
-                }
-                let text = String::from_utf8_lossy(&buf).into_owned();
-                if !text.trim().is_empty() {
-                    push_entry(history, text);
-                }
-            },
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(e);
-            },
-        }
-    }
-}
-
-// macOS has no clipboard-change notification API; poll the pasteboard's
-// change counter (an in-process message send, no data transfer) and read
-// the contents only when it moves.
-#[cfg(target_os = "macos")]
-fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Result<()> {
-    let pasteboard = NSPasteboard::generalPasteboard();
-    // Start from the current count so pre-launch contents are not recorded.
-    let mut last_change = pasteboard.changeCount();
-
-    loop {
-        // The pool drains the objects the pasteboard calls autorelease each
-        // tick; without it they accumulate for the lifetime of this
-        // never-exiting thread.
-        autoreleasepool(|_| {
-            let change = pasteboard.changeCount();
-            if change == last_change {
-                return;
-            }
-            let text = recordable_text(&pasteboard);
-            // Discard the sample if the pasteboard moved mid-read — the
-            // marker check and the text could belong to different entries
-            // (e.g. a concealed password landing between the two calls).
-            // The new entry is examined on the next tick.
-            if pasteboard.changeCount() != change {
-                return;
-            }
-            last_change = change;
-            if let Some(text) = text
-                && !text.trim().is_empty()
-            {
-                push_entry(history, text);
-            }
-        });
-        thread::sleep(POLL_INTERVAL);
-    }
-}
-
-// Skips non-text contents and anything flagged with a privacy marker.
-#[cfg(target_os = "macos")]
-fn recordable_text(pasteboard: &NSPasteboard) -> Option<String> {
-    let types = pasteboard.types()?;
-    if has_private_marker(types.iter().map(|t| t.to_string())) {
-        return None;
-    }
-    pasteboard
-        .stringForType(unsafe { NSPasteboardTypeString })
-        .map(|s| s.to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn has_private_marker<S: AsRef<str>>(types: impl IntoIterator<Item = S>) -> bool {
-    types
-        .into_iter()
-        .any(|t| PRIVATE_TYPE_MARKERS.contains(&t.as_ref()))
-}
-
 fn push_entry(history: &RwLock<VecDeque<String>>, text: String) {
     let mut g = history.write().unwrap();
     g.retain(|e| *e != text);
@@ -318,26 +205,5 @@ mod tests {
             push_entry(&h, format!("entry-{i}"));
         }
         assert_eq!(h.read().unwrap().len(), HISTORY_LIMIT);
-    }
-
-    // Read-only smoke test: the pasteboard is usable from a non-main
-    // thread (tests run off-main), which is where the watcher lives.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn pasteboard_reads_off_main_thread() {
-        let pasteboard = NSPasteboard::generalPasteboard();
-        assert!(pasteboard.changeCount() >= 0);
-        let _ = recordable_text(&pasteboard);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn private_pasteboard_markers_are_detected() {
-        assert!(has_private_marker([
-            "public.utf8-plain-text",
-            "org.nspasteboard.ConcealedType",
-        ]));
-        assert!(has_private_marker(["org.nspasteboard.TransientType"]));
-        assert!(!has_private_marker(["public.utf8-plain-text"]));
     }
 }
