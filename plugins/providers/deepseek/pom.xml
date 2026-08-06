@@ -31,7 +31,7 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <ascopes.grpc.version>5.1.7</ascopes.grpc.version>
 
-        <vertx.version>5.1.5</vertx.version>
+        <vertx.version>5.1.6</vertx.version>
         <protobuf.version>4.35.1</protobuf.version>
 
         <junit-jupiter.version>6.1.0</junit-jupiter.version>
