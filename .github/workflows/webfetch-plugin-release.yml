@@ -60,6 +60,14 @@ jobs:
             runner: ubuntu-24.04-arm
           - name: macos-arm64
             runner: macos-latest
+          - name: windows-amd64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+          - name: windows-arm64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: arm64
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -74,17 +82,26 @@ jobs:
 
       - name: Build release binary
         working-directory: plugins/extensions/webfetch
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: make release
 
       - name: Package release artifact
         working-directory: plugins/extensions/webfetch
-        run: tar -czf "webfetch-${{ matrix.name }}.tar.gz" webfetch
+        run: |
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv webfetch webfetch.exe
+            zip "webfetch-${{ matrix.name }}.zip" webfetch.exe
+          else
+            tar -czf "webfetch-${{ matrix.name }}.tar.gz" webfetch
+          fi
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
           name: webfetch-${{ matrix.name }}
-          path: plugins/extensions/webfetch/webfetch-${{ matrix.name }}.tar.gz
+          path: plugins/extensions/webfetch/webfetch-${{ matrix.name }}.*
           if-no-files-found: error
           retention-days: 1
 
@@ -104,7 +121,7 @@ jobs:
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum webfetch-*.tar.gz > SHA256SUMS
+        run: sha256sum webfetch-* > SHA256SUMS
 
       - name: Create GitHub release
         env:
