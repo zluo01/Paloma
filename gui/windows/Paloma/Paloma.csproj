@@ -48,6 +48,15 @@
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     </ItemGroup>
 
+    <!-- The app has no AI, ML, or widget features; keep their runtime
+         payloads out of the self-contained publish. -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.1.74" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.3.4" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.1.74" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" ExcludeAssets="all" />
+    </ItemGroup>
+
     <ItemGroup>
         <ProjectReference Include="..\Paloma.Protos\Paloma.Protos.csproj" />
     </ItemGroup>
