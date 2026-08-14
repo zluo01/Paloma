@@ -124,6 +124,9 @@ fn watcher_loop(history: Arc<RwLock<VecDeque<String>>>) {
 }
 
 fn push_entry(history: &RwLock<VecDeque<String>>, text: String) {
+    if text.trim().is_empty() {
+        return;
+    }
     let mut g = history.write().unwrap();
     g.retain(|e| *e != text);
     g.push_front(text);
@@ -137,9 +140,14 @@ fn matches_all_words(entry: &str, words: &[String]) -> bool {
     words.iter().all(|word| text.contains(word))
 }
 
+/// Collapse whitespace to a single line for display.
+fn minimize_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn build_item(text: &str) -> Item {
     Item {
-        title: text.to_owned(),
+        title: minimize_text(text),
         subtitle: None,
         icon: Some(CapabilityIcon::name(ICON_NAME)),
         actions: SUPPORTED_ACTION_LABELS
@@ -205,5 +213,70 @@ mod tests {
             push_entry(&h, format!("entry-{i}"));
         }
         assert_eq!(h.read().unwrap().len(), HISTORY_LIMIT);
+    }
+
+    const PRETTY_JSON: &str = r#"{
+        "name": "paloma",
+        "tags": [
+            "launcher",
+            "clipboard"
+        ]
+    }"#;
+
+    #[test]
+    fn item_title_minimizes_json_to_one_line() {
+        let item = build_item(PRETTY_JSON);
+        assert_eq!(
+            item.title,
+            r#"{ "name": "paloma", "tags": [ "launcher", "clipboard" ] }"#
+        );
+    }
+
+    #[test]
+    fn item_title_minimizes_html_to_one_line() {
+        let html = r#"<div class="card">
+            <p>Hello, <b>world</b></p>
+        </div>"#;
+        let item = build_item(html);
+        assert_eq!(
+            item.title,
+            r#"<div class="card"> <p>Hello, <b>world</b></p> </div>"#
+        );
+    }
+
+    #[test]
+    fn item_title_trims_surrounding_whitespace() {
+        let item = build_item("  hello world \n");
+        assert_eq!(item.title, "hello world");
+    }
+
+    #[test]
+    fn item_title_collapses_crlf_and_tabs() {
+        let item = build_item("first\r\nsecond\tthird");
+        assert_eq!(item.title, "first second third");
+    }
+
+    #[test]
+    fn push_entry_ignores_whitespace_only_text() {
+        let h = RwLock::new(VecDeque::new());
+        push_entry(&h, " \r\n\t ".into());
+        assert!(h.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn item_title_keeps_single_line_text_unchanged() {
+        let item = build_item(r#"{"name":"paloma"}"#);
+        assert_eq!(item.title, r#"{"name":"paloma"}"#);
+    }
+
+    #[test]
+    fn item_actions_keep_full_original_text() {
+        let item = build_item(PRETTY_JSON);
+        assert!(!item.actions.is_empty());
+        assert!(
+            item.actions
+                .iter()
+                .all(|a| a.params == [PRETTY_JSON.to_owned()])
+        );
     }
 }
