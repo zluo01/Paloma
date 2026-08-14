@@ -2,7 +2,10 @@ use std::{env, error::Error, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
-    let repository = crate_dir.parent().ok_or("crate dir has no parent")?;
+    let repository = crate_dir
+        .ancestors()
+        .nth(3)
+        .ok_or("crate dir has no repository root")?;
     let schema = repository.join("schema/binding/main.proto");
 
     for proto in [

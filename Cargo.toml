@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "binding-protocol",
     "core",
     "extension-base",
     "extension-protocol",
     "ffi",
     "gui/linux",
+    "gui/windows/binding-protocol",
     "gui/windows/core",
     "plugins/extensions/internal",
     "plugins/extensions/shell",
@@ -40,7 +40,7 @@ eventsource-stream = "0.2.3"
 futures = "0.3.32"
 log = "0.4.33"
 oauth2 = { version = "5.0.0", default-features = false }
-paloma-binding-protocol = { path = "binding-protocol" }
+paloma-binding-protocol = { path = "gui/windows/binding-protocol" }
 paloma-core = { path = "core" }
 paloma-extension-base = { path = "extension-base" }
 paloma-extension-internal = { path = "plugins/extensions/internal" }
