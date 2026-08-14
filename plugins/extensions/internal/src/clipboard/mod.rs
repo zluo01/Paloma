@@ -33,7 +33,10 @@ use crate::clipboard::windows::watch_clipboard;
 
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
+#[cfg(not(windows))]
 const ICON_NAME: &str = "edit-paste";
+#[cfg(windows)]
+const ICON_NAME: &str = "\u{E77F}";
 
 const COPY_ACTION_LABEL: &str = "Copy";
 const REMOVE_ACTION_LABEL: &str = "Remove";
@@ -267,6 +270,14 @@ mod tests {
     fn item_title_keeps_single_line_text_unchanged() {
         let item = build_item(r#"{"name":"paloma"}"#);
         assert_eq!(item.title, r#"{"name":"paloma"}"#);
+    }
+
+    #[test]
+    fn item_carries_the_platform_icon_name() {
+        use paloma_extension_protocol::v1::capability_icon::Icon;
+
+        let item = build_item("text");
+        assert_eq!(item.icon.unwrap().icon, Some(Icon::Name(ICON_NAME.into())));
     }
 
     #[test]

@@ -10,7 +10,10 @@ use regex::Regex;
 use crate::clipboard::copy_to_clipboard;
 
 const MAX_EXPRESSION_BYTES: usize = 1024;
+#[cfg(not(windows))]
 const ICON_NAME: &str = "accessories-calculator";
+#[cfg(windows)]
+const ICON_NAME: &str = "\u{E8EF}";
 const COPY_RESULT_ACTION_LABEL: &str = "Copy Result";
 const COPY_EQUATION_ACTION_LABEL: &str = "Copy Equation";
 const TRIGGER_PREFIX: char = '=';
@@ -167,6 +170,14 @@ mod tests {
     #[test]
     fn trigger_evaluates_constants() {
         assert_eq!(evaluate("= pi"), Some(("pi", "3.1415926536".to_string())));
+    }
+
+    #[test]
+    fn item_carries_the_platform_icon_name() {
+        use paloma_extension_protocol::v1::capability_icon::Icon;
+
+        let item = build_item("2 + 2", "4".to_string());
+        assert_eq!(item.icon.unwrap().icon, Some(Icon::Name(ICON_NAME.into())));
     }
 
     #[test]
