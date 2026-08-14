@@ -18,7 +18,7 @@ env:
   CARGO_TERM_QUIET: "true"
 
 jobs:
-  build-and-test:
+  build-mac:
     name: Build and test
     runs-on: macos-latest
     outputs:
@@ -65,22 +65,57 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+      - name: Build zip
+        run: ./scripts/release-windows.ps1
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: paloma-windows
+          path: target/windows/Paloma-*.zip
+          if-no-files-found: error
+          retention-days: 1
+
   release:
     name: Release
-    needs: build-and-test
+    needs: [build-mac, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download release artifact
+      - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          name: paloma-macos
+          pattern: paloma-*
           path: dist
+          merge-multiple: true
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum Paloma-*.dmg > SHA256SUMS
+        run: sha256sum Paloma-* > SHA256SUMS
 
       - name: Create GitHub release
         env:
