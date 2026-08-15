@@ -2,5 +2,65 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "matchFileNames": ["Cargo.toml"],
+      "groupName": "shared"
+    },
+    {
+      "matchFileNames": ["gui/linux/**"],
+      "groupName": "linux gui"
+    },
+    {
+      "matchFileNames": ["gui/windows/**"],
+      "groupName": "windows gui"
+    },
+    {
+      "matchPackageNames": ["tonic", "tonic-prost", "tonic-prost-build"],
+      "groupName": "windows gui"
+    },
+    {
+      "matchPackageNames": ["uniffi"],
+      "groupName": "macos gui"
+    },
+    {
+      "matchFileNames": ["core/**"],
+      "groupName": "core"
+    },
+    {
+      "matchFileNames": [
+        "plugins/extensions/internal/**",
+        "plugins/extensions/shell/**"
+      ],
+      "groupName": "extensions"
+    },
+    {
+      "matchPackageNames": ["schemars"],
+      "groupName": "extensions"
+    },
+    {
+      "matchFileNames": ["plugins/extensions/webfetch/**"],
+      "groupName": "webfetch plugin"
+    },
+    {
+      "matchFileNames": [
+        "plugins/providers/anthropic/**",
+        "plugins/providers/openai/**"
+      ],
+      "groupName": "providers"
+    },
+    {
+      "matchPackageNames": ["eventsource-stream"],
+      "groupName": "providers"
+    },
+    {
+      "matchFileNames": ["plugins/providers/deepseek/**"],
+      "groupName": "deepseek plugin"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    }
   ]
 }
