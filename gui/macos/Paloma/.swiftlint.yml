@@ -4,6 +4,10 @@ excluded:
 disabled_rules:
   - trailing_comma
 
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
 identifier_name:
   allowed_symbols: "_"
   min_length:
