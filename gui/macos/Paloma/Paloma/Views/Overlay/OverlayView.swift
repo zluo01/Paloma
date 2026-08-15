@@ -32,25 +32,33 @@ struct OverlayView: View {
                 .onSubmit {
                     handleSubmit()
                 }
-                .onKeyPress(.upArrow) {
+                .onKeyPress(keys: [.upArrow]) { press in
+                    guard press.chord() else {
+                        return .ignored
+                    }
                     handleNavigate(-1)
                     return .handled
                 }
                 .onKeyPress(keys: [.downArrow]) { press in
-                    if press.modifiers.contains(.shift) {
-                        openSession()
-                    } else {
+                    if press.chord(.shift) {
+                        toggleSession()
+                    } else if press.chord() {
                         handleNavigate(1)
+                    } else {
+                        return .ignored
                     }
                     return .handled
                 }
-                .onKeyPress(.escape) {
+                .onKeyPress(keys: [.escape]) { press in
+                    guard press.chord() else {
+                        return .ignored
+                    }
                     handleEscape()
                     return .handled
                 }
                 .onKeyPress(keys: [.return]) { press in
                     // ⌃⏎ is taken by the system context-menu shortcut, so ⌘⏎.
-                    guard press.modifiers.contains(.command) else { return .ignored }
+                    guard press.chord(.command) else { return .ignored }
                     if mode == .search {
                         searches.openPanel()
                         return .handled
@@ -58,19 +66,20 @@ struct OverlayView: View {
                     return .ignored
                 }
                 .onKeyPress(keys: ["c"]) { press in
-                    guard press.modifiers.contains(.control) else { return .ignored }
+                    guard press.chord(.control) else { return .ignored }
                     if mode == .chat {
                         chats.interrupt()
                         return .handled
                     }
                     return .ignored
                 }
-                .onKeyPress(.deleteForward) {
-                    handleDeleteKey()
+                .onKeyPress(keys: [.deleteForward]) { press in
+                    guard press.chord() else { return .ignored }
+                    return handleDeleteKey()
                 }
                 .onKeyPress(keys: [.delete]) { press in
                     // ⌘⌫ mirrors del for keyboards(macbook) without a forward-delete key.
-                    guard press.modifiers.contains(.command) else { return .ignored }
+                    guard press.chord(.command) else { return .ignored }
                     return handleDeleteKey()
                 }
                 .onKeyPress(phases: .down) { press in
@@ -97,7 +106,7 @@ struct OverlayView: View {
                 model: launcher,
                 mode: mode,
                 onOpenSettings: onOpenSettings,
-                onOpenSession: openSession,
+                onOpenSession: toggleSession,
                 onSelectModel: selectModel
             )
         }
@@ -209,7 +218,7 @@ struct OverlayView: View {
         }
     }
 
-    private func openSession() {
+    private func toggleSession() {
         if mode == .session {
             mode = .search
         } else {
