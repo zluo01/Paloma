@@ -686,7 +686,21 @@ impl SessionManagerClient {
 impl Session {
     fn update(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Chat(chat_response::Payload::OutputItem(_)) => {},
+            SessionEvent::Chat(chat_response::Payload::OutputItem(item)) => match &item.item {
+                Some(Item::Message(_)) => self.delta.retain(|event| {
+                    !matches!(
+                        event,
+                        SessionEvent::Chat(chat_response::Payload::TextDelta(_))
+                    )
+                }),
+                Some(Item::Reasoning(_)) => self.delta.retain(|event| {
+                    !matches!(
+                        event,
+                        SessionEvent::Chat(chat_response::Payload::ReasoningDelta(_))
+                    )
+                }),
+                _ => {},
+            },
             SessionEvent::Chat(chat_response::Payload::Done(_)) => {
                 self.delta.clear();
                 self.terminal = TerminalState::Done
@@ -779,3 +793,135 @@ pub enum SessionManagerError {
 }
 
 type Result<T> = std::result::Result<T, SessionManagerError>;
+
+#[cfg(test)]
+mod tests {
+    use paloma_provider_protocol::v1::{
+        ConversationMessage, MessageContentItem, Reasoning, SummaryItem, TextDelta, ToolCall,
+    };
+
+    use super::*;
+
+    fn text_delta(text: &str) -> SessionEvent {
+        SessionEvent::Chat(chat_response::Payload::TextDelta(TextDelta {
+            provider_id: "provider".into(),
+            backend_id: "backend".into(),
+            delta: text.into(),
+        }))
+    }
+
+    fn reasoning_delta(text: &str) -> SessionEvent {
+        SessionEvent::Chat(chat_response::Payload::ReasoningDelta(text.into()))
+    }
+
+    fn output_item(item: Item) -> SessionEvent {
+        SessionEvent::Chat(chat_response::Payload::OutputItem(ConversationItem {
+            item: Some(item),
+        }))
+    }
+
+    fn message_item(text: &str) -> Item {
+        Item::Message(ConversationMessage {
+            message: vec![MessageContentItem {
+                content: text.into(),
+                provider_meta: Default::default(),
+            }],
+            provider_meta: Default::default(),
+        })
+    }
+
+    fn reasoning_item(text: &str) -> Item {
+        Item::Reasoning(Reasoning {
+            reasoning: vec![SummaryItem {
+                content: text.into(),
+                provider_meta: Default::default(),
+            }],
+            provider_meta: Default::default(),
+        })
+    }
+
+    fn running_session() -> Session {
+        let mut session = Session::default();
+        session.update(SessionEvent::UserPrompt("prompt".into()));
+        session
+    }
+
+    #[test]
+    fn message_output_item_clears_the_buffered_text_deltas() {
+        let mut session = running_session();
+        session.update(text_delta("hello "));
+        session.update(text_delta("world"));
+
+        session.update(output_item(message_item("hello world")));
+
+        assert!(session.delta.is_empty());
+    }
+
+    #[test]
+    fn reasoning_output_item_clears_the_buffered_reasoning_deltas() {
+        let mut session = running_session();
+        session.update(reasoning_delta("let me "));
+        session.update(reasoning_delta("think"));
+
+        session.update(output_item(reasoning_item("let me think")));
+
+        assert!(session.delta.is_empty());
+    }
+
+    #[test]
+    fn reasoning_output_item_keeps_the_unfinalized_text_deltas() {
+        let mut session = running_session();
+        session.update(reasoning_delta("thinking"));
+        session.update(text_delta("answer"));
+
+        session.update(output_item(reasoning_item("thinking")));
+
+        assert_eq!(session.delta.len(), 1);
+        assert!(matches!(
+            &session.delta[0],
+            SessionEvent::Chat(chat_response::Payload::TextDelta(delta)) if delta.delta == "answer"
+        ));
+    }
+
+    #[test]
+    fn tool_call_output_item_keeps_the_buffered_deltas() {
+        let mut session = running_session();
+        session.update(text_delta("streaming"));
+
+        session.update(output_item(Item::ToolCall(ToolCall {
+            call_id: "c1".into(),
+            name: "tool".into(),
+            arguments: "{}".into(),
+            provider_meta: Default::default(),
+        })));
+
+        assert_eq!(session.delta.len(), 1);
+    }
+
+    #[test]
+    fn empty_output_item_keeps_the_buffered_deltas() {
+        let mut session = running_session();
+        session.update(text_delta("streaming"));
+
+        session.update(SessionEvent::Chat(chat_response::Payload::OutputItem(
+            ConversationItem { item: None },
+        )));
+
+        assert_eq!(session.delta.len(), 1);
+    }
+
+    #[test]
+    fn second_text_run_buffers_after_the_first_run_finalizes() {
+        let mut session = running_session();
+        session.update(text_delta("first"));
+        session.update(output_item(message_item("first")));
+
+        session.update(text_delta("second"));
+
+        assert_eq!(session.delta.len(), 1);
+        assert!(matches!(
+            &session.delta[0],
+            SessionEvent::Chat(chat_response::Payload::TextDelta(delta)) if delta.delta == "second"
+        ));
+    }
+}
