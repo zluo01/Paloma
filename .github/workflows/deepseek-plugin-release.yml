@@ -55,27 +55,81 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: deepseek-provider
+          name: deepseek-provider-jar
           path: plugins/providers/deepseek/deepseek-provider-*.jar
+          if-no-files-found: error
+          retention-days: 1
+
+  build-native:
+    name: Build native ${{ matrix.name }}
+    needs: build-and-test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: macos-arm64
+            runner: macos-latest
+          - name: windows-amd64
+            runner: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install GraalVM JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: "25"
+          distribution: 'graalvm-community'
+          cache: maven
+          cache-dependency-path: plugins/providers/deepseek/pom.xml
+
+      - name: Build native image
+        working-directory: plugins/providers/deepseek
+        run: mvn --batch-mode --no-transfer-progress -Pnative -DskipTests package
+
+      - name: Package release artifact
+        working-directory: plugins/providers/deepseek
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/deepseek-provider.exe .
+            7z a "deepseek-provider-${{ matrix.name }}.zip" deepseek-provider.exe
+          else
+            tar -czf "deepseek-provider-${{ matrix.name }}.tar.gz" -C target deepseek-provider
+          fi
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: deepseek-provider-${{ matrix.name }}
+          path: plugins/providers/deepseek/deepseek-provider-${{ matrix.name }}.*
           if-no-files-found: error
           retention-days: 1
 
   release:
     name: Release
-    needs: build-and-test
+    needs: [ build-and-test, build-native ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download release artifact
+      - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          name: deepseek-provider
+          pattern: deepseek-provider-*
           path: dist
+          merge-multiple: true
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum deepseek-provider-*.jar > SHA256SUMS
+        run: sha256sum deepseek-provider-* > SHA256SUMS
 
       - name: Create GitHub release
         env:
