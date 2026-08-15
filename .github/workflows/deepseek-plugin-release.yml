@@ -85,6 +85,7 @@ jobs:
       - name: Install GraalVM JDK 25
         uses: graalvm/setup-graalvm@v1
         with:
+          version: "25"
           java-version: "25"
           distribution: 'graalvm-community'
           cache: maven
