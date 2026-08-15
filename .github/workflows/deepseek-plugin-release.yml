@@ -88,7 +88,6 @@ jobs:
           java-version: "25"
           distribution: 'graalvm-community'
           cache: maven
-          cache-dependency-path: plugins/providers/deepseek/pom.xml
 
       - name: Build native image
         working-directory: plugins/providers/deepseek
