@@ -88,6 +88,8 @@ internal sealed class MockPalomaClient : IPalomaClient
 
     public Func<UserDecision, PermissionState>? OnDecide { get; set; }
 
+    public Func<UserDecision, Task<PermissionState>>? OnDecideAsync { get; set; }
+
     public Func<ExtensionCapabilityId, ExtAction, RunActionResponse>? OnRunAction { get; set; }
 
     public Func<ExtensionCapabilityId, ExtAction, Task<RunActionResponse>>? OnRunActionAsync { get; set; }
@@ -264,7 +266,8 @@ internal sealed class MockPalomaClient : IPalomaClient
     public Task<PermissionState> DecideAsync(
         UserDecision decision,
         CancellationToken cancellationToken = default) =>
-        Task.FromResult(OnDecide?.Invoke(decision) ?? PermissionState.Allow);
+        OnDecideAsync?.Invoke(decision)
+        ?? Task.FromResult(OnDecide?.Invoke(decision) ?? PermissionState.Allow);
 
     public Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync(
         CancellationToken cancellationToken = default) =>

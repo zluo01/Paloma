@@ -7,6 +7,7 @@ using Xunit.Abstractions;
 using AllowOnce = Paloma.Binding.V1.AllowOnce;
 using AllowSession = Paloma.Binding.V1.AllowSession;
 using Deny = Paloma.Binding.V1.Deny;
+using IgnorePermission = Paloma.Binding.V1.IgnorePermission;
 using PermissionState = Paloma.Binding.V1.PermissionState;
 using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
 using UserDecision = Paloma.Binding.V1.UserDecision;
@@ -305,6 +306,219 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         // left to retry, so the section resolves like allow and deny.
         Assert.Equal(PermissionState.Error, section.Resolution);
         Assert.False(section.Unresolved);
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_IgnorePermission_ResolvesEveryPendingSectionWithTheOption()
+    {
+        var decided = new List<UserDecision>();
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = decision =>
+        {
+            decided.Add(decision);
+            return PermissionState.Allow;
+        };
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            yield return new ChatStreamEvent.ToolCall("one", "{}", null,
+            [
+                new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
+                new UserDecision
+                {
+                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c1" },
+                },
+            ]);
+            yield return new ChatStreamEvent.ToolCall("two", "{}", null,
+            [
+                new UserDecision { AllowOnce = new AllowOnce { CallId = "c2" } },
+                new UserDecision
+                {
+                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c2" },
+                },
+            ]);
+            yield return new ChatStreamEvent.ToolCall("three", "{}", null,
+                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c3" } }]);
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run");
+        await TestWait.UntilAsync(() => vm.Sections.Count == 3);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+
+        sections[0].Decisions[1].Decide();
+
+        Assert.Equal(PermissionState.Allow, sections[0].Resolution);
+        Assert.Equal(PermissionState.Allow, sections[1].Resolution);
+        // The section without the option keeps waiting for its own answer.
+        Assert.True(sections[2].Unresolved);
+        Assert.Equal(["c1", "c2"], decided.Select(d => d.IgnorePermission.CallId));
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_IgnorePermission_CascadeDecidesEachSectionOnce()
+    {
+        var decided = new List<string>();
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = decision =>
+        {
+            decided.Add(decision.IgnorePermission.CallId);
+            return PermissionState.Allow;
+        };
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            for (var i = 1; i <= 5; i++)
+            {
+                yield return new ChatStreamEvent.ToolCall($"tool{i}", "{}", null,
+                [
+                    new UserDecision { AllowOnce = new AllowOnce { CallId = $"c{i}" } },
+                    new UserDecision
+                    {
+                        IgnorePermission = new IgnorePermission { SessionId = "s", CallId = $"c{i}" },
+                    },
+                ]);
+            }
+
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run");
+        await TestWait.UntilAsync(() => vm.Sections.Count == 5);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+
+        // Every fanned-out resolution re-enters the fan-out; the resolved
+        // and in-flight checks must stop it from deciding anything twice.
+        sections[0].Decisions[1].Decide();
+
+        Assert.All(sections, section => Assert.Equal(PermissionState.Allow, section.Resolution));
+        Assert.Equal(["c1", "c2", "c3", "c4", "c5"], decided);
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_IgnorePermission_InFlightSectionsAreNotDecidedTwice()
+    {
+        var calls = new List<string>();
+        var pending = new Dictionary<string, TaskCompletionSource<PermissionState>>();
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecideAsync = decision =>
+        {
+            var id = decision.IgnorePermission.CallId;
+            calls.Add(id);
+            var source = new TaskCompletionSource<PermissionState>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            pending[id] = source;
+            return source.Task;
+        };
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            for (var i = 1; i <= 3; i++)
+            {
+                yield return new ChatStreamEvent.ToolCall($"tool{i}", "{}", null,
+                [
+                    new UserDecision
+                    {
+                        IgnorePermission = new IgnorePermission { SessionId = "s", CallId = $"c{i}" },
+                    },
+                ]);
+            }
+
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run");
+        await TestWait.UntilAsync(() => vm.Sections.Count == 3);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+
+        sections[0].Decisions[0].Decide();
+        Assert.Equal(["c1"], calls);
+
+        // The first resolution fans out to both waiting sections at once.
+        pending["c1"].SetResult(PermissionState.Allow);
+        await TestWait.UntilAsync(() => calls.Count == 3);
+
+        // The second resolution cascades while the third is still in
+        // flight; the deciding gate must not send its rpc again.
+        pending["c2"].SetResult(PermissionState.Allow);
+        await TestWait.UntilAsync(() => sections[1].Resolution is not null);
+        Assert.Equal(["c1", "c2", "c3"], calls);
+
+        pending["c3"].SetResult(PermissionState.Allow);
+        await TestWait.UntilAsync(() => sections[2].Resolution is not null);
+        Assert.Equal(["c1", "c2", "c3"], calls);
+        Assert.All(sections, section => Assert.Equal(PermissionState.Allow, section.Resolution));
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_AllowOnce_LeavesOtherSectionsPending()
+    {
+        var calls = 0;
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = _ =>
+        {
+            calls++;
+            return PermissionState.Allow;
+        };
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            yield return new ChatStreamEvent.ToolCall("one", "{}", null,
+            [
+                new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
+                new UserDecision
+                {
+                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c1" },
+                },
+            ]);
+            yield return new ChatStreamEvent.ToolCall("two", "{}", null,
+            [
+                new UserDecision { AllowOnce = new AllowOnce { CallId = "c2" } },
+                new UserDecision
+                {
+                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c2" },
+                },
+            ]);
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run");
+        await TestWait.UntilAsync(() => vm.Sections.Count == 2);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+
+        sections[0].Decisions[0].Decide();
+
+        Assert.Equal(PermissionState.Allow, sections[0].Resolution);
+        Assert.True(sections[1].Unresolved);
+        Assert.Equal(1, calls);
 
         gate.SetResult();
         await submit;
