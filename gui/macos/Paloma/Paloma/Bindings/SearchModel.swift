@@ -132,13 +132,10 @@ final class SearchModel {
         length > 0 && selection == length - 1
     }
 
-    @discardableResult
-    func clear() -> Bool {
-        let hadResults = itemCount > 0
+    func clear() {
         searchTask?.cancel()
         sections = []
         selection = 0
         panelSelection = nil
-        return hadResults
     }
 }

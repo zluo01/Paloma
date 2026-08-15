@@ -265,8 +265,13 @@ struct OverlayView: View {
             if searches.closePanel() {
                 return
             }
-            query.removeAll()
-            searches.clear()
+
+            // If there is search result, clear it first
+            if !query.isEmpty {
+                query.removeAll()
+                return
+            }
+
             onHide()
         case .chat:
             mode = .search
