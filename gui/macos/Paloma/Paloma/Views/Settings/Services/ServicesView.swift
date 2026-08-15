@@ -18,11 +18,7 @@ struct ServicesView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.connected, id: \.id) { connector in
-                    ServiceRowView(connector: connector) { chosenModel, effort in
-                        OperationError.run("Failed to Set Preference", into: $operationError) {
-                            await model.setPreference(connector.id, model: chosenModel, effort: effort)
-                        }
-                    } onDisconnect: {
+                    ServiceRowView(connector: connector) {
                         OperationError.run("Failed to Disconnect Service", into: $operationError) {
                             await model.disconnect(connector.id)
                         }
