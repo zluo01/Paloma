@@ -14,12 +14,6 @@ pub(super) enum Msg {
     DisconnectClicked(ProviderBackendId),
     DisconnectConfirmed(ProviderBackendId),
     DisconnectFinished(ProviderBackendId, Result<(), AppError>),
-    PreferenceChanged {
-        provider_backend_id: ProviderBackendId,
-        model: String,
-        effort: String,
-    },
-    PreferenceSaveFinished(Result<(), AppError>),
     // dialog
     ConnectClicked(ProviderBackendId),
     InitFinished(ProviderBackendId, Result<ConnectionPayload, AppError>),
@@ -41,11 +35,6 @@ pub(super) enum Command {
     FetchConnectors,
     ShowDisconnectConfirmation(ProviderBackendId),
     DisconnectProvider(ProviderBackendId),
-    PersistPreference {
-        provider_backend_id: ProviderBackendId,
-        model: String,
-        effort: String,
-    },
     Warn(String),
     ShowErrorDialog(String),
     // dialog
@@ -82,8 +71,6 @@ impl Model {
     /// - Disconnect button: `DisconnectClicked -> ShowDisconnectConfirmation
     ///   -> DisconnectConfirmed -> DisconnectProvider -> DisconnectFinished
     ///   -> FetchConnectors -> ConnectorsFetched -> Render`.
-    /// - Model picker or effort picker: `PreferenceChanged ->
-    ///   PersistPreference -> PreferenceSaveFinished`.
     /// - Connect button: `ConnectClicked -> ShowConnectionDialog + InitConnection` -> `InitFinished`
     ///   then takes exactly one of:
     ///   - device code: `ShowChallenge + FinalizeConnection` (finalize waits
@@ -113,24 +100,6 @@ impl Model {
                 Err(e) => vec![Command::ShowErrorDialog(format!(
                     "Disconnecting {id} failed: {e}"
                 ))],
-            },
-            Msg::PreferenceChanged {
-                provider_backend_id,
-                model,
-                effort,
-            } => {
-                vec![Command::PersistPreference {
-                    provider_backend_id,
-                    model,
-                    effort,
-                }]
-            },
-            Msg::PreferenceSaveFinished(result) => match result {
-                Ok(()) => vec![],
-                Err(e) => vec![
-                    Command::Warn(format!("set_preferences failed: {e}")),
-                    Command::FetchConnectors,
-                ],
             },
             Msg::ConnectClicked(id) => {
                 if self.connecting.is_some() {
@@ -362,47 +331,6 @@ mod tests {
 
         let cmds = model.update(Msg::DisconnectFinished(codex(), Err(error("nope"))));
         assert!(matches!(cmds.as_slice(), [Command::ShowErrorDialog(_)]));
-    }
-
-    #[test]
-    fn preference_workflow_persists_silently() {
-        let mut model = Model {
-            connectors: vec![disconnected(codex())],
-            ..Model::default()
-        };
-
-        let cmds = model.update(Msg::PreferenceChanged {
-            provider_backend_id: codex(),
-            model: "new".into(),
-            effort: "high".into(),
-        });
-        assert!(matches!(
-            cmds.as_slice(),
-            [Command::PersistPreference {
-                provider_backend_id,
-                model,
-                effort,
-            }] if *provider_backend_id == codex() && model == "new" && effort == "high"
-        ));
-        assert!(model.connectors[0].connection.is_none());
-
-        assert!(model.update(Msg::PreferenceSaveFinished(Ok(()))).is_empty());
-    }
-
-    #[test]
-    fn preference_workflow_failure_warns_and_reloads() {
-        let mut model = Model::default();
-        let _ = model.update(Msg::PreferenceChanged {
-            provider_backend_id: codex(),
-            model: "new".into(),
-            effort: "high".into(),
-        });
-
-        let cmds = model.update(Msg::PreferenceSaveFinished(Err(error("disk full"))));
-        assert!(matches!(
-            cmds.as_slice(),
-            [Command::Warn(_), Command::FetchConnectors]
-        ));
     }
 
     #[test]

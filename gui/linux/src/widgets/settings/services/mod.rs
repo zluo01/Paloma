@@ -1,17 +1,13 @@
 mod connection_dialog;
 mod model;
 
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Image, Orientation, StringList, glib};
+use gtk4::{Align, Box as GtkBox, Button, Image, Orientation, glib};
 use libadwaita::{
-    ActionRow, AlertDialog, ApplicationWindow, ComboRow, ExpanderRow, PreferencesGroup,
-    PreferencesPage, ResponseAppearance,
+    ActionRow, AlertDialog, ApplicationWindow, PreferencesGroup, PreferencesPage,
+    ResponseAppearance,
     gdk::Texture,
     glib::{Bytes, WeakRef},
     prelude::*,
@@ -92,17 +88,6 @@ impl ServicesPage {
         }));
     }
 
-    fn persist_preference(&self, id: ProviderBackendId, model: String, effort: String) {
-        let app_context = self.app_context.clone();
-        let dispatcher = self.dispatcher.clone();
-        drop(tokio_runtime().spawn(async move {
-            let result = app_context
-                .set_model_preference(id, &model, &effort, false)
-                .await;
-            let _ = dispatcher.unbounded_send(Msg::PreferenceSaveFinished(result));
-        }));
-    }
-
     fn show_disconnect_confirmation(&self, id: ProviderBackendId) {
         let Some(window) = self.window.upgrade() else {
             return;
@@ -175,8 +160,8 @@ impl ServicesPage {
         backend_description: &str,
         icon: Option<&Icon>,
         conn: &ConnectorConnection,
-    ) -> ExpanderRow {
-        let row = ExpanderRow::builder()
+    ) -> ActionRow {
+        let row = ActionRow::builder()
             .title(provider_backend_id.to_string())
             .subtitle(backend_description)
             .build();
@@ -188,17 +173,8 @@ impl ServicesPage {
             .valign(Align::Center)
             .build();
 
-        match conn.status.status {
-            HealthStatus::Running if !conn.status.models.is_empty() => {
-                self.add_picker_rows(provider_backend_id, &row, conn);
-            },
-            HealthStatus::Unhealthy => {
-                row.set_enable_expansion(false);
-                actions.append(&unhealthy_icon(conn.status.error.as_deref()));
-            },
-            HealthStatus::Starting | HealthStatus::Running => {
-                row.set_enable_expansion(false);
-            },
+        if HealthStatus::Unhealthy == conn.status.status {
+            actions.append(&unhealthy_icon(conn.status.error.as_deref()));
         }
 
         actions.append(&self.disconnect_button(provider_backend_id));
@@ -236,114 +212,6 @@ impl ServicesPage {
         });
         button
     }
-
-    fn add_picker_rows(
-        &self,
-        provider_backend_id: &ProviderBackendId,
-        row: &ExpanderRow,
-        conn: &ConnectorConnection,
-    ) {
-        let models = Rc::new(conn.status.models.clone());
-
-        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        let model_row = ComboRow::builder()
-            .title("Model")
-            .model(&StringList::new(&ids))
-            .build();
-        let model_idx = models
-            .iter()
-            .position(|m| m.id == conn.prefer_model)
-            .unwrap_or(0);
-        model_row.set_selected(model_idx as u32);
-
-        let efforts: Vec<&str> = models[model_idx]
-            .supported_reasoning_efforts
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
-        let effort_row = ComboRow::builder()
-            .title("Effort")
-            .model(&StringList::new(&efforts))
-            .build();
-        if !efforts.is_empty() {
-            let effort_idx = models[model_idx]
-                .supported_reasoning_efforts
-                .iter()
-                .position(|e| e == &conn.prefer_effort)
-                .unwrap_or(0);
-            effort_row.set_selected(effort_idx as u32);
-        }
-
-        // Rebuilding the effort list emits selection notifications; ignore those
-        // so only the model handler dispatches the model's default effort.
-        let suppress_effort_notify = Rc::new(Cell::new(false));
-
-        let dispatcher = self.dispatcher.clone();
-        let models_for_effort = models.clone();
-        let suppress_effort_notify_for_effort = suppress_effort_notify.clone();
-        let model_row_weak = model_row.downgrade();
-        let provider_backend_id_for_effort = provider_backend_id.clone();
-        effort_row.connect_selected_notify(move |row| {
-            if suppress_effort_notify_for_effort.get() {
-                return;
-            }
-            let Some(model_row) = model_row_weak.upgrade() else {
-                return;
-            };
-            let Some(model) = models_for_effort.get(model_row.selected() as usize) else {
-                return;
-            };
-            let Some(effort) = model
-                .supported_reasoning_efforts
-                .get(row.selected() as usize)
-            else {
-                return;
-            };
-            let _ = dispatcher.unbounded_send(Msg::PreferenceChanged {
-                provider_backend_id: provider_backend_id_for_effort.clone(),
-                model: model.id.clone(),
-                effort: effort.clone(),
-            });
-        });
-
-        let dispatcher = self.dispatcher.clone();
-        let effort_row_weak = effort_row.downgrade();
-        let provider_backend_id = provider_backend_id.clone();
-        model_row.connect_selected_notify(move |row| {
-            let Some(effort_row) = effort_row_weak.upgrade() else {
-                return;
-            };
-            let Some(model) = models.get(row.selected() as usize) else {
-                return;
-            };
-            let efforts: Vec<&str> = model
-                .supported_reasoning_efforts
-                .iter()
-                .map(|s| s.as_str())
-                .collect();
-            let default = model
-                .supported_reasoning_efforts
-                .iter()
-                .position(|e| e == &model.default_reasoning_effort)
-                .unwrap_or(0);
-
-            suppress_effort_notify.set(true);
-            effort_row.set_model(Some(&StringList::new(&efforts)));
-            if !efforts.is_empty() {
-                effort_row.set_selected(default as u32);
-            }
-            suppress_effort_notify.set(false);
-
-            let _ = dispatcher.unbounded_send(Msg::PreferenceChanged {
-                provider_backend_id: provider_backend_id.clone(),
-                model: model.id.clone(),
-                effort: model.default_reasoning_effort.clone(),
-            });
-        });
-
-        row.add_row(&model_row);
-        row.add_row(&effort_row);
-    }
 }
 
 impl ServicesPage {
@@ -353,11 +221,6 @@ impl ServicesPage {
             Command::FetchConnectors => self.refresh(),
             Command::ShowDisconnectConfirmation(id) => self.show_disconnect_confirmation(id),
             Command::DisconnectProvider(id) => self.disconnect_provider(id),
-            Command::PersistPreference {
-                provider_backend_id,
-                model,
-                effort,
-            } => self.persist_preference(provider_backend_id, model, effort),
             Command::Warn(message) => log::warn!("{message}"),
             Command::ShowErrorDialog(message) => {
                 if let Some(window) = self.window.upgrade() {
