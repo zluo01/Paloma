@@ -35,7 +35,7 @@ jobs:
         run: bash .github/scripts/resolve-release.sh webfetch-plugin-v
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: plugins/extensions/webfetch/go.mod
           cache-dependency-path: plugins/extensions/webfetch/go.sum
@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: plugins/extensions/webfetch/go.mod
           cache-dependency-path: plugins/extensions/webfetch/go.sum
