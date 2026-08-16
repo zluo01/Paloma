@@ -51,9 +51,9 @@ const EXCLUDED_DIRS: &[&str] = &[
 const OPEN_ACTION_LABEL: &str = "Open";
 const OPEN_FOLDER_ACTION_LABEL: &str = "Open Folder";
 const COPY_PATH_ACTION_LABEL: &str = "Copy Path";
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const FOLDER_ICON: &str = "folder";
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const FALLBACK_ICON: &str = "text-x-generic";
 
 type FsWatcher = Debouncer<notify::RecommendedWatcher, NoCache>;
@@ -777,19 +777,19 @@ fn display_parent(roots: &[PathBuf], path: &Path) -> String {
     }
 }
 
-/// Windows renders the entry's real icon from its path.
-#[cfg(windows)]
+/// Windows and macOS can render the entry's real icon from its path.
+#[cfg(not(target_os = "linux"))]
 fn entry_icon(entry: &FileEntry) -> CapabilityIcon {
     CapabilityIcon::path(entry.path.to_string_lossy().into_owned())
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn entry_icon(entry: &FileEntry) -> CapabilityIcon {
     CapabilityIcon::name(icon_name(entry))
 }
 
 /// Freedesktop icon name for the entry's mime type, e.g. `text-plain`.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn icon_name(entry: &FileEntry) -> String {
     if entry.is_dir {
         return FOLDER_ICON.to_string();
@@ -1261,7 +1261,7 @@ mod tests {
         );
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     #[test]
     fn icon_name_maps_mime_types() {
         assert_eq!(icon_name(&entry("/home/u/a.png", false)), "image-png");
@@ -1269,19 +1269,18 @@ mod tests {
         assert_eq!(icon_name(&entry("/home/u/noext", false)), FALLBACK_ICON);
     }
 
-    #[cfg(windows)]
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn entries_use_shell_path_icons() {
         use paloma_extension_protocol::v1::capability_icon::Icon;
 
-        let item = build_item(
-            &[PathBuf::from(r"C:\Users\u")],
-            &entry(r"C:\Users\u\photo.png", false),
-        );
+        #[cfg(windows)]
+        let (root, file) = (r"C:\Users\u", r"C:\Users\u\photo.png");
+        #[cfg(not(windows))]
+        let (root, file) = ("/Users/u", "/Users/u/photo.png");
 
-        assert_eq!(
-            item.icon.unwrap().icon,
-            Some(Icon::Path(r"C:\Users\u\photo.png".into()))
-        );
+        let item = build_item(&[PathBuf::from(root)], &entry(file, false));
+
+        assert_eq!(item.icon.unwrap().icon, Some(Icon::Path(file.into())));
     }
 }

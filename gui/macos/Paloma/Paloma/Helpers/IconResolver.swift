@@ -14,14 +14,11 @@ enum ResolvedIcon {
 }
 
 enum IconResolver {
-    private static let cache = NSCache<NSString, NSImage>()
-
-    /// Freedesktop icon names used by core capabilities.
-    private static let symbols: [String: String] = [
-        "edit-paste": "doc.on.clipboard",
-        "accessories-calculator": "plus.forwardslash.minus",
-        "folder": "folder",
-    ]
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 512
+        return cache
+    }()
 
     static func resolve(_ icon: Icon?) -> ResolvedIcon {
         switch icon {
@@ -33,7 +30,10 @@ enum IconResolver {
             cache.setObject(image, forKey: path as NSString)
             return .image(image)
         case let .name(name):
-            return .system(symbols[name] ?? mimeSymbol(name))
+            guard NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil else {
+                return .system("questionmark.square.dashed")
+            }
+            return .system(name)
         case let .embedded(data):
             if let image = NSImage(data: Data(data)) {
                 return .image(image)
@@ -41,18 +41,6 @@ enum IconResolver {
             return .system("questionmark.square.dashed")
         case nil:
             return .system("magnifyingglass")
-        }
-    }
-
-    /// FileSearch encodes mime types as names like "image-png".
-    private static func mimeSymbol(_ name: String) -> String {
-        switch name.split(separator: "-").first {
-        case "image": "photo"
-        case "video": "film"
-        case "audio": "music.note"
-        case "text": "doc.text"
-        case "application": "doc"
-        default: "doc"
         }
     }
 }

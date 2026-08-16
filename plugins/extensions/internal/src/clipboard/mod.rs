@@ -33,8 +33,10 @@ use crate::clipboard::windows::watch_clipboard;
 
 const HISTORY_LIMIT: usize = 100;
 const RESPAWN_BACKOFF: Duration = Duration::from_secs(2);
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const ICON_NAME: &str = "edit-paste";
+#[cfg(target_os = "macos")]
+const ICON_NAME: &str = "doc.on.clipboard";
 #[cfg(windows)]
 const ICON_NAME: &str = "\u{E77F}";
 

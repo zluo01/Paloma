@@ -10,8 +10,10 @@ use regex::Regex;
 use crate::clipboard::copy_to_clipboard;
 
 const MAX_EXPRESSION_BYTES: usize = 1024;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const ICON_NAME: &str = "accessories-calculator";
+#[cfg(target_os = "macos")]
+const ICON_NAME: &str = "plus.forwardslash.minus";
 #[cfg(windows)]
 const ICON_NAME: &str = "\u{E8EF}";
 const COPY_RESULT_ACTION_LABEL: &str = "Copy Result";
