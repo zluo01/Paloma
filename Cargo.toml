@@ -4,8 +4,9 @@ members = [
     "core",
     "extension-base",
     "extension-protocol",
-    "ffi",
     "gui/linux",
+    "gui/macos/ffi",
+    "gui/macos/uniffi-bindgen",
     "gui/windows/binding-protocol",
     "gui/windows/core",
     "plugins/extensions/internal",
@@ -14,7 +15,6 @@ members = [
     "plugins/providers/openai",
     "provider-base",
     "provider-protocol",
-    "uniffi-bindgen",
     "utils",
 ]
 # skip the macos-only crates in bare cargo invocations
