@@ -7,10 +7,7 @@ use futures::channel::mpsc;
 use gtk4::{Align, Box as GtkBox, Button, Image, Orientation, glib};
 use libadwaita::{
     ActionRow, AlertDialog, ApplicationWindow, PreferencesGroup, PreferencesPage,
-    ResponseAppearance,
-    gdk::Texture,
-    glib::{Bytes, WeakRef},
-    prelude::*,
+    ResponseAppearance, glib::WeakRef, prelude::*,
 };
 use paloma_core::{
     AppContext, ConnectorConnection, HealthStatus, Icon, ProviderAuthMethod, ProviderBackendId,
@@ -19,7 +16,7 @@ use tokio::task::JoinHandle;
 
 use self::model::{Command, Model, Msg};
 use crate::{
-    helper::Clear,
+    helper::{Clear, icon_image},
     runtime::tokio_runtime,
     widgets::settings::{
         helper::{group_is_empty, placeholder, show_error_dialog, unhealthy_icon},
@@ -354,22 +351,9 @@ fn build_view() -> (PreferencesPage, PreferencesGroup, PreferencesGroup) {
 }
 
 fn logo(icon: Option<&Icon>) -> Image {
-    let image = match icon {
-        Some(Icon::Embedded(data)) => match Texture::from_bytes(&Bytes::from(&data[..])) {
-            Ok(texture) => Image::from_paintable(Some(&texture)),
-            Err(e) => {
-                log::warn!("failed to load embedded logo: {e}");
-                fallback_logo()
-            },
-        },
-        Some(Icon::Path(path)) => Image::from_file(path),
-        Some(Icon::Name(name)) => Image::from_icon_name(name),
-        None => fallback_logo(),
-    };
-    image.set_pixel_size(40);
-    image
-}
-
-fn fallback_logo() -> Image {
-    Image::from_icon_name("application-x-executable-symbolic")
+    icon_image(
+        icon.map(Into::into),
+        40,
+        Some("application-x-executable-symbolic"),
+    )
 }

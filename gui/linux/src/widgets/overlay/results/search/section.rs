@@ -3,9 +3,12 @@ use gtk4::{
     Align, Box as GtkBox, Button, Image, Label, Orientation, Revealer, RevealerTransitionType,
     Separator, Widget, prelude::*,
 };
-use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item, capability_icon};
+use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item};
 
-use crate::widgets::overlay::model::{ChatMsg, Msg, SearchMsg};
+use crate::{
+    helper::icon_image,
+    widgets::overlay::model::{ChatMsg, Msg, SearchMsg},
+};
 
 const CHAT_ACTION_LABEL: &str = "Chat about it";
 
@@ -261,13 +264,9 @@ fn item_content_row(item: &Item) -> GtkBox {
         .spacing(10)
         .build();
 
-    let image = match item.icon.as_ref().and_then(|icon| icon.icon.as_ref()) {
-        Some(capability_icon::Icon::Name(name)) => Image::from_icon_name(name),
-        Some(capability_icon::Icon::Path(path)) => Image::from_file(path),
-        Some(capability_icon::Icon::Embedded(_)) | None => Image::new(),
-    };
+    let icon = item.icon.as_ref().and_then(|icon| icon.icon.as_ref());
+    let image = icon_image(icon.map(Into::into), 28, None);
     image.add_css_class("paloma-item-icon");
-    image.set_pixel_size(28);
     row.append(&image);
 
     let text = GtkBox::builder()

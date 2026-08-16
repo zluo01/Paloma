@@ -1,8 +1,12 @@
+mod icon;
+
 use gtk4::{
     ScrolledWindow, Viewport,
     prelude::{AdjustmentExt, BoxExt, CastNone, IsA, StaticType, WidgetExt},
 };
 use libadwaita::{PreferencesGroup, PreferencesPage, prelude::*};
+
+pub(crate) use self::icon::icon_image;
 
 /// The first/last rows snap the card fully to the top/bottom so its padding
 /// isn't clipped; middle rows use the minimal scroll.
