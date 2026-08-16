@@ -13,6 +13,8 @@ struct SearchRowView: View {
     let actionHint: Bool
     let onEvent: (SearchEvent) -> Void
 
+    @State private var hovering = false
+
     var body: some View {
         HStack(spacing: 10) {
             IconView(icon: item.icon)
@@ -28,13 +30,23 @@ struct SearchRowView: View {
                 }
             }
             Spacer(minLength: 0)
-            if actionHint {
+            if hovering, item.actions.count > 1 {
+                Button {
+                    onEvent(.showActions(index: index))
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.ghostIcon)
+                .help("Show actions")
+            } else if actionHint {
                 Text("⌘⏎")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
-        .searchRow(selected: selected) {
+        .searchRow(selected: selected, hovering: $hovering) {
             onEvent(.action(index: index))
         }
         .anchorPreference(key: SelectedRowBounds.self, value: .bounds) { anchor in

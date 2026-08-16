@@ -10,6 +10,8 @@ import Observation
 enum SearchEvent {
     case action(index: Int)
     case subAction(index: Int)
+    case showActions(index: Int)
+    case dismiss
     case chat
 }
 

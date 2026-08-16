@@ -6,15 +6,15 @@
 import SwiftUI
 
 extension View {
-    func searchRow(selected: Bool, onTap: @escaping () -> Void) -> some View {
-        modifier(SearchRowModifier(selected: selected, onTap: onTap))
+    func searchRow(selected: Bool, hovering: Binding<Bool>, onTap: @escaping () -> Void) -> some View {
+        modifier(SearchRowModifier(hovering: hovering, selected: selected, onTap: onTap))
     }
 }
 
 private struct SearchRowModifier: ViewModifier {
+    @Binding var hovering: Bool
     let selected: Bool
     let onTap: () -> Void
-    @State private var hovering = false
 
     func body(content: Content) -> some View {
         content

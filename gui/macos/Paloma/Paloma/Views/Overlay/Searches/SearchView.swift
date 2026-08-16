@@ -53,7 +53,11 @@ struct SearchView: View {
                             .id(index)
                         }
                     }
-                    chatRow
+                    ChatRowView(
+                        query: query,
+                        selected: chatRowSelected,
+                        onEvent: onEvent
+                    )
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
@@ -76,23 +80,38 @@ struct SearchView: View {
                         let estimated = CGFloat(selectedItem.actions.count) * 25 + 8
                         let fitsBelow = row.maxY + estimated <= geometry.size.height
                         let fitsAbove = row.minY - estimated >= 0
-                        ActionPanelView(
-                            actions: selectedItem.actions,
-                            selection: panelSelection,
-                            onEvent: onEvent
-                        )
-                        .frame(width: row.width)
-                        .offset(
-                            x: row.minX,
-                            y: fitsBelow || !fitsAbove ? row.maxY : row.minY - estimated
-                        )
+                        ZStack(alignment: .topLeading) {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    onEvent(.dismiss)
+                                }
+                            ActionPanelView(
+                                actions: selectedItem.actions,
+                                selection: panelSelection,
+                                onEvent: onEvent
+                            )
+                            .frame(width: row.width)
+                            .offset(
+                                x: row.minX,
+                                y: fitsBelow || !fitsAbove ? row.maxY : row.minY - estimated
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
 
-    private var chatRow: some View {
+private struct ChatRowView: View {
+    let query: String
+    let selected: Bool
+    let onEvent: (SearchEvent) -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
         HStack(spacing: 10) {
             IconView(systemName: "sparkles")
             Text("Chat about \u{201C}\(query)\u{201D}")
@@ -100,7 +119,7 @@ struct SearchView: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .searchRow(selected: chatRowSelected) {
+        .searchRow(selected: selected, hovering: $hovering) {
             onEvent(.chat)
         }
         .padding(.top, 6)
@@ -115,21 +134,40 @@ private struct ActionPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(actions.enumerated()), id: \.offset) { actionIndex, action in
-                Text(action.label)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .rowHighlight(actionIndex == selection, cornerRadius: 6)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onEvent(.subAction(index: actionIndex))
-                    }
+                ActionRowView(
+                    action: action,
+                    index: actionIndex,
+                    selection: selection,
+                    onEvent: onEvent
+                )
             }
         }
         .padding(4)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+    }
+}
+
+private struct ActionRowView: View {
+    let action: Action
+    let index: Int
+    let selection: Int
+    let onEvent: (SearchEvent) -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Text(action.label)
+            .font(.system(size: 13))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .rowHighlight(index == selection || hovering, cornerRadius: 6)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .onTapGesture {
+                onEvent(.subAction(index: index))
+            }
     }
 }

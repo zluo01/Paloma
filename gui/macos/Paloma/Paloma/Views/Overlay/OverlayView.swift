@@ -207,6 +207,12 @@ struct OverlayView: View {
         case let .subAction(index):
             searches.panelSelection = index
             runSelected()
+        case let .showActions(index):
+            searches.selection = index
+            searches.closePanel()
+            searches.openPanel()
+        case .dismiss:
+            searches.closePanel()
         case .chat:
             startChat()
         }
@@ -228,6 +234,8 @@ struct OverlayView: View {
         OperationError.run("Failed to Run Action", into: $operationError) {
             await searches.runAction(sectionId, action: action)
         } onSuccess: {
+            query.removeAll()
+            searches.clear()
             onHide()
         }
     }
