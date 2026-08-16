@@ -7,6 +7,13 @@
 import Foundation
 import Observation
 
+enum ScrollCommand: Equatable {
+    case pageUp
+    case pageDown
+    case top
+    case bottom
+}
+
 @MainActor
 @Observable
 final class ChatModel {
@@ -16,6 +23,8 @@ final class ChatModel {
     private(set) var decisionCursor = -1
     /// Tool ids with a decision round-trip in flight.
     private(set) var deciding: Set<Int> = []
+    /// Signal chat view page scrolls
+    private(set) var scrollCommand: ScrollCommand?
 
     @ObservationIgnored private(set) var sessionId: Uuid?
     @ObservationIgnored private var chatTask: Task<Void, Never>?
@@ -134,7 +143,7 @@ final class ChatModel {
 
             // auto populate all ignore permissions
             if case .ignorePermission = decision {
-                for section in _transcript {
+                for section in transcript {
                     guard case let .tool(tool) = section else { continue }
                     if tool.resolution == nil, !deciding.contains(tool.id) {
                         guard let decision = tool.decisions.first(where: {
@@ -211,6 +220,15 @@ final class ChatModel {
         guard let selected = selectedDecision else { return false }
         decide(selected.decision, toolId: selected.toolId)
         return true
+    }
+
+    func scroll(_ command: ScrollCommand) {
+        scrollCommand = command
+    }
+
+    func takeScrollCommand() -> ScrollCommand? {
+        defer { scrollCommand = nil }
+        return scrollCommand
     }
 
     private func render(_ event: RenderEvent) {

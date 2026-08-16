@@ -82,6 +82,31 @@ struct OverlayView: View {
                     guard press.chord(.command) else { return .ignored }
                     return handleDeleteKey()
                 }
+                .onKeyPress(keys: [.pageUp, .pageDown]) { press in
+                    guard press.chord(), mode == .chat else { return .ignored }
+                    chats.scroll(press.key == .pageDown ? .pageDown : .pageUp)
+                    return .handled
+                }
+                .onKeyPress(keys: [.home, .end]) { press in
+                    guard press.chord(), mode == .chat else { return .ignored }
+                    chats.scroll(press.key == .end ? .bottom : .top)
+                    return .handled
+                }
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    if mode != .chat {
+                        return .ignored
+                    }
+
+                    if press.chord(.option) {
+                        chats.scroll(press.key == .downArrow ? .pageDown : .pageUp)
+                    } else if press.chord(.command) {
+                        chats.scroll(press.key == .downArrow ? .bottom : .top)
+                    } else {
+                        return .ignored
+                    }
+
+                    return .handled
+                }
                 .onKeyPress(phases: .down) { press in
                     // Text edits are blocked while the action panel is open.
                     guard mode == .search, searches.panelSelection != nil else {

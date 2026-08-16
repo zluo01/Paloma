@@ -22,6 +22,10 @@ struct ShortcutsView: View {
                 LabeledContent("Send message", value: "⏎")
                 LabeledContent("Stop generating", value: "⌃C")
                 LabeledContent("Open sessions", value: "⇧↓")
+                LabeledContent("Page up", value: "⇞ / ⌥↑")
+                LabeledContent("Page down", value: "⇟ / ⌥↓")
+                LabeledContent("Top", value: "↖ / ⌘↑")
+                LabeledContent("Bottom", value: "↘ / ⌘↓")
             }
             Section("Sessions") {
                 LabeledContent("Restore session", value: "⏎")
