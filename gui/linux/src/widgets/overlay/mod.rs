@@ -23,8 +23,8 @@ mod results;
 mod window;
 
 use paloma_core::{
-    Action, AppContext, ChatRenderEvent, ExtensionCapabilityId, ProviderBackendId, RenderEvent,
-    SearchRenderEvent,
+    Action, AppContext, ChatRenderEvent, ExtensionCapabilityId, PermissionState, ProviderBackendId,
+    RenderEvent, SearchRenderEvent, UserDecision,
 };
 
 use crate::{
@@ -109,7 +109,7 @@ impl Overlay {
             .build();
 
         let search = SearchView::new(dispatcher.clone());
-        let chat = ChatView::new(app_context.clone());
+        let chat = ChatView::new();
         let sessions = SessionsView::new(app_context.clone(), dispatcher.clone());
 
         content_stack.add_named(search.widget(), Some(SEARCH_VIEW_KEY));
@@ -247,6 +247,10 @@ impl Overlay {
             Command::OpenSessions => self.show_session_view(),
             Command::ClearChatContent => self.clear_session(),
             Command::ExitSearch => self.exit_search(),
+            Command::SendDecision(user_decision) => self.make_decision(user_decision),
+            Command::ResolveToolCallDecision(user_decision, permission_state) => {
+                self.resolve_decision(user_decision, permission_state)
+            },
         }
     }
 }
@@ -536,6 +540,7 @@ impl Overlay {
                     &arguments,
                     description.as_deref(),
                     &decisions,
+                    self.dispatcher.clone(),
                 );
             },
             RenderEvent::Done => {
@@ -549,6 +554,34 @@ impl Overlay {
                 error!("unexpected render event on session channel");
             },
         }
+    }
+
+    fn make_decision(&self, user_decision: UserDecision) {
+        let app_context = self.app_context.clone();
+        let dispatcher = self.dispatcher.clone();
+        drop(runtime::tokio_runtime().spawn(async move {
+            match app_context
+                .decide_toolcall_permissions(user_decision.clone())
+                .await
+            {
+                Ok(permission_state) => {
+                    let _ = dispatcher.unbounded_send(Msg::Chat(
+                        ChatMsg::ToolCallDecisionFinished(user_decision, permission_state),
+                    ));
+                },
+                Err(error) => {
+                    error!("Fail to decide permission. {}", error);
+                    let _ = dispatcher.unbounded_send(Msg::Chat(
+                        ChatMsg::ToolCallDecisionFinished(user_decision, PermissionState::Error),
+                    ));
+                },
+            }
+        }));
+    }
+
+    fn resolve_decision(&self, user_decision: UserDecision, permission_state: PermissionState) {
+        self.chat
+            .resolve_tool_call(&user_decision, &permission_state)
     }
 }
 

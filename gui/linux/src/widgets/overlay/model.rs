@@ -1,5 +1,6 @@
 use paloma_core::{
-    Action, AppError, ExtensionCapabilityId, ProviderBackendId, RenderEvent, SearchRenderEvent,
+    Action, AppError, ExtensionCapabilityId, PermissionState, ProviderBackendId, RenderEvent,
+    SearchRenderEvent, UserDecision,
 };
 use uuid::Uuid;
 
@@ -110,6 +111,8 @@ pub(super) enum ChatMsg {
         event: RenderEvent,
     },
     InterruptRequested,
+    ToolCallDecisionRequested(UserDecision),
+    ToolCallDecisionFinished(UserDecision, PermissionState),
 }
 
 pub(super) enum SessionMsg {
@@ -171,6 +174,8 @@ pub(super) enum Command {
     ReportError {
         error: AppError,
     },
+    SendDecision(UserDecision),
+    ResolveToolCallDecision(UserDecision, PermissionState),
 }
 
 impl Model {
@@ -320,6 +325,15 @@ impl Model {
                     return vec![];
                 };
                 vec![Command::CancelChatSession { session_id }]
+            },
+            ChatMsg::ToolCallDecisionRequested(user_decision) => {
+                vec![Command::SendDecision(user_decision)]
+            },
+            ChatMsg::ToolCallDecisionFinished(user_decision, permission_state) => {
+                vec![Command::ResolveToolCallDecision(
+                    user_decision,
+                    permission_state,
+                )]
             },
         }
     }
@@ -1208,5 +1222,134 @@ mod tests {
         assert_eq!(model.current_session, None);
         assert!(matches!(model.mode, Mode::Search));
         assert_chat_idle(&model);
+    }
+
+    fn tool_call_event(call_id: &str) -> RenderEvent {
+        RenderEvent::Chat(ChatRenderEvent::ToolCall {
+            tool_name: "bash".into(),
+            arguments: "rm -rf target".into(),
+            description: None,
+            decisions: vec![
+                UserDecision::AllowOnce {
+                    call_id: call_id.into(),
+                },
+                UserDecision::Deny {
+                    call_id: call_id.into(),
+                },
+            ],
+        })
+    }
+
+    fn expect_tool_call_rendered(model: &mut Model, turn_id: u64, call_id: &str) {
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
+            turn_id,
+            event: tool_call_event(call_id),
+        }));
+        let [
+            Command::RenderChatEvent {
+                event: RenderEvent::Chat(ChatRenderEvent::ToolCall { .. }),
+            },
+        ] = commands.as_slice()
+        else {
+            panic!("expected the tool call to render");
+        };
+    }
+
+    #[test]
+    fn toolcall_decision_workflow_sends_resolves_and_keeps_the_turn_running() {
+        let mut model = Model::new();
+        let turn_id = expect_running_chat(&mut model, "clean the build");
+        expect_tool_call_rendered(&mut model, turn_id, "call-1");
+
+        let decision = UserDecision::AllowOnce {
+            call_id: "call-1".into(),
+        };
+        let commands = model.update(Msg::Chat(ChatMsg::ToolCallDecisionRequested(
+            decision.clone(),
+        )));
+        let [Command::SendDecision(sent)] = commands.as_slice() else {
+            panic!("expected the decision to be sent");
+        };
+        assert_eq!(*sent, decision);
+        assert_chat_running(&model, turn_id);
+
+        let commands = model.update(Msg::Chat(ChatMsg::ToolCallDecisionFinished(
+            decision.clone(),
+            PermissionState::Allow,
+        )));
+        let [Command::ResolveToolCallDecision(resolved, PermissionState::Allow)] =
+            commands.as_slice()
+        else {
+            panic!("expected the decision to resolve");
+        };
+        assert_eq!(*resolved, decision);
+        assert_chat_running(&model, turn_id);
+
+        let commands = model.update(Msg::Chat(ChatMsg::RenderEventReceived {
+            turn_id,
+            event: RenderEvent::Done,
+        }));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RenderChatEvent {
+                event: RenderEvent::Done
+            }]
+        ));
+        assert_chat_idle(&model);
+    }
+
+    #[test]
+    fn toolcall_decision_denied_resolves_with_the_deny_state() {
+        let mut model = Model::new();
+        let turn_id = expect_running_chat(&mut model, "clean the build");
+        expect_tool_call_rendered(&mut model, turn_id, "call-1");
+
+        let decision = UserDecision::Deny {
+            call_id: "call-1".into(),
+        };
+        let commands = model.update(Msg::Chat(ChatMsg::ToolCallDecisionRequested(
+            decision.clone(),
+        )));
+        assert!(matches!(commands.as_slice(), [Command::SendDecision(sent)] if *sent == decision));
+
+        let commands = model.update(Msg::Chat(ChatMsg::ToolCallDecisionFinished(
+            decision.clone(),
+            PermissionState::Deny,
+        )));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ResolveToolCallDecision(resolved, PermissionState::Deny)] if *resolved == decision
+        ));
+        assert_chat_running(&model, turn_id);
+    }
+
+    #[test]
+    fn toolcall_decision_reply_after_chat_exit_is_still_forwarded_to_the_view() {
+        let mut model = Model::new();
+        let turn_id = expect_running_chat(&mut model, "clean the build");
+        expect_tool_call_rendered(&mut model, turn_id, "call-1");
+
+        let decision = UserDecision::AllowOnce {
+            call_id: "call-1".into(),
+        };
+        let _ = model.update(Msg::Chat(ChatMsg::ToolCallDecisionRequested(
+            decision.clone(),
+        )));
+
+        let commands = model.update(Msg::ContentCloseRequested);
+        let [Command::ClearQuery, Command::HideContent] = commands.as_slice() else {
+            panic!("expected chat exit to hide content");
+        };
+
+        // The model has no per-call state yet: a late reply is forwarded and
+        // the view is responsible for dropping decisions it no longer tracks.
+        let commands = model.update(Msg::Chat(ChatMsg::ToolCallDecisionFinished(
+            decision.clone(),
+            PermissionState::Error,
+        )));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ResolveToolCallDecision(resolved, PermissionState::Error)] if *resolved == decision
+        ));
     }
 }

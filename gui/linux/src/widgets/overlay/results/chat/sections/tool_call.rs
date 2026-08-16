@@ -1,25 +1,40 @@
+use std::cmp::PartialEq;
+
+use futures::channel::mpsc;
 use gtk4::{
     Box as GtkBox, Button, Label, Orientation, Separator, pango,
-    prelude::{BoxExt, WidgetExt},
+    prelude::{BoxExt, ButtonExt, WidgetExt},
 };
 use paloma_core::{PermissionState, UserDecision};
 
 use crate::{
-    helper::Clear,
-    widgets::overlay::results::chat::helper::{append_content_label, code_card, new_section},
+    helper::{Clear, scroll_into_view},
+    widgets::overlay::{
+        SELECTED_CLASS,
+        model::{ChatMsg, Msg},
+        results::chat::helper::{append_content_label, code_card, new_section},
+    },
 };
 
 const TOOL_CLASS: &str = "paloma-chat-section-tool";
+
+#[derive(Eq, PartialEq)]
+enum ToolCallState {
+    Waiting,
+    Decided,
+    Done,
+}
 
 pub(crate) struct ToolCallDecision {
     pub action: Button,
     pub decision: UserDecision,
 }
 
-#[derive(Clone)]
 pub(crate) struct ToolCallSection {
     view: GtkBox,
     decision_group: Option<GtkBox>,
+    decisions: Vec<ToolCallDecision>,
+    state: ToolCallState,
 }
 
 impl ToolCallSection {
@@ -28,42 +43,83 @@ impl ToolCallSection {
         arguments: &str,
         description: Option<&str>,
         decisions: &[UserDecision],
-    ) -> (Self, Vec<ToolCallDecision>) {
+        dispatcher: mpsc::UnboundedSender<Msg>,
+    ) -> Self {
         let view = new_section(None, TOOL_CLASS);
         if let Some(description) = description.filter(|d| !d.is_empty()) {
             append_content_label(&view, description, "paloma-chat-tool-description");
         }
         view.append(&code_card(tool_name, arguments));
 
-        let (decision_group, parsed) = if !decisions.is_empty() {
-            let (decision_group, parsed) = decision_button_group(decisions);
+        let (decision_group, decisions, state) = if !decisions.is_empty() {
+            let (decision_group, parsed) = decision_button_group(decisions, dispatcher);
             view.append(&decision_group);
-            (Some(decision_group), parsed)
+            (Some(decision_group), parsed, ToolCallState::Waiting)
         } else {
-            (None, vec![])
+            (None, vec![], ToolCallState::Done)
         };
 
-        (
-            Self {
-                view,
-                decision_group,
-            },
-            parsed,
-        )
+        Self {
+            view,
+            decision_group,
+            decisions,
+            state,
+        }
     }
 
     pub(crate) fn widgets(&self) -> &GtkBox {
         &self.view
     }
 
-    pub(crate) fn on_finish(&self, permission_state: &PermissionState) {
+    pub(crate) fn decision_count(&self) -> usize {
+        self.decisions.len()
+    }
+
+    pub(crate) fn active(&mut self, index: usize) {
+        if self.state != ToolCallState::Waiting {
+            return;
+        }
+        if let Some(decision) = self.decisions.get(index)
+            && decision.action.is_sensitive()
+        {
+            self.state = ToolCallState::Decided;
+            decision.action.emit_clicked();
+        }
+    }
+
+    pub(crate) fn select(&self, index: usize) {
+        if let Some(decision) = self.decisions.get(index) {
+            decision.action.add_css_class(SELECTED_CLASS);
+            scroll_into_view(&decision.action);
+        }
+    }
+
+    pub(crate) fn is_finish(&self) -> bool {
+        self.state == ToolCallState::Done
+    }
+
+    pub(crate) fn deselect(&self, index: usize) {
+        if let Some(decision) = self.decisions.get(index) {
+            decision.action.remove_css_class(SELECTED_CLASS);
+        }
+    }
+
+    pub(crate) fn contains(&self, user_decision: &UserDecision) -> bool {
+        self.decisions.iter().any(|d| &d.decision == user_decision)
+    }
+
+    pub(crate) fn on_finish(&mut self, permission_state: &PermissionState) {
         if let Some(actions) = &self.decision_group {
+            self.state = ToolCallState::Done;
             resolve_decision(actions, permission_state);
         }
     }
 }
 
-fn decision_button_group(user_decisions: &[UserDecision]) -> (GtkBox, Vec<ToolCallDecision>) {
+fn decision_button_group(
+    user_decisions: &[UserDecision],
+    dispatcher: mpsc::UnboundedSender<Msg>,
+) -> (GtkBox, Vec<ToolCallDecision>) {
     let actions = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(6)
@@ -83,23 +139,29 @@ fn decision_button_group(user_decisions: &[UserDecision]) -> (GtkBox, Vec<ToolCa
 
     let mut tool_call_decisions: Vec<ToolCallDecision> = Vec::with_capacity(user_decisions.len());
     for decision in allow {
-        let decision = decision_button(decision);
-        actions.append(&decision.action);
-        tool_call_decisions.push(decision);
+        let action = decision_button(decision, dispatcher.clone());
+        actions.append(&action);
+        tool_call_decisions.push(ToolCallDecision {
+            action,
+            decision: decision.clone(),
+        });
     }
     if !tool_call_decisions.is_empty() && !terminal.is_empty() {
         actions.append(&Separator::new(Orientation::Horizontal));
     }
     for decision in terminal {
-        let decision = decision_button(decision);
-        actions.append(&decision.action);
-        tool_call_decisions.push(decision);
+        let action = decision_button(decision, dispatcher.clone());
+        actions.append(&action);
+        tool_call_decisions.push(ToolCallDecision {
+            action,
+            decision: decision.clone(),
+        });
     }
 
     (actions, tool_call_decisions)
 }
 
-fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
+fn decision_button(user_decision: &UserDecision, dispatcher: mpsc::UnboundedSender<Msg>) -> Button {
     let text = decision_label(user_decision);
     let label = Label::builder()
         .label(&text)
@@ -131,10 +193,18 @@ fn decision_button(user_decision: &UserDecision) -> ToolCallDecision {
         },
     }
 
-    ToolCallDecision {
-        action: button,
-        decision: user_decision.clone(),
-    }
+    let decision = user_decision.clone();
+    button.connect_clicked(move |button| {
+        // disable all buttons
+        if let Some(group) = button.parent() {
+            group.set_sensitive(false);
+        }
+        let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::ToolCallDecisionRequested(
+            decision.clone(),
+        )));
+    });
+
+    button
 }
 
 fn resolve_decision(actions: &GtkBox, state: &PermissionState) {

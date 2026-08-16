@@ -4,9 +4,7 @@ mod tool_call;
 mod user_prompt;
 
 pub(super) use self::{
-    assistant::AssistantSection,
-    reasoning::ReasoningSection,
-    tool_call::{ToolCallDecision, ToolCallSection},
+    assistant::AssistantSection, reasoning::ReasoningSection, tool_call::ToolCallSection,
     user_prompt::UserPromptSection,
 };
 
