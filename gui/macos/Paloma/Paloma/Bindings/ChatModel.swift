@@ -126,16 +126,42 @@ final class ChatModel {
     }
 
     func decide(_ decision: UserDecision, toolId: Int) {
-        guard deciding.insert(toolId).inserted else { return }
-        let turn = generation
         Task {
-            let result = await CoreClient.shared.withApp { app in
-                try await app.decideToolcallPermissions(userDecision: decision)
+            let state = await submitDecision(decision, toolId: toolId)
+            if state != .allow {
+                return
             }
-            deciding.remove(toolId)
-            guard isCurrent(turn) else { return }
-            resolveTool(toolId, with: (try? result.get()) ?? .error)
+
+            // auto populate all ignore permissions
+            if case .ignorePermission = decision {
+                for section in _transcript {
+                    guard case let .tool(tool) = section else { continue }
+                    if tool.resolution == nil, !deciding.contains(tool.id) {
+                        guard let decision = tool.decisions.first(where: {
+                            if case .ignorePermission = $0 {
+                                true
+                            } else {
+                                false
+                            }
+                        }) else { continue }
+                        Task { await submitDecision(decision, toolId: tool.id) }
+                    }
+                }
+            }
         }
+    }
+
+    private func submitDecision(_ decision: UserDecision, toolId: Int) async -> PermissionState? {
+        guard deciding.insert(toolId).inserted else { return nil }
+        let turn = generation
+        let result = await CoreClient.shared.withApp { app in
+            try await app.decideToolcallPermissions(userDecision: decision)
+        }
+        deciding.remove(toolId)
+        guard isCurrent(turn) else { return nil }
+        let state = (try? result.get()) ?? .error
+        resolveTool(toolId, with: state)
+        return state
     }
 
     private func resolveTool(_ toolId: Int, with state: PermissionState) {
