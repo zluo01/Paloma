@@ -231,6 +231,10 @@ impl PendingDecisions {
     }
 
     fn append_decisions(&self, tool_call_section: ToolCallSection) {
+        if tool_call_section.decision_count() == 0 {
+            return;
+        }
+
         let mut state = self.state.borrow_mut();
         state.active += tool_call_section.decision_count();
         state.groups.push(tool_call_section);
@@ -304,6 +308,16 @@ impl PendingDecisionsState {
                 break;
             }
         }
+
+        // autopopulate all the toolcall with ignore permission decision
+        if matches!(user_decision, UserDecision::IgnorePermission { .. })
+            && matches!(permission_state, PermissionState::Allow)
+        {
+            for group in &mut self.groups {
+                group.active_matching(|d| matches!(d, UserDecision::IgnorePermission { .. }));
+            }
+        }
+
         self.select((self.active > 0).then_some(0));
     }
 

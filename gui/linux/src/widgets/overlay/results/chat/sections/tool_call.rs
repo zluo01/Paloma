@@ -1,10 +1,9 @@
-use std::cmp::PartialEq;
-
 use futures::channel::mpsc;
 use gtk4::{
     Box as GtkBox, Button, Label, Orientation, Separator, pango,
     prelude::{BoxExt, ButtonExt, WidgetExt},
 };
+use log::warn;
 use paloma_core::{PermissionState, UserDecision};
 
 use crate::{
@@ -84,6 +83,29 @@ impl ToolCallSection {
         {
             self.state = ToolCallState::Decided;
             decision.action.emit_clicked();
+        }
+    }
+
+    pub(crate) fn active_matching(&mut self, predicate: impl Fn(&UserDecision) -> bool) {
+        if self.state != ToolCallState::Waiting {
+            return;
+        }
+
+        let matched: Vec<&Button> = self
+            .decisions
+            .iter()
+            .filter(|d| predicate(&d.decision))
+            .map(|d| &d.action)
+            .collect();
+
+        match matched.as_slice() {
+            [] => {},
+            [action] if action.is_sensitive() => {
+                self.state = ToolCallState::Decided;
+                action.emit_clicked();
+            },
+            [_] => {},
+            _ => warn!("predicate does not match to exact one decision. This indicates a bug."),
         }
     }
 
