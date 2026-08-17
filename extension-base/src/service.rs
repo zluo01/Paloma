@@ -327,6 +327,7 @@ mod tests {
         fn facet(&self) -> ToolFacet {
             ToolFacet {
                 description: "tool only facet".into(),
+                short_description: "tool only facet".into(),
                 parameters: "{}".into(),
             }
         }
@@ -369,6 +370,7 @@ mod tests {
         fn facet(&self) -> ToolFacet {
             ToolFacet {
                 description: "cancel only facet".into(),
+                short_description: "cancel only facet".into(),
                 parameters: "{}".into(),
             }
         }

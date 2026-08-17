@@ -22,10 +22,11 @@ const (
 )
 
 type ToolFacet struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Description string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Description      string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
+	ShortDescription string                 `protobuf:"bytes,2,opt,name=short_description,json=shortDescription,proto3" json:"short_description,omitempty"`
 	// json schema string for tools
-	Parameters    string `protobuf:"bytes,2,opt,name=parameters,proto3" json:"parameters,omitempty"`
+	Parameters    string `protobuf:"bytes,3,opt,name=parameters,proto3" json:"parameters,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -63,6 +64,13 @@ func (*ToolFacet) Descriptor() ([]byte, []int) {
 func (x *ToolFacet) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *ToolFacet) GetShortDescription() string {
+	if x != nil {
+		return x.ShortDescription
 	}
 	return ""
 }
@@ -527,11 +535,12 @@ var File_schema_extension_tool_proto protoreflect.FileDescriptor
 
 const file_schema_extension_tool_proto_rawDesc = "" +
 	"\n" +
-	"\x1bschema/extension/tool.proto\x12\x13paloma.extension.v1\"M\n" +
+	"\x1bschema/extension/tool.proto\x12\x13paloma.extension.v1\"z\n" +
 	"\tToolFacet\x12 \n" +
-	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1e\n" +
+	"\vdescription\x18\x01 \x01(\tR\vdescription\x12+\n" +
+	"\x11short_description\x18\x02 \x01(\tR\x10shortDescription\x12\x1e\n" +
 	"\n" +
-	"parameters\x18\x02 \x01(\tR\n" +
+	"parameters\x18\x03 \x01(\tR\n" +
 	"parameters\"i\n" +
 	"\x11InvokeToolRequest\x12\x1d\n" +
 	"\n" +

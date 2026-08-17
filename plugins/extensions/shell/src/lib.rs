@@ -130,6 +130,7 @@ impl ToolHandler for Shell {
     fn facet(&self) -> ToolFacet {
         ToolFacet {
             description: DESCRIPTION.to_string(),
+            short_description: "".to_string(),
             parameters: serde_json::to_string(&schemars::schema_for!(ShellArgs))
                 .expect("JsonSchema output is always serializable"),
         }

@@ -4,8 +4,9 @@ package paloma.extension.v1;
 
 message ToolFacet {
   string description = 1;
+  string short_description = 2;
   // json schema string for tools
-  string parameters = 2;
+  string parameters = 3;
 }
 
 message InvokeToolRequest {

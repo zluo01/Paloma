@@ -86,8 +86,9 @@ func newWebFetch() *webFetch {
 
 func (w *webFetch) facet() *pb.ToolFacet {
 	return &pb.ToolFacet{
-		Description: toolDescription,
-		Parameters:  parametersSchema,
+		Description:      toolDescription,
+		ShortDescription: description,
+		Parameters:       parametersSchema,
 	}
 }
 

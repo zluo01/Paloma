@@ -182,6 +182,7 @@ impl ToolHandler for FileSearch {
     fn facet(&self) -> ToolFacet {
         ToolFacet {
             description: include_str!("description.md").to_string(),
+            short_description: "Searches file and directory under user's home.".to_string(),
             parameters: serde_json::to_string(&schemars::schema_for!(FileSearchArgs))
                 .expect("JsonSchema output is always serializable"),
         }
