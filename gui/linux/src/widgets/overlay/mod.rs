@@ -31,7 +31,9 @@ use crate::{
     runtime,
     widgets::overlay::{
         launcher::LauncherView,
-        model::{ChatMsg, Command, LauncherMsg, Mode, Model, Msg, SearchMsg, SessionMsg},
+        model::{
+            ChatMsg, ChatScroll, Command, LauncherMsg, Mode, Model, Msg, SearchMsg, SessionMsg,
+        },
         results::{ChatView, SearchView, SessionsView},
     },
 };
@@ -251,6 +253,7 @@ impl Overlay {
             Command::ResolveToolCallDecision(user_decision, permission_state) => {
                 self.resolve_decision(user_decision, permission_state)
             },
+            Command::ScrollChat(scroll) => self.scroll_chat(scroll),
         }
     }
 }
@@ -577,6 +580,18 @@ impl Overlay {
                 },
             }
         }));
+    }
+
+    fn scroll_chat(&self, scroll: ChatScroll) {
+        let adj = self.scroller.vadjustment();
+        // set_value clamps to [lower, upper - page_size].
+        let value = match scroll {
+            ChatScroll::PageUp => adj.value() - adj.page_increment(),
+            ChatScroll::PageDown => adj.value() + adj.page_increment(),
+            ChatScroll::Top => 0.0,
+            ChatScroll::Bottom => adj.upper(),
+        };
+        adj.set_value(value);
     }
 
     fn resolve_decision(&self, user_decision: UserDecision, permission_state: PermissionState) {

@@ -113,6 +113,15 @@ pub(super) enum ChatMsg {
     InterruptRequested,
     ToolCallDecisionRequested(UserDecision),
     ToolCallDecisionFinished(UserDecision, PermissionState),
+    ScrollRequested(ChatScroll),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ChatScroll {
+    PageUp,
+    PageDown,
+    Top,
+    Bottom,
 }
 
 pub(super) enum SessionMsg {
@@ -176,6 +185,7 @@ pub(super) enum Command {
     },
     SendDecision(UserDecision),
     ResolveToolCallDecision(UserDecision, PermissionState),
+    ScrollChat(ChatScroll),
 }
 
 impl Model {
@@ -335,6 +345,7 @@ impl Model {
                     permission_state,
                 )]
             },
+            ChatMsg::ScrollRequested(scroll) => vec![Command::ScrollChat(scroll)],
         }
     }
 
@@ -1350,6 +1361,24 @@ mod tests {
         assert!(matches!(
             commands.as_slice(),
             [Command::ResolveToolCallDecision(resolved, PermissionState::Error)] if *resolved == decision
+        ));
+    }
+
+    #[test]
+    fn chat_scroll_requests_emit_scroll_commands() {
+        let mut model = Model::new();
+        let _ = expect_running_chat(&mut model, "hello");
+
+        let commands = model.update(Msg::Chat(ChatMsg::ScrollRequested(ChatScroll::PageDown)));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ScrollChat(ChatScroll::PageDown)]
+        ));
+
+        let commands = model.update(Msg::Chat(ChatMsg::ScrollRequested(ChatScroll::Top)));
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::ScrollChat(ChatScroll::Top)]
         ));
     }
 }

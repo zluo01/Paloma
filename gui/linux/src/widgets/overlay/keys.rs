@@ -11,7 +11,7 @@ use log::error;
 use super::Overlay;
 use crate::widgets::{
     keymap::{self, BindingId, Context},
-    overlay::model::{ChatMsg, Mode, Msg, SearchMsg, SessionMsg},
+    overlay::model::{ChatMsg, ChatScroll, Mode, Msg, SearchMsg, SessionMsg},
 };
 
 impl Overlay {
@@ -52,6 +52,16 @@ impl Overlay {
                 if !self.chat.navigate(move_delta(key)) {
                     return Propagation::Proceed;
                 }
+            },
+            Some(BindingId::ChatScrollPage) => {
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Chat(ChatMsg::ScrollRequested(page_scroll(key))));
+            },
+            Some(BindingId::ChatScrollEdge) => {
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Chat(ChatMsg::ScrollRequested(edge_scroll(key))));
             },
             Some(BindingId::ChatSend) => {
                 if !self.chat.activate() {
@@ -148,5 +158,21 @@ fn move_delta(key: Key) -> i32 {
         Key::Up | Key::KP_Up => -1,
         Key::Down | Key::KP_Down => 1,
         _ => unreachable!("move bindings only declare up/down keys"),
+    }
+}
+
+fn page_scroll(key: Key) -> ChatScroll {
+    match key {
+        Key::Page_Up | Key::KP_Page_Up => ChatScroll::PageUp,
+        Key::Page_Down | Key::KP_Page_Down => ChatScroll::PageDown,
+        _ => unreachable!("page scroll bindings only declare page keys"),
+    }
+}
+
+fn edge_scroll(key: Key) -> ChatScroll {
+    match key {
+        Key::Home | Key::KP_Home => ChatScroll::Top,
+        Key::End | Key::KP_End => ChatScroll::Bottom,
+        _ => unreachable!("edge scroll bindings only declare home/end keys"),
     }
 }
