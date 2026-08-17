@@ -190,7 +190,7 @@ impl SessionsView {
         });
 
         let next = match current {
-            Some(current) => step_index(current, delta, visible_sessions.len()).unwrap_or(current),
+            Some(current) => step_index(current, delta, visible_sessions.len()),
             None => 0,
         };
 

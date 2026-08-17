@@ -89,9 +89,7 @@ pub(super) enum SearchMsg {
         action: Action,
     },
     ExitRequested,
-    OpenActionPanel {
-        target: Option<(usize, usize)>,
-    },
+    OpenActionPanel,
     ActionPanelClosed,
 }
 
@@ -171,9 +169,7 @@ pub(super) enum Command {
         session_id: Uuid,
     },
     ClearChatContent,
-    OpenActionPanel {
-        target: Option<(usize, usize)>,
-    },
+    OpenActionPanel,
     ClearActionPanel,
     FocusSearchEntry,
     ClearQuery,
@@ -399,7 +395,7 @@ impl Model {
                 self.reset();
                 vec![Command::ExitSearch]
             },
-            SearchMsg::OpenActionPanel { target } => vec![Command::OpenActionPanel { target }],
+            SearchMsg::OpenActionPanel => vec![Command::OpenActionPanel],
             SearchMsg::ActionPanelClosed => {
                 vec![Command::ClearActionPanel, Command::FocusSearchEntry]
             },

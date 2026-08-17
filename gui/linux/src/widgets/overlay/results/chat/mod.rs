@@ -290,7 +290,7 @@ impl PendingDecisionsState {
             return false;
         }
         match self.current {
-            Some(current) => self.select(step_index(current, delta, self.active)),
+            Some(current) => self.select(Some(step_index(current, delta, self.active))),
             None => self.select(Some(0)),
         }
         true

@@ -1,21 +1,21 @@
 mod action_panel;
 mod section;
 
-use std::cell::{Cell, RefCell};
+use std::{cell::RefCell, rc::Rc};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, ListBoxRow, Orientation, prelude::*};
+use gtk4::{Align, Box as GtkBox, ListBox, ListBoxRow, Orientation, SelectionMode, prelude::*};
 use paloma_core::{ExtensionCapabilityId, Item};
 
 use crate::{
     helper::{Clear, scroll_selection_into_view},
     widgets::overlay::{
-        OVERLAY_WIDTH_PX, SELECTED_CLASS,
-        model::Msg,
+        OVERLAY_WIDTH_PX,
+        model::{ChatMsg, Msg, SearchMsg},
         results::{
             search::{
                 action_panel::ActionPanel,
-                section::{SearchAction, Section},
+                section::{RowEntry, RowKind},
             },
             step_index,
         },
@@ -24,8 +24,8 @@ use crate::{
 
 pub struct SearchView {
     widget: GtkBox,
-    sections: RefCell<Vec<Section>>,
-    selected: Cell<Option<usize>>,
+    list: ListBox,
+    rows: Rc<RefCell<Vec<RowEntry>>>,
     action_panel: RefCell<Option<ActionPanel>>,
     dispatcher: mpsc::UnboundedSender<Msg>,
 }
@@ -39,12 +39,56 @@ impl SearchView {
             .width_request(OVERLAY_WIDTH_PX)
             .css_classes(["paloma-result-card"])
             .build();
+
+        let list = ListBox::builder()
+            .selection_mode(SelectionMode::Browse)
+            .css_classes(["paloma-section-list"])
+            .build();
+        widget.append(&list);
+
+        let rows: Rc<RefCell<Vec<RowEntry>>> = Rc::new(RefCell::new(vec![]));
+
+        let handler_rows = rows.clone();
+        let handler_dispatcher = dispatcher.clone();
+        list.connect_row_activated(move |list, row| {
+            let rows = handler_rows.borrow();
+            let Some(position) = rows.iter().position(|entry| entry.row == *row) else {
+                return;
+            };
+            match &rows[position].kind {
+                RowKind::Item {
+                    extension_capability_id,
+                    primary_index,
+                    actions,
+                } => {
+                    let _ = handler_dispatcher.unbounded_send(Msg::Search(
+                        SearchMsg::ResultActionRequested {
+                            extension_capability_id: extension_capability_id.clone(),
+                            action: actions[*primary_index].clone(),
+                        },
+                    ));
+                },
+                RowKind::ShowMore { tail_len } => {
+                    row.set_visible(false);
+                    let tail = &rows[position + 1..=position + tail_len];
+                    for entry in tail {
+                        entry.row.set_visible(true);
+                    }
+                    list.select_row(tail.first().map(|entry| &entry.row));
+                },
+                RowKind::Chat => {
+                    let _ = handler_dispatcher
+                        .unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
+                },
+            }
+        });
+
         Self {
             widget,
-            sections: RefCell::new(vec![]),
-            dispatcher,
-            selected: Cell::new(None),
+            list,
+            rows,
             action_panel: RefCell::new(None),
+            dispatcher,
         }
     }
 
@@ -53,15 +97,14 @@ impl SearchView {
     }
 
     pub(crate) fn clear(&self) {
-        self.sections.borrow_mut().clear();
-        self.selected.set(None);
+        self.rows.borrow_mut().clear();
 
         if let Some(panel) = self.action_panel.borrow_mut().take() {
             panel.close();
         }
 
         self.widget.set_visible(false);
-        self.widget.clear();
+        self.list.clear();
     }
 
     pub(crate) fn append_section(
@@ -78,68 +121,63 @@ impl SearchView {
             return false;
         }
 
-        let section = Section::search_section(
-            self.sections.borrow().len(),
+        section::append_search_section(
+            &self.list,
+            &mut self.rows.borrow_mut(),
             extension_capability_id,
             handler_name,
             items,
-            self.dispatcher.clone(),
+            &self.dispatcher,
         );
-
-        self.push_section(section.widget());
-        self.sections.borrow_mut().push(section);
+        self.reveal();
         true
     }
 
-    /// Append the "Chat about it" pseudo-row; `invoke` enters chat mode.
     pub(crate) fn append_chat_action(&self) {
-        let section = Section::chat_section(self.action_len(), self.dispatcher.clone());
-
-        self.push_section(section.widget());
-        self.sections.borrow_mut().push(section);
+        section::append_chat_row(&self.list, &mut self.rows.borrow_mut());
+        self.reveal();
     }
 
-    pub(crate) fn open_action_panel(&self, target: Option<(usize, usize)>) {
+    fn reveal(&self) {
+        self.widget.set_visible(true);
+    }
+
+    pub(crate) fn open_action_panel(&self) {
         if self.is_action_panel_open() {
             return;
         }
 
-        if let Some((section_index, local_index)) = target {
-            let offset: usize = self
-                .sections
-                .borrow()
-                .iter()
-                .take(section_index)
-                .map(Section::len)
-                .sum();
-            self.select_row(offset + local_index);
-        }
-
-        let Some((row, extension_capability_id, actions)) =
-            self.selected_action().and_then(|action| {
-                (action.panel_actions.len() > 1).then(|| {
-                    (
-                        action.row.clone(),
-                        action.extension_capability_id,
-                        action.panel_actions.clone(),
-                    )
-                })
-            })
-        else {
+        let Some(selected) = self.list.selected_row() else {
+            return;
+        };
+        let rows = self.rows.borrow();
+        let Some(entry) = rows.iter().find(|entry| entry.row == selected) else {
             return;
         };
 
-        *self.action_panel.borrow_mut() = Some(ActionPanel::new(
-            &row,
+        let RowKind::Item {
             extension_capability_id,
             actions,
+            ..
+        } = &entry.kind
+        else {
+            return;
+        };
+        if actions.len() < 2 {
+            return;
+        }
+
+        *self.action_panel.borrow_mut() = Some(ActionPanel::new(
+            &entry.row,
+            extension_capability_id.clone(),
+            actions.clone(),
             self.dispatcher.clone(),
         ));
     }
 
     pub(crate) fn activate(&self) -> bool {
-        if let Some(row) = self.selected_row() {
-            row.activate();
+        if let Some(selected) = self.list.selected_row() {
+            selected.activate();
             return true;
         }
 
@@ -150,23 +188,30 @@ impl SearchView {
     /// which has higher priority than this function.
     /// This function only handle search result navigation
     pub(crate) fn navigate(&self, delta: i32) -> bool {
-        let actions_len = self.action_len();
-        let next = match self.selected.get() {
-            Some(current) => step_index(current, delta, actions_len),
-            None if actions_len > 0 => Some(0),
-            None => None,
-        };
-
-        match next {
-            None => false,
-            Some(next) => {
-                self.select_row(next);
-                if let Some(row) = self.selected_row() {
-                    scroll_selection_into_view(&row, next, actions_len);
-                }
-                true
-            },
+        let rows = self.rows.borrow();
+        let visible: Vec<&ListBoxRow> = rows
+            .iter()
+            .map(|entry| &entry.row)
+            .filter(|row| row.is_visible())
+            .collect();
+        if visible.is_empty() {
+            return false;
         }
+
+        let current = self
+            .list
+            .selected_row()
+            .and_then(|selected| visible.iter().position(|row| **row == selected));
+        let next = current.map_or(0, |current| step_index(current, delta, visible.len()));
+        // when on first or last, no need to reselect.
+        if current == Some(next) {
+            return true;
+        }
+
+        let selected_row = visible[next];
+        self.list.select_row(Some(selected_row));
+        scroll_selection_into_view(selected_row, next, visible.len());
+        true
     }
 
     pub(crate) fn is_action_panel_open(&self) -> bool {
@@ -180,51 +225,7 @@ impl SearchView {
         self.action_panel.borrow_mut().take();
     }
 
-    fn select_row(&self, idx: usize) {
-        if self.selected.get() == Some(idx) {
-            return;
-        }
-
-        self.clear_selected();
-        self.selected.set(Some(idx));
-        if let Some(row) = self.selected_row() {
-            row.add_css_class(SELECTED_CLASS);
-        };
-    }
-
-    fn clear_selected(&self) {
-        if let Some(row) = self.selected_row() {
-            row.remove_css_class(SELECTED_CLASS);
-        }
-        self.selected.set(None);
-    }
-
-    fn push_section(&self, section: &GtkBox) {
-        self.widget.append(section);
-        self.widget.set_visible(true);
-    }
-
-    fn action_len(&self) -> usize {
-        self.sections.borrow().iter().map(|s| s.len()).sum()
-    }
-
-    fn selected_row(&self) -> Option<ListBoxRow> {
-        self.selected_action().map(|a| a.row)
-    }
-
-    fn selected_action(&self) -> Option<SearchAction> {
-        let mut selected = self.selected.get()?;
-        for section in self.sections.borrow().iter() {
-            let len = section.len();
-            if selected < len {
-                return section.action(selected);
-            }
-            selected -= len;
-        }
-        None
-    }
-
     pub(crate) fn render_any(&self) -> bool {
-        !self.sections.borrow().is_empty()
+        !self.rows.borrow().is_empty()
     }
 }

@@ -112,7 +112,7 @@ impl Overlay {
             Some(BindingId::SearchShowActions) => {
                 let _ = self
                     .dispatcher
-                    .unbounded_send(Msg::Search(SearchMsg::OpenActionPanel { target: None }));
+                    .unbounded_send(Msg::Search(SearchMsg::OpenActionPanel));
             },
             None => {
                 if !self.search.is_action_panel_open() {
