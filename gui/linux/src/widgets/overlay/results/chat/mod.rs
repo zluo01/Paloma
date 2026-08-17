@@ -238,11 +238,6 @@ impl PendingDecisions {
         let mut state = self.state.borrow_mut();
         state.active += tool_call_section.decision_count();
         state.groups.push(tool_call_section);
-
-        if state.current.is_none() {
-            let has_active = state.active > 0;
-            state.select(has_active.then_some(0));
-        }
     }
 
     fn clear(&self, permission_state: PermissionState) -> bool {
@@ -294,8 +289,10 @@ impl PendingDecisionsState {
         if self.active == 0 {
             return false;
         }
-        let current = self.current.unwrap_or(0);
-        self.select(step_index(current, delta, self.active));
+        match self.current {
+            Some(current) => self.select(step_index(current, delta, self.active)),
+            None => self.select(Some(0)),
+        }
         true
     }
 
