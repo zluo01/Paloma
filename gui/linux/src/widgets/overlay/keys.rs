@@ -92,11 +92,9 @@ impl Overlay {
     fn handle_search_view_key(&self, key: Key, state: ModifierType) -> Propagation {
         match keymap::match_binding(Context::Search, key, state) {
             Some(BindingId::SearchClose) => {
-                if !self.search.close_action_panel() {
-                    let _ = self
-                        .dispatcher
-                        .unbounded_send(Msg::Search(SearchMsg::ExitRequested));
-                }
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Search(SearchMsg::ExitRequested));
             },
             Some(BindingId::SearchMove) => {
                 if !self.search.navigate(move_delta(key)) {
@@ -111,7 +109,11 @@ impl Overlay {
                         .unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
                 }
             },
-            Some(BindingId::SearchShowActions) => self.search.open_action_panel(),
+            Some(BindingId::SearchShowActions) => {
+                let _ = self
+                    .dispatcher
+                    .unbounded_send(Msg::Search(SearchMsg::OpenActionPanel { target: None }));
+            },
             None => {
                 if !self.search.is_action_panel_open() {
                     return Propagation::Proceed;

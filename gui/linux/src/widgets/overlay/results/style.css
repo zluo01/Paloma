@@ -12,15 +12,23 @@
     margin: 6px 4px 4px 4px;
 }
 
-/* Item rows are `.flat` buttons (theme provides fill + hover). `.selected`
-   is keyboard selection driven by code (a CSS class, not GTK focus; the
-   entry keeps focus). */
+/* Item rows are list rows. `.selected` is keyboard selection driven by
+   code (a CSS class, not GTK focus; the entry keeps focus). */
+.paloma-section-list {
+    background: transparent;
+}
+
 .paloma-item {
     padding: 6px 8px;
     border-radius: 8px;
 }
 
-.paloma-item.selected {
+.paloma-item:hover {
+    background: alpha(currentColor, 0.06);
+}
+
+.paloma-item.selected,
+.paloma-item.selected:hover {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }

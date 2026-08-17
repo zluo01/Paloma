@@ -1,13 +1,18 @@
+use std::collections::HashMap;
+
 use futures::channel::mpsc;
 use gtk4::{
-    Align, Box as GtkBox, Button, Image, Label, Orientation, Revealer, RevealerTransitionType,
-    Separator, Widget, prelude::*,
+    Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow, Orientation, Revealer,
+    RevealerTransitionType, SelectionMode, Separator, StateFlags, Widget, prelude::*,
 };
 use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item};
 
 use crate::{
     helper::icon_image,
-    widgets::overlay::model::{ChatMsg, Msg, SearchMsg},
+    widgets::overlay::{
+        SELECTED_CLASS,
+        model::{ChatMsg, Msg, SearchMsg},
+    },
 };
 
 const CHAT_ACTION_LABEL: &str = "Chat about it";
@@ -16,7 +21,7 @@ const MAX_SECTION_ITEMS: usize = 5;
 
 #[derive(Clone)]
 pub(super) struct SearchAction {
-    pub(super) button: Button,
+    pub(super) row: ListBoxRow,
     pub(super) extension_capability_id: ExtensionCapabilityId,
     pub(super) panel_actions: Vec<Action>,
 }
@@ -24,11 +29,12 @@ pub(super) struct SearchAction {
 pub(super) struct Section {
     view: GtkBox,
     actions: Vec<SearchAction>,
-    show_more: Option<SearchAction>,
+    show_more: Option<ListBoxRow>,
 }
 
 impl Section {
     pub(super) fn search_section(
+        section_index: usize,
         extension_capability_id: ExtensionCapabilityId,
         handler_name: &str,
         mut items: Vec<Item>,
@@ -50,36 +56,68 @@ impl Section {
             Vec::new()
         };
 
+        let search_section_list = section_list();
         let mut actions = Vec::with_capacity(items.len() + tail.len());
-        for item in &items {
-            let row = build_item_row(extension_capability_id.clone(), item, &dispatcher);
-            view.append(&row.button);
-            actions.push(row);
+        let mut primaries = HashMap::with_capacity(items.len() + tail.len());
+        for (index, item) in items.iter().enumerate() {
+            let (action, primary) = build_item_row(
+                (section_index, index),
+                extension_capability_id.clone(),
+                item,
+                dispatcher.clone(),
+            );
+            search_section_list.append(&action.row);
+            primaries.insert(action.row.clone(), primary);
+            actions.push(action);
         }
 
         let mut show_more = None;
         if !tail.is_empty() {
-            let folded = GtkBox::builder().orientation(Orientation::Vertical).build();
-            for item in &tail {
-                let row = build_item_row(extension_capability_id.clone(), item, &dispatcher);
-                folded.append(&row.button);
-                actions.push(row);
-            }
-            let revealer = Revealer::builder()
-                .transition_type(RevealerTransitionType::SlideDown)
-                .child(&folded)
-                .build();
-
             let row = build_show_more_row(tail.len());
-            let reveal = revealer.clone();
-            row.button.connect_clicked(move |button| {
-                button.set_visible(false);
-                reveal.set_reveal_child(true);
-            });
-            view.append(&row.button);
-            view.append(&revealer);
+            search_section_list.append(&row);
             show_more = Some(row);
+
+            for (index, item) in tail.iter().enumerate() {
+                let (action, primary) = build_item_row(
+                    (section_index, items.len() + index),
+                    extension_capability_id.clone(),
+                    item,
+                    dispatcher.clone(),
+                );
+                action.row.set_visible(false);
+                search_section_list.append(&action.row);
+                primaries.insert(action.row.clone(), primary);
+                actions.push(action);
+            }
         }
+
+        let show_more_row = show_more.clone();
+        let first_tail_row = actions
+            .get(MAX_SECTION_ITEMS)
+            .map(|action| action.row.clone());
+        search_section_list.connect_row_activated(move |_, row| {
+            if show_more_row.as_ref() == Some(row) {
+                row.set_visible(false);
+                for item_row in primaries.keys() {
+                    item_row.set_visible(true);
+                }
+                if row.has_css_class(SELECTED_CLASS)
+                    && let Some(first_tail_row) = &first_tail_row
+                {
+                    row.remove_css_class(SELECTED_CLASS);
+                    first_tail_row.add_css_class(SELECTED_CLASS);
+                }
+                return;
+            }
+            if let Some(action) = primaries.get(row) {
+                let _ = dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
+                    extension_capability_id: extension_capability_id.clone(),
+                    action: action.clone(),
+                }));
+            }
+        });
+
+        view.append(&search_section_list);
 
         Self {
             view,
@@ -110,18 +148,19 @@ impl Section {
             icon: Some(CapabilityIcon::name("dialog-question-symbolic")),
             actions: Vec::new(),
         };
-        let button = flat_button(&item_content_row(&item), Some("paloma-chat-action"));
-        let action_dispatcher = dispatcher;
-        button.connect_clicked(move |_| {
-            let _ = action_dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
-        });
+        let row = flat_row(&item_content_row(&item), Some("paloma-chat-action"));
 
-        section.append(&button);
+        let chat_section_list = section_list();
+        chat_section_list.append(&row);
+        chat_section_list.connect_row_activated(move |_, _| {
+            let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptSubmitRequested));
+        });
+        section.append(&chat_section_list);
 
         Self {
             view: section,
             actions: vec![SearchAction {
-                button,
+                row,
                 extension_capability_id: ExtensionCapabilityId::default(),
                 panel_actions: vec![],
             }],
@@ -134,102 +173,90 @@ impl Section {
     }
 
     pub(super) fn len(&self) -> usize {
-        if self
-            .show_more
-            .as_ref()
-            .is_some_and(|row| row.button.get_visible())
-        {
+        if self.show_more.as_ref().is_some_and(WidgetExt::get_visible) {
             return MAX_SECTION_ITEMS + 1;
         }
         self.actions.len()
     }
 
     pub(super) fn action(&self, index: usize) -> Option<SearchAction> {
-        if self
-            .show_more
-            .as_ref()
-            .is_some_and(|row| row.button.get_visible())
-            && index == MAX_SECTION_ITEMS
+        if self.show_more.as_ref().is_some_and(WidgetExt::get_visible) && index == MAX_SECTION_ITEMS
         {
-            return self.show_more.clone();
+            return self.show_more.clone().map(|row| SearchAction {
+                row,
+                extension_capability_id: ExtensionCapabilityId::default(),
+                panel_actions: vec![],
+            });
         }
         self.actions.get(index).cloned()
     }
 }
 
 fn build_item_row(
-    extension_capability_id: ExtensionCapabilityId,
-    item: &Item,
-    dispatcher: &mpsc::UnboundedSender<Msg>,
-) -> SearchAction {
-    if item.actions.len() == 1 {
-        build_row(extension_capability_id, item, dispatcher.clone())
-    } else {
-        build_actionable_row(extension_capability_id, item, dispatcher.clone())
-    }
-}
-
-fn build_row(
+    target: (usize, usize),
     extension_capability_id: ExtensionCapabilityId,
     item: &Item,
     dispatcher: mpsc::UnboundedSender<Msg>,
-) -> SearchAction {
-    let content = item_content_row(item);
-    let button = flat_button(&content, None);
-    let action = item.actions.first().unwrap().clone();
-
-    let action_dispatcher = dispatcher;
-    let id = extension_capability_id.clone();
-    button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
-            extension_capability_id: id.clone(),
-            action: action.clone(),
-        }));
-    });
-
-    SearchAction {
-        button,
-        extension_capability_id,
-        panel_actions: vec![],
-    }
-}
-
-fn build_actionable_row(
-    extension_capability_id: ExtensionCapabilityId,
-    item: &Item,
-    dispatcher: mpsc::UnboundedSender<Msg>,
-) -> SearchAction {
-    let primary_idx = item.actions.iter().position(|a| a.primary).unwrap_or(0);
-    let primary = item.actions.get(primary_idx).cloned().unwrap();
+) -> (SearchAction, Action) {
+    let primary = item
+        .actions
+        .iter()
+        .find(|a| a.primary)
+        .or_else(|| item.actions.first())
+        .cloned()
+        .unwrap();
 
     let content = item_content_row(item);
-    let chip = Label::builder()
-        .label("Ctrl ↵")
-        .valign(Align::Center)
-        .css_classes(["paloma-keycap"])
-        .build();
-    content.append(&chip);
+    let row = flat_row(&content, None);
 
-    let button = flat_button(&content, None);
+    let mut panel_actions = vec![];
+    if item.actions.len() > 1 {
+        panel_actions = item.actions.clone();
 
-    let primary_action = primary;
-    let action_dispatcher = dispatcher;
-    let id = extension_capability_id.clone();
-    button.connect_clicked(move |_| {
-        let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::ResultActionRequested {
-            extension_capability_id: id.clone(),
-            action: primary_action.clone(),
-        }));
-    });
+        let chip = Label::builder()
+            .label("Ctrl ↵")
+            .valign(Align::Center)
+            .css_classes(["paloma-keycap"])
+            .build();
+        content.append(&chip);
 
-    SearchAction {
-        button,
-        extension_capability_id,
-        panel_actions: item.actions.clone(),
+        let more_action_button = Button::builder()
+            .icon_name("view-more-symbolic")
+            .tooltip_text("More actions")
+            .valign(Align::Center)
+            .css_classes(["flat", "circular"])
+            .build();
+        more_action_button.connect_clicked(move |_| {
+            let _ = dispatcher.unbounded_send(Msg::Search(SearchMsg::OpenActionPanel {
+                target: Some(target),
+            }));
+        });
+
+        // zero width until hovered, so the time sits flush right otherwise
+        let reveal = Revealer::builder()
+            .child(&more_action_button)
+            .transition_type(RevealerTransitionType::SlideLeft)
+            .transition_duration(150)
+            .valign(Align::Center)
+            .build();
+        content.append(&reveal);
+
+        row.connect_state_flags_changed(move |row, _| {
+            reveal.set_reveal_child(row.state_flags().contains(StateFlags::PRELIGHT));
+        });
     }
+
+    (
+        SearchAction {
+            row,
+            extension_capability_id,
+            panel_actions,
+        },
+        primary,
+    )
 }
 
-fn build_show_more_row(hidden: usize) -> SearchAction {
+fn build_show_more_row(hidden: usize) -> ListBoxRow {
     let content = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
@@ -238,24 +265,28 @@ fn build_show_more_row(hidden: usize) -> SearchAction {
     content.append(&Image::from_icon_name("pan-down-symbolic"));
     content.append(&Label::new(Some(&format!("Show {hidden} more"))));
 
-    SearchAction {
-        button: flat_button(&content, Some("paloma-show-more")),
-        extension_capability_id: ExtensionCapabilityId::default(),
-        panel_actions: vec![],
-    }
+    flat_row(&content, Some("paloma-show-more"))
 }
 
-fn flat_button(content: &impl IsA<Widget>, extra_class: Option<&str>) -> Button {
-    let button = Button::builder()
+fn section_list() -> ListBox {
+    ListBox::builder()
+        .selection_mode(SelectionMode::None)
+        .css_classes(["paloma-section-list"])
+        .build()
+}
+
+fn flat_row(content: &impl IsA<Widget>, extra_class: Option<&str>) -> ListBoxRow {
+    let row = ListBoxRow::builder()
         .child(content)
+        .activatable(true)
         .focusable(false)
         .can_focus(false)
-        .css_classes(["flat", "paloma-item"])
+        .css_classes(["paloma-item"])
         .build();
     if let Some(class) = extra_class {
-        button.add_css_class(class);
+        row.add_css_class(class);
     }
-    button
+    row
 }
 
 fn item_content_row(item: &Item) -> GtkBox {

@@ -4,7 +4,7 @@ mod section;
 use std::cell::{Cell, RefCell};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Orientation, prelude::*};
+use gtk4::{Align, Box as GtkBox, ListBoxRow, Orientation, prelude::*};
 use paloma_core::{ExtensionCapabilityId, Item};
 
 use crate::{
@@ -79,6 +79,7 @@ impl SearchView {
         }
 
         let section = Section::search_section(
+            self.sections.borrow().len(),
             extension_capability_id,
             handler_name,
             items,
@@ -98,18 +99,29 @@ impl SearchView {
         self.sections.borrow_mut().push(section);
     }
 
-    pub(crate) fn open_action_panel(&self) {
+    pub(crate) fn open_action_panel(&self, target: Option<(usize, usize)>) {
         if self.is_action_panel_open() {
             return;
         }
 
-        let Some((button, extension_capability_id, actions)) =
-            self.selected_action().and_then(|row| {
-                (row.panel_actions.len() > 1).then(|| {
+        if let Some((section_index, local_index)) = target {
+            let offset: usize = self
+                .sections
+                .borrow()
+                .iter()
+                .take(section_index)
+                .map(Section::len)
+                .sum();
+            self.select_row(offset + local_index);
+        }
+
+        let Some((row, extension_capability_id, actions)) =
+            self.selected_action().and_then(|action| {
+                (action.panel_actions.len() > 1).then(|| {
                     (
-                        row.button.clone(),
-                        row.extension_capability_id,
-                        row.panel_actions.clone(),
+                        action.row.clone(),
+                        action.extension_capability_id,
+                        action.panel_actions.clone(),
                     )
                 })
             })
@@ -118,7 +130,7 @@ impl SearchView {
         };
 
         *self.action_panel.borrow_mut() = Some(ActionPanel::new(
-            &button,
+            &row,
             extension_capability_id,
             actions,
             self.dispatcher.clone(),
@@ -126,33 +138,18 @@ impl SearchView {
     }
 
     pub(crate) fn activate(&self) -> bool {
-        let panel_button = self
-            .action_panel
-            .borrow()
-            .as_ref()
-            .filter(|panel| panel.is_open())
-            .and_then(ActionPanel::selected_button);
-        if let Some(button) = panel_button {
-            button.emit_clicked();
-            return true;
-        }
-
-        if let Some(button) = self.selected_button() {
-            button.emit_clicked();
+        if let Some(row) = self.selected_row() {
+            row.activate();
             return true;
         }
 
         false
     }
 
+    /// Action panel navigation is handled within action panel
+    /// which has higher priority than this function.
+    /// This function only handle search result navigation
     pub(crate) fn navigate(&self, delta: i32) -> bool {
-        if let Some(panel) = self.action_panel.borrow().as_ref()
-            && panel.is_open()
-        {
-            panel.navigate(delta);
-            return true;
-        }
-
         let actions_len = self.action_len();
         let next = match self.selected.get() {
             Some(current) => step_index(current, delta, actions_len),
@@ -164,8 +161,8 @@ impl SearchView {
             None => false,
             Some(next) => {
                 self.select_row(next);
-                if let Some(button) = self.selected_button() {
-                    scroll_selection_into_view(&button, next, actions_len);
+                if let Some(row) = self.selected_row() {
+                    scroll_selection_into_view(&row, next, actions_len);
                 }
                 true
             },
@@ -179,17 +176,8 @@ impl SearchView {
             .is_some_and(ActionPanel::is_open)
     }
 
-    pub(crate) fn close_action_panel(&self) -> bool {
-        let Some(panel) = self.action_panel.borrow_mut().take() else {
-            return false;
-        };
-
-        if panel.is_open() {
-            panel.close();
-            return true;
-        }
-
-        false
+    pub(crate) fn clear_action_panel(&self) {
+        self.action_panel.borrow_mut().take();
     }
 
     fn select_row(&self, idx: usize) {
@@ -199,14 +187,14 @@ impl SearchView {
 
         self.clear_selected();
         self.selected.set(Some(idx));
-        if let Some(button) = self.selected_button() {
-            button.add_css_class(SELECTED_CLASS);
+        if let Some(row) = self.selected_row() {
+            row.add_css_class(SELECTED_CLASS);
         };
     }
 
     fn clear_selected(&self) {
-        if let Some(button) = self.selected_button() {
-            button.remove_css_class(SELECTED_CLASS);
+        if let Some(row) = self.selected_row() {
+            row.remove_css_class(SELECTED_CLASS);
         }
         self.selected.set(None);
     }
@@ -220,8 +208,8 @@ impl SearchView {
         self.sections.borrow().iter().map(|s| s.len()).sum()
     }
 
-    fn selected_button(&self) -> Option<Button> {
-        self.selected_action().map(|a| a.button)
+    fn selected_row(&self) -> Option<ListBoxRow> {
+        self.selected_action().map(|a| a.row)
     }
 
     fn selected_action(&self) -> Option<SearchAction> {

@@ -89,6 +89,9 @@ pub(super) enum SearchMsg {
         action: Action,
     },
     ExitRequested,
+    OpenActionPanel {
+        target: Option<(usize, usize)>,
+    },
     ActionPanelClosed,
 }
 
@@ -168,6 +171,10 @@ pub(super) enum Command {
         session_id: Uuid,
     },
     ClearChatContent,
+    OpenActionPanel {
+        target: Option<(usize, usize)>,
+    },
+    ClearActionPanel,
     FocusSearchEntry,
     ClearQuery,
     FilterSessions {
@@ -352,7 +359,7 @@ impl Model {
     /// Search workflow:
     /// - Query: `Launcher(QueryChanged) -> ClearSearchResults + RunSearchQuery -> QueryEventReceived -> RenderSearchQueryResult` (per result) `-> QueryFinished -> RenderChatAction`. Empty query / no result ends at `HideContent`.
     /// - Activate result: `ResultActionRequested -> InvokeLocalQueryResultAction + HideOverlay`.
-    /// - Close action panel: `ActionPanelClosed -> FocusSearchEntry`.
+    /// - Close action panel: `ActionPanelClosed -> ClearActionPanel + FocusSearchEntry`.
     /// - Exit view: `ExitRequested -> ExitSearch`.
     fn update_search(&mut self, msg: SearchMsg) -> Vec<Command> {
         match msg {
@@ -392,7 +399,10 @@ impl Model {
                 self.reset();
                 vec![Command::ExitSearch]
             },
-            SearchMsg::ActionPanelClosed => vec![Command::FocusSearchEntry],
+            SearchMsg::OpenActionPanel { target } => vec![Command::OpenActionPanel { target }],
+            SearchMsg::ActionPanelClosed => {
+                vec![Command::ClearActionPanel, Command::FocusSearchEntry]
+            },
         }
     }
 
@@ -721,7 +731,7 @@ mod tests {
             model
                 .update(Msg::Search(SearchMsg::ActionPanelClosed))
                 .as_slice(),
-            [Command::FocusSearchEntry]
+            [Command::ClearActionPanel, Command::FocusSearchEntry]
         ));
         assert!(matches!(
             model

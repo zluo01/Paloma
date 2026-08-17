@@ -254,6 +254,8 @@ impl Overlay {
                 self.resolve_decision(user_decision, permission_state)
             },
             Command::ScrollChat(scroll) => self.scroll_chat(scroll),
+            Command::OpenActionPanel { target } => self.open_action_panel(target),
+            Command::ClearActionPanel => self.search.clear_action_panel(),
         }
     }
 }
@@ -432,6 +434,10 @@ impl Overlay {
                 error!("failed to run search action: {error}");
             }
         }));
+    }
+
+    fn open_action_panel(&self, target: Option<(usize, usize)>) {
+        self.search.open_action_panel(target)
     }
 
     fn render_any(&self) -> bool {
