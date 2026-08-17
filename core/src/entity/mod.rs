@@ -181,6 +181,7 @@ pub struct ToolSpec {
 pub struct ToolSchema {
     pub name: String,
     pub description: String,
+    pub short_description: String,
     pub parameters: Value,
 }
 

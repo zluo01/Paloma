@@ -471,6 +471,7 @@ fn capability_specs(extension_id: &str, capabilities: &[Capability]) -> HashMap<
                 schema: ToolSchema {
                     name: ext_tool_name_encode(extension_id, &capability.capability_id),
                     description: tool.description.clone(),
+                    short_description: tool.short_description.clone(),
                     parameters,
                 },
             };

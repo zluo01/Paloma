@@ -48,7 +48,7 @@ pub(crate) fn extract_args(spec: ToolSpec, raw_args: &str) -> Disposition {
     Disposition::Gated {
         name: format!("{} - {}", spec.name, spec.tool),
         arguments: prettify_arg(raw_args),
-        description: Some(spec.schema.description),
+        description: Some(spec.schema.short_description),
         require_permission: vec![
             format!("{TOOL_PERMISSION_NAMESPACE}{}", spec.name),
             spec.tool,
@@ -75,6 +75,7 @@ mod tests {
             schema: ToolSchema {
                 name: format!("{name}__{tool}"),
                 description: String::new(),
+                short_description: String::new(),
                 parameters: serde_json::json!({}),
             },
         }

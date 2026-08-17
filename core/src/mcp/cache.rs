@@ -76,6 +76,7 @@ mod tests {
                 schema: ToolSchema {
                     name: tool.to_string(),
                     description: String::new(),
+                    short_description: String::new(),
                     parameters: serde_json::Value::Null,
                 },
             },

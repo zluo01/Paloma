@@ -409,12 +409,14 @@ fn tools_to_specs(name: &str, tools: Vec<Tool>) -> HashMap<String, ToolSpec> {
     tools
         .into_iter()
         .map(|tool| {
+            let description = tool.description.map(|d| d.into_owned()).unwrap_or_default();
             let spec = ToolSpec {
                 name: name.to_string(),
                 tool: tool.name.to_string(),
                 schema: ToolSchema {
                     name: mcp_function_name_encode(name, &tool.name),
-                    description: tool.description.map(|d| d.into_owned()).unwrap_or_default(),
+                    short_description: description.clone(),
+                    description,
                     parameters: Value::Object((*tool.input_schema).clone()),
                 },
             };
