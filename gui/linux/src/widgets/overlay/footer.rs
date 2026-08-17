@@ -16,6 +16,8 @@ const SEARCH_HINTS: &[(BindingId, &str)] = &[
 const CHAT_HINTS: &[(BindingId, &str)] = &[
     (BindingId::ChatSend, "send"),
     (BindingId::ChatInterrupt, "stop"),
+    (BindingId::ChatScrollPage, "scroll"),
+    (BindingId::ChatScrollEdge, "top/bottom"),
     (BindingId::OpenSessions, "sessions"),
 ];
 
@@ -63,7 +65,7 @@ fn hint_row(hints: &[(BindingId, &str)]) -> GtkBox {
 }
 
 fn accel_text(chords: &[Chord]) -> String {
-    chords.iter().map(chord_text).collect()
+    chords.iter().map(chord_text).collect::<Vec<_>>().join("/")
 }
 
 fn chord_text(chord: &Chord) -> String {
@@ -89,6 +91,10 @@ fn key_glyph(key: Key) -> String {
         Key::Return => "⏎".into(),
         Key::Escape => "Esc".into(),
         Key::Delete => "Del".into(),
+        Key::Page_Up => "PgUp".into(),
+        Key::Page_Down => "PgDn".into(),
+        Key::Home => "Home".into(),
+        Key::End => "End".into(),
         other => other
             .name()
             .map(|name| name.to_uppercase())
