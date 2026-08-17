@@ -365,14 +365,14 @@ mod tests {
 
         #[tokio::test]
         async fn composite_with_dangerous_is_ask_no_persist() {
-            let decision = classify(&["bash", "-lc", "ls && rm -rf x"])
+            let decision = classify(&["bash", "-lc", "ls && chmod -R 755 x"])
                 .await
                 .expect("classify");
             assert!(matches!(decision.command_type(), CommandType::Composite));
             assert_eq!(decision.decision(), ArgvDecision::AskNoPersist);
             assert_eq!(
                 decision.parsed_commands(),
-                &[argv(&["ls"]), argv(&["rm", "-rf", "x"])]
+                &[argv(&["ls"]), argv(&["chmod", "-R", "755", "x"])]
             );
         }
 

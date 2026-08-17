@@ -51,11 +51,8 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
         Some("pkexec" | "osascript") => Ok(ArgvDecision::AskNoPersist),
 
-        Some("rm")
-            if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
-        {
-            Ok(ArgvDecision::AskNoPersist)
-        },
+        // should always favor move to trash folder to allow recovery
+        Some("rm") => Ok(ArgvDecision::NotExecutable),
 
         Some("chmod" | "chown")
             if has_recursive_short_flag(command) || command.iter().any(|a| a == "--recursive") =>
@@ -388,21 +385,13 @@ mod tests {
     }
 
     #[test]
-    fn recursive_rm_variants() {
-        assert!(is_ask_no_persist(&["rm", "-r", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-R", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-rf", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-fr", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-vrf", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-rfv", "x"]));
-        assert!(is_ask_no_persist(&["rm", "-Rfv", "x"]));
-        assert!(is_ask_no_persist(&["rm", "--recursive", "x"]));
-    }
-
-    #[test]
-    fn non_recursive_rm_is_not_ask_no_persist() {
-        assert!(is_unknown(&["rm", "x"]));
-        assert!(is_unknown(&["rm", "-i", "x"]));
+    fn rm_is_refused_outright() {
+        assert!(is_not_executable(&["rm", "x"]));
+        assert!(is_not_executable(&["rm", "-i", "x"]));
+        assert!(is_not_executable(&["rm", "-r", "x"]));
+        assert!(is_not_executable(&["rm", "-rf", "x"]));
+        assert!(is_not_executable(&["rm", "-Rfv", "x"]));
+        assert!(is_not_executable(&["rm", "--recursive", "x"]));
     }
 
     #[test]
