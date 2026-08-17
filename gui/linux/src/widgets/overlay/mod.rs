@@ -337,6 +337,8 @@ impl Overlay {
     }
 
     fn clear_session(&self) {
+        // new session should always pin to bottom.
+        self.stuck_to_bottom.set(true);
         self.chat.clear()
     }
 
