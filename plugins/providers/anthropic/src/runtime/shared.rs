@@ -424,7 +424,7 @@ pub(super) fn parse_stream_error(data: &str) -> ProviderError {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| format!("claude messages stream error: {data}"));
-    error!("{} - {}", &message, data);
+    error!("{} - {}", message, data);
     ProviderError::Other(message)
 }
 

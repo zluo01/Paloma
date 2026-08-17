@@ -103,15 +103,12 @@ impl McpPlugin {
                 (tool, schemas)
             },
             Ok(Err(error)) => {
-                error!(
-                    "failed to connect to mcp server {}: {}",
-                    &config.name, error
-                );
+                error!("failed to connect to mcp server {}: {}", config.name, error);
                 (Self::unhealthy(config, &error), HashMap::new())
             },
             Err(_elapsed) => {
                 let error = McpPluginError::InitTimeout(CONNECTION_TIMEOUT.as_secs());
-                error!("mcp server {}: {}", &config.name, error);
+                error!("mcp server {}: {}", config.name, error);
                 (Self::unhealthy(config, &error), HashMap::new())
             },
         }
@@ -261,7 +258,7 @@ impl McpPlugin {
                     self.status
                         .store(HealthStatus::Unhealthy as u8, Ordering::Relaxed);
                 }
-                error!("mcp tool `{}` failed: {err}", &tool_name);
+                error!("mcp tool `{}` failed: {err}", tool_name);
                 return Err(err);
             },
             // Timed out across all retries — ambiguous (slow tool vs hung
