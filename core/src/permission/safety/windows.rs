@@ -177,10 +177,9 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
 
         Some(name) if ASK_NO_PERSIST.contains(name) => Ok(ArgvDecision::AskNoPersist),
 
-        Some("remove-item" | "ri" | "rm" | "del" | "erase" | "rd" | "rmdir")
-            if has_recurse_or_force_flag(command) =>
-        {
-            Ok(ArgvDecision::AskNoPersist)
+        // should always favor move to trash folder to allow recovery
+        Some("remove-item" | "ri" | "rm" | "del" | "erase" | "rd" | "rmdir") => {
+            Ok(ArgvDecision::NotExecutable)
         },
 
         Some("reg")
@@ -200,19 +199,6 @@ pub(crate) fn safety_check(command: &[String]) -> Result<ArgvDecision> {
         Some(name) if ALWAYS_ALLOWED.contains(name) => Ok(ArgvDecision::Allow),
         _ => Ok(ArgvDecision::Unknown),
     }
-}
-
-/// Parameters legally abbreviate to any unambiguous prefix, so `-r` selects
-/// `-Recurse` and `-fo` selects `-Force`. Matching every prefix over-asks on
-/// the ambiguous spellings PowerShell itself rejects, which is harmless.
-fn has_recurse_or_force_flag(command: &[String]) -> bool {
-    command.iter().skip(1).any(|arg| {
-        let Some(param) = arg.strip_prefix('-') else {
-            return false;
-        };
-        let param = param.to_ascii_lowercase();
-        !param.is_empty() && ("recurse".starts_with(&param) || "force".starts_with(&param))
-    })
 }
 
 /// PowerShell has no transparent-wrapper
@@ -427,22 +413,17 @@ mod tests {
     }
 
     #[test]
-    fn force_and_recursive_delete_variants() {
-        assert!(is_ask_no_persist(&["remove-item", "-Recurse", "C:\\x"]));
-        assert!(is_ask_no_persist(&["Remove-Item", "-r", "C:\\x"]));
-        assert!(is_ask_no_persist(&["ri", "-rec", "C:\\x"]));
-        assert!(is_ask_no_persist(&["rm", "-Force", "C:\\x"]));
-        assert!(is_ask_no_persist(&["del", "-fo", "C:\\x"]));
-        assert!(is_ask_no_persist(&["rd", "-RECURSE", "C:\\x"]));
-        assert!(is_ask_no_persist(&["rmdir", "-f", "C:\\x"]));
-        assert!(is_ask_no_persist(&["erase", "-force", "C:\\x"]));
-    }
-
-    #[test]
-    fn plain_delete_is_unknown() {
-        assert!(is_unknown(&["remove-item", "C:\\x"]));
-        assert!(is_unknown(&["del", "file.txt"]));
-        assert!(is_unknown(&["rm", "-Confirm", "C:\\x"]));
+    fn delete_commands_are_refused_outright() {
+        assert!(is_not_executable(&["remove-item", "C:\\x"]));
+        assert!(is_not_executable(&["Remove-Item", "-Recurse", "C:\\x"]));
+        assert!(is_not_executable(&["ri", "-rec", "C:\\x"]));
+        assert!(is_not_executable(&["rm", "-Force", "C:\\x"]));
+        assert!(is_not_executable(&["rm", "-Confirm", "C:\\x"]));
+        assert!(is_not_executable(&["del", "file.txt"]));
+        assert!(is_not_executable(&["DEL.EXE", "C:\\x"]));
+        assert!(is_not_executable(&["rd", "-RECURSE", "C:\\x"]));
+        assert!(is_not_executable(&["rmdir", "-f", "C:\\x"]));
+        assert!(is_not_executable(&["erase", "-force", "C:\\x"]));
     }
 
     #[test]

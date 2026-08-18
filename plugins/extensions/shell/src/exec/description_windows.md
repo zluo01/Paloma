@@ -50,9 +50,9 @@ Approval:
 - A denial is final. On "command was denied by the user", "could not be validated", or "permission request was cancelled", nothing ran: report it and stop. Do not retry, reword, or reach the same outcome another way.
 
 Deletion:
-- Deletions belong in the `ext__Shell__DeleteFiles` tool, which moves targets to the Recycle Bin, where the user can restore them. Prefer it over any delete through this tool.
-- Permanent deletes (`Remove-Item`, or its aliases `del`/`rm`/`rd`) are unrecoverable: use them only when the user explicitly asked for one. Keep the target legible — pass each path as its own argv element (["powershell", "-NoProfile", "-Command", "Remove-Item", "-LiteralPath", "C:\path\to\file"]) — and never bury a deletion inside a longer command string or a generated script.
-- Recursive shapes (`Remove-Item -Recurse`) are the riskiest form; never restructure a command to make one look routine.
+- Never delete through this tool: use the `ext__Shell__DeleteFiles` tool, which moves targets to the Recycle Bin, where the user can restore them.
+- `Remove-Item` and its aliases (`ri`, `rm`, `del`, `erase`, `rd`, `rmdir`) are refused before any prompt, recursive or not. Never route a deletion through an interpreter or a helper to get around that — no `powershell -Command` string, no generated script, no `[System.IO.File]::Delete`, no `Clear-Content`, no emptying a file with `>`. Those hide the operation from the argv the user is shown and from the safety parser.
+- When the user explicitly wants a permanent delete, suggest how they can run the deletion themselves — neither this tool nor `ext__Shell__DeleteFiles` can perform one.
 
 Privilege escalation:
 - There is no supported elevation path: do not attempt `sudo` (usually absent; Windows' optional Sudo and tools like gsudo trigger a UAC prompt and run in a separate window whose output cannot be captured), `runas` (prompts for a password on a console this tool does not have), or `Start-Process -Verb RunAs` (cannot capture output). When something genuinely needs administrator rights, say so and suggest how the user can run it themselves.
