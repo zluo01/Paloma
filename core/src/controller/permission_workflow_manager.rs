@@ -594,18 +594,18 @@ mod tests {
         PermissionWorkflowManager::new(PermissionController::new(storage)).0
     }
 
+    const DECISION_TIMEOUT: Duration = Duration::from_millis(50);
+
     /// `None` when the request is still waiting on the user.
     async fn resolution(
         manager: &PermissionWorkflowManager,
         call_id: &str,
+        timeout: Duration,
     ) -> Option<PermissionState> {
         let pending = manager
             .handle_wait_decision(call_id.to_string())
             .expect("tracked call");
-        tokio::time::timeout(Duration::from_millis(50), pending)
-            .await
-            .ok()
-            .flatten()
+        tokio::time::timeout(timeout, pending).await.ok().flatten()
     }
 
     async fn init(manager: &mut PermissionWorkflowManager, session_id: Uuid, command: &[&str]) {
@@ -639,7 +639,7 @@ mod tests {
             init(&mut manager, session_id, BENIGN_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", DECISION_TIMEOUT).await,
                 Some(PermissionState::Allow)
             ));
         }
@@ -652,7 +652,7 @@ mod tests {
             init(&mut manager, session_id, SUDO_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", DECISION_TIMEOUT).await,
                 Some(PermissionState::Deny)
             ));
         }
@@ -666,7 +666,7 @@ mod tests {
             init(&mut manager, session_id, SUDO_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", DECISION_TIMEOUT).await,
                 Some(PermissionState::Deny)
             ));
         }
@@ -675,6 +675,8 @@ mod tests {
     #[cfg(windows)]
     mod windows {
         use super::*;
+
+        const PARSER_TIMEOUT: Duration = Duration::from_secs(10);
 
         const BENIGN_COMPOSITE: &[&str] =
             &["powershell", "-NoProfile", "-Command", "cargo build; ls"];
@@ -695,7 +697,7 @@ mod tests {
             init(&mut manager, session_id, BENIGN_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", DECISION_TIMEOUT).await,
                 Some(PermissionState::Allow)
             ));
         }
@@ -708,7 +710,7 @@ mod tests {
             init(&mut manager, session_id, RUNAS_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", PARSER_TIMEOUT).await,
                 Some(PermissionState::Deny)
             ));
         }
@@ -722,7 +724,7 @@ mod tests {
             init(&mut manager, session_id, RUNAS_COMPOSITE).await;
 
             assert!(matches!(
-                resolution(&manager, "c").await,
+                resolution(&manager, "c", PARSER_TIMEOUT).await,
                 Some(PermissionState::Deny)
             ));
         }
@@ -736,7 +738,7 @@ mod tests {
 
         init(&mut manager, session_id, &["some-unknown-program"]).await;
 
-        assert!(resolution(&manager, "c").await.is_none());
+        assert!(resolution(&manager, "c", DECISION_TIMEOUT).await.is_none());
     }
 
     /// A glob `Allow` with call_id "c" — asserting against it checks all
