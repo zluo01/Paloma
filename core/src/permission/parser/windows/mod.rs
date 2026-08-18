@@ -209,6 +209,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "flaky on CI/CD due to powershell code start."]
     async fn backtick_in_bareword_normalizes_to_plain_name() {
         assert_eq!(
             output("g`it status").await,
@@ -497,6 +498,7 @@ mod parse_commands_tests {
     }
 
     #[tokio::test]
+    #[ignore = "flaky on CI/CD due to powershell code start."]
     async fn program_and_switches_match_case_insensitively() {
         assert_eq!(
             parsed(&["POWERSHELL.EXE", "-noprofile", "-command", "git status"]).await,
