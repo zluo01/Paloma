@@ -92,6 +92,17 @@ Download the latest `Paloma-<version>-x64.zip` from
 [GitHub Releases](../../releases). Extract all files to a folder, then launch
 Paloma through `Paloma.exe`. Keep all extracted files in the same folder.
 
+## Plugins
+
+Paloma provides these optional plugins as separate downloads:
+
+| Plugin | Type | What it adds | Installation |
+| --- | --- | --- | --- |
+| DeepSeek | Provider | Adds DeepSeek models through the official API. A DeepSeek API key is required. | [Install DeepSeek](plugins/providers/deepseek/README.md#installation) |
+| WebFetch | Extension | Lets models read public web pages as markdown, plain text, or raw HTML. Useful for models without built-in web search, such as DeepSeek. | [Install WebFetch](plugins/extensions/webfetch/README.md#installation) |
+
+Installed plugins are managed under **Settings → Plugins**.
+
 ## Extend Paloma
 
 Paloma plugins can be written in any language using the provided protobuf
