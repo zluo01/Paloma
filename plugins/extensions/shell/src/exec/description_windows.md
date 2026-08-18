@@ -50,11 +50,9 @@ Approval:
 - A denial is final. On "command was denied by the user", "could not be validated", or "permission request was cancelled", nothing ran: report it and stop. Do not retry, reword, or reach the same outcome another way.
 
 Deletion:
-- Windows has no trash command; the Recycle Bin is only reachable through the shell API. To make a deletion recoverable, use exactly this form, substituting only the path:
-    ["powershell", "-NoProfile", "-Command", "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('C:\path\to\file', 'OnlyErrorDialogs', 'SendToRecycleBin')"]
-  For a directory, use `DeleteDirectory` with the same last two arguments. Prefer this over a permanent delete.
+- Deletions belong in the `ext__Shell__DeleteFiles` tool, which moves targets to the Recycle Bin, where the user can restore them. Prefer it over any delete through this tool.
 - Permanent deletes (`Remove-Item`, or its aliases `del`/`rm`/`rd`) are unrecoverable: use them only when the user explicitly asked for one. Keep the target legible — pass each path as its own argv element (["powershell", "-NoProfile", "-Command", "Remove-Item", "-LiteralPath", "C:\path\to\file"]) — and never bury a deletion inside a longer command string or a generated script.
 - Recursive shapes (`Remove-Item -Recurse`) are the riskiest form; never restructure a command to make one look routine.
 
 Privilege escalation:
-- There is no supported elevation path: do not attempt `sudo` (usually absent; Windows' optional Sudo and tools like gsudo trigger a UAC prompt and run in a separate window whose output cannot be captured), `runas` (prompts for a password on a console this tool does not have), or `Start-Process -Verb RunAs` (cannot capture output). When something genuinely needs administrator rights, say so and ask the user to run it themselves in an elevated terminal.
+- There is no supported elevation path: do not attempt `sudo` (usually absent; Windows' optional Sudo and tools like gsudo trigger a UAC prompt and run in a separate window whose output cannot be captured), `runas` (prompts for a password on a console this tool does not have), or `Start-Process -Verb RunAs` (cannot capture output). When something genuinely needs administrator rights, say so and suggest how the user can run it themselves.

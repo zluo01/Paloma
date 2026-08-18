@@ -1,3 +1,4 @@
+mod delete;
 mod exec;
 
 use std::io;
@@ -5,8 +6,8 @@ use std::io;
 use paloma_extension_base::{Capability, ExtensionService};
 use paloma_utils::init_logging;
 
-use crate::exec::Exec;
 pub use crate::exec::{CAPABILITY_ID, ExecArgs};
+use crate::{delete::DeleteFiles, exec::Exec};
 
 pub const EXTENSION_ID: &str = "Shell";
 
@@ -22,11 +23,12 @@ pub fn run() -> io::Result<()> {
 }
 
 fn service() -> io::Result<ExtensionService> {
-    let capabilities: Vec<Box<dyn Capability>> = vec![Box::new(Exec::new())];
+    let capabilities: Vec<Box<dyn Capability>> =
+        vec![Box::new(Exec::new()), Box::new(DeleteFiles::new())];
 
     Ok(ExtensionService::new(
         EXTENSION_ID,
-        "Execute shell commands.",
+        "Execute shell commands and move files to the trash.",
         None,
         None,
         capabilities,

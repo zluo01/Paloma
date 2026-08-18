@@ -43,16 +43,14 @@ Approval:
 - A `bash -lc` chain is split into its individual commands and each is classified; the strictest verdict wins. A chain of already-trusted commands runs without prompting, but a chain containing anything novel prompts *and cannot be remembered* — so run an unfamiliar command on its own first to get it approved, then use it inside chains freely.
 - Shell the parser cannot parse prompts on every run, with no way to remember it. Keep chains simple, or split them into separate calls.
 - When invoking `timeout`, `env`, `nice`, or `nohup`, write *their* options canonically and spelled out (`--signal KILL`, not `--sig KILL`; `-v -f`, not `-vf`). The parser unwraps these only in canonical form: an unrecognized option yields a prompt that cannot be remembered, and a malformed one (missing or invalid flag value) fails the call outright. The inner command's own options, and the options of unwrapped commands, can be written normally.
-- Some commands are refused before any prompt, because this path has no TTY to drive them: anything containing `sudo`, plus `su`, `passwd`, `ssh-add`, and `gpg --gen-key`/`--full-generate-key`. `rm` is forbidden — see Deletion below. Do not attempt them; tell the user to run it in a terminal.
+- Some commands are refused before any prompt, because this path has no TTY to drive them: anything containing `sudo`, plus `su`, `passwd`, `ssh-add`, and `gpg --gen-key`/`--full-generate-key`. `rm` is forbidden — see Deletion below. Do not attempt them; suggest how the user can run it themselves.
 - Recursive shapes always prompt and are never remembered — `chmod -R`, `chown -R`, `find -delete`, and `find -exec`/`-execdir`/`-ok`/`-okdir`. Expect a prompt every time, and never restructure a command to dodge one.
 - A denial is final. On "command was denied by the user", "could not be validated", or "permission request was cancelled", nothing ran: report it and stop. Do not retry, reword, or reach the same outcome another way.
 
 Deletion:
-- `rm` is forbidden — every invocation, recursive or not, is refused before any prompt. Never route a deletion through an interpreter or a helper to get around that — no `["python3", "-c", ...]`, no generated script, no `find -delete`, no `xargs`, no emptying a file with `>` or `dd`. Those hide the operation from the argv the user is shown and from the safety parser.
-- Move the target to the platform's trash instead, where the user can restore it:
-  - macos: `["mv", "<path>", "<home>/.Trash/"]`.
-  - linux: `["gio", "trash", "<path>"]` uses the desktop trash under `~/.local/share/Trash`. `gio` ships with glib2 and is present on most desktops, but confirm it exists before relying on it and say so if it does not.
-- When the user explicitly wants a permanent delete, or no trash is available, tell the user to run the deletion themselves in a terminal — this path cannot perform one.
+- Never delete through this tool: use the `ext__Shell__DeleteFiles` tool, which moves the target to the platform's trash, where the user can restore it.
+- `rm` is refused before any prompt, recursive or not. Never route a deletion through an interpreter or a helper to get around that — no `["python3", "-c", ...]`, no generated script, no `find -delete`, no `xargs`, no emptying a file with `>` or `dd`. Those hide the operation from the argv the user is shown and from the safety parser.
+- When the user explicitly wants a permanent delete, suggest how they can run the deletion themselves — neither this tool nor `ext__Shell__DeleteFiles` can perform one.
 
 Privilege escalation:
 - A bare `sudo` is refused outright — there is no TTY for it to prompt on. Use the platform's graphical authentication agent instead, chosen from the host OS. Both forms below always prompt for approval and are never remembered, so elevate only where it is genuinely required.
