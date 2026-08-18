@@ -95,12 +95,6 @@ jobs:
           cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
           cargo +1.94.0 test --workspace --locked
 
-      # Windows PowerShell cold start on a fresh runner exceeds the permission
-      # parser's sidecar timeout; pay it once before the test suite spawns it.
-      - name: Warm up Windows PowerShell
-        if: matrix.platform == 'windows'
-        run: powershell.exe -NoProfile -NonInteractive -Command exit
-
       - name: Run Rust tests
         if: matrix.platform != 'linux'
         run: cargo test --workspace --locked
