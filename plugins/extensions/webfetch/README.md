@@ -15,13 +15,49 @@ config at it.
 
 ## Installation
 
+Download the newest `webfetch-plugin-v*` release from
+[GitHub Releases](https://github.com/zluo01/Paloma/releases), then choose the
+archive for your platform:
+
+| Platform | Release asset |
+|---|---|
+| Linux x86-64 | `webfetch-linux-amd64.tar.gz` |
+| Linux ARM64 | `webfetch-linux-arm64.tar.gz` |
+| macOS Apple silicon | `webfetch-macos-arm64.tar.gz` |
+| Windows x86-64 | `webfetch-windows-amd64.zip` |
+| Windows ARM64 | `webfetch-windows-arm64.zip` |
+
+Extract the archive to the location where you want to keep the plugin. The
+plugin file is named `webfetch` (`webfetch.exe` on Windows). The release also
+includes `SHA256SUMS` for verifying the download.
+
+### Add the plugin to Paloma
+
+1. Open **Settings → Plugins** and select **Add Extension Plugin…**.
+2. Set **Command** to the extracted binary's absolute path.
+3. Leave **Arguments** and **Environment** empty, then select **Add**.
+
+Example **Command** values:
+
+- Linux: `/home/<username>/paloma-plugins/webfetch`
+- macOS: `/Users/<username>/paloma-plugins/webfetch`
+- Windows: `C:\Users\<username>\paloma-plugins\webfetch.exe`
+
+Paloma starts the plugin automatically and makes the `WebFetch` capability
+available to models with tool access.
+
+## Build from source
+
+Requires Go 1.26.3 and Make.
+
 ```sh
+git clone https://github.com/zluo01/Paloma.git
+cd Paloma/plugins/extensions/webfetch
 make release
 ```
 
-Copy the resulting `webfetch` binary somewhere stable and register it in
-the host under **Settings → Plugins → Add Extension Plugin…**, with
-**Command** set to the binary's absolute path.
+The build produces the `webfetch` plugin file in the current directory. Follow
+[Add the plugin to Paloma](#add-the-plugin-to-paloma) to register it.
 
 ## The tool
 
