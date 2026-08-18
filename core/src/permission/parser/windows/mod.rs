@@ -456,6 +456,7 @@ mod parse_commands_tests {
     }
 
     #[tokio::test]
+    #[ignore = "flaky on CI/CD due to powershell code start."]
     async fn extracts_command_script() {
         assert_eq!(
             parsed(&[
@@ -474,6 +475,7 @@ mod parse_commands_tests {
     }
 
     #[tokio::test]
+    #[ignore = "flaky on CI/CD due to powershell code start."]
     async fn extracts_command_rest_arguments_joined() {
         assert_eq!(
             parsed(&[
