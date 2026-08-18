@@ -46,18 +46,11 @@ find and do.
 
 | Platform | Availability | Requirements |
 | --- | --- | --- |
-| macOS | DMG | Apple silicon and macOS 26.5 or later. The first launch requires one-time approval in macOS settings. |
 | Linux | Build from source | A compatible Wayland desktop is required. See the Linux installation requirements below. |
-
-Windows is not currently supported.
+| macOS | DMG | Apple silicon and macOS 26.5 or later. The first launch requires one-time approval in macOS settings. |
+| Windows | ZIP | Windows 10 version 1809 or later on an x64 PC. |
 
 ## Install
-
-### macOS
-
-Download the latest DMG from [GitHub Releases](../../releases). Current builds
-are ad-hoc signed, so macOS requires you to approve Paloma in
-**System Settings → Privacy & Security** the first time you open it.
 
 ### Linux
 
@@ -86,6 +79,18 @@ remove both:
 
 On Linux, your desktop may ask you to approve the global shortcut the first
 time Paloma starts.
+
+### macOS
+
+Download the latest DMG from [GitHub Releases](../../releases). Current builds
+are ad-hoc signed, so macOS requires you to approve Paloma in
+**System Settings → Privacy & Security** the first time you open it.
+
+### Windows
+
+Download the latest `Paloma-<version>-x64.zip` from
+[GitHub Releases](../../releases). Extract all files to a folder, then launch
+Paloma through `Paloma.exe`. Keep all extracted files in the same folder.
 
 ## Extend Paloma
 
@@ -133,6 +138,37 @@ open gui/macos/Paloma/Paloma.xcodeproj
 Build and run the `Paloma` scheme in Xcode. Subsequent builds refresh the Rust
 library and Swift bindings automatically.
 
+### Windows
+
+Windows development requires:
+
+- Windows 10 version 1809 (build 17763) or later;
+- Rust 1.94 or later;
+- the .NET 10 SDK; and
+- Microsoft C++ Build Tools, including the **Desktop development with C++**
+  workload.
+
+Build and start Paloma from the repository root:
+
+```powershell
+dotnet run --project gui/windows/Paloma/Paloma.csproj
+```
+
+Run the Windows frontend tests with:
+
+```powershell
+dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj
+```
+
+To create the Windows release ZIP:
+
+```powershell
+./scripts/release-windows.ps1
+```
+
+The script builds for the current machine's architecture and writes
+`target/windows/Paloma-<version>-<arch>.zip`.
+
 ### Checks
 
 ```sh
@@ -148,6 +184,7 @@ cargo clippy --workspace --all-targets
 | [`core/`](core) | Shared runtime, persistence, plugin host, and UniFFI API |
 | [`gui/linux/`](gui/linux) | GTK4 and libadwaita frontend |
 | [`gui/macos/`](gui/macos) | SwiftUI frontend and Xcode project |
+| [`gui/windows/`](gui/windows) | WinUI 3 frontend, C# tests and protobuf bindings, and Rust gRPC core process |
 | [`plugins/extensions/`](plugins/extensions) | Bundled and example extensions |
 | [`plugins/providers/`](plugins/providers) | Bundled and example model providers |
 | [`schema/`](schema) | Protobuf contracts for plugins |
@@ -161,6 +198,7 @@ Logs are written to:
 
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/paloma/logs/`
 - macOS: `~/Library/Logs/Paloma/`
+- Windows: `%LOCALAPPDATA%\Paloma\logs\`
 
 ## Contributing
 
