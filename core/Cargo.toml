@@ -49,7 +49,7 @@ tree-sitter-bash = "0.25.1"
 uuid = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = [
+windows-sys = { workspace = true, default-features = false, features = [
     "Win32_Foundation",
     "Win32_System_Registry",
 ] }

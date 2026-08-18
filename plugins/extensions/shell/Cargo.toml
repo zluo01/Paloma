@@ -32,7 +32,7 @@ uuid = { workspace = true }
 nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-foundation = { version = "0.3.2", default-features = false, features = [
+objc2-foundation = { workspace = true, default-features = false, features = [
     "std",
     "NSError",
     "NSFileManager",
@@ -41,11 +41,11 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = [
+windows = { workspace = true, default-features = false, features = [
     "Win32_System_Com",
     "Win32_UI_Shell",
 ] }
-windows-sys = { version = "0.61.2", features = [
+windows-sys = { workspace = true, default-features = false, features = [
     "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
