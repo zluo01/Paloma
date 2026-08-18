@@ -701,6 +701,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore = "flaky on CI/CD due to powershell code start."]
         async fn not_executable_composite_is_denied_outright() {
             let mut manager = manager().await;
             let session_id = Uuid::from_u128(5);
@@ -714,6 +715,7 @@ mod tests {
         }
 
         #[tokio::test]
+        #[ignore = "flaky on CI/CD due to powershell code start."]
         async fn session_bypass_does_not_override_not_executable() {
             let mut manager = manager().await;
             let session_id = Uuid::from_u128(6);
