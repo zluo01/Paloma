@@ -6,7 +6,6 @@ using Paloma.Extensions;
 using Paloma.Helpers;
 using Connector = Paloma.Binding.V1.Connector;
 using Icon = Paloma.Binding.V1.Icon;
-using Model = Paloma.Provider.Runtime.V1.Model;
 using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
 
 namespace Paloma.ViewModels.Settings;
@@ -85,75 +84,20 @@ public sealed partial class ConnectorViewModel(
     IPalomaClient client,
     Connector connector,
     Func<Task> refresh,
-    Action<string> report) : ObservableObject
+    Action<string> report)
 {
-    private bool _switchingModel;
-
     private ProviderBackendId Id { get; } = connector.Id;
+
+    public string BackendLabel { get; } = Display.Backend(connector.Id);
 
     public string Description { get; } = connector.Description;
 
-    public string BackendLabel { get; } = Display.Backend(connector.Id);
+    public Icon? Icon { get; } = connector.Icon;
 
     public string? Error { get; } =
         connector.Connection!.Status is { HasError: true } status ? status.Error : null;
 
-    public Icon? Icon { get; } = connector.Icon;
-
-    public IReadOnlyList<Model> Models { get; } = connector.Connection!.Status?.Models ?? [];
-
-    public bool ShowPickers { get; } =
-        connector.Connection!.Status is { Error: not { Length: > 0 } } liveStatus
-        && liveStatus.Models.Count > 0;
-
-    // Initializers write the backing fields directly, so seeding from the
-    // stored preferences never runs the change hooks or their persists.
-    [ObservableProperty] public partial Model? SelectedModel { get; set; } = InitialModel(connector);
-
-    [ObservableProperty]
-    public partial IReadOnlyList<string> Efforts { get; private set; } =
-        InitialModel(connector)?.SupportedReasoningEfforts ?? [];
-
-    [ObservableProperty] public partial string? SelectedEffort { get; set; } = InitialEffort(connector);
-
-    partial void OnSelectedModelChanged(Model? value)
-    {
-        if (value is null)
-        {
-            return;
-        }
-
-        Efforts = value.SupportedReasoningEfforts;
-        // Persisted here, not via the effort setter: when the new model's
-        // default effort equals the current one, no effort change fires.
-        _switchingModel = true;
-        SelectedEffort = value.DefaultReasoningEffort;
-        _switchingModel = false;
-        Persist();
-    }
-
-    partial void OnSelectedEffortChanged(string? value)
-    {
-        if (_switchingModel || SelectedModel is null || value is null)
-        {
-            return;
-        }
-
-        Persist();
-    }
-
-    private async void Persist()
-    {
-        if (SelectedModel is not { } model || SelectedEffort is not { } effort)
-        {
-            return;
-        }
-
-        await RpcGuard.TryAsync(
-            () => client.SetModelPreferenceAsync(Id, model.Id, effort),
-            report,
-            "Failed to set model");
-    }
+    public bool HasError => Error is { Length: > 0 };
 
     [RelayCommand]
     private async Task DisconnectAsync()
@@ -165,22 +109,5 @@ public sealed partial class ConnectorViewModel(
         {
             await refresh();
         }
-    }
-
-    private static Model? InitialModel(Connector connector)
-    {
-        var connection = connector.Connection!;
-        var models = connection.Status?.Models ?? [];
-        return models.FirstOrDefault(model => model.Id == connection.PreferModel)
-               ?? (models.Count > 0 ? models[0] : null);
-    }
-
-    private static string? InitialEffort(Connector connector)
-    {
-        var model = InitialModel(connector);
-        var efforts = model?.SupportedReasoningEfforts ?? [];
-        return efforts.Contains(connector.Connection!.PreferEffort)
-            ? connector.Connection!.PreferEffort
-            : model?.DefaultReasoningEffort;
     }
 }

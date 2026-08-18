@@ -50,69 +50,57 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="viewmodels:ConnectorViewModel">
                         <Grid
+                            MinHeight="68"
                             Padding="16,12"
                             Margin="0,0,0,8"
-                            RowSpacing="12"
+                            ColumnSpacing="12"
                             Style="{StaticResource SettingsCard}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <ContentPresenter
-                                    Grid.Column="0"
-                                    Width="28"
-                                    Height="28"
-                                    VerticalAlignment="Center"
-                                    Content="{x:Bind Icon, Converter={StaticResource IconToIconElement}}" />
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock
-                                        Style="{ThemeResource BaseTextBlockStyle}"
-                                        Text="{x:Bind BackendLabel}" />
-                                    <TextBlock
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Style="{ThemeResource CaptionTextBlockStyle}"
-                                        Text="{x:Bind Description}" />
-                                </StackPanel>
-                            </Grid>
-                            <Grid Grid.Row="1" ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox
-                                    Grid.Column="0"
-                                    MinWidth="200"
-                                    DisplayMemberPath="Name"
-                                    ItemsSource="{x:Bind Models}"
-                                    SelectedItem="{x:Bind SelectedModel, Mode=TwoWay}"
-                                    Visibility="{x:Bind ShowPickers}" />
-                                <ComboBox
-                                    Grid.Column="1"
-                                    MinWidth="110"
-                                    ItemsSource="{x:Bind Efforts, Mode=OneWay}"
-                                    SelectedItem="{x:Bind SelectedEffort, Mode=TwoWay}"
-                                    Visibility="{x:Bind ShowPickers}" />
+                            <ContentPresenter
+                                Grid.Row="0"
+                                Grid.Column="0"
+                                Width="32"
+                                Height="32"
+                                VerticalAlignment="Center"
+                                Content="{x:Bind Icon, Converter={StaticResource IconToIconElement}}" />
+                            <StackPanel
+                                Grid.Row="0"
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Spacing="2">
                                 <TextBlock
-                                    Grid.Column="0"
-                                    Grid.ColumnSpan="3"
-                                    VerticalAlignment="Center"
-                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    Style="{ThemeResource BaseTextBlockStyle}"
+                                    Text="{x:Bind BackendLabel}" />
+                                <TextBlock
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                     Style="{ThemeResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind Error}"
-                                    TextWrapping="Wrap"
-                                    Visibility="{x:Bind Error, Converter={StaticResource EmptyToCollapsed}}" />
-                                <Button
-                                    Grid.Column="3"
-                                    Command="{x:Bind DisconnectCommand}"
-                                    Content="Disconnect" />
-                            </Grid>
+                                    Text="{x:Bind Description}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button
+                                Grid.Row="0"
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Command="{x:Bind DisconnectCommand}"
+                                Content="Disconnect" />
+                            <InfoBar
+                                Grid.Row="1"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="3"
+                                Margin="0,8,0,0"
+                                IsClosable="False"
+                                IsOpen="{x:Bind HasError}"
+                                Message="{x:Bind Error}"
+                                Severity="Error"
+                                Visibility="{x:Bind HasError}" />
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -130,6 +118,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="binding:Connector">
                         <Grid
+                            MinHeight="68"
                             Padding="16,12"
                             Margin="0,0,0,8"
                             ColumnSpacing="12"
@@ -145,11 +134,14 @@
                                 </Grid.ColumnDefinitions>
                                 <ContentPresenter
                                     Grid.Column="0"
-                                    Width="28"
-                                    Height="28"
+                                    Width="32"
+                                    Height="32"
                                     VerticalAlignment="Center"
                                     Content="{x:Bind Icon, Converter={StaticResource IconToIconElement}}" />
-                                <StackPanel Grid.Column="1" Spacing="2">
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
                                     <TextBlock Style="{ThemeResource BaseTextBlockStyle}"
                                                Text="{x:Bind extensions:Display.Backend(Id)}" />
                                     <TextBlock
