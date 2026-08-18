@@ -118,6 +118,9 @@ pub(crate) enum DeleteError {
     #[cfg(target_os = "linux")]
     #[error("gio was not found on the host")]
     GioNotFound,
+    #[cfg(not(target_os = "linux"))]
+    #[error("the trash task failed: {0}")]
+    TaskFailed(#[from] tokio::task::JoinError),
 }
 
 #[cfg(test)]
@@ -134,7 +137,11 @@ mod tests {
 
     #[test]
     fn validate_paths_rejects_relative_path() {
-        let paths = ["/tmp/ok".to_string(), "relative".to_string()];
+        let absolute = std::env::temp_dir()
+            .join("ok")
+            .to_string_lossy()
+            .into_owned();
+        let paths = [absolute, "relative".to_string()];
         assert_eq!(
             validate_paths(&paths).unwrap_err().to_string(),
             "path must be absolute, got: relative"

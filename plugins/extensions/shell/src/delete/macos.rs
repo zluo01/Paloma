@@ -15,8 +15,7 @@ pub(super) async fn trash(paths: &[String]) -> Result<Vec<(String, String)>, Del
         }
         failures
     })
-    .await
-    .expect("trash task panicked");
+    .await?;
     Ok(failures)
 }
 

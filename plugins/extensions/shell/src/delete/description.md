@@ -16,7 +16,7 @@ The result is `<delete_output/>` when every path was trashed; otherwise it carri
       <failed target="..."><![CDATA[reason]]></failed>
     </delete_output>
 
-A failure of the whole call is reported as a single `<error>` child instead; nothing was trashed:
+A failure of the whole call is reported as a single `<error>` child instead:
 
     <delete_output>
       <error><![CDATA[reason]]></error>
