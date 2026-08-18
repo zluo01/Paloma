@@ -2630,6 +2630,7 @@ dependencies = [
  "dashmap",
  "log",
  "nix",
+ "objc2-foundation",
  "paloma-extension-base",
  "paloma-extension-protocol",
  "paloma-utils",
