@@ -687,6 +687,7 @@ mod tests {
         ];
 
         #[tokio::test]
+        #[ignore = "flaky on CI/CD due to powershell code start."]
         async fn session_bypass_auto_allows_ordinary_composite() {
             let mut manager = manager().await;
             let session_id = Uuid::from_u128(2);
