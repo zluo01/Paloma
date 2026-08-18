@@ -9,7 +9,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use crate::process_group::{ProcessGroup, ProcessGroupHolder};
+use crate::exec::process_group::{ProcessGroup, ProcessGroupHolder};
 
 /// Wall-clock budget for a single command before it is force-killed.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
