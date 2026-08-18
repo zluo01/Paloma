@@ -467,7 +467,7 @@ mod tests {
 
     #[tokio::test]
     async fn renders_tree_with_attrs_and_children_in_order() {
-        let content = ToolContent::new("shell_output")
+        let content = ToolContent::new("exec_output")
             .attr("exit_code", 0)
             .child(ToolContent::new("stdout").cdata("hello"))
             .child(ToolContent::new("stderr"));
@@ -479,7 +479,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "<shell_output\n  exit_code=\"0\"\n>\n<stdout><![CDATA[hello]]></stdout>\n<stderr></stderr>\n</shell_output>"
+            "<exec_output\n  exit_code=\"0\"\n>\n<stdout><![CDATA[hello]]></stdout>\n<stderr></stderr>\n</exec_output>"
         );
     }
 
@@ -568,7 +568,7 @@ mod tests {
     #[tokio::test]
     async fn short_sibling_is_kept_whole_in_an_over_budget_result() {
         let dir = tempfile::tempdir().unwrap();
-        let content = ToolContent::new("shell_output")
+        let content = ToolContent::new("exec_output")
             .child(
                 ToolContent::new("stdout").cdata("x".repeat(MAX_STREAM_PAYLOAD_BYTES + 10 * 1024)),
             )

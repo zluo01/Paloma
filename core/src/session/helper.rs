@@ -1,12 +1,12 @@
 use std::sync::LazyLock;
 
 use log::error;
-use paloma_extension_shell::ShellArgs;
+use paloma_extension_shell::ExecArgs;
 use serde_json::Value;
 
 use crate::{
     entity::ToolSpec,
-    extension::{PLUGIN_SHELL, SHELL_CAPABILITY},
+    extension::{EXEC_CAPABILITY, PLUGIN_SHELL},
     utils::ext_tool_name_encode,
 };
 
@@ -21,8 +21,8 @@ pub(crate) enum Disposition {
     Skip,
 }
 
-static SHELL_KEY: LazyLock<String> =
-    LazyLock::new(|| ext_tool_name_encode(PLUGIN_SHELL, SHELL_CAPABILITY));
+static EXEC_KEY: LazyLock<String> =
+    LazyLock::new(|| ext_tool_name_encode(PLUGIN_SHELL, EXEC_CAPABILITY));
 
 /// Namespace for tool approvals
 const TOOL_PERMISSION_NAMESPACE: &str = "tool:";
@@ -30,8 +30,8 @@ const TOOL_PERMISSION_NAMESPACE: &str = "tool:";
 /// extract commands and description for permission checking
 pub(crate) fn extract_args(spec: ToolSpec, raw_args: &str) -> Disposition {
     // have to hardcode on the shell tool to extract the commands for approval
-    if spec.schema.name == *SHELL_KEY {
-        return match serde_json::from_str::<ShellArgs>(raw_args) {
+    if spec.schema.name == *EXEC_KEY {
+        return match serde_json::from_str::<ExecArgs>(raw_args) {
             Ok(args) => Disposition::Gated {
                 name: PLUGIN_SHELL.to_string(),
                 arguments: args.command.join(" "),

@@ -283,9 +283,9 @@ mod tests {
     }
 
     #[test]
-    fn shell_output_realistic_shape() {
+    fn exec_output_realistic_shape() {
         // Sanity check for the actual planned shell payload shape.
-        let actual = Element::new("shell_output")
+        let actual = Element::new("exec_output")
             .attr("command", "ls -la")
             .attr("workdir", "/home/user")
             .attr("exit_code", 0)
@@ -305,12 +305,12 @@ mod tests {
             )
             .to_string();
 
-        assert!(actual.starts_with("<shell_output"));
+        assert!(actual.starts_with("<exec_output"));
         assert!(actual.contains("command=\"ls -la\""));
         assert!(actual.contains("workdir=\"/home/user\""));
         assert!(actual.contains("<![CDATA[file1]]>"));
         assert!(actual.contains("<stderr"));
-        assert!(actual.ends_with("</shell_output>"));
+        assert!(actual.ends_with("</exec_output>"));
     }
 
     #[test]

@@ -78,7 +78,7 @@ mod tests {
     fn encodes_simple_names() {
         let name = mcp_function_name_encode("spotify", "search");
         assert_eq!(name, "mcp__spotify__search");
-        assert_eq!(ext_tool_name_encode("Shell", "Shell"), "ext__Shell__Shell");
+        assert_eq!(ext_tool_name_encode("Shell", "Exec"), "ext__Shell__Exec");
     }
 
     #[test]

@@ -30,10 +30,10 @@ Commands time out after 300 seconds.
 
 The result is an XML envelope shaped like:
 
-    <shell_output command="..." workdir="..." exec_id="..." exit_code="..." duration_ms="..." [timed_out="true"]>
+    <exec_output command="..." workdir="..." exec_id="..." exit_code="..." duration_ms="..." [timed_out="true"]>
       <stdout total_bytes="..." [truncated="true"] [full_output="..."]><![CDATA[...]]></stdout>
       <stderr total_bytes="..." [truncated="true"] [full_output="..."]><![CDATA[...]]></stderr>
-    </shell_output>
+    </exec_output>
 
 Attributes:
 - exec_id: the tool-call id; also the spill directory name under %TEMP%\paloma\

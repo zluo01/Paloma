@@ -11,7 +11,7 @@ use crate::exec::process_controller::{ProcessController, ProcessExecRequest};
 mod process_controller;
 mod process_group;
 
-pub const CAPABILITY_ID: &str = "Shell";
+pub const CAPABILITY_ID: &str = "Exec";
 
 #[cfg(unix)]
 const DESCRIPTION: &str = include_str!("description.md");
@@ -19,7 +19,7 @@ const DESCRIPTION: &str = include_str!("description.md");
 const DESCRIPTION: &str = include_str!("description_windows.md");
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct ShellArgs {
+pub struct ExecArgs {
     /// argv array to execute. argv[0] is the program name (e.g. "git",
     /// "cargo"); the remaining elements are its positional arguments,
     /// one per element. Do NOT pre-concatenate multiple arguments into
@@ -75,11 +75,11 @@ pub struct ShellArgs {
     pub description: String,
 }
 
-pub(crate) struct Shell {
+pub(crate) struct Exec {
     process_controller: ProcessController,
 }
 
-impl Shell {
+impl Exec {
     pub fn new() -> Self {
         Self {
             process_controller: ProcessController::new(),
@@ -87,7 +87,7 @@ impl Shell {
     }
 }
 
-impl Capability for Shell {
+impl Capability for Exec {
     fn id(&self) -> &'static str {
         CAPABILITY_ID
     }
@@ -102,12 +102,12 @@ impl Capability for Shell {
 }
 
 #[async_trait::async_trait]
-impl ToolHandler for Shell {
+impl ToolHandler for Exec {
     fn facet(&self) -> ToolFacet {
         ToolFacet {
             description: DESCRIPTION.to_string(),
             short_description: "".to_string(),
-            parameters: serde_json::to_string(&schemars::schema_for!(ShellArgs))
+            parameters: serde_json::to_string(&schemars::schema_for!(ExecArgs))
                 .expect("JsonSchema output is always serializable"),
         }
     }
@@ -118,7 +118,7 @@ impl ToolHandler for Shell {
         call_id: &str,
         arguments: &str,
     ) -> Result<ToolContent, String> {
-        let args: ShellArgs = serde_json::from_str(arguments).map_err(|e| e.to_string())?;
+        let args: ExecArgs = serde_json::from_str(arguments).map_err(|e| e.to_string())?;
         validate_argv(&args.command)?;
         let workdir = resolve_workdir(&args.workdir)?;
         let session_id = Uuid::from_str(session_id).map_err(|e| e.to_string())?;
@@ -185,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn invoke_rejects_relative_workdir() {
-        let tool = Shell::new();
+        let tool = Exec::new();
         let arguments = serde_json::json!({
             "command": ["printf", "ok"],
             "workdir": "relative",
@@ -204,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn invoke_rejects_malformed_arguments() {
-        let tool = Shell::new();
+        let tool = Exec::new();
         let actual = tool
             .invoke(&Uuid::now_v7().to_string(), "call_1", "not json")
             .await;
@@ -214,7 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn invoke_delegates_to_process_manager() {
-        let tool = Shell::new();
+        let tool = Exec::new();
         #[cfg(unix)]
         let command = ["printf", "ok"];
         #[cfg(windows)]
@@ -235,7 +235,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(content.tag, "shell_output");
+        assert_eq!(content.tag, "exec_output");
         assert!(
             content
                 .attributes

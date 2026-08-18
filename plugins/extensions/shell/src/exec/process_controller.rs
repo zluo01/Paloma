@@ -170,7 +170,7 @@ async fn run_to_completion(
     let stderr = drain_task(stderr_task, group).await;
 
     let duration = started_at.elapsed();
-    Ok(ToolContent::new("shell_output")
+    Ok(ToolContent::new("exec_output")
         .attr("command", request.command.join(" "))
         .attr("workdir", request.cwd.display())
         .attr("exec_id", &request.call_id)
@@ -310,7 +310,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(content.tag, "shell_output");
+            assert_eq!(content.tag, "exec_output");
             assert_eq!(attr(&content, "exit_code"), Some("0"));
             assert_eq!(attr(&content, "exec_id"), Some("call_stdout"));
             assert!(attr(&content, "duration_ms").is_some());
@@ -428,7 +428,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(content.tag, "shell_output");
+            assert_eq!(content.tag, "exec_output");
             assert_eq!(attr(&content, "exit_code"), Some("0"));
             assert_eq!(attr(&content, "exec_id"), Some("call_stdout"));
             assert!(attr(&content, "duration_ms").is_some());

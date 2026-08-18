@@ -13,7 +13,7 @@ use crate::{
 
 const PLUGIN_INTERNAL: &str = "Internal";
 pub(crate) const PLUGIN_SHELL: &str = paloma_extension_shell::EXTENSION_ID;
-pub(crate) const SHELL_CAPABILITY: &str = paloma_extension_shell::CAPABILITY_ID;
+pub(crate) const EXEC_CAPABILITY: &str = paloma_extension_shell::CAPABILITY_ID;
 
 const EXTENSION_PLUGIN_FLAG: &str = "--extension-plugin";
 
