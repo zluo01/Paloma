@@ -166,7 +166,7 @@ public sealed partial class OverlayView
                 break;
         }
     }
-    
+
     private async Task HandleChatShortcutAsync(KeyRoutedEventArgs args, Modifiers modifiers)
     {
         switch (args.Key)
@@ -179,10 +179,15 @@ public sealed partial class OverlayView
                 Chat.PageScroll(args.Key == VirtualKey.PageDown ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
+            // Home/End is occupied by the input
+            case VirtualKey.Home or VirtualKey.End when modifiers == Modifiers.MOD_CONTROL:
+                Chat.EdgeScroll(args.Key == VirtualKey.End ? MoveDown : MoveUp);
+                args.Handled = true;
+                break;
             // Only a streaming turn claims Ctrl+C; otherwise it stays the
             // clipboard copy everyone expects in a text box.
             case VirtualKey.C when modifiers == Modifiers.MOD_CONTROL
-                                   && Chat.ViewModel.Streaming: 
+                                   && Chat.ViewModel.Streaming:
                 // select on the input prompt
                 if (Input.SelectionLength > 0)
                 {
@@ -218,7 +223,7 @@ public sealed partial class OverlayView
                 break;
         }
     }
-    
+
     private void OnInputChanged(object sender, TextChangedEventArgs args)
     {
         switch (Mode)

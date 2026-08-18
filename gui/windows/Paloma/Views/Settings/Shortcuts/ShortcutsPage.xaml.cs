@@ -27,6 +27,8 @@ public sealed partial class ShortcutsPage
             new ShortcutEntry("Enter", "Send message"),
             new ShortcutEntry("Ctrl+C", "Interrupt response"),
             new ShortcutEntry("↑ ↓", "Move between pending decisions"),
+            new ShortcutEntry("PgUp PgDn", "Scroll by page"),
+            new ShortcutEntry("Ctrl+Home Ctrl+End", "Scroll to top / bottom"),
             new ShortcutEntry("Shift+↓", "Open sessions"),
             new ShortcutEntry("Esc", "Exit chat"),
         ];

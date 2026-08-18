@@ -41,6 +41,12 @@ public sealed partial class ChatView
         ScrollBy(direction * SectionsScroller.ViewportHeight * PageFraction);
     }
 
+    public void EdgeScroll(int direction)
+    {
+        SectionsScroller.ChangeView(
+            null, direction < 0 ? 0 : SectionsScroller.ScrollableHeight, null, true);
+    }
+
     public bool CopySelection()
     {
         switch (this.FindDescendants().FirstOrDefault(HasSelection))
