@@ -3,7 +3,7 @@ use std::{collections::HashMap, io, time::Duration};
 use log::{debug, info};
 use oauth2::TokenResponse;
 use paloma_utils::unix_now;
-use rmcp::transport::{AuthError, StoredCredentials, auth::OAuthState};
+use rmcp::transport::{AuthError, AuthorizationRequest, StoredCredentials, auth::OAuthState};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -31,7 +31,7 @@ pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackStat
 
     // empty scopes: rmcp selects them from the 401 header or server metadata
     oauth_state
-        .start_authorization(&[], &redirect_uri, Some("Paloma"))
+        .start_authorization(AuthorizationRequest::new(&redirect_uri).with_client_name("Paloma"))
         .await?;
 
     info!("Starting OAuth authentication: {url}; callback server listening on port {port}");

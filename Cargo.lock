@@ -3426,14 +3426,17 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "2.1.0"
+version = "3.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f00a32c3b81b7b254076a65abd5ab2551209146713ba38f73818657e865e9433"
+checksum = "5f17072af977b0f86f714dbd64b3d37d0715bb63064f9d13483f0a1775813374"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
+ "bytes",
  "chrono",
  "futures",
  "http",
+ "indexmap",
  "oauth2",
  "pin-project-lite",
  "process-wrap",
@@ -4048,9 +4051,9 @@ dependencies = [
 
 [[package]]
 name = "sse-stream"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3962b63f038885f15bce2c6e02c0e7925c072f1ac86bb60fd44c5c6b762fb72"
+checksum = "c123f296ade4ec4b8b0f6162116e6629f5146922ca5ab40ca9d3c2e73ab4761e"
 dependencies = [
  "bytes",
  "futures-util",

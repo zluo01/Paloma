@@ -23,7 +23,7 @@ paloma-provider-protocol = { workspace = true }
 paloma-utils = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
-rmcp = { version = "2.1.0", default-features = false, features = [
+rmcp = { version = "3.1.3", default-features = false, features = [
     "client",
     "auth",
     "transport-child-process",

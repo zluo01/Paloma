@@ -88,7 +88,8 @@ impl McpPlugin {
                 let schemas = tools_to_specs(&config.name, tools);
                 let description = client
                     .peer_info()
-                    .and_then(|info| info.server_info.description.clone())
+                    .and_then(|info| info.server_info.clone())
+                    .and_then(|server_info| server_info.description)
                     .unwrap_or_default()
                     .trim()
                     .to_string();
