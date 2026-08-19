@@ -36,9 +36,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION_INPUT: ${{ inputs.version }}
-        run: |
-          workspace_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
-          bash .github/scripts/resolve-release.sh v "$workspace_version"
+        run: bash .github/scripts/resolve-release.sh v
 
       - name: Install Rust 1.94
         uses: dtolnay/rust-toolchain@1.94.0
