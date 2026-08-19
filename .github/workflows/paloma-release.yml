@@ -53,6 +53,8 @@ jobs:
         run: scripts/build-swift-bindings.sh
 
       - name: Build DMG
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
         run: scripts/release-macos.sh
 
       - name: Upload release artifact
@@ -72,6 +74,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Resolve release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: bash .github/scripts/resolve-release.sh v
+
       - name: Install Rust 1.94
         uses: dtolnay/rust-toolchain@1.94.0
 
@@ -87,6 +97,8 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Build zip
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
         run: ./scripts/release-windows.ps1
 
       - name: Upload release artifact

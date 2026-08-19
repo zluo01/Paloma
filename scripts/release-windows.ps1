@@ -2,25 +2,30 @@
 #
 #   scripts/release-windows.ps1
 #
-# Version comes from the workspace version in Cargo.toml. Builds for the
-# host architecture: the core build inside the project file always
-# targets the host. The app is unsigned, so SmartScreen warns once.
+# Version comes from the VERSION environment variable, falling back to
+# the workspace version in Cargo.toml. Builds for the host architecture:
+# the core build inside the project file always targets the host. The
+# app is unsigned, so SmartScreen warns once.
 #
 # Outputs:
-#   target/windows/Paloma-<version>-<arch>.zip
+#   target/windows/Paloma-<version>-windows-<arch>.zip
 $ErrorActionPreference = "Stop"
 
 Set-Location (Join-Path $PSScriptRoot "..")
 
-$match = Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$' | Select-Object -First 1
-$version = $match.Matches[0].Groups[1].Value
+$version = $env:VERSION
+if (-not $version) {
+    $match = Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$' | Select-Object -First 1
+    $version = $match.Matches[0].Groups[1].Value
+}
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $platform = if ($arch -eq "arm64") { "ARM64" } else { "x64" }
+$archLabel = if ($arch -eq "arm64") { "arm64" } else { "amd64" }
 
 $out = "target/windows"
 $staging = "$out/Paloma"
-$zip = "$out/Paloma-$version-$arch.zip"
+$zip = "$out/Paloma-$version-windows-$archLabel.zip"
 
 if (Test-Path $out) {
     Remove-Item $out -Recurse -Force
