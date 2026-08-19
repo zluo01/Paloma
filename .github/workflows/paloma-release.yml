@@ -120,8 +120,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${{ needs.build-and-test.outputs.tag }}"
-          version="${{ needs.build-and-test.outputs.version }}"
+          tag="${{ needs.build-mac.outputs.tag }}"
+          version="${{ needs.build-mac.outputs.version }}"
           release_target=(--verify-tag)
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             release_target=(--target "$GITHUB_SHA")
