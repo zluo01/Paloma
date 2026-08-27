@@ -135,7 +135,13 @@ fn decode(de: &DesktopEntry, locales: &[String]) -> Option<AppEntry> {
                 .collect()
         })
         .unwrap_or_default();
-    let icon = de.icon().map(CapabilityIcon::name);
+    let icon = de.icon().map(|icon| {
+        if Path::new(icon).is_absolute() {
+            CapabilityIcon::path(icon)
+        } else {
+            CapabilityIcon::name(icon)
+        }
+    });
     Some(AppEntry {
         name,
         generic_name,
