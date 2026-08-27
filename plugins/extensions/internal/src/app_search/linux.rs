@@ -105,7 +105,21 @@ fn keep(de: &DesktopEntry, current_desktop: Option<&[String]>, seen: &mut HashSe
 
 fn decode(de: &DesktopEntry, locales: &[String]) -> Option<AppEntry> {
     let name = de.name(locales)?.to_string();
-    let exec = de.parse_exec().ok().filter(|v| !v.is_empty())?;
+    let exec = match de.parse_exec() {
+        Ok(exec) if !exec.is_empty() => exec,
+        Ok(_) => {
+            error!("empty Exec for {}", de.path.display());
+            return None;
+        },
+        Err(_) => {
+            // https://github.com/pop-os/freedesktop-desktop-entry/issues/36
+            vec![
+                "gio".to_string(),
+                "launch".to_string(),
+                de.path.to_string_lossy().into_owned(),
+            ]
+        },
+    };
     let exec_interest = exec
         .iter()
         .find(|tok| !is_interpreter(tok))
@@ -145,7 +159,9 @@ fn is_interpreter(tok: &str) -> bool {
             | "dbus-send"
             | "env"
             | "flatpak"
+            | "gio"
             | "java"
+            | "launch"
             | "perl"
             | "python"
             | "python2"
