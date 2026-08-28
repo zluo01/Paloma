@@ -247,8 +247,9 @@ fn set_sessions(
     let now = now_epoch();
     let mut rows = Vec::with_capacity(sessions.len());
     for session in sessions {
+        let title = session.title.lines().next().unwrap_or("").trim();
         let row = ActionRow::builder()
-            .title(&session.title)
+            .title(title)
             // titles are user content, not Pango markup
             .use_markup(false)
             .title_lines(1)
