@@ -123,4 +123,4 @@ jobs:
 
       - name: Build and test Windows application
         if: matrix.platform == 'windows'
-        run: dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj
+        run: dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj -p:PalomaBindingsArgs=-Debug

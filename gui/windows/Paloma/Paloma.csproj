@@ -78,7 +78,7 @@
     <!-- Regenerate the ffi bindings everytime -->
     <Target Name="BuildPalomaBindings" BeforeTargets="BeforeBuild"
             Condition="'$(SkipPalomaCore)' != 'true' and '$(DesignTimeBuild)' != 'true'">
-        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-cs-bindings.ps1"
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-cs-bindings.ps1 $(PalomaBindingsArgs)"
               WorkingDirectory="$(MSBuildProjectDirectory)\..\..\.."/>
     </Target>
 

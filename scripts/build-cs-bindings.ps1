@@ -1,16 +1,23 @@
 # Build paloma-ffi and generate the C# bindings the Windows app compiles
 # against. Runs standalone or as a pre-build step.
 #
-#   scripts/build-cs-bindings.ps1
+#   scripts/build-cs-bindings.ps1 [-Debug]
 #
 # Outputs:
 #   target/cs/    generated C# bindings next to the paloma_ffi.dll they load
+param([switch]$Debug)
+
 Set-Location (Join-Path $PSScriptRoot '..') -ErrorAction Stop
 
-$lib = 'target/release/paloma_ffi.dll'
+$buildProfile = if ($Debug) { 'debug' } else { 'release' }
+$lib = "target/$buildProfile/paloma_ffi.dll"
 $out = 'target/cs'
 
-cargo build -p paloma-ffi --release
+if ($Debug) {
+    cargo build -p paloma-ffi
+} else {
+    cargo build -p paloma-ffi --release
+}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (Test-Path $out) { Remove-Item -Recurse -Force $out -ErrorAction Stop }
