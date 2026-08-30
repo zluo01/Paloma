@@ -34,7 +34,7 @@ use crate::{
     db::Storage,
     entity::{CapabilityInfo, HealthStatus, Plugin, PluginArgs, ToolResult, ToolSchema, ToolSpec},
     mcp::credentials::CredentialStorage,
-    utils::{mcp_function_name_encode, shell_path, write_spill_file},
+    utils::{hide_console, mcp_function_name_encode, shell_path, write_spill_file},
 };
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -330,6 +330,7 @@ async fn connect(
         // Local process over stdio
         PluginArgs::Local { command, args } => {
             let mut cmd = Command::new(command);
+            hide_console(&mut cmd);
             if let Some(path) = shell_path().await {
                 cmd.env("PATH", path);
             }

@@ -52,6 +52,7 @@ uuid = { workspace = true }
 windows-sys = { workspace = true, default-features = false, features = [
     "Win32_Foundation",
     "Win32_System_Registry",
+    "Win32_System_Threading",
 ] }
 
 [dev-dependencies]

@@ -38,7 +38,7 @@ use crate::{
     HealthStatus, Plugin, PluginArgs,
     db::{AuthKind, Storage},
     entity::ProviderBackendId,
-    utils::shell_path,
+    utils::{hide_console, shell_path},
 };
 
 const PROVIDER_REQUEST_CHANNEL_CAPACITY: usize = 16;
@@ -539,6 +539,7 @@ async fn execute_plugin(plugin: &Plugin) -> Result<Child> {
     };
 
     let mut cmd = Command::new(command);
+    hide_console(&mut cmd);
     if let Some(path) = shell_path().await {
         cmd.env("PATH", path);
     }
