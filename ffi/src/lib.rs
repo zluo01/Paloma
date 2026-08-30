@@ -48,6 +48,14 @@ pub fn init_logging(log_path: String) {
     let _ = builder.try_init();
 }
 
+/// Expose only in windows so can do internal plugins initialization in process executable
+/// Execute within the core through DLL will cause "deadlock" from loader lock
+#[cfg(windows)]
+#[uniffi::export]
+pub fn process_entry() {
+    paloma_core::process_entry();
+}
+
 /// The frontend's sink into the same log file; Swift has no portable
 /// path into `log`.
 #[uniffi::export]

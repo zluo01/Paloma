@@ -23,8 +23,14 @@ mod provider;
 mod session;
 mod utils;
 
+#[cfg(not(windows))]
 #[ctor::ctor(unsafe)]
-fn process_entry() {
+fn process_entry_ctor() {
+    process_entry();
+}
+
+/// Run with ctor to execute the built-in binary as plugin children
+pub fn process_entry() {
     provider::serve_plugin_and_exit_if_requested();
     extension::serve_extension_plugin_and_exit_if_requested();
     utils::print_path_and_exit_if_requested();

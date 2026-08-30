@@ -3,3 +3,4 @@ module_name = "PalomaCore"
 
 [bindings.csharp]
 namespace = "PalomaCore"
+access_modifier = "public"
