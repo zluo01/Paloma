@@ -75,10 +75,17 @@ final class PluginModel {
         }
     }
 
-    func finalizeMcpConnection(_ config: Plugin, session: McpOauthSession?) async -> Result<Void, Error> {
-        await CoreClient.shared.withApp { app in
-            try await app.finalizeMcpConnection(config: config, session: session)
-            refreshMcpServers()
+    func finalizeMcpConnection(_ config: Plugin, session: McpOauthSession?) -> Task<Result<Void, Error>, Never> {
+        Task {
+            let token = CancelToken()
+            return await withTaskCancellationHandler {
+                await CoreClient.shared.withApp { app in
+                    try await app.finalizeMcpConnection(config: config, session: session, token: token)
+                    refreshMcpServers()
+                }
+            } onCancel: {
+                Task { @MainActor in token.cancel() }
+            }
         }
     }
 

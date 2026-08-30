@@ -12,6 +12,7 @@ struct PluginDialog: View {
     @State var state: PluginDialogState
     @State private var operationError: OperationError?
     @State private var oauthSession: McpOauthSession?
+    @State private var finalizeTask: Task<Result<Void, Error>, Never>?
     @State private var submitting = false
 
     var body: some View {
@@ -41,7 +42,7 @@ struct PluginDialog: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Cancel", role: .cancel) {
-                        session.cancel()
+                        finalizeTask?.cancel()
                         submitting = false
                     }
                     .keyboardShortcut(.cancelAction)
@@ -341,8 +342,10 @@ struct PluginDialog: View {
     }
 
     private func finalizeConnection(_ plugin: Plugin, session: McpOauthSession?) {
+        let task = model.finalizeMcpConnection(plugin, session: session)
+        finalizeTask = task
         OperationError.run("Failed to Add MCP Server", into: $operationError) {
-            await model.finalizeMcpConnection(plugin, session: session)
+            await task.value
         } onSuccess: {
             oauthSession = nil
             onClose()
