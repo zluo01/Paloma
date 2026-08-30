@@ -42,8 +42,10 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         async Task<long> RunAsync(bool batched)
         {
             var gate = new FlushGate();
-            var mock = new MockPalomaClient();
-            mock.OnChat = (_, _) => Stream();
+            var mock = new MockPalomaClient
+            {
+                OnChat = (_, _) => Stream()
+            };
 
             async IAsyncEnumerable<ChatStreamEvent> Stream()
             {

@@ -136,15 +136,15 @@ public sealed class SessionsViewModelTests
         var mock = new MockPalomaClient
         {
             Sessions = [Session("a"), Session("b")],
-        };
-        mock.OnSearchSessionsAsync = async (needle, token) =>
-        {
-            if (needle == "ne")
+            OnSearchSessionsAsync = async (needle, token) =>
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, token);
-            }
+                if (needle == "ne")
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
 
-            return ["b"];
+                return ["b"];
+            }
         };
         var vm = new SessionsViewModel(mock);
         await vm.LoadAsync();

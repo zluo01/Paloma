@@ -50,7 +50,7 @@ internal static class TestProtos
 
     public static Plugin LocalPlugin(string name, string command = "", params string[] args)
     {
-        return new Plugin(name, Transport.Local, 300, false, new Dictionary<string, string>(),
+        return new Plugin(name, Transport.Local, 300, false, [],
             new PluginArgs.Local(command, args));
     }
 

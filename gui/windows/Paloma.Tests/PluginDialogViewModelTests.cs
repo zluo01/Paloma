@@ -21,9 +21,10 @@ public sealed class PluginDialogViewModelTests
     public void TakenName_ReportsNameError()
     {
         var vm = new PluginDialogViewModel(
-            new MockPalomaClient(), new HashSet<string> { "existing" }, PluginType.Mcp, null);
-
-        vm.Name = "existing";
+            new MockPalomaClient(), new HashSet<string> { "existing" }, PluginType.Mcp, null)
+        {
+            Name = "existing"
+        };
 
         Assert.NotNull(vm.NameError);
         Assert.False(vm.CanSubmit);
@@ -139,7 +140,7 @@ public sealed class PluginDialogViewModelTests
             Transport.Local,
             300,
             false,
-            new Dictionary<string, string>(),
+            [],
             new PluginArgs.Local("npx", ["--flag"]));
         var vm = new PluginDialogViewModel(
             mock, new HashSet<string>(), PluginType.Mcp, editing);
@@ -161,8 +162,10 @@ public sealed class PluginDialogViewModelTests
                 throw new InvalidOperationException("core is down"),
         };
         var vm = new PluginDialogViewModel(
-            mock, new HashSet<string>(), PluginType.Extension, null);
-        vm.Command = @"C:\tools\extension.exe";
+            mock, new HashSet<string>(), PluginType.Extension, null)
+        {
+            Command = @"C:\tools\extension.exe"
+        };
 
         Assert.False(await vm.SubmitAsync());
 
@@ -180,7 +183,7 @@ public sealed class PluginDialogViewModelTests
             Transport.Local,
             300,
             false,
-            new Dictionary<string, string>(),
+            [],
             new PluginArgs.Local("npx", ["--flag"]));
 
         // The edited plugin's own name is always in the taken set; editing
@@ -220,8 +223,10 @@ public sealed class PluginDialogViewModelTests
     public void Extension_MalformedArgs_ReportsArgsError()
     {
         var vm = new PluginDialogViewModel(
-            new MockPalomaClient(), new HashSet<string>(), PluginType.Extension, null);
-        vm.Command = @"C:\tools\extension.exe";
+            new MockPalomaClient(), new HashSet<string>(), PluginType.Extension, null)
+        {
+            Command = @"C:\tools\extension.exe"
+        };
         Assert.True(vm.CanSubmit);
 
         vm.Args = "not json";

@@ -95,8 +95,8 @@ public sealed class ConnectViewModelTests
         vm.Input = "  secret-key  ";
         await vm.SubmitAsync();
 
-        var call = Assert.Single(mock.FinalizeConnections);
-        Assert.Equal((ProviderAuthMethod.ApiKey, "secret-key"), (call.Method, call.Payload));
+        var (Id, Method, Payload) = Assert.Single(mock.FinalizeConnections);
+        Assert.Equal((ProviderAuthMethod.ApiKey, "secret-key"), (Method, Payload));
         Assert.True(vm.IsSuccess);
         Assert.Equal("Close", vm.CloseLabel);
     }

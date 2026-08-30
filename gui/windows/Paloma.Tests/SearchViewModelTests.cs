@@ -452,7 +452,7 @@ public sealed class SearchViewModelTests
         var (vm, errors) = Model(mock);
         mock.OnSearch = (_, _) => Failing();
 
-        async IAsyncEnumerable<QueryResponse> Failing()
+        static async IAsyncEnumerable<QueryResponse> Failing()
         {
             await Task.FromException(
                 new InvalidOperationException("core is down"));
@@ -473,7 +473,7 @@ public sealed class SearchViewModelTests
             ? Held(token)
             : MockPalomaClient.Stream(Section("Files", "readme"));
 
-        async IAsyncEnumerable<QueryResponse> Held(
+        static async IAsyncEnumerable<QueryResponse> Held(
             [System.Runtime.CompilerServices.EnumeratorCancellation]
             CancellationToken token)
         {
