@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Paloma.Client;
 using Paloma.Helpers;
-using Permission = Paloma.Binding.V1.Permission;
+using Permission = PalomaCore.Permission;
 
 namespace Paloma.ViewModels.Settings;
 

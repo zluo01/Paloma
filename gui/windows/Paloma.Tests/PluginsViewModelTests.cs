@@ -1,5 +1,4 @@
-using Grpc.Core;
-using Paloma.Binding.V1;
+using PalomaCore;
 using Paloma.ViewModels.Settings;
 using Xunit;
 
@@ -9,27 +8,18 @@ public sealed class PluginsViewModelTests
 {
     private static CapabilityInfo Capability(string id, params CapabilityFacet[] facets)
     {
-        var capability = new CapabilityInfo { Id = id, Description = $"{id} capability" };
-        foreach (var facet in facets)
-        {
-            capability.Facets.Add(new FacetState { Facet = facet });
-        }
-        return capability;
+        return new CapabilityInfo(id, $"{id} capability", [.. facets.Select(facet => new FacetState(facet, false))]);
     }
 
-    private static ExtensionInfo EnabledExtension() => new()
-    {
-        Name = "my-extension",
-        Description = "a test extension",
-        Status = HealthStatus.Running,
-        Capabilities = { Capability("cap", CapabilityFacet.Search) },
-        Config = new Plugin
-        {
-            Name = "my-extension",
-            Timeout = 300,
-            Local = new LocalPluginArgs { Command = "cmd" },
-        },
-    };
+    private static ExtensionInfo EnabledExtension() => new(
+        "my-extension",
+        "a test extension",
+        null,
+        null,
+        [Capability("cap", CapabilityFacet.Search)],
+        HealthStatus.Running,
+        null,
+        TestProtos.LocalPlugin("my-extension", "cmd"));
 
     [Fact]
     public async Task Load_DoesNotWriteTogglesBack()
@@ -52,7 +42,7 @@ public sealed class PluginsViewModelTests
         {
             ExtensionPlugins = [EnabledExtension()],
             OnRemovePlugin = (_, _) =>
-                throw new RpcException(new Status(StatusCode.Internal, "storage failure")),
+                throw new InvalidOperationException("storage failure"),
         };
         var vm = new PluginsViewModel(mock);
         await vm.LoadAsync();
@@ -71,7 +61,7 @@ public sealed class PluginsViewModelTests
         {
             ExtensionPlugins = [EnabledExtension()],
             OnTogglePlugin = (_, _) =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core away")),
+                throw new InvalidOperationException("core away"),
         };
         var vm = new PluginsViewModel(mock);
         await vm.LoadAsync();
@@ -87,11 +77,15 @@ public sealed class PluginsViewModelTests
     [Fact]
     public async Task Extension_RoutesCapabilitiesByFacet()
     {
-        var extension = EnabledExtension();
-        extension.Capabilities.Clear();
-        extension.Capabilities.Add(Capability("search-only", CapabilityFacet.Search));
-        extension.Capabilities.Add(Capability("tool-only", CapabilityFacet.Tool));
-        extension.Capabilities.Add(Capability("both", CapabilityFacet.Search, CapabilityFacet.Tool));
+        var extension = EnabledExtension() with
+        {
+            Capabilities =
+            [
+                Capability("search-only", CapabilityFacet.Search),
+                Capability("tool-only", CapabilityFacet.Tool),
+                Capability("both", CapabilityFacet.Search, CapabilityFacet.Tool),
+            ],
+        };
         var vm = new PluginsViewModel(new MockPalomaClient { ExtensionPlugins = [extension] });
 
         await vm.LoadAsync();
@@ -104,17 +98,12 @@ public sealed class PluginsViewModelTests
     [Fact]
     public async Task Mcp_TakesNameFromConfigAndFiltersToolsByMcpFacet()
     {
-        var mcp = new McpPluginInfo
-        {
-            Description = "a test server",
-            Status = HealthStatus.Running,
-            Tools =
-            {
-                Capability("tool", CapabilityFacet.Mcp),
-                Capability("not-a-tool", CapabilityFacet.Search),
-            },
-            Config = new Plugin { Name = "server" },
-        };
+        var mcp = new McpPluginInfo(
+            "a test server",
+            HealthStatus.Running,
+            null,
+            [Capability("tool", CapabilityFacet.Mcp), Capability("not-a-tool", CapabilityFacet.Search)],
+            TestProtos.LocalPlugin("server"));
         var vm = new PluginsViewModel(new MockPalomaClient { McpPlugins = [mcp] });
 
         await vm.LoadAsync();

@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using PalomaCore;
 using Serilog;
 using WinRT;
 
@@ -15,6 +16,9 @@ public static class Program
     [STAThread]
     private static void Main()
     {
+        // Initialze the internal extensions. This should always at the very beginning.
+        PalomaMethods.ProcessEntry();
+
         ComWrappersSupport.InitializeComWrappers();
 
         // A second instance exits immediately; the running one stays

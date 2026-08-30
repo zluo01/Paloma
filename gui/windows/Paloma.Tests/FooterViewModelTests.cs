@@ -1,15 +1,14 @@
 using CommunityToolkit.Mvvm.Messaging;
-using Grpc.Core;
 using Paloma.Messages;
 using Paloma.ViewModels.Overlay;
 using Xunit;
-using Connector = Paloma.Binding.V1.Connector;
-using ConnectorConnection = Paloma.Binding.V1.ConnectorConnection;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
-using HealthStatus = Paloma.Binding.V1.HealthStatus;
-using Model = Paloma.Provider.Runtime.V1.Model;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using ProviderStatus = Paloma.Binding.V1.ProviderStatus;
+using Connector = PalomaCore.Connector;
+using ConnectorConnection = PalomaCore.ConnectorConnection;
+using HealthLevel = PalomaCore.HealthLevel;
+using HealthStatus = PalomaCore.HealthStatus;
+using Model = PalomaCore.Model;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using ProviderStatus = PalomaCore.ProviderStatus;
 
 namespace Paloma.Tests;
 
@@ -182,7 +181,7 @@ public sealed class FooterViewModelTests
         Assert.Equal("b", vm.SelectedModelId);
 
         mock.OnGetConnectors = () =>
-            throw new RpcException(new Status(StatusCode.Unavailable, "core is down"));
+            throw new InvalidOperationException("core is down");
         await vm.RefreshAsync();
 
         Assert.Contains("core is down", Assert.Single(errors));
@@ -227,7 +226,7 @@ public sealed class FooterViewModelTests
         var mock = new MockPalomaClient
         {
             OnSetModelPreference = (_, _, _) =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core is down")),
+                throw new InvalidOperationException("core is down"),
         };
         var (vm, errors) = Footer(mock);
 

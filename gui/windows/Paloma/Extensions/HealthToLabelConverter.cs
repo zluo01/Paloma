@@ -1,5 +1,5 @@
 using Microsoft.UI.Xaml.Data;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
+using HealthLevel = PalomaCore.HealthLevel;
 
 namespace Paloma.Extensions;
 

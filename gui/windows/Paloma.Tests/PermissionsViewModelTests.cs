@@ -1,13 +1,12 @@
-using Grpc.Core;
 using Paloma.ViewModels.Settings;
 using Xunit;
-using Permission = Paloma.Binding.V1.Permission;
+using Permission = PalomaCore.Permission;
 
 namespace Paloma.Tests;
 
 public sealed class PermissionsViewModelTests
 {
-    private static Permission Permission(string prefix) => new() { Prefix = prefix };
+    private static Permission Permission(string prefix) => new(prefix, false, 0);
 
     [Fact]
     public async Task Filter_NarrowsAndReportsNoMatchesDistinctly()
@@ -53,7 +52,7 @@ public sealed class PermissionsViewModelTests
         {
             Permissions = [Permission("git status")],
             OnDeletePermission = _ =>
-                throw new RpcException(new Status(StatusCode.Internal, "storage failure")),
+                throw new InvalidOperationException("storage failure"),
         };
         var vm = new PermissionsViewModel(mock);
         await vm.LoadAsync();

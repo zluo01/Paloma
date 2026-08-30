@@ -1,6 +1,6 @@
-using BrowserRedirect = Paloma.Provider.Runtime.V1.BrowserRedirect;
-using DeviceCode = Paloma.Provider.Runtime.V1.DeviceCode;
-using ManualInput = Paloma.Provider.Runtime.V1.ManualInput;
+using BrowserRedirect = PalomaCore.ConnectionPayload.BrowserRedirect;
+using DeviceCode = PalomaCore.ConnectionPayload.DeviceCode;
+using ManualInput = PalomaCore.ConnectionPayload.ManualInput;
 
 namespace Paloma.Models;
 

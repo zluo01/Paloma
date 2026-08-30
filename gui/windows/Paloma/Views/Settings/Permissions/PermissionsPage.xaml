@@ -6,7 +6,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:binding="using:Paloma.Binding.V1"
+    xmlns:binding="using:PalomaCore"
     xmlns:local="using:Paloma.Views.Settings.Permissions"
     Loaded="OnLoaded"
     Unloaded="OnUnloaded"

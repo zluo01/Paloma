@@ -1,5 +1,5 @@
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.Models;
 

@@ -4,9 +4,9 @@ using CommunityToolkit.Mvvm.Input;
 using Paloma.Client;
 using Paloma.Extensions;
 using Paloma.Helpers;
-using Connector = Paloma.Binding.V1.Connector;
-using Icon = Paloma.Binding.V1.Icon;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using Connector = PalomaCore.Connector;
+using Icon = PalomaCore.Icon;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.ViewModels.Settings;
 
@@ -95,7 +95,7 @@ public sealed partial class ConnectorViewModel(
     public Icon? Icon { get; } = connector.Icon;
 
     public string? Error { get; } =
-        connector.Connection!.Status is { HasError: true } status ? status.Error : null;
+        connector.Connection!.Status.Error;
 
     public bool HasError => Error is { Length: > 0 };
 

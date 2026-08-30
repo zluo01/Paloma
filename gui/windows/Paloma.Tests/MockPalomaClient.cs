@@ -1,37 +1,34 @@
 using System.Runtime.CompilerServices;
-using Grpc.Core;
 using Paloma.Client;
 using Paloma.Models;
-using CapabilityFacet = Paloma.Binding.V1.CapabilityFacet;
-using Connector = Paloma.Binding.V1.Connector;
-using ExtAction = Paloma.Extension.V1.Action;
-using ExtensionCapabilityId = Paloma.Binding.V1.ExtensionCapabilityId;
-using ExtensionInfo = Paloma.Binding.V1.ExtensionInfo;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
-using McpPluginInfo = Paloma.Binding.V1.McpPluginInfo;
-using ProviderInfo = Paloma.Binding.V1.ProviderInfo;
-using Permission = Paloma.Binding.V1.Permission;
-using PermissionState = Paloma.Binding.V1.PermissionState;
-using Plugin = Paloma.Binding.V1.Plugin;
-using PluginType = Paloma.Binding.V1.PluginType;
-using ProviderAuthMethod = Paloma.Provider.Runtime.V1.ProviderAuthMethod;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using QueryResponse = Paloma.Binding.V1.QueryResponse;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
-using SessionListItem = Paloma.Binding.V1.SessionListItem;
-using Stay = Paloma.Extension.V1.Stay;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using CapabilityFacet = PalomaCore.CapabilityFacet;
+using Connector = PalomaCore.Connector;
+using ExtAction = PalomaCore.Action;
+using ExtensionCapabilityId = PalomaCore.ExtensionCapabilityId;
+using ExtensionInfo = PalomaCore.ExtensionInfo;
+using HealthLevel = PalomaCore.HealthLevel;
+using McpOauthSession = PalomaCore.McpOauthSession;
+using McpPluginInfo = PalomaCore.McpPluginInfo;
+using ProviderInfo = PalomaCore.ProviderInfo;
+using Permission = PalomaCore.Permission;
+using PermissionState = PalomaCore.PermissionState;
+using Plugin = PalomaCore.Plugin;
+using PluginType = PalomaCore.PluginType;
+using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using QueryResponse = PalomaCore.QueryResponse;
+using Behavior = PalomaCore.Behavior;
+using SessionListItem = PalomaCore.SessionListItem;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.Tests;
 
 /// <summary>Configurable mock: set the delegate for what a test exercises;
-/// everything else answers with an empty success. Cancellation surfaces the
-/// way the real channel does — RpcException(Cancelled), never
-/// OperationCanceledException.</summary>
+/// everything else answers with an empty success. Cancellation surfaces as
+/// OperationCanceledException, the way the real client reports it.</summary>
 internal sealed class MockPalomaClient : IPalomaClient
 {
-    private static RpcException Cancelled() =>
-        new(new Status(StatusCode.Cancelled, "call was cancelled"));
+    private static OperationCanceledException Cancelled() => new("call was cancelled");
 
     private static void ThrowIfCancelled(CancellationToken token)
     {
@@ -90,9 +87,9 @@ internal sealed class MockPalomaClient : IPalomaClient
 
     public Func<UserDecision, Task<PermissionState>>? OnDecideAsync { get; set; }
 
-    public Func<ExtensionCapabilityId, ExtAction, RunActionResponse>? OnRunAction { get; set; }
+    public Func<ExtensionCapabilityId, ExtAction, Behavior>? OnRunAction { get; set; }
 
-    public Func<ExtensionCapabilityId, ExtAction, Task<RunActionResponse>>? OnRunActionAsync { get; set; }
+    public Func<ExtensionCapabilityId, ExtAction, Task<Behavior>>? OnRunActionAsync { get; set; }
 
     public Action<string>? OnRemoveSession { get; set; }
 
@@ -141,7 +138,7 @@ internal sealed class MockPalomaClient : IPalomaClient
     public IReadOnlyList<McpPluginInfo> McpPlugins { get; set; } = [];
 
     public ProviderBackendId? PreferredBackend { get; set; } =
-        new() { ProviderId = "provider", BackendId = "backend" };
+        new("provider", "backend");
 
     // The real client stops reading after a terminal event; the mock must
     // not deliver stream shapes production can never produce.
@@ -179,7 +176,7 @@ internal sealed class MockPalomaClient : IPalomaClient
             cancellationToken);
     }
 
-    public async Task<RunActionResponse?> RunSearchActionAsync(
+    public async Task<Behavior?> RunSearchActionAsync(
         ExtensionCapabilityId capabilityId,
         ExtAction action,
         CancellationToken cancellationToken = default)
@@ -189,7 +186,7 @@ internal sealed class MockPalomaClient : IPalomaClient
             return await hook(capabilityId, action);
         }
 
-        return OnRunAction?.Invoke(capabilityId, action) ?? new RunActionResponse { Stay = new Stay() };
+        return OnRunAction?.Invoke(capabilityId, action) ?? new Behavior.Stay();
     }
 
     public Task<ProviderBackendId?> PreferModelAsync(CancellationToken cancellationToken = default)
@@ -208,7 +205,7 @@ internal sealed class MockPalomaClient : IPalomaClient
         return Observing(
             Terminated(
                 OnChat?.Invoke(sessionId, prompt)
-                    ?? Stream<ChatStreamEvent>(new ChatStreamEvent.Done()),
+                ?? Stream<ChatStreamEvent>(new ChatStreamEvent.Done()),
                 cancellationToken),
             cancellationToken);
     }
@@ -283,7 +280,7 @@ internal sealed class MockPalomaClient : IPalomaClient
         // The real init can never return Success; its unreachable phases
         // must stay unreachable in tests too.
         Task.FromResult(OnInitConnection?.Invoke(id)
-            ?? (ConnectionPhase)new ConnectionPhase.Failed("no init hook configured"));
+                        ?? (ConnectionPhase)new ConnectionPhase.Failed("no init hook configured"));
 
     public Task FinalizeConnectionAsync(
         ProviderBackendId id,
@@ -374,14 +371,14 @@ internal sealed class MockPalomaClient : IPalomaClient
         CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 
-    public Task<(string? SessionId, string? AuthUrl)> InitMcpConnectionAsync(
+    public Task<McpOauthSession?> InitMcpConnectionAsync(
         Plugin config,
         CancellationToken cancellationToken = default) =>
-        Task.FromResult<(string?, string?)>((null, null));
+        Task.FromResult<McpOauthSession?>(null);
 
     public Task FinalizeMcpConnectionAsync(
         Plugin config,
-        string? oauthSessionId,
+        McpOauthSession? session,
         CancellationToken cancellationToken = default)
     {
         ThrowIfCancelled(cancellationToken);

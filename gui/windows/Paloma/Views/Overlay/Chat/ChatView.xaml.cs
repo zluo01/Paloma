@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
-using PermissionState = Paloma.Binding.V1.PermissionState;
+using PermissionState = PalomaCore.PermissionState;
 
 namespace Paloma.Views.Overlay.Chat;
 

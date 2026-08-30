@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Paloma.Binding.V1;
 using Paloma.Client;
 using Paloma.Helpers;
+using PalomaCore;
 
 namespace Paloma.ViewModels.Settings;
 
@@ -25,24 +25,24 @@ public sealed partial class PluginsViewModel(IPalomaClient client) : ObservableO
     public async Task LoadAsync()
     {
         if (await RpcGuard.TryAsync(
-            async () =>
-            {
-                Fill(
-                    Extensions,
-                    await client.GetExtensionPluginsAsync(),
-                    extension => new ExtensionViewModel(client, extension, Report));
-                Fill(
-                    Providers,
-                    await client.GetProviderPluginsAsync(),
-                    provider => new ProviderViewModel(client, provider, Report));
-                Fill(
-                    Mcps,
-                    await client.GetMcpsAsync(),
-                    mcp => new McpViewModel(client, mcp, Report));
-                HasMcps = Mcps.Count > 0;
-            },
-            message => Status = message,
-            "Failed to load plugins"))
+                async () =>
+                {
+                    Fill(
+                        Extensions,
+                        await client.GetExtensionPluginsAsync(),
+                        extension => new ExtensionViewModel(client, extension, Report));
+                    Fill(
+                        Providers,
+                        await client.GetProviderPluginsAsync(),
+                        provider => new ProviderViewModel(client, provider, Report));
+                    Fill(
+                        Mcps,
+                        await client.GetMcpsAsync(),
+                        mcp => new McpViewModel(client, mcp, Report));
+                    HasMcps = Mcps.Count > 0;
+                },
+                message => Status = message,
+                "Failed to load plugins"))
         {
             Status = string.Empty;
         }
@@ -162,7 +162,7 @@ public sealed partial class ExtensionViewModel(IPalomaClient client, ExtensionIn
         extension.Name,
         extension.Description,
         extension.Status,
-        extension.HasError ? extension.Error : null,
+        extension.Error,
         extension.Config,
         report)
 {
@@ -186,7 +186,7 @@ public sealed partial class ProviderViewModel(IPalomaClient client, ProviderInfo
         provider.Name,
         provider.Description,
         provider.Status,
-        provider.HasError ? provider.Error : null,
+        provider.Error,
         provider.Config,
         report);
 
@@ -194,15 +194,15 @@ public sealed partial class McpViewModel(IPalomaClient client, McpPluginInfo mcp
     : PluginViewModel(
         client,
         PluginType.Mcp,
-        mcp.Config?.Name ?? string.Empty,
+        mcp.Config.Name,
         mcp.Description,
         mcp.Status,
-        mcp.HasError ? mcp.Error : null,
+        mcp.Error,
         mcp.Config,
         report)
 {
     public IReadOnlyList<CapabilityToggleViewModel> Tools { get; } =
-        Toggles(client, mcp.Config?.Name ?? string.Empty, mcp.Tools, CapabilityFacet.Mcp, report);
+        Toggles(client, mcp.Config.Name, mcp.Tools, CapabilityFacet.Mcp, report);
 
     public bool HasTools => Tools.Count > 0;
 }

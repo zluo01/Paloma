@@ -1,9 +1,8 @@
-using Grpc.Core;
 using Paloma.ViewModels.Settings;
 using Xunit;
-using Connector = Paloma.Binding.V1.Connector;
-using ConnectorConnection = Paloma.Binding.V1.ConnectorConnection;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using Connector = PalomaCore.Connector;
+using ConnectorConnection = PalomaCore.ConnectorConnection;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.Tests;
 
@@ -17,7 +16,7 @@ public sealed class ServicesViewModelTests
         var mock = new MockPalomaClient
         {
             OnDisconnect = _ =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core is down")),
+                throw new InvalidOperationException("core is down"),
         };
         var reported = string.Empty;
         var vm = new ConnectorViewModel(
@@ -68,7 +67,7 @@ public sealed class ServicesViewModelTests
         var mock = new MockPalomaClient
         {
             OnGetConnectors = () =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core is down")),
+                throw new InvalidOperationException("core is down"),
         };
         var vm = new ServicesViewModel(mock);
 
@@ -88,7 +87,7 @@ public sealed class ServicesViewModelTests
         var mock = new MockPalomaClient
         {
             OnGetConnectors = () =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core is down")),
+                throw new InvalidOperationException("core is down"),
         };
         var vm = new ServicesViewModel(mock);
         await vm.LoadAsync();
@@ -145,30 +144,6 @@ public sealed class ServicesViewModelTests
         Assert.True(erroring.HasError);
         Assert.Null(healthy.Error);
         Assert.False(healthy.HasError);
-    }
-
-    [Fact]
-    public void StatuslessConnection_ComesUpWithoutError()
-    {
-        // The proto allows a connection without a status message; the row
-        // must come up clean instead of crashing.
-        var connector = new Connector
-        {
-            Id = new ProviderBackendId { ProviderId = "provider", BackendId = "backend" },
-            Description = "a test connector",
-            Connection = new ConnectorConnection
-            {
-                Preferred = true,
-                PreferModel = "a",
-                PreferEffort = "medium",
-            },
-        };
-
-        var vm = Row(new MockPalomaClient(), connector);
-
-        Assert.Null(vm.Error);
-        Assert.False(vm.HasError);
-        Assert.Equal("a test connector", vm.Description);
     }
 
     private static ConnectorViewModel Row(MockPalomaClient mock, Connector connector) =>

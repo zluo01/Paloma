@@ -2,7 +2,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using Paloma.Helpers;
-using Icon = Paloma.Binding.V1.Icon;
+using Icon = PalomaCore.Icon;
 
 namespace Paloma.Extensions;
 
@@ -21,13 +21,11 @@ public sealed partial class IconToIconElementConverter : IValueConverter
 
     private static IconElement Resolve(Icon icon)
     {
-        return icon.IconCase switch
+        return icon switch
         {
-            Icon.IconOneofCase.Embedded =>
-                AsIcon(CapabilityIcons.DecodeEmbedded(icon.Embedded.ToByteArray())),
-            Icon.IconOneofCase.Path => AsIcon(CapabilityIcons.ImageFromPath(icon.Path)),
-            Icon.IconOneofCase.Name when CapabilityIcons.IsGlyph(icon.Name) =>
-                new FontIcon { Glyph = icon.Name },
+            Icon.Embedded embedded => AsIcon(CapabilityIcons.DecodeEmbedded(embedded.V1)),
+            Icon.Path path => AsIcon(CapabilityIcons.ImageFromPath(path.V1)),
+            Icon.Name name when CapabilityIcons.IsGlyph(name.V1) => new FontIcon { Glyph = name.V1 },
             _ => Fallback(),
         };
     }

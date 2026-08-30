@@ -1,13 +1,16 @@
-using Connector = Paloma.Binding.V1.Connector;
-using ConnectorConnection = Paloma.Binding.V1.ConnectorConnection;
-using HealthStatus = Paloma.Binding.V1.HealthStatus;
-using Model = Paloma.Provider.Runtime.V1.Model;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using ProviderStatus = Paloma.Binding.V1.ProviderStatus;
+using Connector = PalomaCore.Connector;
+using ConnectorConnection = PalomaCore.ConnectorConnection;
+using HealthStatus = PalomaCore.HealthStatus;
+using Model = PalomaCore.Model;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using Plugin = PalomaCore.Plugin;
+using PluginArgs = PalomaCore.PluginArgs;
+using ProviderStatus = PalomaCore.ProviderStatus;
+using Transport = PalomaCore.Transport;
 
 namespace Paloma.Tests;
 
-/// Shared connector and model proto builders.
+/// Shared connector and model builders.
 internal static class TestProtos
 {
     public static readonly Model ModelA = TestModel("a", "Model A", "medium", "low", "medium");
@@ -20,14 +23,12 @@ internal static class TestProtos
         string defaultEffort,
         params string[] efforts)
     {
-        var model = new Model { Id = id, Name = name, DefaultReasoningEffort = defaultEffort };
-        model.SupportedReasoningEfforts.AddRange(efforts);
-        return model;
+        return new Model(id, name, defaultEffort, efforts);
     }
 
     public static ProviderBackendId Backend(string backend)
     {
-        return new ProviderBackendId { ProviderId = "provider", BackendId = backend };
+        return new ProviderBackendId("provider", backend);
     }
 
     public static Connector ConnectorWith(
@@ -39,32 +40,22 @@ internal static class TestProtos
         string? error = null,
         IReadOnlyList<Model>? models = null)
     {
-        var status = new ProviderStatus
-        {
-            Status = health,
-            Models = { models ?? [ModelA, ModelB] },
-        };
-        if (error is not null)
-        {
-            status.Error = error;
-        }
+        var status = new ProviderStatus([.. models ?? [ModelA, ModelB]], health, error);
+        return new Connector(
+            Backend(backend),
+            "a test connector",
+            null,
+            new ConnectorConnection(preferred, preferModel, preferEffort, status));
+    }
 
-        return new Connector
-        {
-            Id = Backend(backend),
-            Description = "a test connector",
-            Connection = new ConnectorConnection
-            {
-                Preferred = preferred,
-                PreferModel = preferModel,
-                PreferEffort = preferEffort,
-                Status = status,
-            },
-        };
+    public static Plugin LocalPlugin(string name, string command = "", params string[] args)
+    {
+        return new Plugin(name, Transport.Local, 300, false, new Dictionary<string, string>(),
+            new PluginArgs.Local(command, args));
     }
 
     public static Connector Unconnected(string backend = "backend")
     {
-        return new Connector { Id = Backend(backend), Description = "a test connector" };
+        return new Connector(Backend(backend), "a test connector", null, null);
     }
 }

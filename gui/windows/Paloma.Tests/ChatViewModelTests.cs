@@ -1,16 +1,15 @@
 using System.Runtime.CompilerServices;
-using Grpc.Core;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
 using Xunit;
 using Xunit.Abstractions;
-using AllowOnce = Paloma.Binding.V1.AllowOnce;
-using AllowSession = Paloma.Binding.V1.AllowSession;
-using Deny = Paloma.Binding.V1.Deny;
-using IgnorePermission = Paloma.Binding.V1.IgnorePermission;
-using PermissionState = Paloma.Binding.V1.PermissionState;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using AllowOnce = PalomaCore.UserDecision.AllowOnce;
+using AllowSession = PalomaCore.UserDecision.AllowSession;
+using Deny = PalomaCore.UserDecision.Deny;
+using IgnorePermission = PalomaCore.UserDecision.IgnorePermission;
+using PermissionState = PalomaCore.PermissionState;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.Tests;
 
@@ -101,7 +100,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
 
         var restoreA = vm.RestoreAsync("A");
         await vm.RestoreAsync("B");
-        gateA.SetException(new RpcException(new Status(StatusCode.Cancelled, "superseded")));
+        gateA.SetException(new InvalidOperationException("superseded"));
         await restoreA;
 
         await vm.SubmitAsync("hello");
@@ -127,11 +126,8 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "{}",
                 null,
                 [
-                    new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
-                    new UserDecision
-                    {
-                        AllowSession = new AllowSession { SessionId = "s", CallId = "c1" },
-                    },
+                    new AllowOnce("c1"),
+                    new AllowSession("s", "c1"),
                 ]);
             await gate.Task;
         }
@@ -158,7 +154,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         var vm = new ChatViewModel(mock);
         var gate = new TaskCompletionSource();
         mock.OnChat = (_, _) => Held();
-        mock.OnDecide = _ => throw new RpcException(new Status(StatusCode.Unavailable, "core busy"));
+        mock.OnDecide = _ => throw new InvalidOperationException("core busy");
 
         async IAsyncEnumerable<ChatStreamEvent> Held()
         {
@@ -167,7 +163,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "shell",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } }]);
+                [new AllowOnce("c1")]);
             await gate.Task;
         }
 
@@ -194,7 +190,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         var gate = new TaskCompletionSource();
         mock.OnChat = (_, _) => Held();
         mock.OnDecide = decision =>
-            decision.DecisionCase == UserDecision.DecisionOneofCase.Deny
+            decision is Deny
                 ? PermissionState.Deny
                 : PermissionState.Allow;
 
@@ -205,12 +201,12 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "one",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } }]);
+                [new AllowOnce("c1")]);
             yield return new ChatStreamEvent.ToolCall(
                 "two",
                 "{}",
                 null,
-                [new UserDecision { Deny = new Deny { CallId = "c2" } }]);
+                [new Deny("c2")]);
             await gate.Task;
         }
 
@@ -257,7 +253,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "shell",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } }]);
+                [new AllowOnce("c1")]);
             await gate.Task;
         }
 
@@ -292,7 +288,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "shell",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } }]);
+                [new AllowOnce("c1")]);
             await gate.Task;
         }
 
@@ -330,22 +326,16 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             yield return new ChatStreamEvent.SessionStarted("s");
             yield return new ChatStreamEvent.ToolCall("one", "{}", null,
             [
-                new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
-                new UserDecision
-                {
-                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c1" },
-                },
+                new AllowOnce("c1"),
+                new IgnorePermission("s", "c1"),
             ]);
             yield return new ChatStreamEvent.ToolCall("two", "{}", null,
             [
-                new UserDecision { AllowOnce = new AllowOnce { CallId = "c2" } },
-                new UserDecision
-                {
-                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c2" },
-                },
+                new AllowOnce("c2"),
+                new IgnorePermission("s", "c2"),
             ]);
             yield return new ChatStreamEvent.ToolCall("three", "{}", null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c3" } }]);
+                [new AllowOnce("c3")]);
             await gate.Task;
         }
 
@@ -359,7 +349,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         Assert.Equal(PermissionState.Allow, sections[1].Resolution);
         // The section without the option keeps waiting for its own answer.
         Assert.True(sections[2].Unresolved);
-        Assert.Equal(["c1", "c2"], decided.Select(d => d.IgnorePermission.CallId));
+        Assert.Equal(["c1", "c2"], decided.Select(d => ((IgnorePermission)d).CallId));
 
         gate.SetResult();
         await submit;
@@ -375,7 +365,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         mock.OnChat = (_, _) => Held();
         mock.OnDecide = decision =>
         {
-            decided.Add(decision.IgnorePermission.CallId);
+            decided.Add(((IgnorePermission)decision).CallId);
             return PermissionState.Allow;
         };
 
@@ -386,11 +376,8 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             {
                 yield return new ChatStreamEvent.ToolCall($"tool{i}", "{}", null,
                 [
-                    new UserDecision { AllowOnce = new AllowOnce { CallId = $"c{i}" } },
-                    new UserDecision
-                    {
-                        IgnorePermission = new IgnorePermission { SessionId = "s", CallId = $"c{i}" },
-                    },
+                    new AllowOnce($"c{i}"),
+                    new IgnorePermission("s", $"c{i}"),
                 ]);
             }
 
@@ -423,7 +410,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         mock.OnChat = (_, _) => Held();
         mock.OnDecideAsync = decision =>
         {
-            var id = decision.IgnorePermission.CallId;
+            var id = ((IgnorePermission)decision).CallId;
             calls.Add(id);
             var source = new TaskCompletionSource<PermissionState>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
@@ -438,10 +425,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             {
                 yield return new ChatStreamEvent.ToolCall($"tool{i}", "{}", null,
                 [
-                    new UserDecision
-                    {
-                        IgnorePermission = new IgnorePermission { SessionId = "s", CallId = $"c{i}" },
-                    },
+                    new IgnorePermission("s", $"c{i}"),
                 ]);
             }
 
@@ -493,19 +477,13 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             yield return new ChatStreamEvent.SessionStarted("s");
             yield return new ChatStreamEvent.ToolCall("one", "{}", null,
             [
-                new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
-                new UserDecision
-                {
-                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c1" },
-                },
+                new AllowOnce("c1"),
+                new IgnorePermission("s", "c1"),
             ]);
             yield return new ChatStreamEvent.ToolCall("two", "{}", null,
             [
-                new UserDecision { AllowOnce = new AllowOnce { CallId = "c2" } },
-                new UserDecision
-                {
-                    IgnorePermission = new IgnorePermission { SessionId = "s", CallId = "c2" },
-                },
+                new AllowOnce("c2"),
+                new IgnorePermission("s", "c2"),
             ]);
             await gate.Task;
         }
@@ -531,7 +509,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         var vm = new ChatViewModel(mock);
         var gate = new TaskCompletionSource();
         mock.OnChat = (_, _) => Held();
-        mock.OnDecide = _ => throw new RpcException(new Status(StatusCode.Unavailable, "core busy"));
+        mock.OnDecide = _ => throw new InvalidOperationException("core busy");
 
         async IAsyncEnumerable<ChatStreamEvent> Held()
         {
@@ -540,7 +518,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "shell",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } }]);
+                [new AllowOnce("c1")]);
             await gate.Task;
         }
 
@@ -688,14 +666,14 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 "{}",
                 null,
                 [
-                    new UserDecision { AllowOnce = new AllowOnce { CallId = "c1" } },
-                    new UserDecision { Deny = new Deny { CallId = "c1" } },
+                    new AllowOnce("c1"),
+                    new Deny("c1"),
                 ]),
             new ChatStreamEvent.ToolCall(
                 "two",
                 "{}",
                 null,
-                [new UserDecision { AllowOnce = new AllowOnce { CallId = "c2" } }]),
+                [new AllowOnce("c2")]),
             new ChatStreamEvent.Done());
         await vm.SubmitAsync("run");
         var first = Assert.IsType<ToolSectionViewModel>(vm.Sections[0]);
@@ -823,6 +801,6 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
 
     private static ProviderBackendId Backend(string id)
     {
-        return new ProviderBackendId { ProviderId = "prov", BackendId = id };
+        return new ProviderBackendId("prov", id);
     }
 }

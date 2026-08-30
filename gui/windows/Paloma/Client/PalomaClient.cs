@@ -1,120 +1,51 @@
-using System.IO.Pipes;
 using System.Runtime.CompilerServices;
-using System.Security.Principal;
-using Grpc.Core;
-using Grpc.Net.Client;
-using Paloma.Binding.V1;
-using Paloma.Extension.V1;
 using Paloma.Models;
-using Paloma.Provider.Runtime.V1;
-using BindingRpc = Paloma.Binding.V1.Binding;
-using CancelConnectionRequest = Paloma.Binding.V1.CancelConnectionRequest;
-using ChatRequest = Paloma.Binding.V1.ChatRequest;
-using ExtAction = Paloma.Extension.V1.Action;
-using FinalizeConnectionRequest = Paloma.Binding.V1.FinalizeConnectionRequest;
-using InitConnectionRequest = Paloma.Binding.V1.InitConnectionRequest;
-using ProviderAuthMethod = Paloma.Provider.Runtime.V1.ProviderAuthMethod;
-using SearchRequest = Paloma.Binding.V1.SearchRequest;
+using PalomaCore;
+using ExtAction = PalomaCore.Action;
 
 namespace Paloma.Client;
 
-public sealed partial class PalomaClient : IPalomaClient, IDisposable
+public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDisposable
 {
-    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan StartupHealthTimeout = TimeSpan.FromSeconds(5);
-
-    private readonly GrpcChannel? _channel;
-    private readonly BindingRpc.BindingClient _client;
-
-    public PalomaClient(string pipeName)
-    {
-        var handler = new SocketsHttpHandler
-        {
-            ConnectCallback = (_, cancellationToken) => ConnectAsync(pipeName, cancellationToken),
-            ConnectTimeout = ConnectTimeout,
-        };
-        // The address is required but never used.
-        // Every connection goes through ConnectCallback to the named pipe.
-        _channel = GrpcChannel.ForAddress(
-            "http://localhost",
-            new GrpcChannelOptions { HttpHandler = handler });
-        _client = new BindingRpc.BindingClient(_channel);
-        // Block wait for health check on startup, grpc service is required to be healthy.
-        _client.Health(new HealthRequest(), deadline: DateTime.UtcNow.Add(StartupHealthTimeout));
-    }
-
-    internal PalomaClient(BindingRpc.BindingClient client)
-    {
-        _client = client;
-    }
-
     public static string Describe(Exception e)
     {
-        return e is RpcException { Status.Detail.Length: > 0 } rpc
-            ? rpc.Status.Detail
-            : e.Message;
+        return e is PalomaException.Failure failure ? failure.message : e.Message;
     }
 
     public static bool IsCancellation(Exception e)
     {
-        return e is OperationCanceledException
-            or RpcException { StatusCode: StatusCode.Cancelled };
+        return e is OperationCanceledException or PalomaException.Failure { message: "cancelled" };
     }
 
     public async IAsyncEnumerable<QueryResponse> SearchAsync(
         string input,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        using var call = _client.Search(
-            new SearchRequest { Input = input },
-            cancellationToken: cancellationToken);
-        await foreach (var e in call.ResponseStream.ReadAllAsync(cancellationToken))
+        using var stream = await app.Search(input);
+        await foreach (var e in Events(stream.Next, cancellationToken))
         {
-            if (e.PayloadCase != RenderEvent.PayloadOneofCase.Search)
+            switch (e)
             {
-                if (e.PayloadCase is RenderEvent.PayloadOneofCase.Done
-                    or RenderEvent.PayloadOneofCase.Cancel)
-                {
+                case RenderEvent.Search { Event: SearchRenderEvent.Append append }:
+                    yield return append.Response;
+                    break;
+                case RenderEvent.Done or RenderEvent.Cancel:
                     yield break;
-                }
-
-                // Error events here are per-extension search failures;
-                // search is best-effort, so they drop instead of ending
-                // the stream.
-                continue;
             }
-
-            if (e.Search.PayloadCase != SearchRenderEvent.PayloadOneofCase.Append)
-            {
-                continue;
-            }
-
-            yield return e.Search.Append;
         }
     }
 
-    public async Task<RunActionResponse?> RunSearchActionAsync(
+    public async Task<Behavior?> RunSearchActionAsync(
         ExtensionCapabilityId capabilityId,
         ExtAction action,
         CancellationToken cancellationToken = default)
     {
-        var request = new RunSearchActionRequest
-        {
-            ExtensionCapabilityId = capabilityId,
-            Action = action,
-        };
-        var response = await _client.RunSearchActionAsync(
-            request,
-            cancellationToken: cancellationToken);
-        return response.Behavior;
+        return await app.RunSearchAction(capabilityId, action);
     }
 
     public async Task<ProviderBackendId?> PreferModelAsync(CancellationToken cancellationToken = default)
     {
-        var response = await _client.PreferModelAsync(
-            new PreferModelRequest(),
-            cancellationToken: cancellationToken);
-        return response.ProviderBackendId;
+        return await app.PreferModel();
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> ChatAsync(
@@ -123,27 +54,15 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         string prompt,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var request = new ChatRequest
+        using var chat = await app.Chat(sessionId, backend, prompt);
+        if (chat.SessionId() is { } started)
         {
-            ProviderBackendId = backend,
-            Prompt = prompt,
-        };
-        if (sessionId is not null)
-        {
-            request.SessionId = sessionId;
+            yield return new ChatStreamEvent.SessionStarted(started);
         }
 
-        using var call = _client.Chat(request, cancellationToken: cancellationToken);
-        await foreach (var e in call.ResponseStream.ReadAllAsync(cancellationToken))
+        await foreach (var e in Events(chat.Next, cancellationToken))
         {
-            var mapped = e.PayloadCase switch
-            {
-                ChatEvent.PayloadOneofCase.SessionStarted =>
-                    new ChatStreamEvent.SessionStarted(e.SessionStarted),
-                ChatEvent.PayloadOneofCase.Event => MapRenderEvent(e.Event),
-                _ => null,
-            };
-            if (mapped is null) continue;
+            if (MapRenderEvent(e) is not { } mapped) continue;
             yield return mapped;
             if (IsTerminal(mapped))
             {
@@ -155,39 +74,29 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
     public async Task<IReadOnlyList<SessionListItem>> GetSessionsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.AvailableSessionsAsync(
-            new AvailableSessionsRequest(),
-            cancellationToken: cancellationToken);
-        return [.. response.Sessions];
+        return await app.AvailableSessions();
     }
 
     public async Task<IReadOnlyList<string>> SearchSessionsAsync(
         string needle,
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.SearchSessionsAsync(
-            new SearchSessionsRequest { Needle = needle },
-            cancellationToken: cancellationToken);
-        return [.. response.SessionIds];
+        return await app.SearchSessions(needle);
     }
 
     public async Task RemoveSessionAsync(
         string sessionId,
         CancellationToken cancellationToken = default)
     {
-        await _client.RemoveSessionAsync(
-            new RemoveSessionRequest { SessionId = sessionId },
-            cancellationToken: cancellationToken);
+        await app.RemoveSession(sessionId);
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> RestoreSessionAsync(
         string sessionId,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        using var call = _client.RestoreSession(
-            new RestoreSessionRequest { SessionId = sessionId },
-            cancellationToken: cancellationToken);
-        await foreach (var e in call.ResponseStream.ReadAllAsync(cancellationToken))
+        using var stream = await app.RestoreSession(sessionId);
+        await foreach (var e in Events(stream.Next, cancellationToken))
         {
             if (MapRenderEvent(e) is not { } mapped) continue;
             yield return mapped;
@@ -202,59 +111,40 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         string sessionId,
         CancellationToken cancellationToken = default)
     {
-        await _client.CancelSessionAsync(
-            new CancelSessionRequest { SessionId = sessionId },
-            cancellationToken: cancellationToken);
+        await app.CancelSession(sessionId);
     }
 
     public async Task<PermissionState> DecideAsync(
         UserDecision decision,
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.DecideToolcallPermissionsAsync(
-            new DecideToolcallPermissionsRequest { UserDecision = decision },
-            cancellationToken: cancellationToken);
-        return response.State;
+        return await app.DecideToolcallPermissions(decision);
     }
 
     public async Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync(
         CancellationToken cancellationToken = default)
     {
-        var services = _client.ConnectorsHealthLevelAsync(
-            new ConnectorsHealthLevelRequest(),
-            cancellationToken: cancellationToken).ResponseAsync;
-        var plugins = _client.PluginsHealthLevelAsync(
-            new PluginsHealthLevelRequest(),
-            cancellationToken: cancellationToken).ResponseAsync;
+        var services = app.ConnectorsHealthLevel();
+        var plugins = app.PluginsHealthLevel();
         await Task.WhenAll(services, plugins);
-        return ((await services).HealthLevel, (await plugins).HealthLevel);
+        return (await services, await plugins);
     }
 
     public async Task<IReadOnlyList<Connector>> GetConnectorsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.AvailableConnectorsAsync(
-            new AvailableConnectorsRequest(),
-            cancellationToken: cancellationToken);
-        return response.Connectors;
+        return await app.AvailableConnectors();
     }
 
     public async Task<ConnectionPhase> InitConnectionAsync(
         ProviderBackendId id,
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.InitConnectionAsync(
-            new InitConnectionRequest { ProviderBackendId = id },
-            cancellationToken: cancellationToken);
-        var payload = response.Connection;
-        return payload?.PayloadCase switch
+        return await app.InitConnection(id) switch
         {
-            ConnectionPayload.PayloadOneofCase.DeviceCode =>
-                new ConnectionPhase.Challenge(payload.DeviceCode),
-            ConnectionPayload.PayloadOneofCase.BrowserRedirect =>
-                new ConnectionPhase.Oauth(payload.BrowserRedirect),
-            ConnectionPayload.PayloadOneofCase.ManualInput =>
-                new ConnectionPhase.Manual(payload.ManualInput),
+            ConnectionPayload.DeviceCode payload => new ConnectionPhase.Challenge(payload),
+            ConnectionPayload.BrowserRedirect payload => new ConnectionPhase.Oauth(payload),
+            ConnectionPayload.ManualInput payload => new ConnectionPhase.Manual(payload),
             _ => new ConnectionPhase.Failed("provider returned an empty connection payload"),
         };
     }
@@ -265,30 +155,19 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         string payload,
         CancellationToken cancellationToken = default)
     {
-        await _client.FinalizeConnectionAsync(
-            new FinalizeConnectionRequest
-            {
-                ProviderAuthMethod = method,
-                ProviderBackendId = id,
-                Payload = payload,
-            },
-            cancellationToken: cancellationToken);
+        await app.FinalizeConnection(method, id, payload);
     }
 
     public async Task CancelConnectionAsync(
         ProviderBackendId id,
         CancellationToken cancellationToken = default)
     {
-        await _client.CancelConnectionAsync(
-            new CancelConnectionRequest { ProviderBackendId = id },
-            cancellationToken: cancellationToken);
+        await app.CancelConnection(id);
     }
 
     public async Task DisconnectAsync(ProviderBackendId id, CancellationToken cancellationToken = default)
     {
-        await _client.DisconnectConnectorAsync(
-            new DisconnectConnectorRequest { ProviderBackendId = id },
-            cancellationToken: cancellationToken);
+        await app.DisconnectConnector(id);
     }
 
     public async Task SetModelPreferenceAsync(
@@ -298,42 +177,25 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         bool asDefault = false,
         CancellationToken cancellationToken = default)
     {
-        await _client.SetModelPreferenceAsync(
-            new SetModelPreferenceRequest
-            {
-                ProviderBackendId = id,
-                Model = model,
-                Effort = effort,
-                AsDefault = asDefault,
-            },
-            cancellationToken: cancellationToken);
+        await app.SetModelPreference(id, model, effort, asDefault);
     }
 
     public async Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.ListExtensionPluginsAsync(
-            new ListExtensionPluginsRequest(),
-            cancellationToken: cancellationToken);
-        return response.Extensions;
+        return await app.ListExtensionPlugins();
     }
 
     public async Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.ListProviderPluginsAsync(
-            new ListProviderPluginsRequest(),
-            cancellationToken: cancellationToken);
-        return response.Providers;
+        return await app.ListProviderPlugins();
     }
 
     public async Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.ListMcpsAsync(
-            new ListMcpsRequest(),
-            cancellationToken: cancellationToken);
-        return response.Mcps;
+        return await app.ListMcps();
     }
 
     public async Task TogglePluginAsync(
@@ -341,53 +203,36 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         bool disabled,
         CancellationToken cancellationToken = default)
     {
-        await _client.TogglePluginAsync(
-            new TogglePluginRequest { Name = name, Disabled = disabled },
-            cancellationToken: cancellationToken);
+        await app.TogglePlugin(name, disabled);
     }
 
     public async Task AddExtensionPluginAsync(
         Plugin config,
         CancellationToken cancellationToken = default)
     {
-        await _client.AddExtensionPluginAsync(
-            new AddExtensionPluginRequest { Config = config },
-            cancellationToken: cancellationToken);
+        await app.AddExtensionPlugin(config);
     }
 
     public async Task AddProviderPluginAsync(
         Plugin config,
         CancellationToken cancellationToken = default)
     {
-        await _client.AddProviderPluginAsync(
-            new AddProviderPluginRequest { Config = config },
-            cancellationToken: cancellationToken);
+        await app.AddProviderPlugin(config);
     }
 
-    public async Task<(string? SessionId, string? AuthUrl)> InitMcpConnectionAsync(
+    public async Task<McpOauthSession?> InitMcpConnectionAsync(
         Plugin config,
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.InitMcpConnectionAsync(
-            new InitMcpConnectionRequest { Config = config },
-            cancellationToken: cancellationToken);
-        return (
-            response.HasOauthSessionId ? response.OauthSessionId : null,
-            response.HasAuthUrl ? response.AuthUrl : null);
+        return await app.InitMcpConnection(config);
     }
 
     public async Task FinalizeMcpConnectionAsync(
         Plugin config,
-        string? oauthSessionId,
+        McpOauthSession? session,
         CancellationToken cancellationToken = default)
     {
-        var request = new FinalizeMcpConnectionRequest { Config = config };
-        if (oauthSessionId is not null)
-        {
-            request.OauthSessionId = oauthSessionId;
-        }
-
-        await _client.FinalizeMcpConnectionAsync(request, cancellationToken: cancellationToken);
+        await app.FinalizeMcpConnection(config, session);
     }
 
     public async Task UpdatePluginAsync(
@@ -395,9 +240,7 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         Plugin config,
         CancellationToken cancellationToken = default)
     {
-        await _client.UpdatePluginAsync(
-            new UpdatePluginRequest { PluginType = kind, Plugin = config },
-            cancellationToken: cancellationToken);
+        await app.UpdatePlugin(kind, config);
     }
 
     public async Task RemovePluginAsync(
@@ -405,27 +248,20 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         string name,
         CancellationToken cancellationToken = default)
     {
-        await _client.RemovePluginAsync(
-            new RemovePluginRequest { PluginType = kind, Name = name },
-            cancellationToken: cancellationToken);
+        await app.RemovePlugin(kind, name);
     }
 
     public async Task<IReadOnlyList<Permission>> GetPermissionsAsync(
         CancellationToken cancellationToken = default)
     {
-        var response = await _client.GetPermissionsAsync(
-            new GetPermissionsRequest(),
-            cancellationToken: cancellationToken);
-        return response.Permissions;
+        return await app.GetPermissions();
     }
 
     public async Task DeletePermissionAsync(
         string prefix,
         CancellationToken cancellationToken = default)
     {
-        await _client.DeletePermissionAsync(
-            new DeletePermissionRequest { Prefix = prefix },
-            cancellationToken: cancellationToken);
+        await app.DeletePermission(prefix);
     }
 
     public async Task ToggleCapabilityAsync(
@@ -435,89 +271,49 @@ public sealed partial class PalomaClient : IPalomaClient, IDisposable
         bool disabled,
         CancellationToken cancellationToken = default)
     {
-        await _client.ToggleCapabilityAsync(
-            new ToggleCapabilityRequest
-            {
-                Name = plugin,
-                Capability = capability,
-                Facet = facet,
-                Disabled = disabled,
-            },
-            cancellationToken: cancellationToken);
+        await app.ToggleCapability(plugin, capability, facet, disabled);
     }
 
     public void Dispose()
     {
-        _channel?.Dispose();
+        app.Dispose();
     }
 
-    private static async ValueTask<Stream> ConnectAsync(
-        string pipeName,
-        CancellationToken cancellationToken)
+    private static async IAsyncEnumerable<RenderEvent> Events(
+        Func<Task<RenderEvent?>> next,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var pipe = new NamedPipeClientStream(
-            ".",
-            pipeName,
-            PipeDirection.InOut,
-            PipeOptions.Asynchronous,
-            TokenImpersonationLevel.None);
-        try
+        while (!cancellationToken.IsCancellationRequested && await next() is { } e)
         {
-            await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken);
-            ValidateOwner(pipe);
-            return pipe;
+            yield return e;
         }
-        catch
-        {
-            await pipe.DisposeAsync();
-            throw;
-        }
-    }
 
-    /// Any local account could create a fake pipe under the same name.
-    /// Only talk to a pipe owned by the current user.
-    private static void ValidateOwner(NamedPipeClientStream pipe)
-    {
-        var owner = pipe.GetAccessControl().GetOwner(typeof(SecurityIdentifier));
-        using var identity = WindowsIdentity.GetCurrent();
-        var current = identity.User;
-        if (current is null || !current.Equals(owner))
-        {
-            throw new UnauthorizedAccessException("the core pipe is not owned by the current user");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private static ChatStreamEvent? MapRenderEvent(RenderEvent e)
     {
-        return e.PayloadCase switch
+        return e switch
         {
-            RenderEvent.PayloadOneofCase.Chat => e.Chat.PayloadCase switch
-            {
-                ChatRenderEvent.PayloadOneofCase.UserPrompt =>
-                    new ChatStreamEvent.UserPrompt(e.Chat.UserPrompt),
-                ChatRenderEvent.PayloadOneofCase.TextDelta => new ChatStreamEvent.TextDelta(
-                    e.Chat.TextDelta.ProviderBackendId,
-                    e.Chat.TextDelta.Text),
-                ChatRenderEvent.PayloadOneofCase.ReasoningDelta =>
-                    new ChatStreamEvent.ReasoningDelta(e.Chat.ReasoningDelta),
-                ChatRenderEvent.PayloadOneofCase.ToolCall => new ChatStreamEvent.ToolCall(
-                    e.Chat.ToolCall.ToolName,
-                    e.Chat.ToolCall.Arguments,
-                    e.Chat.ToolCall.HasDescription ? e.Chat.ToolCall.Description : null,
-                    [
-                        .. e.Chat.ToolCall.Decisions.Where(decision =>
-                            decision.DecisionCase != UserDecision.DecisionOneofCase.None)
-                    ]),
-                _ => null,
-            },
-            RenderEvent.PayloadOneofCase.Done => new ChatStreamEvent.Done(),
-            RenderEvent.PayloadOneofCase.Cancel => new ChatStreamEvent.Cancelled(),
-            RenderEvent.PayloadOneofCase.Error => new ChatStreamEvent.Error(e.Error),
+            RenderEvent.Chat { Event: ChatRenderEvent.UserPrompt prompt } =>
+                new ChatStreamEvent.UserPrompt(prompt.Text),
+            RenderEvent.Chat { Event: ChatRenderEvent.TextDelta delta } =>
+                new ChatStreamEvent.TextDelta(delta.ProviderBackendId, delta.Text),
+            RenderEvent.Chat { Event: ChatRenderEvent.ReasoningDelta delta } =>
+                new ChatStreamEvent.ReasoningDelta(delta.Text),
+            RenderEvent.Chat { Event: ChatRenderEvent.ToolCall call } => new ChatStreamEvent.ToolCall(
+                call.ToolName,
+                call.Arguments,
+                call.Description,
+                call.Decisions),
+            RenderEvent.Done => new ChatStreamEvent.Done(),
+            RenderEvent.Cancel => new ChatStreamEvent.Cancelled(),
+            RenderEvent.Error error => new ChatStreamEvent.Error(error.Message),
             _ => null,
         };
     }
 
-    internal static bool IsTerminal(ChatStreamEvent e)
+    private static bool IsTerminal(ChatStreamEvent e)
     {
         return e is ChatStreamEvent.Done or ChatStreamEvent.Cancelled or ChatStreamEvent.Error;
     }

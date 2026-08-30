@@ -1,16 +1,14 @@
 using CommunityToolkit.Mvvm.Messaging;
-using Grpc.Core;
 using Paloma.Helpers;
 using Paloma.Messages;
 using Paloma.ViewModels.Overlay;
 using Xunit;
-using CapabilityIcon = Paloma.Extension.V1.CapabilityIcon;
-using ExtAction = Paloma.Extension.V1.Action;
-using ExtensionCapabilityId = Paloma.Binding.V1.ExtensionCapabilityId;
-using Item = Paloma.Extension.V1.Item;
-using QueryResponse = Paloma.Binding.V1.QueryResponse;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
-using Stay = Paloma.Extension.V1.Stay;
+using CapabilityIcon = PalomaCore.Icon;
+using ExtAction = PalomaCore.Action;
+using ExtensionCapabilityId = PalomaCore.ExtensionCapabilityId;
+using Item = PalomaCore.Item;
+using QueryResponse = PalomaCore.QueryResponse;
+using Behavior = PalomaCore.Behavior;
 
 namespace Paloma.Tests;
 
@@ -20,25 +18,10 @@ public sealed class SearchViewModelTests
 
     private static QueryResponse Section(string name, params string[] items)
     {
-        var section = new QueryResponse
-        {
-            ExtensionCapabilityId = new ExtensionCapabilityId
-            {
-                ExtensionId = "ext",
-                CapabilityId = "cap",
-            },
-            Name = name,
-        };
-        foreach (var title in items)
-        {
-            section.Items.Add(new Item
-            {
-                Title = title,
-                Actions = { new ExtAction { Label = "Open", Primary = true } },
-            });
-        }
-
-        return section;
+        return new QueryResponse(
+            new ExtensionCapabilityId("ext", "cap"),
+            name,
+            [.. items.Select(title => new Item(title, null, null, [new ExtAction("Open", [], true)]))]);
     }
 
     private static (SearchViewModel Vm, List<string> Errors) Model(MockPalomaClient mock)
@@ -52,7 +35,7 @@ public sealed class SearchViewModelTests
     {
         var mock = new MockPalomaClient();
         var (vm, _) = Model(mock);
-        var gate = new TaskCompletionSource<RunActionResponse>(
+        var gate = new TaskCompletionSource<Behavior>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
         mock.OnRunActionAsync = (_, _) =>
@@ -72,7 +55,7 @@ public sealed class SearchViewModelTests
         Assert.Null(await vm.ActivateAsync(row, action));
         Assert.Equal(1, calls);
 
-        gate.SetResult(new RunActionResponse { Stay = new Stay() });
+        gate.SetResult(new Behavior.Stay());
         Assert.NotNull(await first);
     }
 
@@ -209,8 +192,8 @@ public sealed class SearchViewModelTests
 
         // A row that is not in the list moves nothing.
         vm.Select(LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item { Title = "foreign", Actions = { new ExtAction { Label = "Open" } } }));
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("foreign", null, null, [new ExtAction("Open", [], false)])));
         Assert.Same(target, vm.SelectedRow);
     }
 
@@ -298,7 +281,7 @@ public sealed class SearchViewModelTests
         var mock = new MockPalomaClient();
         var (vm, _) = Model(mock);
         var section = Section("Apps", "usable");
-        section.Items.Add(new Item { Title = "inert" });
+        section = section with { Items = [.. section.Items, new Item("inert", null, null, [])] };
         mock.OnSearch = (_, _) => MockPalomaClient.Stream(section);
 
         await vm.SearchAsync("query");
@@ -318,7 +301,7 @@ public sealed class SearchViewModelTests
         Assert.True(vm.HasResults);
 
         var inert = Section("Files");
-        inert.Items.Add(new Item { Title = "no actions" });
+        inert = inert with { Items = [new Item("no actions", null, null, [])] };
         mock.OnSearch = (_, _) => MockPalomaClient.Stream(inert);
         await vm.SearchAsync("second");
 
@@ -332,13 +315,8 @@ public sealed class SearchViewModelTests
     public void ForItem_WithANameIcon_LoadsNoImage()
     {
         var row = LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item
-            {
-                Title = "title",
-                Icon = new CapabilityIcon { Name = "image-png" },
-                Actions = { new ExtAction { Label = "Open", Primary = true } },
-            });
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("title", null, new CapabilityIcon.Name("image-png"), [new ExtAction("Open", [], true)]));
 
         // Windows has no themed-icon registry to resolve a name against;
         // the row collapses its icon slot instead.
@@ -350,16 +328,8 @@ public sealed class SearchViewModelTests
     public void RowHints_YieldToTheHoveringMouse()
     {
         var row = LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item
-            {
-                Title = "title",
-                Actions =
-                {
-                    new ExtAction { Label = "Open", Primary = true },
-                    new ExtAction { Label = "Copy" },
-                },
-            });
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("title", null, null, [new ExtAction("Open", [], true), new ExtAction("Copy", [], false)]));
 
         row.IsSelected = true;
         Assert.True(row.ShowActionHint);
@@ -372,8 +342,8 @@ public sealed class SearchViewModelTests
 
         // A single-action row offers neither affordance.
         var single = LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item { Title = "one", Actions = { new ExtAction { Label = "Open", Primary = true } } });
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("one", null, null, [new ExtAction("Open", [], true)]));
         single.IsSelected = true;
         single.IsHovered = true;
         Assert.False(single.ShowActionHint);
@@ -384,13 +354,9 @@ public sealed class SearchViewModelTests
     public void ForItem_WithAPathIcon_ReservesTheIconSlot()
     {
         var row = LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item
-            {
-                Title = "title",
-                Icon = new CapabilityIcon { Path = @"Z:\paloma-tests\missing-slot" },
-                Actions = { new ExtAction { Label = "Open", Primary = true } },
-            });
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("title", null, new CapabilityIcon.Path(@"Z:\paloma-tests\missing-slot"),
+                [new ExtAction("Open", [], true)]));
 
         // The slot is decided up front so the row never shifts when the
         // async render lands.
@@ -489,7 +455,7 @@ public sealed class SearchViewModelTests
         async IAsyncEnumerable<QueryResponse> Failing()
         {
             await Task.FromException(
-                new RpcException(new Status(StatusCode.Unavailable, "core is down")));
+                new InvalidOperationException("core is down"));
             yield break;
         }
 
@@ -591,13 +557,13 @@ public sealed class SearchViewModelTests
         var mock = new MockPalomaClient
         {
             OnRunAction = (_, _) =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "action broke")),
+                throw new InvalidOperationException("action broke"),
         };
         var (vm, errors) = Model(mock);
-        var action = new ExtAction { Label = "Open", Primary = true };
+        var action = new ExtAction("Open", [], true);
         var row = LauncherRow.ForItem(
-            new ExtensionCapabilityId { ExtensionId = "ext", CapabilityId = "cap" },
-            new Item { Title = "title", Actions = { action } });
+            new ExtensionCapabilityId("ext", "cap"),
+            new Item("title", null, null, [action]));
 
         var behavior = await vm.ActivateAsync(row, action);
 

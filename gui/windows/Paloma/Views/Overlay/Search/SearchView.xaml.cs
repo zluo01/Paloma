@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Paloma.Helpers;
 using Paloma.ViewModels.Overlay;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
+using Behavior = PalomaCore.Behavior;
 
 namespace Paloma.Views.Overlay.Search;
 
@@ -13,7 +13,7 @@ public sealed partial class SearchView
 {
     public SearchViewModel ViewModel { get; }
 
-    public event EventHandler<RunActionResponse?>? ActionCompleted;
+    public event EventHandler<Behavior?>? ActionCompleted;
 
     public event EventHandler? AskRequested;
 

@@ -5,11 +5,11 @@ using Microsoft.UI.Xaml.Controls;
 using Paloma.Client;
 using Paloma.Helpers;
 using Paloma.Messages;
-using CapabilityIcon = Paloma.Extension.V1.CapabilityIcon;
-using ExtAction = Paloma.Extension.V1.Action;
-using ExtensionCapabilityId = Paloma.Binding.V1.ExtensionCapabilityId;
-using Item = Paloma.Extension.V1.Item;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
+using CapabilityIcon = PalomaCore.Icon;
+using ExtAction = PalomaCore.Action;
+using ExtensionCapabilityId = PalomaCore.ExtensionCapabilityId;
+using Item = PalomaCore.Item;
+using Behavior = PalomaCore.Behavior;
 
 namespace Paloma.ViewModels.Overlay;
 
@@ -61,7 +61,7 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
                 }
 
                 // Rows without actions cannot be activated.
-                var items = section.Items.Where(item => item.Actions.Count > 0).ToList();
+                var items = section.Items.Where(item => item.Actions.Length > 0).ToList();
                 if (items.Count == 0)
                 {
                     continue;
@@ -99,7 +99,7 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
         }
     }
 
-    public async Task<RunActionResponse?> ActivateAsync(LauncherRow row, ExtAction action)
+    public async Task<Behavior?> ActivateAsync(LauncherRow row, ExtAction action)
     {
         // A held Enter or a double click must not run the action twice.
         if (_activating)
@@ -110,7 +110,7 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
         _activating = true;
         try
         {
-            RunActionResponse? behavior = null;
+            Behavior? behavior = null;
             await RpcGuard.TryAsync(
                 async () => behavior = await client.RunSearchActionAsync(row.CapabilityId, action),
                 Report,
@@ -233,7 +233,7 @@ public sealed partial class LauncherRow : ObservableObject
     public ExtAction? PrimaryAction =>
         Item.Actions.FirstOrDefault(action => action.Primary) ?? Item.Actions.FirstOrDefault();
 
-    public bool HasActionMenu => Item.Actions.Count > 1;
+    public bool HasActionMenu => Item.Actions.Length > 1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowActionHint))]

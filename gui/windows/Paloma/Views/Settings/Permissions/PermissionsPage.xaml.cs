@@ -2,7 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Paloma.ViewModels.Settings;
-using Permission = Paloma.Binding.V1.Permission;
+using Permission = PalomaCore.Permission;
 
 namespace Paloma.Views.Settings.Permissions;
 

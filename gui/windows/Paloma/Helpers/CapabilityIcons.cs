@@ -11,7 +11,7 @@ using BitFaster.Caching.Lru;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
-using CapabilityIcon = Paloma.Extension.V1.CapabilityIcon;
+using CapabilityIcon = PalomaCore.Icon;
 
 namespace Paloma.Helpers;
 
@@ -32,27 +32,26 @@ public static partial class CapabilityIcons
 
     public static bool CanLoad(CapabilityIcon icon)
     {
-        return icon.IconCase switch
+        return icon switch
         {
-            CapabilityIcon.IconOneofCase.Embedded => !icon.Embedded.IsEmpty,
-            CapabilityIcon.IconOneofCase.Path => icon.Path.Length > 0,
-            CapabilityIcon.IconOneofCase.Name => IsGlyph(icon.Name),
+            CapabilityIcon.Embedded embedded => embedded.V1.Length > 0,
+            CapabilityIcon.Path path => path.V1.Length > 0,
+            CapabilityIcon.Name name => IsGlyph(name.V1),
             _ => false,
         };
     }
 
     public static async Task<IconElement?> LoadAsync(CapabilityIcon icon)
     {
-        if (icon.IconCase == CapabilityIcon.IconOneofCase.Name)
+        if (icon is CapabilityIcon.Name name)
         {
-            return IsGlyph(icon.Name) ? new FontIcon { Glyph = icon.Name } : null;
+            return IsGlyph(name.V1) ? new FontIcon { Glyph = name.V1 } : null;
         }
 
-        var source = icon.IconCase switch
+        var source = icon switch
         {
-            CapabilityIcon.IconOneofCase.Embedded => DecodeEmbedded(icon.Embedded.ToByteArray()),
-            CapabilityIcon.IconOneofCase.Path when icon.Path.Length > 0 =>
-                await LoadPathAsync(icon.Path),
+            CapabilityIcon.Embedded embedded => DecodeEmbedded(embedded.V1),
+            CapabilityIcon.Path { V1.Length: > 0 } path => await LoadPathAsync(path.V1),
             _ => null,
         };
         return source is null ? null : new ImageIcon { Source = source };
@@ -78,7 +77,7 @@ public static partial class CapabilityIcons
         }
 
         while (start < bytes.Length
-            && bytes[start] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
+               && bytes[start] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
         {
             start++;
         }
@@ -100,9 +99,9 @@ public static partial class CapabilityIcons
 
     internal static bool IsGlyph(string name)
     {
-         return name is [>= '\uE000' and <= '\uF8FF'];
+        return name is [>= '\uE000' and <= '\uF8FF'];
     }
-    
+
     internal static Task<ImageSource?> LoadPathAsync(string path)
     {
         return Cache.GetOrAdd(path, static requested =>

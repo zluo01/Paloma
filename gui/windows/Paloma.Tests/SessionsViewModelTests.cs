@@ -1,7 +1,6 @@
-using Grpc.Core;
 using Paloma.ViewModels.Overlay;
 using Xunit;
-using SessionListItem = Paloma.Binding.V1.SessionListItem;
+using SessionListItem = PalomaCore.SessionListItem;
 
 namespace Paloma.Tests;
 
@@ -11,7 +10,7 @@ public sealed class SessionsViewModelTests
     private static readonly string[] RetypedNeedles = ["ne", "needle"];
 
     private static SessionListItem Session(string id) =>
-        new() { SessionId = id, Title = $"Session {id}", LastUpdate = 0 };
+        new(id, $"Session {id}", 0);
 
     [Fact]
     public async Task Delete_UnderActiveFilter_KeepsFilteredView()
@@ -272,7 +271,7 @@ public sealed class SessionsViewModelTests
         {
             Sessions = [Session("a"), Session("b"), Session("c")],
             OnRemoveSession = _ =>
-                throw new RpcException(new Status(StatusCode.Internal, "storage failure")),
+                throw new InvalidOperationException("storage failure"),
         };
         var vm = new SessionsViewModel(mock);
         await vm.LoadAsync();
@@ -290,7 +289,7 @@ public sealed class SessionsViewModelTests
         {
             Sessions = [Session("a"), Session("b")],
             OnRemoveSession = _ =>
-                throw new RpcException(new Status(StatusCode.Internal, "storage failure")),
+                throw new InvalidOperationException("storage failure"),
         };
         var vm = new SessionsViewModel(mock);
         await vm.LoadAsync();

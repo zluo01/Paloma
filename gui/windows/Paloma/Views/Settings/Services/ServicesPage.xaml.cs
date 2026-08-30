@@ -2,7 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Navigation;
 using Paloma.Helpers;
 using Paloma.ViewModels.Settings;
-using Connector = Paloma.Binding.V1.Connector;
+using Connector = PalomaCore.Connector;
 
 namespace Paloma.Views.Settings.Services;
 

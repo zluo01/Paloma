@@ -5,9 +5,9 @@ using Paloma.Client;
 using Paloma.Helpers;
 using Paloma.Models;
 using Serilog;
-using PermissionState = Paloma.Binding.V1.PermissionState;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using PermissionState = PalomaCore.PermissionState;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.ViewModels.Overlay;
 
@@ -273,7 +273,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
     // and Deciding flag will gate on duplicate RPC calls.
     private void OnDecisionResolved(UserDecision decision)
     {
-        if (decision.DecisionCase != UserDecision.DecisionOneofCase.IgnorePermission)
+        if (decision is not UserDecision.IgnorePermission)
         {
             return;
         }
@@ -287,7 +287,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
 
             section.Decisions
                 .FirstOrDefault(other =>
-                    other.Decision.DecisionCase == UserDecision.DecisionOneofCase.IgnorePermission)
+                    other.Decision is UserDecision.IgnorePermission)
                 ?.Decide();
         }
     }
@@ -441,9 +441,7 @@ public sealed partial class DecisionViewModel(
 {
     public UserDecision Decision { get; } = decision;
 
-    public bool Terminal => Decision.DecisionCase
-        is UserDecision.DecisionOneofCase.Deny
-        or UserDecision.DecisionOneofCase.IgnorePermission;
+    public bool Terminal => Decision is UserDecision.Deny or UserDecision.IgnorePermission;
 
     [ObservableProperty] public partial bool IsSelected { get; set; }
 

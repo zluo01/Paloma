@@ -1,5 +1,4 @@
-using Grpc.Core;
-using Paloma.Binding.V1;
+using PalomaCore;
 using Paloma.ViewModels.Settings;
 using Xunit;
 
@@ -92,14 +91,13 @@ public sealed class PluginDialogViewModelTests
     public void EditingRemote_PrefillsFormWithReadOnlyName()
     {
         var mock = new MockPalomaClient();
-        var editing = new Plugin
-        {
-            Name = "server",
-            Timeout = 60,
-            Env = { ["KEY"] = "value" },
-            Transport = Transport.Http,
-            Remote = new RemotePluginArgs { Url = "https://example.com/mcp", RequiresAuth = true },
-        };
+        var editing = new Plugin(
+            "server",
+            Transport.Http,
+            60,
+            false,
+            new Dictionary<string, string> { ["KEY"] = "value" },
+            new PluginArgs.Remote("https://example.com/mcp", true));
 
         var vm = new PluginDialogViewModel(
             mock, new HashSet<string>(), PluginType.Mcp, editing);
@@ -127,22 +125,22 @@ public sealed class PluginDialogViewModelTests
 
         var config = Assert.Single(mock.FinalizedMcps);
         Assert.Equal("server", config.Name);
-        Assert.Equal(Plugin.ArgsOneofCase.Local, config.ArgsCase);
-        Assert.Equal("npx", config.Local.Command);
-        Assert.Equal(ExpectedLocalArgs, config.Local.Args);
+        var local = Assert.IsType<PluginArgs.Local>(config.Args);
+        Assert.Equal("npx", local.Command);
+        Assert.Equal(ExpectedLocalArgs, local.Args);
     }
 
     [Fact]
     public async Task Submit_WhenEditing_RoutesToUpdate()
     {
         var mock = new MockPalomaClient();
-        var editing = new Plugin
-        {
-            Name = "server",
-            Timeout = 300,
-            Transport = Transport.Local,
-            Local = new LocalPluginArgs { Command = "npx", Args = { "--flag" } },
-        };
+        var editing = new Plugin(
+            "server",
+            Transport.Local,
+            300,
+            false,
+            new Dictionary<string, string>(),
+            new PluginArgs.Local("npx", ["--flag"]));
         var vm = new PluginDialogViewModel(
             mock, new HashSet<string>(), PluginType.Mcp, editing);
 
@@ -160,7 +158,7 @@ public sealed class PluginDialogViewModelTests
         var mock = new MockPalomaClient
         {
             OnAddExtensionPlugin = _ =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "core is down")),
+                throw new InvalidOperationException("core is down"),
         };
         var vm = new PluginDialogViewModel(
             mock, new HashSet<string>(), PluginType.Extension, null);
@@ -177,13 +175,13 @@ public sealed class PluginDialogViewModelTests
     [Fact]
     public void Editing_OwnTakenNameIsNotAnError()
     {
-        var editing = new Plugin
-        {
-            Name = "server",
-            Timeout = 300,
-            Transport = Transport.Local,
-            Local = new LocalPluginArgs { Command = "npx", Args = { "--flag" } },
-        };
+        var editing = new Plugin(
+            "server",
+            Transport.Local,
+            300,
+            false,
+            new Dictionary<string, string>(),
+            new PluginArgs.Local("npx", ["--flag"]));
 
         // The edited plugin's own name is always in the taken set; editing
         // must not flag it as a duplicate.

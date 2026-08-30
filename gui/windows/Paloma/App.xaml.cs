@@ -8,12 +8,13 @@ using H.NotifyIcon;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Paloma.Client;
-using Paloma.Core;
 using Paloma.Messages;
 using Paloma.Settings;
 using Paloma.Views.Overlay;
 using Paloma.Views.Settings;
 using Serilog;
+using PalomaApp = PalomaCore.PalomaApp;
+using PalomaMethods = PalomaCore.PalomaMethods;
 
 namespace Paloma;
 
@@ -21,7 +22,6 @@ public partial class App
 {
     private SettingsWindow? _settingsWindow;
     private OverlayWindow? _overlayWindow;
-    private CoreProcess? _core;
     private TaskbarIcon? _tray;
 
     public PalomaClient Client { get; private set; } = null!;
@@ -42,8 +42,12 @@ public partial class App
     {
         try
         {
-            _core = CoreProcess.Start(OnCoreExited);
-            Client = new PalomaClient(_core.PipeName);
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            PalomaMethods.InitLogging(local);
+            // Core builds on its own Tokio runtime, but the await would resume on the UI thread
+            // that GetResult blocks; Task.Run keeps the wait off the UI thread so it cannot deadlock.
+            var core = Task.Run(() => PalomaApp.PalomaAppAsync(local)).GetAwaiter().GetResult();
+            Client = new PalomaClient(core);
         }
         catch (Exception e)
         {
@@ -120,24 +124,11 @@ public partial class App
         _settingsWindow.Activate();
     }
 
-    // Kill the whole app on core crash.
-    private static void OnCoreExited()
-    {
-        Log.Fatal("core exited unexpectedly");
-        ShowError(
-            "Paloma's core stopped unexpectedly and the app will close. "
-            + "Restart Paloma to continue; check the logs folder for details.");
-        Environment.Exit(1);
-    }
-
     private void Quit()
     {
         _tray?.Dispose();
         Settings.Dispose();
         _overlayWindow?.Close();
-        // Core dies before the client channel: a core that reacts to the
-        // disconnect by exiting must not be reported as a crash.
-        _core?.Dispose();
         Client.Dispose();
         Exit();
     }

@@ -7,8 +7,6 @@ members = [
     "ffi",
     "gui/linux",
     "gui/macos/uniffi-bindgen",
-    "gui/windows/binding-protocol",
-    "gui/windows/core",
     "gui/windows/uniffi-bindgen",
     "plugins/extensions/internal",
     "plugins/extensions/shell",
@@ -42,7 +40,6 @@ futures = "0.3.32"
 log = "0.4.33"
 oauth2 = { version = "5.0.0", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
-paloma-binding-protocol = { path = "gui/windows/binding-protocol" }
 paloma-core = { path = "core" }
 paloma-extension-base = { path = "extension-base" }
 paloma-extension-internal = { path = "plugins/extensions/internal" }

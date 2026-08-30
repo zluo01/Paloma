@@ -3,9 +3,9 @@ using Paloma.Client;
 using Paloma.Extensions;
 using Paloma.Helpers;
 using Paloma.Models;
-using Connector = Paloma.Binding.V1.Connector;
-using ProviderAuthMethod = Paloma.Provider.Runtime.V1.ProviderAuthMethod;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using Connector = PalomaCore.Connector;
+using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.ViewModels.Settings;
 
@@ -53,8 +53,8 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
             : null;
 
     public Uri? InstructionsUri =>
-        Phase is ConnectionPhase.Manual { Payload: { HasInstructionsUrl: true } payload }
-            ? ToUri(payload.InstructionsUrl)
+        Phase is ConnectionPhase.Manual { Payload.InstructionsUrl: { } instructionsUrl }
+            ? ToUri(instructionsUrl)
             : null;
 
     public Uri? AuthorizationUri =>

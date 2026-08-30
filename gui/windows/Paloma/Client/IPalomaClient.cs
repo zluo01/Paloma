@@ -1,22 +1,23 @@
 using Paloma.Models;
-using CapabilityFacet = Paloma.Binding.V1.CapabilityFacet;
-using Connector = Paloma.Binding.V1.Connector;
-using ExtAction = Paloma.Extension.V1.Action;
-using ExtensionCapabilityId = Paloma.Binding.V1.ExtensionCapabilityId;
-using ExtensionInfo = Paloma.Binding.V1.ExtensionInfo;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
-using McpPluginInfo = Paloma.Binding.V1.McpPluginInfo;
-using Permission = Paloma.Binding.V1.Permission;
-using PermissionState = Paloma.Binding.V1.PermissionState;
-using Plugin = Paloma.Binding.V1.Plugin;
-using PluginType = Paloma.Binding.V1.PluginType;
-using ProviderAuthMethod = Paloma.Provider.Runtime.V1.ProviderAuthMethod;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using ProviderInfo = Paloma.Binding.V1.ProviderInfo;
-using QueryResponse = Paloma.Binding.V1.QueryResponse;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
-using SessionListItem = Paloma.Binding.V1.SessionListItem;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using Behavior = PalomaCore.Behavior;
+using CapabilityFacet = PalomaCore.CapabilityFacet;
+using Connector = PalomaCore.Connector;
+using ExtAction = PalomaCore.Action;
+using ExtensionCapabilityId = PalomaCore.ExtensionCapabilityId;
+using ExtensionInfo = PalomaCore.ExtensionInfo;
+using HealthLevel = PalomaCore.HealthLevel;
+using McpOauthSession = PalomaCore.McpOauthSession;
+using McpPluginInfo = PalomaCore.McpPluginInfo;
+using Permission = PalomaCore.Permission;
+using PermissionState = PalomaCore.PermissionState;
+using Plugin = PalomaCore.Plugin;
+using PluginType = PalomaCore.PluginType;
+using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using ProviderInfo = PalomaCore.ProviderInfo;
+using QueryResponse = PalomaCore.QueryResponse;
+using SessionListItem = PalomaCore.SessionListItem;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.Client;
 
@@ -26,7 +27,7 @@ public interface IPalomaClient
         string input,
         CancellationToken cancellationToken = default);
 
-    Task<RunActionResponse?> RunSearchActionAsync(
+    Task<Behavior?> RunSearchActionAsync(
         ExtensionCapabilityId capabilityId,
         ExtAction action,
         CancellationToken cancellationToken = default);
@@ -113,13 +114,13 @@ public interface IPalomaClient
         Plugin config,
         CancellationToken cancellationToken = default);
 
-    Task<(string? SessionId, string? AuthUrl)> InitMcpConnectionAsync(
+    Task<McpOauthSession?> InitMcpConnectionAsync(
         Plugin config,
         CancellationToken cancellationToken = default);
 
     Task FinalizeMcpConnectionAsync(
         Plugin config,
-        string? oauthSessionId,
+        McpOauthSession? session,
         CancellationToken cancellationToken = default);
 
     Task UpdatePluginAsync(

@@ -1,7 +1,6 @@
-using Google.Protobuf;
 using Paloma.Helpers;
 using Xunit;
-using CapabilityIcon = Paloma.Extension.V1.CapabilityIcon;
+using CapabilityIcon = PalomaCore.Icon;
 
 namespace Paloma.Tests;
 
@@ -31,25 +30,24 @@ public sealed class CapabilityIconsTests
     [Fact]
     public void CanLoad_OnlyForRenderableCases()
     {
-        Assert.False(CapabilityIcons.CanLoad(new CapabilityIcon()));
-        Assert.False(CapabilityIcons.CanLoad(new CapabilityIcon { Name = "image-png" }));
-        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon { Name = "\uE8EF" }));
-        Assert.False(CapabilityIcons.CanLoad(new CapabilityIcon { Embedded = ByteString.Empty }));
-        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon { Embedded = ByteString.CopyFrom(1, 2) }));
-        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon { Path = @"C:\anything" }));
+        Assert.False(CapabilityIcons.CanLoad(new CapabilityIcon.Name("image-png")));
+        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon.Name("\uE8EF")));
+        Assert.False(CapabilityIcons.CanLoad(new CapabilityIcon.Embedded([])));
+        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon.Embedded([1, 2])));
+        Assert.True(CapabilityIcons.CanLoad(new CapabilityIcon.Path(@"C:\anything")));
     }
 
     [Fact]
     public async Task Load_WithAName_YieldsNoImage()
     {
-        Assert.Null(await CapabilityIcons.LoadAsync(new CapabilityIcon { Name = "image-png" }));
+        Assert.Null(await CapabilityIcons.LoadAsync(new CapabilityIcon.Name("image-png")));
     }
 
     [Fact]
     public async Task Load_WithEmptyEmbeddedBytes_YieldsNoImage()
     {
         Assert.Null(
-            await CapabilityIcons.LoadAsync(new CapabilityIcon { Embedded = ByteString.Empty }));
+            await CapabilityIcons.LoadAsync(new CapabilityIcon.Embedded([])));
     }
 
     [Fact]
@@ -68,7 +66,7 @@ public sealed class CapabilityIconsTests
         Assert.Null(await first);
 
         // The failed task is evicted so the next request re-renders.
-        await TestWait.UntilAsync(
-            () => !ReferenceEquals(first, CapabilityIcons.LoadPathAsync(@"Z:\paloma-tests\missing-b")));
+        await TestWait.UntilAsync(() =>
+            !ReferenceEquals(first, CapabilityIcons.LoadPathAsync(@"Z:\paloma-tests\missing-b")));
     }
 }

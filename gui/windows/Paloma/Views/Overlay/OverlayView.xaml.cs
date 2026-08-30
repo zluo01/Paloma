@@ -12,7 +12,7 @@ using Paloma.ViewModels.Overlay;
 using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 using Modifiers = Windows.Win32.UI.Input.KeyboardAndMouse.HOT_KEY_MODIFIERS;
-using RunActionResponse = Paloma.Extension.V1.RunActionResponse;
+using Behavior = PalomaCore.Behavior;
 
 namespace Paloma.Views.Overlay;
 
@@ -337,17 +337,17 @@ public sealed partial class OverlayView
         ModeChanged?.Invoke();
     }
 
-    private void HandleBehavior(RunActionResponse? behavior)
+    private void HandleBehavior(Behavior? behavior)
     {
-        switch (behavior?.BehaviorCase)
+        switch (behavior)
         {
-            case RunActionResponse.BehaviorOneofCase.Hide:
+            case Behavior.Hide:
                 Input.Text = string.Empty;
                 Search.Clear();
                 HideRequested?.Invoke();
                 break;
-            case RunActionResponse.BehaviorOneofCase.Replace:
-                Input.Text = behavior.Replace.Input;
+            case Behavior.Replace replace:
+                Input.Text = replace.Input;
                 Input.SelectionStart = Input.Text.Length;
                 break;
         }
@@ -375,7 +375,7 @@ public sealed partial class OverlayView
         _ = OpenSessionsAsync();
     }
 
-    private void OnSearchActionCompleted(object? sender, RunActionResponse? behavior)
+    private void OnSearchActionCompleted(object? sender, Behavior? behavior)
     {
         HandleBehavior(behavior);
     }

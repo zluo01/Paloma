@@ -1,6 +1,6 @@
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Paloma.Binding.V1;
+using PalomaCore;
 using Paloma.Client;
 using Paloma.Helpers;
 
@@ -125,17 +125,17 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         Env = JsonSerializer.Serialize(_editing.Env);
         // Customized advanced settings deserve to be seen while editing.
         AdvancedExpanded = _editing.Env.Count > 0 || _editing.Timeout != CoreDefaultTimeout;
-        switch (_editing.ArgsCase)
+        switch (_editing.Args)
         {
-            case Plugin.ArgsOneofCase.Local:
+            case PluginArgs.Local local:
                 TypeIndex = 0;
-                Command = _editing.Local.Command;
-                Args = JsonSerializer.Serialize(_editing.Local.Args);
+                Command = local.Command;
+                Args = JsonSerializer.Serialize(local.Args);
                 break;
-            case Plugin.ArgsOneofCase.Remote:
+            case PluginArgs.Remote remote:
                 TypeIndex = 1;
-                Url = _editing.Remote.Url;
-                RequiresAuth = _editing.Remote.RequiresAuth;
+                Url = remote.Url;
+                RequiresAuth = remote.RequiresAuth;
                 break;
         }
     }
@@ -287,46 +287,41 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         {
             // Extension and provider names come from the plugin handshake,
             // not the dialog.
-            var extensionLocal = new LocalPluginArgs { Command = Command.Trim() };
-            extensionLocal.Args.AddRange(
-                ParseArgs(Args.Trim().Length == 0 ? "[]" : Args.Trim()) ?? []);
-            var extension = new Plugin
-            {
-                Name = string.Empty,
-                Timeout = _editing?.Timeout ?? CoreDefaultTimeout,
-                Disabled = false,
-                Transport = Transport.Local,
-                Local = extensionLocal,
-            };
-            extension.Env.Add(env);
-            return extension;
+            var extensionArgs = ParseArgs(Args.Trim().Length == 0 ? "[]" : Args.Trim()) ?? [];
+            return new Plugin(
+                string.Empty,
+                Transport.Local,
+                _editing?.Timeout ?? CoreDefaultTimeout,
+                false,
+                env,
+                new PluginArgs.Local(Command.Trim(), [.. extensionArgs]));
         }
 
-        var config = new Plugin
-        {
-            Name = _editing?.Name ?? Name.Trim(),
-            Timeout = (uint)Timeout,
-            Disabled = _editing?.Disabled ?? false,
-        };
-        config.Env.Add(env);
+        var name = _editing?.Name ?? Name.Trim();
+        var disabled = _editing?.Disabled ?? false;
         if (IsRemote)
         {
-            config.Transport = Transport.Http;
-            config.Remote = new RemotePluginArgs { Url = Url.Trim(), RequiresAuth = RequiresAuth };
+            return new Plugin(
+                name,
+                Transport.Http,
+                (uint)Timeout,
+                disabled,
+                env,
+                new PluginArgs.Remote(Url.Trim(), RequiresAuth));
         }
-        else if (ParseArgs(Args.Trim()) is { } parsed)
-        {
-            config.Transport = Transport.Local;
-            var local = new LocalPluginArgs { Command = Command.Trim() };
-            local.Args.AddRange(parsed);
-            config.Local = local;
-        }
-        else
+
+        if (ParseArgs(Args.Trim()) is not { } parsed)
         {
             return null;
         }
 
-        return config;
+        return new Plugin(
+            name,
+            Transport.Local,
+            (uint)Timeout,
+            disabled,
+            env,
+            new PluginArgs.Local(Command.Trim(), [.. parsed]));
     }
 
     /// <summary>True means saved and the dialog can close; failures land in
@@ -389,16 +384,16 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         // One token spans both connect phases: closing the dialog cancels
         // whichever call is currently in flight.
         _finalize = new CancellationTokenSource();
-        var (sessionId, authUrl) =
-            await _client.InitMcpConnectionAsync(config, _finalize.Token);
+        var session = await _client.InitMcpConnectionAsync(config, _finalize.Token);
         // A cancel that landed between the two calls must not finalize.
         _finalize.Token.ThrowIfCancellationRequested();
-        if (authUrl is not null)
+        if (session is not null)
         {
             Authorizing = true;
-            AuthUri = Browser.Open(authUrl);
+            AuthUri = Browser.Open(session.AuthUrl());
         }
 
-        await _client.FinalizeMcpConnectionAsync(config, sessionId, _finalize.Token);
+        await using var abort = _finalize.Token.Register(() => session?.Cancel());
+        await _client.FinalizeMcpConnectionAsync(config, session, _finalize.Token);
     }
 }

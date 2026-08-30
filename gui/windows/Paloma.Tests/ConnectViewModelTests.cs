@@ -1,11 +1,10 @@
-using Grpc.Core;
 using Paloma.Models;
 using Paloma.ViewModels.Settings;
 using Xunit;
-using Connector = Paloma.Binding.V1.Connector;
-using ManualInput = Paloma.Provider.Runtime.V1.ManualInput;
-using ProviderAuthMethod = Paloma.Provider.Runtime.V1.ProviderAuthMethod;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using Connector = PalomaCore.Connector;
+using ManualInput = PalomaCore.ConnectionPayload.ManualInput;
+using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.Tests;
 
@@ -14,11 +13,7 @@ namespace Paloma.Tests;
 public sealed class ConnectViewModelTests
 {
     private static Connector TestConnector() =>
-        new()
-        {
-            Id = new ProviderBackendId { ProviderId = "provider", BackendId = "backend" },
-            Description = "a test connector",
-        };
+        new(new ProviderBackendId("provider", "backend"), "a test connector", null, null);
 
     [Fact]
     public async Task Start_ManualPhase_WaitsForInputWithoutFinalizing()
@@ -26,7 +21,7 @@ public sealed class ConnectViewModelTests
         var mock = new MockPalomaClient
         {
             OnInitConnection = _ => new ConnectionPhase.Manual(
-                new ManualInput { InstructionsUrl = "https://keys.example" }),
+                new ManualInput("https://keys.example")),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
 
@@ -43,7 +38,7 @@ public sealed class ConnectViewModelTests
         var mock = new MockPalomaClient
         {
             OnInitConnection = _ =>
-                throw new RpcException(new Status(StatusCode.Unavailable, "no credentials")),
+                throw new InvalidOperationException("no credentials"),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
 
@@ -75,7 +70,7 @@ public sealed class ConnectViewModelTests
     {
         var mock = new MockPalomaClient
         {
-            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput()),
+            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput(null)),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
         await vm.StartAsync();
@@ -92,7 +87,7 @@ public sealed class ConnectViewModelTests
     {
         var mock = new MockPalomaClient
         {
-            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput()),
+            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput(null)),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
         await vm.StartAsync();

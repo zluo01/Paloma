@@ -2,8 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Navigation;
 using Paloma.Helpers;
 using Paloma.ViewModels.Settings;
-using Plugin = Paloma.Binding.V1.Plugin;
-using PluginType = Paloma.Binding.V1.PluginType;
+using Plugin = PalomaCore.Plugin;
+using PluginType = PalomaCore.PluginType;
 
 namespace Paloma.Views.Settings.Plugins;
 

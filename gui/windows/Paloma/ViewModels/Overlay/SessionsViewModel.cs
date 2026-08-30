@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Paloma.Client;
 using Paloma.Helpers;
-using SessionListItem = Paloma.Binding.V1.SessionListItem;
+using SessionListItem = PalomaCore.SessionListItem;
 
 namespace Paloma.ViewModels.Overlay;
 

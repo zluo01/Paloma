@@ -7,10 +7,10 @@ using Paloma.Extensions;
 using Paloma.Messages;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
-using HealthStatus = Paloma.Binding.V1.HealthStatus;
-using Model = Paloma.Provider.Runtime.V1.Model;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using HealthLevel = PalomaCore.HealthLevel;
+using HealthStatus = PalomaCore.HealthStatus;
+using Model = PalomaCore.Model;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.Views.Overlay.Footer;
 
@@ -96,13 +96,13 @@ public sealed partial class FooterView
             foreach (var model in status.Models)
             {
                 // skip if there is no effort for the model
-                if (model.SupportedReasoningEfforts.Count == 0)
+                if (model.SupportedReasoningEfforts.Length == 0)
                 {
                     continue;
                 }
 
                 var isCurrentModel = model.Id == ViewModel.SelectedModelId;
-                if (model.SupportedReasoningEfforts.Count > 1)
+                if (model.SupportedReasoningEfforts.Length > 1)
                 {
                     var efforts = new MenuFlyoutSubItem { Text = model.Name };
                     if (isCurrentModel)

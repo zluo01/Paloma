@@ -1,7 +1,7 @@
 using System.Globalization;
 using Paloma.Models;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
-using UserDecision = Paloma.Binding.V1.UserDecision;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.Extensions;
 
@@ -11,14 +11,14 @@ public static class Display
 
     public static string Decision(UserDecision decision)
     {
-        return decision.DecisionCase switch
+        return decision switch
         {
-            UserDecision.DecisionOneofCase.AllowOnce => "Allow once",
-            UserDecision.DecisionOneofCase.Allow => decision.Allow.Glob
-                ? $"Always allow {decision.Allow.Command} *"
-                : $"Always allow {decision.Allow.Command}",
-            UserDecision.DecisionOneofCase.AllowSession => "Allow for this session",
-            UserDecision.DecisionOneofCase.IgnorePermission => "Stop asking this session",
+            UserDecision.AllowOnce => "Allow once",
+            UserDecision.Allow allow => allow.Glob
+                ? $"Always allow {allow.Command} *"
+                : $"Always allow {allow.Command}",
+            UserDecision.AllowSession => "Allow for this session",
+            UserDecision.IgnorePermission => "Stop asking this session",
             _ => "Deny",
         };
     }

@@ -24,45 +24,47 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Content Include="Assets\AppIcon.ico" />
+        <Content Include="Assets\AppIcon.ico"/>
     </ItemGroup>
 
     <ItemGroup>
-        <Manifest Include="$(ApplicationManifest)" />
+        <Manifest Include="$(ApplicationManifest)"/>
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="BitFaster.Caching" Version="2.6.0" />
-        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-        <PackageReference Include="CommunityToolkit.WinUI.Extensions" Version="8.2.251219" />
-        <PackageReference Include="Grpc.Net.Client" Version="2.80.0" />
-        <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
-        <PackageReference Include="Markdig" Version="1.3.2" />
+        <PackageReference Include="BitFaster.Caching" Version="2.6.0"/>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2"/>
+        <PackageReference Include="CommunityToolkit.WinUI.Extensions" Version="8.2.251219"/>
+        <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1"/>
+        <PackageReference Include="Markdig" Version="1.3.2"/>
         <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.298">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
-        <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
-        <PackageReference Include="Serilog" Version="4.4.0" />
-        <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1"/>
+        <PackageReference Include="Serilog" Version="4.4.0"/>
+        <PackageReference Include="Serilog.Sinks.File" Version="7.0.0"/>
     </ItemGroup>
 
     <!-- The app has no AI, ML, or widget features; keep their runtime
          payloads out of the self-contained publish. -->
     <ItemGroup>
-        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.1.74" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.3.4" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.1.74" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.1.74" ExcludeAssets="all"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.3.4" ExcludeAssets="all"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.1.74" ExcludeAssets="all"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" ExcludeAssets="all"/>
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Paloma.Protos\Paloma.Protos.csproj" />
+        <InternalsVisibleTo Include="Paloma.Tests"/>
     </ItemGroup>
 
+    <!-- Linked generated ffi files. -->
     <ItemGroup>
-        <InternalsVisibleTo Include="Paloma.Tests" />
+        <Compile Include="..\..\..\target\cs\paloma.cs" Link="Generated\paloma.cs"/>
+        <None Include="..\..\..\target\cs\paloma_ffi.dll" Link="paloma_ffi.dll"
+              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/>
     </ItemGroup>
 
     <!-- Publish Properties -->
@@ -73,38 +75,21 @@
         <PublishTrimmed>False</PublishTrimmed>
     </PropertyGroup>
 
-    <!-- Build the grpc core binding everytime -->
-    <Target Name="BuildPalomaCore" BeforeTargets="Build"
+    <!-- Regenerate the ffi bindings everytime -->
+    <Target Name="BuildPalomaBindings" BeforeTargets="BeforeBuild"
             Condition="'$(SkipPalomaCore)' != 'true' and '$(DesignTimeBuild)' != 'true'">
-        <PropertyGroup>
-            <CargoProfileFlag Condition="'$(Configuration)' != 'Debug'">--release</CargoProfileFlag>
-            <CargoProfileDir>debug</CargoProfileDir>
-            <CargoProfileDir Condition="'$(Configuration)' != 'Debug'">release</CargoProfileDir>
-        </PropertyGroup>
-        <Exec Command="cargo build -p paloma-windows-core $(CargoProfileFlag)"
-              WorkingDirectory="$(MSBuildProjectDirectory)\..\..\.." />
-        <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\..\target\$(CargoProfileDir)\paloma-core.exe"
-              DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-cs-bindings.ps1"
+              WorkingDirectory="$(MSBuildProjectDirectory)\..\..\.."/>
     </Target>
 
-    <Target Name="PublishPalomaCore" AfterTargets="ComputeFilesToPublish">
-        <ItemGroup>
-            <ResolvedFileToPublish Include="$(OutDir)paloma-core.exe">
-                <RelativePath>paloma-core.exe</RelativePath>
-                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            </ResolvedFileToPublish>
-        </ItemGroup>
-    </Target>
-
-    <!-- Unpackaged publish drops the loose WinUI outputs (compiled XAML .xbf, resource index .pri, Assets), so re-add them or the app crashes on missing files. -->
     <Target Name="PublishLooseOutputs" AfterTargets="ComputeFilesToPublish">
         <ItemGroup>
-            <_CompiledXaml Include="$(OutDir)**\*.xbf;$(OutDir)$(TargetName).pri" />
+            <_CompiledXaml Include="$(OutDir)**\*.xbf;$(OutDir)$(TargetName).pri"/>
             <ResolvedFileToPublish Include="@(_CompiledXaml)">
                 <RelativePath>%(_CompiledXaml.RecursiveDir)%(_CompiledXaml.Filename)%(_CompiledXaml.Extension)</RelativePath>
                 <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
             </ResolvedFileToPublish>
-            <_PublishAssets Include="$(OutDir)Assets\**" />
+            <_PublishAssets Include="$(OutDir)Assets\**"/>
             <ResolvedFileToPublish Include="@(_PublishAssets)">
                 <RelativePath>Assets\%(_PublishAssets.RecursiveDir)%(_PublishAssets.Filename)%(_PublishAssets.Extension)</RelativePath>
                 <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

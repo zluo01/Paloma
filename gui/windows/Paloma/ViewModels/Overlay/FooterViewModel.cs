@@ -3,11 +3,11 @@ using CommunityToolkit.Mvvm.Messaging;
 using Paloma.Client;
 using Paloma.Helpers;
 using Paloma.Messages;
-using Connector = Paloma.Binding.V1.Connector;
-using HealthLevel = Paloma.Binding.V1.HealthLevel;
-using HealthStatus = Paloma.Binding.V1.HealthStatus;
-using Model = Paloma.Provider.Runtime.V1.Model;
-using ProviderBackendId = Paloma.Binding.V1.ProviderBackendId;
+using Connector = PalomaCore.Connector;
+using HealthLevel = PalomaCore.HealthLevel;
+using HealthStatus = PalomaCore.HealthStatus;
+using Model = PalomaCore.Model;
+using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.ViewModels.Overlay;
 
@@ -68,7 +68,7 @@ public sealed partial class FooterViewModel(IPalomaClient client, IMessenger? me
         Connected = [.. connectors.Where(connector => connector.Connection is not null)];
         HasSelectableProvider = Connected.Any(connector =>
             connector.Connection is { Status: { Status: HealthStatus.Running } status }
-            && status.Models.Any(model => model.SupportedReasoningEfforts.Count > 0));
+            && status.Models.Any(model => model.SupportedReasoningEfforts.Length > 0));
 
         // A preference only counts while its provider runs and still offers
         // the model and effort. Anything stale shows "Select model" instead
@@ -119,5 +119,5 @@ public sealed partial class FooterViewModel(IPalomaClient client, IMessenger? me
     }
 
     private static string Label(Model model, string effort) =>
-        model.SupportedReasoningEfforts.Count > 1 ? $"{model.Name} · {effort}" : model.Name;
+        model.SupportedReasoningEfforts.Length > 1 ? $"{model.Name} · {effort}" : model.Name;
 }
