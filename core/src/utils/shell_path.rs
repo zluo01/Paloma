@@ -119,14 +119,96 @@ fn read_registry_path(
             )
         };
         match status {
-            s if s == ERROR_SUCCESS => {
-                let chars = (bytes as usize / 2).saturating_sub(1).min(buffer.len());
-                let path = String::from_utf16_lossy(&buffer[..chars]);
-                let path = path.trim().to_owned();
-                return (!path.is_empty()).then_some(path);
-            },
+            s if s == ERROR_SUCCESS => return parse_registry_string(&buffer, bytes),
             s if s == ERROR_MORE_DATA => continue,
             _ => return None,
         }
+    }
+}
+
+/// read the registry buffer and make sure we clean up all trailing '\0' paddings
+///
+/// # Arguments
+/// * `buffer` - UTF-16 registries string buffer
+/// * `bytes` - actual buffer size
+#[cfg(windows)]
+fn parse_registry_string(buffer: &[u16], bytes: u32) -> Option<String> {
+    let chars = (bytes as usize / 2).min(buffer.len());
+    let data = &buffer[..chars];
+    let end = data.iter().position(|&c| c == 0).unwrap_or(chars);
+    let path = String::from_utf16_lossy(&data[..end]);
+    let path = path.trim().to_owned();
+    (!path.is_empty()).then_some(path)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    fn utf16(s: &str) -> Vec<u16> {
+        s.encode_utf16().collect()
+    }
+
+    #[test]
+    fn verify_single_terminal_should_be_striped() {
+        let buffer = utf16("C:\\foo;C:\\bar\0");
+        let bytes = (buffer.len() * 2) as u32;
+        assert_eq!(
+            parse_registry_string(&buffer, bytes),
+            Some("C:\\foo;C:\\bar".to_owned())
+        );
+    }
+
+    #[test]
+    fn verify_mul_terminal_should_be_striped() {
+        let buffer = utf16("C:\\foo\0\0\0");
+        let bytes = (buffer.len() * 2) as u32;
+        assert_eq!(
+            parse_registry_string(&buffer, bytes),
+            Some("C:\\foo".to_owned())
+        );
+    }
+
+    #[test]
+    fn verify_only_keep_value_before_terminal_bytes() {
+        let buffer = utf16("C:\\foo\0junk");
+        let bytes = (buffer.len() * 2) as u32;
+        assert_eq!(
+            parse_registry_string(&buffer, bytes),
+            Some("C:\\foo".to_owned())
+        );
+    }
+
+    #[test]
+    fn verify_no_terminal_bytes_keep_whole() {
+        let buffer = utf16("C:\\foo");
+        let bytes = (buffer.len() * 2) as u32;
+        assert_eq!(
+            parse_registry_string(&buffer, bytes),
+            Some("C:\\foo".to_owned())
+        );
+    }
+
+    #[test]
+    fn empty_value_on_empty_data_or_only_terminal_bytes() {
+        assert_eq!(parse_registry_string(&[], 0), None);
+        assert_eq!(parse_registry_string(&utf16("\0"), 2), None);
+        assert_eq!(parse_registry_string(&utf16("\0\0\0"), 6), None);
+        assert_eq!(parse_registry_string(&utf16("  \0"), 6), None);
+    }
+
+    #[test]
+    fn verify_read_real_buffer_size_on_invalid_length() {
+        let buffer = utf16("C:\\foo");
+        assert_eq!(
+            parse_registry_string(&buffer, 1024),
+            Some("C:\\foo".to_owned())
+        );
+    }
+
+    #[test]
+    fn verify_only_keep_real_char_one_size_conflict() {
+        let buffer = utf16("abc");
+        assert_eq!(parse_registry_string(&buffer, 5), Some("ab".to_owned()));
     }
 }
