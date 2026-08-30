@@ -47,7 +47,7 @@ public sealed partial class ServicesViewModel(IPalomaClient client) : Observable
 
     public async Task<bool> RefreshAsync()
     {
-        var refreshed = await RpcGuard.TryAsync(
+        var refreshed = await ClientGuard.TryAsync(
             async () =>
             {
                 var connectors = await client.GetConnectorsAsync();
@@ -102,7 +102,7 @@ public sealed partial class ConnectorViewModel(
     [RelayCommand]
     private async Task DisconnectAsync()
     {
-        if (await RpcGuard.TryAsync(
+        if (await ClientGuard.TryAsync(
                 () => client.DisconnectAsync(Id),
                 report,
                 "Failed to disconnect"))

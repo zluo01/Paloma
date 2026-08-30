@@ -2,7 +2,7 @@ using Paloma.Client;
 
 namespace Paloma.Helpers;
 
-internal static class RpcGuard
+internal static class ClientGuard
 {
     /// <summary>Runs the operation and returns whether it succeeded. A failure
     /// is reported as one "label: detail" line instead of propagating.</summary>

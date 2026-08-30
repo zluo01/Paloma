@@ -191,7 +191,7 @@ cargo clippy --workspace --all-targets
 | [`core/`](core) | Shared runtime, persistence, plugin host, and UniFFI API |
 | [`gui/linux/`](gui/linux) | GTK4 and libadwaita frontend |
 | [`gui/macos/`](gui/macos) | SwiftUI frontend and Xcode project |
-| [`gui/windows/`](gui/windows) | WinUI 3 frontend, C# tests and protobuf bindings, and Rust gRPC core process |
+| [`gui/windows/`](gui/windows) | WinUI 3 frontend, C# tests, and the uniffi C# bindgen |
 | [`plugins/extensions/`](plugins/extensions) | Bundled and example extensions |
 | [`plugins/providers/`](plugins/providers) | Bundled and example model providers |
 | [`schema/`](schema) | Protobuf contracts for plugins |

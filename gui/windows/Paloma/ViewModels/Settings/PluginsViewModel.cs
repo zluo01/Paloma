@@ -24,7 +24,7 @@ public sealed partial class PluginsViewModel(IPalomaClient client) : ObservableO
 
     public async Task LoadAsync()
     {
-        if (await RpcGuard.TryAsync(
+        if (await ClientGuard.TryAsync(
                 async () =>
                 {
                     Fill(
@@ -54,7 +54,7 @@ public sealed partial class PluginsViewModel(IPalomaClient client) : ObservableO
     public async Task RemoveAsync(PluginViewModel plugin)
     {
         string? failure = null;
-        await RpcGuard.TryAsync(
+        await ClientGuard.TryAsync(
             () => client.RemovePluginAsync(plugin.Kind, plugin.Name),
             message => failure = message,
             $"Failed to remove {plugin.Name}");

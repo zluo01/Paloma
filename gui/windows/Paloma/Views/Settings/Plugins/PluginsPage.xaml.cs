@@ -77,7 +77,7 @@ public sealed partial class PluginsPage
 
     private async Task OpenDialogAsync(PluginType kind, Plugin? editing)
     {
-        var shown = await RpcGuard.TryAsync(
+        var shown = await ClientGuard.TryAsync(
             async () =>
             {
                 using var model = new PluginDialogViewModel(

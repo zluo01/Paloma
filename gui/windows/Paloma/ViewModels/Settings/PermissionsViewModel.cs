@@ -26,7 +26,7 @@ public sealed partial class PermissionsViewModel(IPalomaClient client) : Observa
 
     public async Task LoadAsync()
     {
-        if (await RpcGuard.TryAsync(
+        if (await ClientGuard.TryAsync(
                 async () =>
                 {
                     _all = await client.GetPermissionsAsync();
@@ -41,7 +41,7 @@ public sealed partial class PermissionsViewModel(IPalomaClient client) : Observa
 
     public async Task DeleteAsync(Permission permission)
     {
-        if (await RpcGuard.TryAsync(
+        if (await ClientGuard.TryAsync(
                 async () =>
                 {
                     await client.DeletePermissionAsync(permission.Prefix);

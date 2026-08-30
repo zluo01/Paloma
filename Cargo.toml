@@ -68,9 +68,6 @@ tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", default-features = false }
 tokio-util = { version = "0.7.18", features = ["codec"] }
-tonic = "0.14.3"
-tonic-prost = "0.14.3"
-tonic-prost-build = "0.14.3"
 uniffi = "0.31.0"
 uuid = { version = "1.23.4", default-features = false, features = ["v7", "std"] }
 windows = { version = "0.62", default-features = false }

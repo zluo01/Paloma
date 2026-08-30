@@ -61,7 +61,7 @@ public sealed partial class ServicesPage
 
     private async Task ConnectAsync(Connector connector)
     {
-        var shown = await RpcGuard.TryAsync(
+        var shown = await ClientGuard.TryAsync(
             () => new ConnectDialog(new ConnectViewModel(App.Current.Client, connector))
             {
                 XamlRoot = XamlRoot,

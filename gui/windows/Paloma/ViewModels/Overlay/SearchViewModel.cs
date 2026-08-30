@@ -111,7 +111,7 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
         try
         {
             Behavior? behavior = null;
-            await RpcGuard.TryAsync(
+            await ClientGuard.TryAsync(
                 async () => behavior = await client.RunSearchActionAsync(row.CapabilityId, action),
                 Report,
                 "Action failed");

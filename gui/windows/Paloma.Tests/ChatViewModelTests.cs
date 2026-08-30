@@ -95,7 +95,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
 
         async IAsyncEnumerable<ChatStreamEvent> Held()
         {
-            // Completes with the exception a cancelled gRPC stream surfaces.
+            // Completes with the exception a cancelled stream surfaces.
             await gateA.Task;
             yield break;
         }

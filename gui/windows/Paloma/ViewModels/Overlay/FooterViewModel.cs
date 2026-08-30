@@ -32,7 +32,7 @@ public sealed partial class FooterViewModel(IPalomaClient client, IMessenger? me
 
     public async Task RefreshAsync()
     {
-        if (!await RpcGuard.TryAsync(
+        if (!await ClientGuard.TryAsync(
                 async () =>
                 {
                     (ServicesHealth, PluginsHealth) = await client.GetHealthAsync();
@@ -52,7 +52,7 @@ public sealed partial class FooterViewModel(IPalomaClient client, IMessenger? me
         SelectedModelId = model.Id;
         SelectedEffort = effort;
         ModelLabel = Label(model, effort);
-        await RpcGuard.TryAsync(
+        await ClientGuard.TryAsync(
             () => client.SetModelPreferenceAsync(
                 backend,
                 model.Id,

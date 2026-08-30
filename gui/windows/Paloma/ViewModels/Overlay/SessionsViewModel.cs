@@ -22,7 +22,7 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
 
     public async Task LoadAsync()
     {
-        await RpcGuard.TryAsync(
+        await ClientGuard.TryAsync(
             async () =>
             {
                 _sessions = await client.GetSessionsAsync();
@@ -117,7 +117,7 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
 
     public async Task<bool> RemoveAsync(SessionRow row)
     {
-        return await RpcGuard.TryAsync(
+        return await ClientGuard.TryAsync(
             async () =>
             {
                 await client.RemoveSessionAsync(row.Item.SessionId);
