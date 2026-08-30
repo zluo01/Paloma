@@ -1,14 +1,14 @@
 //! UniFFI bindings for `paloma-core`.
 //!
 //! The core spawns Tokio tasks and drives sockets internally, while UniFFI
-//! polls exported futures on foreign (Swift) threads that have no ambient
+//! polls exported futures on foreign (Swift, C#) threads that have no ambient
 //! runtime. Every core call is therefore spawned onto the FFI-owned [`RUNTIME`]
 //! and only the join handle is awaited on the foreign side; streams are pumped
 //! into channels from inside the runtime for the same reason.
 
-// The swift bridge only exists for the macos frontend; elsewhere the crate
+// The bridge only exists for the macos and windows frontends; elsewhere the crate
 // (and its whole dependency tree, moved to a target section) compiles empty.
-#![cfg(target_os = "macos")]
+#![cfg(any(target_os = "macos", target_os = "windows"))]
 
 mod error;
 mod types;
@@ -33,8 +33,8 @@ pub use crate::{error::PalomaError, types::*};
 
 uniffi::setup_scaffolding!("paloma");
 
-/// Route `log` records to ~/Library/Logs/Paloma/paloma-YYYY-MM-DD.log
-/// (per-day files, appended) and to stderr for Xcode/terminal runs. Call
+/// Route `log` records to `<log_path>/Paloma/paloma-YYYY-MM-DD.log`
+/// (per-day files, appended) and to stderr for debugger/terminal runs. Call
 /// once at app startup, before [`PalomaApp::new`]; extra calls are no-ops.
 /// `RUST_LOG` overrides the default filter.
 #[uniffi::export]

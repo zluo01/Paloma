@@ -7,13 +7,13 @@ license = { workspace = true }
 publish = false
 
 [lib]
-# staticlib is what the Swift/Xcode side links; cdylib lets uniffi-bindgen
-# run in library mode on the host during development.
+# staticlib is what the Swift/Xcode side links; cdylib is what the Windows host
+# loads and what uniffi-bindgen reads in library mode.
 crate-type = ["lib", "staticlib", "cdylib"]
 
-# The swift bridge only exists for the macos frontend; on other platforms
+# The bridge only exists for the macos and windows frontends; on other platforms
 # the crate builds empty (see the crate-level cfg in src/lib.rs).
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 chrono = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
