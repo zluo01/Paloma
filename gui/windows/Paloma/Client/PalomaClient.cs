@@ -232,7 +232,9 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         McpOauthSession? session,
         CancellationToken cancellationToken = default)
     {
-        await app.FinalizeMcpConnection(config, session);
+        using var token = new CancelToken();
+        await using var forward = cancellationToken.Register(token.Cancel);
+        await app.FinalizeMcpConnection(config, session, token);
     }
 
     public async Task UpdatePluginAsync(

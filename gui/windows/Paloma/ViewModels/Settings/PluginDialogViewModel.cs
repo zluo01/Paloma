@@ -393,7 +393,6 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
             AuthUri = Browser.Open(session.AuthUrl());
         }
 
-        await using var abort = _finalize.Token.Register(() => session?.Cancel());
         await _client.FinalizeMcpConnectionAsync(config, session, _finalize.Token);
     }
 }
