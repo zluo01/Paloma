@@ -121,6 +121,22 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Restore NuGet cache
+        if: matrix.platform == 'windows'
+        id: nuget-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('gui/windows/**/*.csproj') }}
+          restore-keys: nuget-windows-
+
       - name: Build and test Windows application
         if: matrix.platform == 'windows'
         run: dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj -p:PalomaBindingsArgs=-Debug
+
+      - name: Save NuGet cache
+        if: matrix.platform == 'windows' && github.ref == 'refs/heads/main' && steps.nuget-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('gui/windows/**/*.csproj') }}

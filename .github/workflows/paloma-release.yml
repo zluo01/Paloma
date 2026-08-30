@@ -93,6 +93,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Restore NuGet cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('gui/windows/**/*.csproj') }}
+          restore-keys: nuget-windows-
+
       - name: Run tests
         run: cargo test --workspace --locked
 
