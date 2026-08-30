@@ -9,6 +9,7 @@ members = [
     "gui/macos/uniffi-bindgen",
     "gui/windows/binding-protocol",
     "gui/windows/core",
+    "gui/windows/uniffi-bindgen",
     "plugins/extensions/internal",
     "plugins/extensions/shell",
     "plugins/providers/anthropic",
@@ -17,7 +18,7 @@ members = [
     "provider-protocol",
     "utils",
 ]
-# skip the macos-only crates in bare cargo invocations
+# skip the frontend-only crates in bare cargo invocations
 default-members = ["core", "gui/linux"]
 
 [workspace.package]
@@ -73,7 +74,7 @@ tokio-util = { version = "0.7.18", features = ["codec"] }
 tonic = "0.14.3"
 tonic-prost = "0.14.3"
 tonic-prost-build = "0.14.3"
-uniffi = "0.32.0"
+uniffi = "0.31.0"
 uuid = { version = "1.23.4", default-features = false, features = ["v7", "std"] }
 windows = { version = "0.62", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false }

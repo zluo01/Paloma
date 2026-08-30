@@ -1,0 +1,17 @@
+[package]
+name = "paloma-uniffi-bindgen-cs"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+publish = false
+
+[[bin]]
+name = "uniffi-bindgen-cs"
+path = "src/main.rs"
+
+[target.'cfg(windows)'.dependencies]
+uniffi-bindgen-cs = { git = "https://github.com/NordSecurity/uniffi-bindgen-cs", tag = "v0.11.0+v0.31.0" }
+
+[lints]
+workspace = true
