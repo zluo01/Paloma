@@ -115,6 +115,8 @@ public sealed partial class OverlayWindow
             WINDOWS_HOOK_ID.WH_MOUSE_LL, _clickAwayProc, null, 0);
 
         QueueResize();
+        // Send show notification explicitly to trigger associate refresh.
+        WeakReferenceMessenger.Default.Send(new OverlayShownMessage());
     }
 
     private void Hide()
@@ -124,18 +126,8 @@ public sealed partial class OverlayWindow
         _clickAwayHook?.Dispose();
         _clickAwayHook = null;
         AppWindow.Hide();
-    }
-
-    private void OnVisibilityChanged(object sender, WindowVisibilityChangedEventArgs args)
-    {
-        if (args.Visible)
-        {
-            WeakReferenceMessenger.Default.Send(new OverlayShownMessage());
-        }
-        else
-        {
-            WeakReferenceMessenger.Default.Send(new OverlayHiddenMessage());
-        }
+        // Same as shown, on hide, explicitly send hidden signal for handling cleanup
+        WeakReferenceMessenger.Default.Send(new OverlayHiddenMessage());
     }
 
     // A search response updates the results in several steps.
@@ -246,7 +238,6 @@ public sealed partial class OverlayWindow
                                     || point.Y < rect.top || point.Y >= rect.bottom) return true;
             inside = true;
             return false;
-
         };
         _ = PInvoke.EnumThreadWindows(PInvoke.GetCurrentThreadId(), test, new LPARAM(0));
         return inside;

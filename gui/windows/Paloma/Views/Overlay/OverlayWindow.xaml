@@ -5,8 +5,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Paloma.Views.Overlay"
-    Title="Paloma"
-    VisibilityChanged="OnVisibilityChanged">
+    Title="Paloma">
     <Window.SystemBackdrop>
         <DesktopAcrylicBackdrop />
     </Window.SystemBackdrop>
