@@ -74,10 +74,13 @@ jobs:
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           targets: aarch64-apple-darwin
+          components: clippy
 
       - name: Install Rust 1.94
         if: matrix.platform == 'windows'
         uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -95,9 +98,11 @@ jobs:
           cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
           cargo +1.94.0 test --workspace --locked
 
-      - name: Run Rust tests
+      - name: Lint and test
         if: matrix.platform != 'linux'
-        run: cargo test --workspace --locked
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
 
       - name: Generate Swift bindings
         if: matrix.platform == 'macos'
