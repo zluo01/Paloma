@@ -313,7 +313,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         };
     }
 
-    private static bool IsTerminal(ChatStreamEvent e)
+    internal static bool IsTerminal(ChatStreamEvent e)
     {
         return e is ChatStreamEvent.Done or ChatStreamEvent.Cancelled or ChatStreamEvent.Error;
     }

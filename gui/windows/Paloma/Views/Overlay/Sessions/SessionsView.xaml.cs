@@ -34,7 +34,7 @@ public sealed partial class SessionsView
 
     private void OnSessionTapped(object sender, TappedRoutedEventArgs args)
     {
-        if ((sender as FrameworkElement)?.DataContext is SessionRow row)
+        if (sender is FrameworkElement { DataContext: SessionRow row })
         {
             RowActivated?.Invoke(this, row);
         }

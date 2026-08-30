@@ -118,7 +118,7 @@ public sealed partial class ChatView
 
     private void OnReasoningToggle(object sender, RoutedEventArgs args)
     {
-        if ((sender as FrameworkElement)?.DataContext is ReasoningSectionViewModel section)
+        if (sender is FrameworkElement { DataContext: ReasoningSectionViewModel section })
         {
             section.IsExpanded = !section.IsExpanded;
         }

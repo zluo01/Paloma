@@ -61,7 +61,7 @@ public sealed partial class PluginsPage
 
     private async void OnEditPlugin(object sender, RoutedEventArgs args)
     {
-        if ((sender as FrameworkElement)?.DataContext is PluginViewModel { Config: { } config } plugin)
+        if (sender is FrameworkElement { DataContext: PluginViewModel { Config: { } config } plugin })
         {
             await OpenDialogAsync(plugin.Kind, config);
         }
@@ -69,7 +69,7 @@ public sealed partial class PluginsPage
 
     private async void OnRemovePlugin(object sender, RoutedEventArgs args)
     {
-        if ((sender as FrameworkElement)?.DataContext is PluginViewModel plugin)
+        if (sender is FrameworkElement { DataContext: PluginViewModel plugin })
         {
             await ViewModel.RemoveAsync(plugin);
         }

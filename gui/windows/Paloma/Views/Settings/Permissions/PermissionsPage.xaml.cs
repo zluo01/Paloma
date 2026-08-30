@@ -59,7 +59,7 @@ public sealed partial class PermissionsPage
 
     private async void OnDeleteClick(object sender, RoutedEventArgs args)
     {
-        if ((sender as FrameworkElement)?.DataContext is Permission permission)
+        if (sender is FrameworkElement { DataContext: Permission permission })
         {
             await ViewModel.DeleteAsync(permission);
         }

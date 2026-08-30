@@ -10,7 +10,6 @@ using Windows.Win32.UI.Input.KeyboardAndMouse;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
 using CommunityToolkit.Mvvm.Messaging;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -62,7 +61,7 @@ public sealed partial class OverlayWindow
         // procedure to listen windows activate message
         _activationProc = OnActivateMessage;
         _ = PInvoke.SetWindowSubclass(new HWND(hwnd), _activationProc, 1, 0);
-       // click to hide callback procedure
+        // click to hide callback procedure
         _clickAwayProc = OnGlobalClick;
 
         // resize for the search result content change
@@ -95,20 +94,20 @@ public sealed partial class OverlayWindow
         WindowPlacement.SizeAndPlaceOnCursorMonitor(
             AppWindow, OverlayWidth, ContentHeight(), keepIfOnMonitor: _hasBeenPlaced);
         _hasBeenPlaced = true;
-        
+
         Activate();
         var hwnd = WindowNative.GetWindowHandle(this);
-        
+
         // set some styles
         ApplyFrameStyle(hwnd);
         WindowFrame.MatchFrameToTheme(
             hwnd,
             Overlay.ActualTheme == ElementTheme.Dark);
-        
+
         // make sure we keep the launcher on top
         ForceForeground(hwnd);
         Overlay.FocusInput();
-        
+
         // click to hide procedure is a global event,
         // hence only add the click to hide hook procedure on showing
         // such that it does not affect other running apps during hiding.
@@ -198,7 +197,7 @@ public sealed partial class OverlayWindow
     {
         // not windows activate message, skip
         if (msg != PInvoke.WM_ACTIVATE) return PInvoke.DefSubclassProc(hwnd, msg, wparam, lparam);
-        
+
         var state = (uint)(wparam.Value & 0xFFFF);
         if (state != PInvoke.WA_INACTIVE)
         {
@@ -276,10 +275,10 @@ public sealed partial class OverlayWindow
             handle,
             WINDOW_LONG_PTR_INDEX.GWL_STYLE);
         style &= ~(WINDOW_STYLE.WS_CAPTION
-            | WINDOW_STYLE.WS_THICKFRAME
-            | WINDOW_STYLE.WS_SYSMENU
-            | WINDOW_STYLE.WS_MINIMIZEBOX
-            | WINDOW_STYLE.WS_MAXIMIZEBOX);
+                   | WINDOW_STYLE.WS_THICKFRAME
+                   | WINDOW_STYLE.WS_SYSMENU
+                   | WINDOW_STYLE.WS_MINIMIZEBOX
+                   | WINDOW_STYLE.WS_MAXIMIZEBOX);
         style |= WINDOW_STYLE.WS_POPUP;
         _ = PInvoke.SetWindowLongPtr(handle, WINDOW_LONG_PTR_INDEX.GWL_STYLE, (nint)style);
         // Apply the style change without moving, sizing, reordering,
@@ -292,10 +291,10 @@ public sealed partial class OverlayWindow
             0,
             0,
             SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED
-                | SET_WINDOW_POS_FLAGS.SWP_NOMOVE
-                | SET_WINDOW_POS_FLAGS.SWP_NOSIZE
-                | SET_WINDOW_POS_FLAGS.SWP_NOZORDER
-                | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+            | SET_WINDOW_POS_FLAGS.SWP_NOMOVE
+            | SET_WINDOW_POS_FLAGS.SWP_NOSIZE
+            | SET_WINDOW_POS_FLAGS.SWP_NOZORDER
+            | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
     }
 
     /// Takes the foreground for the window. Windows only allows
