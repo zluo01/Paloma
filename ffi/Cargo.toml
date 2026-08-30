@@ -20,7 +20,8 @@ futures = { workspace = true }
 log = { workspace = true }
 paloma-core = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros"] }
+tokio-util = { workspace = true }
 uniffi = { workspace = true }
 uuid = { workspace = true }
 

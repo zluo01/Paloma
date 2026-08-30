@@ -25,8 +25,8 @@ use paloma_core::AppContext;
 use tokio::{
     runtime::Runtime,
     sync::{Mutex as AsyncMutex, mpsc},
-    task::AbortHandle,
 };
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub use crate::{error::PalomaError, types::*};
@@ -113,30 +113,40 @@ where
         .map_err(|e| PalomaError::new(e.to_string()))
 }
 
-/// Like [`on_runtime`], but parks the task's abort handle in `slot` so a
-/// concurrent cancel can abort it; an abort surfaces as a "cancelled"
-/// failure.
+/// Like [`on_runtime`], but a fired `token` aborts the task, which surfaces
+/// as a "cancelled" failure.
 ///
-/// TODO: drop this hand-rolled abort plumbing once uniffi's Swift bindings
-/// support cancelling async futures, so dropping the future cancels the
-/// task instead (tracked in mozilla/uniffi-rs#2771; the docs currently
-/// recommend exactly this kind of side-channel cancel).
-async fn run_abortable<T, F>(slot: &Mutex<Option<AbortHandle>>, task: F) -> Result<T, PalomaError>
+/// https://github.com/mozilla/uniffi-rs/issues/2771#issuecomment-3754440908
+async fn run_cancellable<T, F>(token: &CancelToken, task: F) -> Result<T, PalomaError>
 where
     T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
 {
     let handle = RUNTIME.spawn(task);
-    *slot.lock().expect("abort slot lock poisoned") = Some(handle.abort_handle());
-    let outcome = handle.await;
-    slot.lock().expect("abort slot lock poisoned").take();
-    outcome.map_err(|join_error| {
-        PalomaError::new(if join_error.is_cancelled() {
-            "cancelled".to_owned()
-        } else {
-            join_error.to_string()
-        })
-    })
+    let abort = handle.abort_handle();
+    tokio::select! {
+        _ = token.0.cancelled() => {
+            abort.abort();
+            Err(PalomaError::new("cancelled"))
+        }
+        outcome = handle => outcome.map_err(|join_error| PalomaError::new(join_error.to_string())),
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct CancelToken(CancellationToken);
+
+#[uniffi::export]
+impl CancelToken {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self(CancellationToken::new()))
+    }
+
+    /// Idempotent; a call that already settled is unaffected.
+    pub fn cancel(&self) {
+        self.0.cancel();
+    }
 }
 
 /// Pull-based adapter over a core event stream: Swift awaits `next()` until it
@@ -196,12 +206,11 @@ impl ChatStream {
 
 /// Opaque handle to an in-flight MCP OAuth flow. It owns the local callback
 /// listener, so it must be handed back to `finalize_mcp_connection` exactly
-/// once; [`Self::cancel`] aborts a finalize already in flight.
+/// once.
 #[derive(uniffi::Object)]
 pub struct McpOauthSession {
     inner: Mutex<Option<paloma_core::OAuthCallbackState>>,
     auth_url: String,
-    abort: Mutex<Option<AbortHandle>>,
 }
 
 #[uniffi::export]
@@ -209,15 +218,6 @@ impl McpOauthSession {
     /// URL the user must open in a browser to authorize the connection.
     pub fn auth_url(&self) -> String {
         self.auth_url.clone()
-    }
-
-    /// Abort the finalize running with this session: the callback listener
-    /// drops, so a late browser approval can no longer add the server. No-op
-    /// before finalize starts or after it settles.
-    pub fn cancel(&self) {
-        if let Some(abort) = self.abort_slot().take() {
-            abort.abort();
-        }
     }
 }
 
@@ -228,10 +228,6 @@ impl McpOauthSession {
             .expect("MCP OAuth session lock poisoned")
             .take()
             .ok_or_else(|| PalomaError::new("MCP OAuth session was already consumed"))
-    }
-
-    fn abort_slot(&self) -> std::sync::MutexGuard<'_, Option<AbortHandle>> {
-        self.abort.lock().expect("MCP OAuth abort lock poisoned")
     }
 }
 
@@ -485,25 +481,22 @@ impl PalomaApp {
             Arc::new(McpOauthSession {
                 auth_url: state.auth_url().to_owned(),
                 inner: Mutex::new(Some(state)),
-                abort: Mutex::new(None),
             })
         }))
     }
 
     /// Persist and connect the server. For OAuth servers this waits for the
-    /// browser approval; [`McpOauthSession::cancel`] aborts the wait.
+    /// browser approval; firing `token` aborts the wait and drops the listener.
     pub async fn finalize_mcp_connection(
         &self,
         config: Plugin,
         session: Option<Arc<McpOauthSession>>,
+        token: Arc<CancelToken>,
     ) -> Result<(), PalomaError> {
         let state = session.as_ref().map(|session| session.take()).transpose()?;
         let inner = Arc::clone(&self.inner);
         let task = async move { inner.finalize_mcp_connection(config, state).await };
-        match &session {
-            Some(session) => Ok(run_abortable(&session.abort, task).await??),
-            None => Ok(on_runtime(task).await??),
-        }
+        Ok(run_cancellable(&token, task).await??)
     }
 
     pub async fn update_plugin(
