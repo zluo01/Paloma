@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
+using Serilog;
 
 namespace Paloma.Helpers;
 
@@ -28,7 +29,18 @@ internal sealed class BatchedAction(Action action, Func<Action, bool>? schedule 
     private void Run()
     {
         _queued = false;
-        action();
+        try
+        {
+            action();
+        }
+        catch (Exception e)
+        {
+            // I decide to rethrow to keep the error loudly after the logging
+            // this should not happen in normal case, if happens,
+            // it means some rendering lifecycle bug hence make it loud.
+            Log.Error(e, "batched action failed");
+            throw;
+        }
     }
 
     private static Func<Action, bool>? Scheduler()

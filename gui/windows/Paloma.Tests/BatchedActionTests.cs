@@ -93,4 +93,46 @@ public class BatchedActionTests
 
         Assert.Equal(2, runs);
     }
+
+    [Fact]
+    public void Run_ActionThrows_Rethrows()
+    {
+        Action? pending = null;
+        var batched = new BatchedAction(() => throw new InvalidOperationException("error"), run =>
+        {
+            pending = run;
+            return true;
+        });
+
+        batched.Trigger();
+
+        Assert.Throws<InvalidOperationException>(() => pending!());
+    }
+
+    [Fact]
+    public void Trigger_AfterAThrowingRun_SchedulesAgain()
+    {
+        var runs = 0;
+        Action? pending = null;
+        var batched = new BatchedAction(
+            () =>
+            {
+                if (++runs == 1)
+                {
+                    throw new InvalidOperationException("error");
+                }
+            },
+            run =>
+            {
+                pending = run;
+                return true;
+            });
+
+        batched.Trigger();
+        Assert.Throws<InvalidOperationException>(() => pending!());
+        batched.Trigger();
+        pending!();
+
+        Assert.Equal(2, runs);
+    }
 }
