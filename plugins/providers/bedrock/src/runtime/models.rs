@@ -7,9 +7,10 @@ use aws_sdk_bedrock::types::{
     FoundationModelLifecycleStatus, FoundationModelSummary, InferenceProfileType, InferenceType,
     ModelModality,
 };
-use aws_smithy_types::error::display::DisplayErrorContext;
 use paloma_provider_base::{ProviderError, Result};
 use paloma_provider_protocol::v1::Model;
+
+use super::utils::parse_error;
 
 static CONVERSE_UNSUPPORTED: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| HashSet::from(["twelvelabs.pegasus"]));
@@ -110,7 +111,7 @@ async fn models(
         .by_output_modality(ModelModality::Text)
         .send()
         .await
-        .map_err(|e| ProviderError::Other(format!("{}", DisplayErrorContext(&e))))?;
+        .map_err(|e| ProviderError::Other(parse_error(&e)))?;
 
     Ok(foundation
         .model_summaries
@@ -148,8 +149,7 @@ async fn inference_profiles(
         .into_paginator()
         .send();
     while let Some(page) = pages.next().await {
-        let page =
-            page.map_err(|e| ProviderError::Other(format!("{}", DisplayErrorContext(&e))))?;
+        let page = page.map_err(|e| ProviderError::Other(parse_error(&e)))?;
         for profile in page.inference_profile_summaries() {
             let profile_id = profile.inference_profile_id();
             // model arn: arn:aws:bedrock:<region>::foundation-model/<model id>

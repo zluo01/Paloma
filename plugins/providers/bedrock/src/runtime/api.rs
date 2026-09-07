@@ -3,7 +3,6 @@ use std::sync::{
     atomic::{AtomicI32, Ordering},
 };
 
-use aws_smithy_types::error::display::DisplayErrorContext;
 use log::error;
 use paloma_provider_base::{
     Dispatcher, ProviderCache, ProviderClient, ProviderError, Result, SSE_IDLE_TIMEOUT,
@@ -17,6 +16,7 @@ use paloma_provider_protocol::v1::{
 use super::{
     models::fetch_models,
     stream::{StreamStep, on_stream_event},
+    utils::parse_error,
 };
 use crate::{
     connect::BedrockCredential,
@@ -116,7 +116,7 @@ impl ProviderClient for BedrockRuntime {
             .set_additional_model_request_fields(construct_reasoning_config(&request))
             .send()
             .await
-            .map_err(|e| ProviderError::Other(format!("{}", DisplayErrorContext(&e))))?;
+            .map_err(|e| ProviderError::Other(parse_error(&e)))?;
 
         let mut stream = output.stream;
         let mut placeholder = None;
@@ -134,7 +134,7 @@ impl ProviderClient for BedrockRuntime {
                     dispatcher
                         .send_chat_event(chat_response::Payload::Error(format!(
                             "converse stream error: {}",
-                            DisplayErrorContext(&e)
+                            parse_error(&e)
                         )))
                         .await;
                     return Ok(());
