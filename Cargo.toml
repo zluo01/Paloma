@@ -11,6 +11,7 @@ members = [
     "plugins/extensions/internal",
     "plugins/extensions/shell",
     "plugins/providers/anthropic",
+    "plugins/providers/bedrock",
     "plugins/providers/openai",
     "provider-base",
     "provider-protocol",
@@ -22,7 +23,7 @@ default-members = ["core", "gui/linux"]
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.94.0"
+rust-version = "1.98.1"
 license = "GPL-3.0-or-later"
 
 [workspace.lints.clippy]

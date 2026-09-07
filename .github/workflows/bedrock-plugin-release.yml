@@ -1,9 +1,9 @@
-name: Paloma release
+name: Bedrock plugin release
 
 on:
   push:
     tags:
-      - "v*"
+      - "bedrock-plugin-v*"
   workflow_dispatch:
     inputs:
       version:
@@ -18,9 +18,9 @@ env:
   CARGO_TERM_QUIET: "true"
 
 jobs:
-  build-mac:
-    name: Build and test
-    runs-on: macos-latest
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
@@ -28,7 +28,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve release
@@ -36,89 +35,77 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION_INPUT: ${{ inputs.version }}
-        run: bash .github/scripts/resolve-release.sh v
+        run: bash .github/scripts/resolve-release.sh bedrock-plugin-v
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.98.1
         with:
-          targets: aarch64-apple-darwin
+          components: clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Run tests
-        run: cargo test --workspace --locked
-
-      - name: Generate Swift bindings
-        run: scripts/build-swift-bindings.sh
-
-      - name: Build DMG
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: scripts/release-macos.sh
-
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v7
         with:
-          name: paloma-macos
-          path: target/macos/Paloma-*.dmg
-          if-no-files-found: error
-          retention-days: 1
+          key: bedrock-plugin
 
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
+      - name: Lint and test
+        run: |
+          cargo clippy -p paloma-provider-bedrock --all-targets --locked -- -D warnings
+          cargo test -p paloma-provider-bedrock --locked
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: macos-arm64
+            runner: macos-latest
+          - name: windows-amd64
+            runner: windows-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Resolve release
-        id: release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION_INPUT: ${{ inputs.version }}
-        run: bash .github/scripts/resolve-release.sh v
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.98.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Install .NET 10
-        uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          key: bedrock-plugin
 
-      - name: Restore NuGet cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.nuget/packages
-          key: nuget-windows-${{ hashFiles('gui/windows/**/*.csproj') }}
-          restore-keys: nuget-windows-
+      - name: Build release binary
+        run: cargo build -p paloma-provider-bedrock --release --locked
 
-      - name: Run tests
-        run: cargo test --workspace --locked
-
-      - name: Build zip
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: ./scripts/release-windows.ps1
+      - name: Package release artifact
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/release/bedrock-provider.exe .
+            7z a "bedrock-provider-${{ matrix.name }}.zip" bedrock-provider.exe
+          else
+            tar -czf "bedrock-provider-${{ matrix.name }}.tar.gz" -C target/release bedrock-provider
+          fi
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: paloma-windows
-          path: target/windows/Paloma-*.zip
+          name: bedrock-provider-${{ matrix.name }}
+          path: bedrock-provider-${{ matrix.name }}.*
           if-no-files-found: error
           retention-days: 1
 
   release:
     name: Release
-    needs: [build-mac, build-windows]
+    needs: [test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,28 +113,28 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: paloma-*
+          pattern: bedrock-provider-*
           path: dist
           merge-multiple: true
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum Paloma-* > SHA256SUMS
+        run: sha256sum bedrock-provider-* > SHA256SUMS
 
       - name: Create GitHub release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${{ needs.build-mac.outputs.tag }}"
-          version="${{ needs.build-mac.outputs.version }}"
+          tag="${{ needs.test.outputs.tag }}"
+          version="${{ needs.test.outputs.version }}"
           release_target=(--verify-tag)
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             release_target=(--target "$GITHUB_SHA")
           fi
 
           gh release create "$tag" dist/* \
-            --latest \
-            --notes "Paloma v${version}." \
-            --title "Paloma v${version}" \
+            --latest=false \
+            --notes "Amazon Bedrock provider plugin v${version}." \
+            --title "Bedrock plugin v${version}" \
             "${release_target[@]}"

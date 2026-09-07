@@ -6,22 +6,28 @@ on:
     paths-ignore:
       - "docs/**"
       - "LICENSES/**"
+      - ".github/workflows/bedrock-plugin.yml"
+      - ".github/workflows/bedrock-plugin-release.yml"
       - ".github/workflows/deepseek-plugin.yml"
       - ".github/workflows/deepseek-plugin-release.yml"
       - ".github/workflows/webfetch-plugin.yml"
       - ".github/workflows/webfetch-plugin-release.yml"
       - "plugins/extensions/webfetch/**"
+      - "plugins/providers/bedrock/**"
       - "plugins/providers/deepseek/**"
   push:
     branches: [main]
     paths-ignore:
       - "docs/**"
       - "LICENSES/**"
+      - ".github/workflows/bedrock-plugin.yml"
+      - ".github/workflows/bedrock-plugin-release.yml"
       - ".github/workflows/deepseek-plugin.yml"
       - ".github/workflows/deepseek-plugin-release.yml"
       - ".github/workflows/webfetch-plugin.yml"
       - ".github/workflows/webfetch-plugin-release.yml"
       - "plugins/extensions/webfetch/**"
+      - "plugins/providers/bedrock/**"
       - "plugins/providers/deepseek/**"
 
 permissions:
@@ -44,6 +50,7 @@ jobs:
           - name: macOS
             platform: macos
             runner: macos-latest
+            targets: aarch64-apple-darwin
           - name: Windows
             platform: windows
             runner: windows-latest
@@ -63,23 +70,10 @@ jobs:
             libgtk4-layer-shell-dev \
             pkg-config
 
-      - name: Install Rust 1.94
-        if: matrix.platform == 'linux'
-        uses: dtolnay/rust-toolchain@1.94.0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.1
         with:
-          components: clippy
-
-      - name: Install Rust 1.94
-        if: matrix.platform == 'macos'
-        uses: dtolnay/rust-toolchain@1.94.0
-        with:
-          targets: aarch64-apple-darwin
-          components: clippy
-
-      - name: Install Rust 1.94
-        if: matrix.platform == 'windows'
-        uses: dtolnay/rust-toolchain@1.94.0
-        with:
+          targets: ${{ matrix.targets }}
           components: clippy
 
       - name: Cache Rust dependencies
@@ -97,14 +91,14 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           cargo +nightly fmt --all -- --check
-          cargo +1.94.0 clippy --workspace --all-targets --locked -- -D warnings
-          cargo +1.94.0 test --workspace --locked
+          cargo +1.98.1 clippy --workspace --exclude paloma-provider-bedrock --all-targets --locked -- -D warnings
+          cargo +1.98.1 test --workspace --exclude paloma-provider-bedrock --locked
 
       - name: Lint and test
         if: matrix.platform != 'linux'
         run: |
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --locked
+          cargo clippy --workspace --exclude paloma-provider-bedrock --all-targets --locked -- -D warnings
+          cargo test --workspace --exclude paloma-provider-bedrock --locked
 
       - name: Generate Swift bindings
         if: matrix.platform == 'macos'

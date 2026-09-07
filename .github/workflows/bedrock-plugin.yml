@@ -1,0 +1,64 @@
+name: Bedrock plugin
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/bedrock-plugin.yml"
+      - "plugins/providers/bedrock/**"
+      - "provider-base/**"
+      - "provider-protocol/**"
+      - "schema/provider/**"
+      - "utils/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bedrock-plugin.yml"
+      - "plugins/providers/bedrock/**"
+      - "provider-base/**"
+      - "provider-protocol/**"
+      - "schema/provider/**"
+      - "utils/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_QUIET: "true"
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: bedrock-plugin
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting, lint, test, and build
+        run: |
+          cargo +nightly fmt -p paloma-provider-bedrock -- --check
+          cargo +1.98.1 clippy -p paloma-provider-bedrock --all-targets --locked -- -D warnings
+          cargo +1.98.1 test -p paloma-provider-bedrock --locked
+          cargo +1.98.1 build -p paloma-provider-bedrock --release --locked
