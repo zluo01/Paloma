@@ -152,6 +152,7 @@ pub struct Action {
 #[uniffi::remote(Record)]
 pub struct Model {
     pub id: String,
+    pub provider: String,
     pub name: String,
     pub default_reasoning_effort: String,
     pub supported_reasoning_efforts: Vec<String>,
@@ -354,8 +355,27 @@ pub enum ConnectionPayload {
         authorization_url: String,
     },
     ManualInput {
-        instructions_url: Option<String>,
+        instructions: Vec<Instruction>,
     },
+}
+
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum Instruction {
+    Text { text: String },
+    Link { label: String, link: String },
+}
+
+impl Instruction {
+    fn from_core(value: paloma_core::Instruction) -> Option<Self> {
+        use paloma_core::instruction::Content;
+        match value.content? {
+            Content::Text(text) => Some(Self::Text { text }),
+            Content::Link(link) => Some(Self::Link {
+                label: link.label,
+                link: link.link,
+            }),
+        }
+    }
 }
 
 impl TryFrom<paloma_core::ConnectionPayload> for ConnectionPayload {
@@ -373,7 +393,11 @@ impl TryFrom<paloma_core::ConnectionPayload> for ConnectionPayload {
                 authorization_url: redirect.authorization_url,
             }),
             Some(Payload::ManualInput(manual_input)) => Ok(Self::ManualInput {
-                instructions_url: manual_input.instructions_url,
+                instructions: manual_input
+                    .instructions
+                    .into_iter()
+                    .filter_map(Instruction::from_core)
+                    .collect(),
             }),
             // should not happen, this indicates a provider plugin bug.
             None => Err(PalomaError::new(
