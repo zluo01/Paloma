@@ -28,7 +28,7 @@ struct ServiceConnectionDialog: View {
                 if isInputStage {
                     Button("Connect", action: submit)
                         .keyboardShortcut(.defaultAction)
-                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(shouldDisableConnection)
                 }
             }
         }
@@ -50,6 +50,14 @@ struct ServiceConnectionDialog: View {
         case .manual, .oauth: true
         default: false
         }
+    }
+
+    /// allow manual mode to connect without api key
+    private var shouldDisableConnection: Bool {
+        if case .manual = phase {
+            return false
+        }
+        return key.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func submit() {
