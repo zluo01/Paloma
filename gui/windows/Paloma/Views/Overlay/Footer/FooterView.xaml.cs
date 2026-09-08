@@ -87,61 +87,105 @@ public sealed partial class FooterView
                 continue;
             }
 
-            var provider = new MenuFlyoutSubItem { Text = backend };
+            var backendMenu = new MenuFlyoutSubItem { Text = backend };
             if (status.Models.Any(model => model.Id == ViewModel.SelectedModelId))
             {
-                provider.Icon = CheckIcon();
+                backendMenu.Icon = CheckIcon();
             }
 
-            foreach (var model in status.Models)
+            // skip if there is no effort for the model
+            var models = status.Models
+                .Where(model => model.SupportedReasoningEfforts.Length > 0);
+            var groups = ModelProviders(backend, models);
+            // display models directly on single model provider, else show the
+            // model providers menu first
+            if (groups.Count == 1)
             {
-                // skip if there is no effort for the model
-                if (model.SupportedReasoningEfforts.Length == 0)
-                {
-                    continue;
-                }
-
-                var isCurrentModel = model.Id == ViewModel.SelectedModelId;
-                if (model.SupportedReasoningEfforts.Length > 1)
-                {
-                    var efforts = new MenuFlyoutSubItem { Text = model.Name };
-                    if (isCurrentModel)
-                    {
-                        efforts.Icon = CheckIcon();
-                    }
-
-                    foreach (var effort in model.SupportedReasoningEfforts)
-                    {
-                        efforts.Items.Add(SelectItem(
-                            effort,
-                            isCurrentModel && effort == ViewModel.SelectedEffort,
-                            connector.Id,
-                            model,
-                            effort));
-                    }
-
-                    provider.Items.Add(efforts);
-                }
-                else
-                {
-                    provider.Items.Add(SelectItem(
-                        model.Name,
-                        isCurrentModel,
-                        connector.Id,
-                        model,
-                        model.DefaultReasoningEffort));
-                }
+                AddModelItems(backendMenu, connector.Id, groups[0].Models);
+            }
+            else
+            {
+                AddModelProviderItems(backendMenu, connector.Id, groups);
             }
 
-            if (provider.Items.Count == 0)
+            if (backendMenu.Items.Count == 0)
             {
                 ModelFlyout.Items.Add(DisabledItem(backend));
             }
             else
             {
-                ModelFlyout.Items.Add(provider);
+                ModelFlyout.Items.Add(backendMenu);
             }
         }
+    }
+
+    private void AddModelProviderItems(
+        MenuFlyoutSubItem menu,
+        ProviderBackendId backend,
+        List<(string Name, List<Model> Models)> groups)
+    {
+        foreach (var (name, models) in groups)
+        {
+            var modelProvider = new MenuFlyoutSubItem { Text = name };
+            if (models.Any(model => model.Id == ViewModel.SelectedModelId))
+            {
+                modelProvider.Icon = CheckIcon();
+            }
+
+            AddModelItems(modelProvider, backend, models);
+            menu.Items.Add(modelProvider);
+        }
+    }
+
+    private void AddModelItems(MenuFlyoutSubItem menu, ProviderBackendId backend, List<Model> models)
+    {
+        foreach (var model in models)
+        {
+            var isCurrentModel = model.Id == ViewModel.SelectedModelId;
+            if (model.SupportedReasoningEfforts.Length > 1)
+            {
+                var efforts = new MenuFlyoutSubItem { Text = model.Name };
+                if (isCurrentModel)
+                {
+                    efforts.Icon = CheckIcon();
+                }
+
+                foreach (var effort in model.SupportedReasoningEfforts)
+                {
+                    efforts.Items.Add(SelectItem(
+                        effort,
+                        isCurrentModel && effort == ViewModel.SelectedEffort,
+                        backend,
+                        model,
+                        effort));
+                }
+
+                menu.Items.Add(efforts);
+            }
+            else
+            {
+                menu.Items.Add(SelectItem(
+                    model.Name,
+                    isCurrentModel,
+                    backend,
+                    model,
+                    model.DefaultReasoningEffort));
+            }
+        }
+    }
+
+    /// <summary>Group models by their model providers, sorted by provider name.</summary>
+    private static List<(string Name, List<Model> Models)> ModelProviders(
+        string backend,
+        IEnumerable<Model> models)
+    {
+        return
+        [
+            .. models
+                .GroupBy(model => model.Provider.Length == 0 ? backend : model.Provider)
+                .Select(group => (Name: group.Key, Models: group.ToList()))
+                .OrderBy(pair => pair.Name, StringComparer.Ordinal),
+        ];
     }
 
     private RadioMenuFlyoutItem SelectItem(
