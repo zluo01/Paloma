@@ -1,3 +1,5 @@
+import static constants.Constants.PROVIDER_ID;
+
 import com.github.zluo01.paloma.proto.v1.Backend;
 import com.github.zluo01.paloma.proto.v1.BackendAuth;
 import com.github.zluo01.paloma.proto.v1.BackendHealthStatusResponse;
@@ -70,6 +72,7 @@ public final class DeepSeekClient {
             Model.newBuilder()
                 .setId(node.getString("id"))
                 .setName(node.getString("name"))
+                .setProvider(PROVIDER_ID)
                 .setDefaultReasoningEffort(reasoning.getString("default_effort"));
         reasoning
             .getJsonArray("supported_efforts")
@@ -104,7 +107,7 @@ public final class DeepSeekClient {
             b.setHandshakeResponse(
                 HandshakeResponse.newBuilder()
                     .setVersion(Constants.PROTOCOL_VERSION)
-                    .setProviderId(Constants.PROVIDER_ID)
+                    .setProviderId(PROVIDER_ID)
                     .setDescription(Constants.DESCRIPTION)
                     .addBackends(
                         Backend.newBuilder()
