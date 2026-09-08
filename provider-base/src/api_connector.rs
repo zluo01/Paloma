@@ -1,6 +1,6 @@
 use paloma_provider_protocol::v1::{
-    ConnectionPayload, ManualInput, ProviderAuth, connection_payload, finalize_connection_request,
-    provider_auth,
+    ConnectionPayload, Instruction, InstructionLink, ManualInput, ProviderAuth, connection_payload,
+    finalize_connection_request, instruction, provider_auth,
 };
 
 use crate::{
@@ -22,8 +22,12 @@ impl ProviderAuthenticator for ApiKeyConnector {
     async fn init_connection(&self) -> Result<ConnectionPayload> {
         Ok(ConnectionPayload {
             payload: Some(connection_payload::Payload::ManualInput(ManualInput {
-                api_key: String::new(),
-                instructions_url: Some(self.instructions_url.to_string()),
+                instructions: vec![Instruction {
+                    content: Some(instruction::Content::Link(InstructionLink {
+                        label: "Get an API key".to_string(),
+                        link: self.instructions_url.to_string(),
+                    })),
+                }],
             })),
         })
     }

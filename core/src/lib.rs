@@ -49,8 +49,8 @@ pub use paloma_extension_protocol::v1::{
     Action, CapabilityIcon, Item, capability_icon, run_action_response::Behavior,
 };
 pub use paloma_provider_protocol::v1::{
-    BrowserRedirect, ConnectionPayload, DeviceCode, ManualInput, Model, ProviderAuthMethod,
-    connection_payload,
+    BrowserRedirect, ConnectionPayload, DeviceCode, Instruction, InstructionLink, ManualInput,
+    Model, ProviderAuthMethod, connection_payload, instruction,
 };
 pub use permission::{PermissionState, UserDecision};
 pub use provider::{Connector, ConnectorConnection, ProviderInfo, ProviderStatus};

@@ -1,7 +1,7 @@
 use paloma_provider_base::{ProviderAuthenticator, ProviderError, Result};
 use paloma_provider_protocol::v1::{
-    ConnectionPayload, ManualInput, ProviderAuth, connection_payload, finalize_connection_request,
-    provider_auth,
+    ConnectionPayload, Instruction, InstructionLink, ManualInput, ProviderAuth, connection_payload,
+    finalize_connection_request, instruction, provider_auth,
 };
 
 use crate::constant::backend_id;
@@ -23,8 +23,13 @@ impl ProviderAuthenticator for BedrockConnector {
     async fn init_connection(&self) -> Result<ConnectionPayload> {
         Ok(ConnectionPayload {
             payload: Some(connection_payload::Payload::ManualInput(ManualInput {
-                api_key: String::new(),
-                instructions_url: Some(INSTRUCTION_URL.to_string()),
+                instructions: vec![
+                    text("Enter a "),
+                    link("long-term API key", INSTRUCTION_URL),
+                    text(
+                        " in <region>:<api-key> format. Leave blank to use the AWS credentials configured on this device.",
+                    ),
+                ],
             })),
         })
     }
@@ -46,6 +51,21 @@ impl ProviderAuthenticator for BedrockConnector {
         Ok(ProviderAuth {
             payload: Some(provider_auth::Payload::ApiKey(credential.to_string())),
         })
+    }
+}
+
+fn text(text: &str) -> Instruction {
+    Instruction {
+        content: Some(instruction::Content::Text(text.to_string())),
+    }
+}
+
+fn link(label: &str, link: &str) -> Instruction {
+    Instruction {
+        content: Some(instruction::Content::Link(InstructionLink {
+            label: label.to_string(),
+            link: link.to_string(),
+        })),
     }
 }
 

@@ -38,8 +38,19 @@ message BrowserRedirect {
 }
 
 message ManualInput {
-  string api_key = 1;
-  optional string instructions_url = 2;
+  repeated Instruction instructions = 1;
+}
+
+message Instruction {
+  oneof content {
+    string text = 1;
+    InstructionLink link = 2;
+  }
+}
+
+message InstructionLink {
+  string label = 1;
+  string link = 2;
 }
 
 message InitConnectionRequest {}
