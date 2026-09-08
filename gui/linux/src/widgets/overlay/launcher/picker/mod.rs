@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use gtk4::{Align, MenuButton, PopoverMenu, PopoverMenuFlags, gio, glib, prelude::*};
 use log::error;
-use paloma_core::{AppContext, Connector, HealthStatus, ProviderBackendId};
+use paloma_core::{AppContext, Connector, HealthStatus, Model, ProviderBackendId};
 
 use crate::runtime;
 
@@ -78,7 +78,10 @@ impl ModelPicker {
                 return;
             };
             let Ok(provider_id) = serde_json::from_str::<ProviderBackendId>(&provider) else {
-                error!("unknown provider string {}, this indicate a bug.", provider);
+                error!(
+                    "unknown provider string {}, this indicates a bug.",
+                    provider
+                );
                 return;
             };
 
@@ -106,8 +109,9 @@ impl ModelPicker {
             let Some(conn) = connector.connection.as_ref() else {
                 continue;
             };
+            let backend_name = connector.id.to_string();
             if conn.status.status != HealthStatus::Running {
-                picker_menu.append_item(&disabled_item(&connector.id.to_string()));
+                picker_menu.append_item(&disabled_item(&backend_name));
                 continue;
             }
 
@@ -116,31 +120,38 @@ impl ModelPicker {
                 .filter(|s| s.provider_backend_id == connector.id);
             let provider_json = serde_json::to_string(&connector.id).expect("serializable id");
 
-            let models = gio::Menu::new();
+            // group models by providers
+            let mut model_providers: BTreeMap<&str, Vec<&Model>> = BTreeMap::new();
             for model in &conn.status.models {
                 if model.supported_reasoning_efforts.is_empty() {
                     continue;
                 }
-
-                let efforts = gio::Menu::new();
-                for effort in &model.supported_reasoning_efforts {
-                    efforts.append_item(&effort_item(&provider_json, &model.id, effort));
-                }
-
-                let is_current_model = current.is_some_and(|s| s.model_id == model.id);
-                models.append_item(&submenu_item(
-                    &checked_label(&model.name, is_current_model),
-                    &efforts,
-                ));
+                let model_provider = if model.provider.is_empty() {
+                    backend_name.as_str()
+                } else {
+                    model.provider.as_str()
+                };
+                model_providers
+                    .entry(model_provider)
+                    .or_default()
+                    .push(model);
             }
 
-            let provider_label = checked_label(&connector.id.to_string(), current.is_some());
-            if models.n_items() == 0 {
-                picker_menu.append_item(&disabled_item(&provider_label));
-            } else {
-                has_selectable_provider = true;
-                picker_menu.append_item(&submenu_item(&provider_label, &models));
+            if model_providers.is_empty() {
+                picker_menu.append_item(&disabled_item(&backend_name));
+                continue;
             }
+
+            has_selectable_provider = true;
+            let backend_label = checked_label(&backend_name, current.is_some());
+
+            // display models directly on single model provider, else show the model providers menu first
+            let mut groups = model_providers.values();
+            let models = match (groups.next(), groups.next()) {
+                (Some(models), None) => models_menu(&provider_json, models, current),
+                _ => model_providers_menu(&provider_json, &model_providers, current),
+            };
+            picker_menu.append_item(&submenu_item(&backend_label, &models));
         }
 
         // disabled rows are context, not choices: with nothing to pick the button is dead.
@@ -230,6 +241,43 @@ fn dropdown_popover() -> PopoverMenu {
     let popover = PopoverMenu::from_model_full(&gio::Menu::new(), PopoverMenuFlags::NESTED);
     popover.set_has_arrow(false);
     popover
+}
+
+fn model_providers_menu(
+    provider_json: &str,
+    model_providers: &BTreeMap<&str, Vec<&Model>>,
+    current: Option<&Selection<'_>>,
+) -> gio::Menu {
+    let menu = gio::Menu::new();
+    for (model_provider, models) in model_providers {
+        let has_current =
+            current.is_some_and(|s| models.iter().any(|model| model.id == s.model_id));
+        menu.append_item(&submenu_item(
+            &checked_label(model_provider, has_current),
+            &models_menu(provider_json, models, current),
+        ));
+    }
+    menu
+}
+
+fn models_menu(
+    provider_json: &str,
+    models: &[&Model],
+    current: Option<&Selection<'_>>,
+) -> gio::Menu {
+    let menu = gio::Menu::new();
+    for model in models {
+        let efforts = gio::Menu::new();
+        for effort in &model.supported_reasoning_efforts {
+            efforts.append_item(&effort_item(provider_json, &model.id, effort));
+        }
+        let is_current_model = current.is_some_and(|s| s.model_id == model.id);
+        menu.append_item(&submenu_item(
+            &checked_label(&model.name, is_current_model),
+            &efforts,
+        ));
+    }
+    menu
 }
 
 fn effort_item(provider_json: &str, model: &str, effort: &str) -> gio::MenuItem {
