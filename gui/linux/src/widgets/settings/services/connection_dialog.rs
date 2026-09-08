@@ -2,13 +2,14 @@ use std::{rc::Rc, time::Duration};
 
 use futures::channel::mpsc;
 use gtk4::{
-    Align, Box as GtkBox, Button, Label, Orientation, Stack, StackTransitionType, glib, prelude::*,
+    Align, Box as GtkBox, Button, Justification, Label, Orientation, Stack, StackTransitionType,
+    glib, prelude::*,
 };
 use libadwaita::{
     Dialog, EntryRow, HeaderBar, PasswordEntryRow, PreferencesGroup, Spinner, ToolbarView,
     prelude::*,
 };
-use paloma_core::{ProviderAuthMethod, ProviderBackendId};
+use paloma_core::{Instruction, ProviderAuthMethod, ProviderBackendId, instruction};
 
 use crate::widgets::settings::{helper::launch_url, services::model::Msg};
 
@@ -77,13 +78,10 @@ impl ConnectionDialog {
     pub(super) fn show_manual(
         &self,
         provider_backend_id: ProviderBackendId,
-        instructions_url: Option<String>,
+        instructions: &[Instruction],
     ) {
-        let (manual_view, key_entry) = manual_page(
-            provider_backend_id,
-            instructions_url,
-            self.dispatcher.clone(),
-        );
+        let (manual_view, key_entry) =
+            manual_page(provider_backend_id, instructions, self.dispatcher.clone());
         self.set_visible(&manual_view);
         key_entry.grab_focus();
     }
@@ -192,7 +190,7 @@ fn challenge_page(verification_uri: &str, user_code: &str) -> GtkBox {
 
 fn manual_page(
     provider_backend_id: ProviderBackendId,
-    instructions_url: Option<String>,
+    instructions: &[Instruction],
     dispatcher: mpsc::UnboundedSender<Msg>,
 ) -> (GtkBox, PasswordEntryRow) {
     let body = page(true);
@@ -203,14 +201,36 @@ fn manual_page(
     group.add(&key_entry);
     body.append(&group);
 
-    if let Some(url) = instructions_url {
-        let instructions = Button::builder()
-            .label("Get an API key")
+    let mut instruction_text = String::new();
+    for instruction in instructions {
+        match &instruction.content {
+            Some(instruction::Content::Text(text)) => {
+                instruction_text.push_str(&glib::markup_escape_text(text));
+            },
+            Some(instruction::Content::Link(link)) => {
+                instruction_text.push_str("<a href=\"");
+                instruction_text.push_str(&glib::markup_escape_text(&link.link));
+                instruction_text.push_str("\">");
+                instruction_text.push_str(&glib::markup_escape_text(&link.label));
+                instruction_text.push_str("</a>");
+            },
+            None => {},
+        }
+    }
+    if !instruction_text.is_empty() {
+        let paragraph = Label::builder()
+            .label(&instruction_text)
+            .use_markup(true)
+            .wrap(true)
+            .justify(Justification::Center)
             .halign(Align::Center)
-            .css_classes(["link"])
+            .css_classes(["caption", "dim-label"])
             .build();
-        instructions.connect_clicked(move |_| launch_url(&url));
-        body.append(&instructions);
+        paragraph.connect_activate_link(|_, url| {
+            launch_url(url);
+            glib::Propagation::Stop
+        });
+        body.append(&paragraph);
     }
 
     let connect = submit_button(

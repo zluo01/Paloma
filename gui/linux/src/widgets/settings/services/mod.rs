@@ -242,10 +242,8 @@ impl ServicesPage {
             },
             Command::ShowManualInput {
                 provider_backend_id,
-                instructions_url,
-            } => {
-                self.with_dialog(|dialog| dialog.show_manual(provider_backend_id, instructions_url))
-            },
+                instructions,
+            } => self.with_dialog(|dialog| dialog.show_manual(provider_backend_id, &instructions)),
             Command::ShowOauth {
                 provider_backend_id,
                 authorization_url,

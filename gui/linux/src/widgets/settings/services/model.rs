@@ -1,5 +1,5 @@
 use paloma_core::{
-    AppError, ConnectionPayload, Connector, ProviderAuthMethod, ProviderBackendId,
+    AppError, ConnectionPayload, Connector, Instruction, ProviderAuthMethod, ProviderBackendId,
     connection_payload,
 };
 
@@ -47,7 +47,7 @@ pub(super) enum Command {
     },
     ShowManualInput {
         provider_backend_id: ProviderBackendId,
-        instructions_url: Option<String>,
+        instructions: Vec<Instruction>,
     },
     ShowOauth {
         provider_backend_id: ProviderBackendId,
@@ -138,7 +138,7 @@ impl Model {
                         payload: Some(connection_payload::Payload::ManualInput(manual_input)),
                     }) => vec![Command::ShowManualInput {
                         provider_backend_id,
-                        instructions_url: manual_input.instructions_url,
+                        instructions: manual_input.instructions,
                     }],
                     Ok(ConnectionPayload {
                         payload: Some(connection_payload::Payload::BrowserRedirect(redirect)),
@@ -203,7 +203,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
-    use paloma_core::{BrowserRedirect, DeviceCode, ManualInput};
+    use paloma_core::{BrowserRedirect, DeviceCode, InstructionLink, ManualInput, instruction};
 
     use super::*;
 
@@ -252,10 +252,18 @@ mod tests {
     }
 
     fn manual_input(instructions_url: Option<&str>) -> ConnectionPayload {
+        let instructions = instructions_url
+            .map(|url| Instruction {
+                content: Some(instruction::Content::Link(InstructionLink {
+                    label: "Get an API key".into(),
+                    link: url.into(),
+                })),
+            })
+            .into_iter()
+            .collect();
         ConnectionPayload {
             payload: Some(connection_payload::Payload::ManualInput(ManualInput {
-                api_key: String::new(),
-                instructions_url: instructions_url.map(str::to_string),
+                instructions,
             })),
         }
     }
@@ -406,8 +414,8 @@ mod tests {
             cmds.as_slice(),
             [Command::ShowManualInput {
                 provider_backend_id,
-                instructions_url: Some(_),
-            }] if *provider_backend_id == anthropic()
+                instructions,
+            }] if *provider_backend_id == anthropic() && instructions.len() == 1
         ));
 
         let cmds = model.update(Msg::ConnectionSubmitted {
