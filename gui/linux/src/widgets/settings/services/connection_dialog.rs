@@ -306,32 +306,22 @@ fn submit_button(
     let connect = Button::builder()
         .label("Connect")
         .halign(Align::Center)
-        .sensitive(false)
         .css_classes(["pill", "suggested-action"])
         .build();
 
     let submit: Rc<dyn Fn()> = {
         let entry = entry.clone();
         Rc::new(move || {
-            let payload = entry.text().trim().to_string();
-            if payload.is_empty() {
-                return;
-            }
             let _ = dispatcher.unbounded_send(Msg::ConnectionSubmitted {
                 provider_auth_method,
                 provider_backend_id: provider_backend_id.clone(),
-                payload,
+                payload: entry.text().trim().to_string(),
             });
         })
     };
     let on_click = submit.clone();
     connect.connect_clicked(move |_| on_click());
     entry.connect_entry_activated(move |_| submit());
-
-    let button = connect.clone();
-    entry.connect_changed(move |entry| {
-        button.set_sensitive(!entry.text().trim().is_empty());
-    });
 
     connect
 }
