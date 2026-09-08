@@ -19,6 +19,8 @@ import com.github.zluo01.paloma.proto.v1.InitBackendResponse;
 import com.github.zluo01.paloma.proto.v1.InitConnectionResponse;
 import com.github.zluo01.paloma.proto.v1.InitializeBackendsRequest;
 import com.github.zluo01.paloma.proto.v1.InitializeBackendsResponse;
+import com.github.zluo01.paloma.proto.v1.Instruction;
+import com.github.zluo01.paloma.proto.v1.InstructionLink;
 import com.github.zluo01.paloma.proto.v1.ListModelsResponse;
 import com.github.zluo01.paloma.proto.v1.ManualInput;
 import com.github.zluo01.paloma.proto.v1.Model;
@@ -212,8 +214,14 @@ public final class DeepSeekClient {
                         ConnectionPayload.newBuilder()
                             .setManualInput(
                                 ManualInput.newBuilder()
-                                    .setApiKey("")
-                                    .setInstructionsUrl(Constants.INSTRUCTION_URL)
+                                    .addInstructions(
+                                        Instruction.newBuilder()
+                                            .setLink(
+                                                InstructionLink.newBuilder()
+                                                    .setLabel("Get an API key")
+                                                    .setLink(Constants.INSTRUCTION_URL)
+                                                    .build())
+                                            .build())
                                     .build())
                             .build())
                     .build()));
