@@ -10,7 +10,7 @@
     CloseButtonClick="OnCloseButtonClick"
     CloseButtonText="{x:Bind ViewModel.CloseLabel, Mode=OneWay}"
     DefaultButton="Primary"
-    IsPrimaryButtonEnabled="{x:Bind ViewModel.HasInput, Mode=OneWay}"
+    IsPrimaryButtonEnabled="{x:Bind ViewModel.CanConnect, Mode=OneWay}"
     Opened="OnOpened"
     PrimaryButtonClick="OnPrimaryButtonClick"
     PrimaryButtonText="{x:Bind ViewModel.PrimaryLabel, Mode=OneWay}"

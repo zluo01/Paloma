@@ -24,7 +24,11 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
 
     [ObservableProperty] public partial string Input { get; set; } = string.Empty;
 
-    partial void OnInputChanged(string value) => OnPropertyChanged(nameof(HasInput));
+    partial void OnInputChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasInput));
+        OnPropertyChanged(nameof(CanConnect));
+    }
 
     public bool IsLoading => Phase is ConnectionPhase.Loading;
 
@@ -41,6 +45,8 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
     public bool NeedsInput => IsManual || IsOauth;
 
     public bool HasInput => !string.IsNullOrWhiteSpace(Input);
+
+    public bool CanConnect => IsManual || HasInput;
 
     public string UserCode =>
         Phase is ConnectionPhase.Challenge challenge ? challenge.Payload.UserCode : string.Empty;
@@ -94,7 +100,7 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
             ConnectionPhase.Oauth => ProviderAuthMethod.BrowserOauth,
             _ => (ProviderAuthMethod?)null,
         };
-        if (method is null || string.IsNullOrWhiteSpace(Input))
+        if (method is null || (method == ProviderAuthMethod.BrowserOauth && !HasInput))
         {
             return;
         }

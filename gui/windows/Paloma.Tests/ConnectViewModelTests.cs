@@ -72,7 +72,7 @@ public sealed class ConnectViewModelTests
     }
 
     [Fact]
-    public async Task Submit_WhitespaceInput_DoesNothing()
+    public async Task Submit_ManualBlankInput_FinalizesEmptyKey()
     {
         var mock = new MockPalomaClient
         {
@@ -81,11 +81,13 @@ public sealed class ConnectViewModelTests
         var vm = new ConnectViewModel(mock, TestConnector());
         await vm.StartAsync();
 
+        Assert.True(vm.CanConnect);
         vm.Input = "   ";
         await vm.SubmitAsync();
 
-        Assert.True(vm.IsManual);
-        Assert.Empty(mock.FinalizeConnections);
+        var (Id, Method, Payload) = Assert.Single(mock.FinalizeConnections);
+        Assert.Equal((ProviderAuthMethod.ApiKey, ""), (Method, Payload));
+        Assert.True(vm.IsSuccess);
     }
 
     [Fact]
