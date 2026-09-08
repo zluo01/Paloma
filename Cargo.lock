@@ -3365,6 +3365,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-bedrock",
  "aws-sdk-bedrockruntime",
+ "aws-smithy-runtime-api",
  "aws-smithy-types",
  "log",
  "paloma-provider-base",

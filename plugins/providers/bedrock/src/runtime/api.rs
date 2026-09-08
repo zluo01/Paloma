@@ -3,6 +3,7 @@ use std::sync::{
     atomic::{AtomicI32, Ordering},
 };
 
+use aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID;
 use log::error;
 use paloma_provider_base::{
     Dispatcher, ProviderCache, ProviderClient, ProviderError, Result, SSE_IDLE_TIMEOUT,
@@ -58,7 +59,9 @@ impl BedrockRuntime {
             };
             loader = loader
                 .region(aws_config::Region::new(region))
-                .token_provider(aws_sdk_bedrockruntime::config::Token::new(api_key, None));
+                .token_provider(aws_sdk_bedrockruntime::config::Token::new(api_key, None))
+                // following line make sure sigV4 always honor the api key and not rely on local aws config
+                .auth_scheme_preference([HTTP_BEARER_AUTH_SCHEME_ID]);
         }
         let sdk_config = loader.load().await;
         let runtime_client = aws_sdk_bedrockruntime::Client::new(&sdk_config);
