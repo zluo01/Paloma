@@ -87,11 +87,8 @@ fn to_model(summary: &FoundationModelSummary, id: &str) -> Model {
         .collect();
     Model {
         id: id.to_string(),
-        name: format!(
-            "{} {}",
-            summary.provider_name().unwrap_or_default(),
-            summary.model_name().unwrap_or_default()
-        ),
+        name: summary.model_name().unwrap_or_default().to_string(),
+        provider: summary.provider_name().unwrap_or_default().to_string(),
         // Bedrock's documented default for adaptive thinking
         default_reasoning_effort: if efforts.len() > 1 {
             "high".to_string()

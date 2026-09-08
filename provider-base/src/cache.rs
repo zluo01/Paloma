@@ -55,6 +55,7 @@ mod tests {
     fn model(id: &str) -> Model {
         Model {
             id: id.into(),
+            provider: String::new(),
             name: id.into(),
             default_reasoning_effort: String::new(),
             supported_reasoning_efforts: Vec::new(),

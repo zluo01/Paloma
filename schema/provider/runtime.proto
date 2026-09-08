@@ -70,9 +70,10 @@ message ListModelsResponse {
 
 message Model {
   string id = 1;
-  string name = 2;
-  string default_reasoning_effort = 3;
-  repeated string supported_reasoning_efforts = 4;
+  string provider = 2;
+  string name = 3;
+  string default_reasoning_effort = 4;
+  repeated string supported_reasoning_efforts = 5;
 }
 
 message BackendInitErrorRequest {}

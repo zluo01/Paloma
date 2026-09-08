@@ -500,6 +500,7 @@ fn parse_model_response(data: Value) -> Vec<Model> {
             Some(Model {
                 id: id.to_string(),
                 name: name.to_string(),
+                provider: PROVIDER_ID.to_string(),
                 default_reasoning_effort,
                 supported_reasoning_efforts,
             })
@@ -1050,6 +1051,7 @@ mod parse_model_response_tests {
             vec![Model {
                 id: "claude-test".to_string(),
                 name: "Claude Test".to_string(),
+                provider: PROVIDER_ID.to_string(),
                 default_reasoning_effort: "low".to_string(),
                 supported_reasoning_efforts: vec!["low".to_string()],
             }]

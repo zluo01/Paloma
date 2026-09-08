@@ -343,6 +343,7 @@ pub(super) fn models_from_response(response: ModelsResponse) -> Vec<Model> {
             Some(Model {
                 id: m.slug,
                 name: m.display_name,
+                provider: PROVIDER_ID.to_string(),
                 default_reasoning_effort,
                 supported_reasoning_efforts,
             })
