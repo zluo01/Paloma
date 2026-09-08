@@ -2,6 +2,7 @@ using Paloma.Models;
 using Paloma.ViewModels.Settings;
 using Xunit;
 using Connector = PalomaCore.Connector;
+using Instruction = PalomaCore.Instruction;
 using ManualInput = PalomaCore.ConnectionPayload.ManualInput;
 using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
 using ProviderBackendId = PalomaCore.ProviderBackendId;
@@ -20,14 +21,19 @@ public sealed class ConnectViewModelTests
     {
         var mock = new MockPalomaClient
         {
-            OnInitConnection = _ => new ConnectionPhase.Manual(
-                new ManualInput("https://keys.example")),
+            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput(
+            [
+                new Instruction.Text("Get an API key from "),
+                new Instruction.Link("the console", "https://keys.example"),
+            ])),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
 
         await vm.StartAsync();
 
         Assert.True(vm.IsManual);
+        Assert.True(vm.HasInstructions);
+        Assert.Equal(2, vm.Instructions.Count);
         Assert.Empty(mock.FinalizeConnections);
         Assert.Equal("Connect", vm.PrimaryLabel);
     }
@@ -70,7 +76,7 @@ public sealed class ConnectViewModelTests
     {
         var mock = new MockPalomaClient
         {
-            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput(null)),
+            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput([])),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
         await vm.StartAsync();
@@ -87,7 +93,7 @@ public sealed class ConnectViewModelTests
     {
         var mock = new MockPalomaClient
         {
-            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput(null)),
+            OnInitConnection = _ => new ConnectionPhase.Manual(new ManualInput([])),
         };
         var vm = new ConnectViewModel(mock, TestConnector());
         await vm.StartAsync();

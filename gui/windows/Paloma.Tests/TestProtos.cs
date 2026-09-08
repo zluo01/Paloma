@@ -23,7 +23,7 @@ internal static class TestProtos
         string defaultEffort,
         params string[] efforts)
     {
-        return new Model(id, name, defaultEffort, efforts);
+        return new Model(id, "provider", name, defaultEffort, efforts);
     }
 
     public static ProviderBackendId Backend(string backend)

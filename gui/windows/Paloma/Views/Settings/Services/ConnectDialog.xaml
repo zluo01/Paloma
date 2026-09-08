@@ -84,11 +84,10 @@
             Spacing="8"
             Visibility="{x:Bind ViewModel.IsManual, Mode=OneWay}">
             <PasswordBox Header="API key" Password="{x:Bind ViewModel.Input, Mode=TwoWay}" />
-            <HyperlinkButton
-                Padding="0"
-                Content="Get an API key"
-                FontSize="12"
-                NavigateUri="{x:Bind ViewModel.InstructionsUri, Mode=OneWay}"
+            <TextBlock
+                x:Name="InstructionsText"
+                Style="{ThemeResource CaptionTextBlockStyle}"
+                TextWrapping="Wrap"
                 Visibility="{x:Bind ViewModel.HasInstructions, Mode=OneWay}" />
         </StackPanel>
 

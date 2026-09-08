@@ -4,6 +4,7 @@ using Paloma.Extensions;
 using Paloma.Helpers;
 using Paloma.Models;
 using Connector = PalomaCore.Connector;
+using Instruction = PalomaCore.Instruction;
 using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
 using ProviderBackendId = PalomaCore.ProviderBackendId;
 
@@ -52,15 +53,13 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
             ? ToUri(challenge.Payload.VerificationUrl)
             : null;
 
-    public Uri? InstructionsUri =>
-        Phase is ConnectionPhase.Manual { Payload.InstructionsUrl: { } instructionsUrl }
-            ? ToUri(instructionsUrl)
-            : null;
+    public IReadOnlyList<Instruction> Instructions =>
+        Phase is ConnectionPhase.Manual manual ? manual.Payload.Instructions : [];
 
     public Uri? AuthorizationUri =>
         Phase is ConnectionPhase.Oauth oauth ? ToUri(oauth.Payload.AuthorizationUrl) : null;
 
-    public bool HasInstructions => InstructionsUri is not null;
+    public bool HasInstructions => Instructions.Count > 0;
 
     /// <summary>An empty label hides the button; only typed-input phases
     /// have anything for Connect to submit.</summary>
