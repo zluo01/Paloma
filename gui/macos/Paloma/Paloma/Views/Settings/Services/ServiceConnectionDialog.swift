@@ -63,6 +63,21 @@ struct ServiceConnectionDialog: View {
         }
     }
 
+    private func instructionParagraph(_ instructions: [Instruction]) -> AttributedString {
+        var paragraph = AttributedString()
+        for instruction in instructions {
+            switch instruction {
+            case let .text(text):
+                paragraph += AttributedString(text)
+            case let .link(label, link):
+                var linkText = AttributedString(label)
+                linkText.link = URL(string: link)
+                paragraph += linkText
+            }
+        }
+        return paragraph
+    }
+
     @ViewBuilder
     private var content: some View {
         switch phase {
@@ -89,13 +104,16 @@ struct ServiceConnectionDialog: View {
                 }
                 .padding(.top, 2)
             }
-        case let .manual(instructionsUrl):
+        case let .manual(instructions):
             VStack(alignment: .leading, spacing: 8) {
                 SecureField("API key", text: $key)
                     .textFieldStyle(.roundedBorder)
-                if let instructionsUrl, let url = URL(string: instructionsUrl) {
-                    Link("Get an API key", destination: url)
+                let paragraph = instructionParagraph(instructions)
+                if !paragraph.characters.isEmpty {
+                    Text(paragraph)
                         .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         case let .oauth(authorizationUrl):

@@ -12,7 +12,7 @@ enum ServiceConnectionPhase {
     /// otp challenge
     case challenge(verificationUrl: String, userCode: String, transactionPayload: String)
     /// api key
-    case manual(instructionsUrl: String?)
+    case manual(instructions: [Instruction])
     /// oauth pkce
     case oauth(authorizationUrl: String)
     case success
@@ -58,8 +58,8 @@ final class ServiceModel {
         switch result {
         case let .success(connection):
             switch connection {
-            case let .manualInput(instructionsUrl):
-                return .manual(instructionsUrl: instructionsUrl)
+            case let .manualInput(instructions):
+                return .manual(instructions: instructions)
             case let .deviceCode(url, code, transactionPayload):
                 openUrl(url)
                 return .challenge(verificationUrl: url, userCode: code, transactionPayload: transactionPayload)
