@@ -55,12 +55,31 @@ struct ModelPickerView: View {
     }
 
     private func providerMenu(_ providerBackendId: ProviderBackendId, _ connection: ConnectorConnection) -> some View {
-        Menu {
-            ForEach(connection.status.models, id: \.id) { item in
-                modelMenu(providerBackendId, connection, item)
+        let groups = modelProviders(providerBackendId, connection.status.models)
+        return Menu {
+            // display models directly on single model provider, else show the model providers menu first
+            if groups.count == 1, let group = groups.first {
+                ForEach(group.models, id: \.id) { item in
+                    modelMenu(providerBackendId, connection, item)
+                }
+            } else {
+                ForEach(groups, id: \.name) { group in
+                    modelProviderMenu(providerBackendId, connection, group)
+                }
             }
         } label: {
             menuLabel(providerBackendId.label, checked: connection.preferred)
+        }
+    }
+
+    private func modelProviderMenu(_ providerBackendId: ProviderBackendId, _ connection: ConnectorConnection, _ group: (name: String, models: [Model])) -> some View {
+        let hasCurrentModel = connection.preferred && group.models.contains { $0.id == connection.preferModel }
+        return Menu {
+            ForEach(group.models, id: \.id) { item in
+                modelMenu(providerBackendId, connection, item)
+            }
+        } label: {
+            menuLabel(group.name, checked: hasCurrentModel)
         }
     }
 
@@ -95,5 +114,17 @@ struct ModelPickerView: View {
         } else {
             Text(title)
         }
+    }
+
+    /// group models by their model providers, sorted by provider name
+    private func modelProviders(_ providerBackendId: ProviderBackendId, _ models: [Model]) -> [(name: String, models: [Model])] {
+        var groups: [String: [Model]] = [:]
+        for model in models {
+            let provider = model.provider.isEmpty ? providerBackendId.label : model.provider
+            groups[provider, default: []].append(model)
+        }
+        return groups
+            .map { (name: $0.key, models: $0.value) }
+            .sorted { $0.name < $1.name }
     }
 }
