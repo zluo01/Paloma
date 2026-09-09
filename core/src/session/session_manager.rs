@@ -14,14 +14,10 @@ use super::helper::{Disposition, extract_args, prettify_arg};
 use crate::{
     constants::SESSION_MANAGER_CHANNEL_CAPACITY,
     controller::{PermissionWorkflowError, PermissionWorkflowManagerClient, ToolController},
-    db::{Session as StorageSession, Storage, StorageError},
+    db::{Session as StorageSession, Storage, StorageError, TURN_ERROR_REASON, USER_CANCEL_REASON},
     entity::{ChatRenderEvent, ProviderBackendId, RenderEvent},
     utils::Gated,
 };
-
-const USER_CANCEL_REASON: &str = "Tool call cancelled by user.";
-
-const TURN_ERROR_REASON: &str = "Tool call interrupted before a result was produced.";
 
 #[derive(Clone, Debug)]
 pub struct SessionListItem {

@@ -1210,155 +1210,285 @@ mod history {
         .unwrap();
     }
 
-    // ---- recover ----
+    mod recover {
+        use super::*;
 
-    #[tokio::test]
-    async fn recover_prunes_unfinished_turn_back_to_last_prompt() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000a0");
-        seed_session(
-            &storage,
-            id,
-            &[
-                user(),
-                assistant_message(),
-                user(),
-                reasoning(),
-                function_call(),
-            ],
-        )
-        .await;
-
-        storage.recover_history().await.unwrap();
-
-        let history = storage.get_history(&id.to_string()).await.unwrap();
-        assert_eq!(history.len(), 2);
-        assert!(matches!(
-            history.last().unwrap().payload,
-            ConversationItem {
-                item: Some(Item::Message(_))
+        async fn snapshot(
+            storage: &Storage,
+            ids: &[Uuid],
+        ) -> Vec<(bool, Vec<(ProviderBackendId, ConversationItem)>)> {
+            let sessions = storage.all_sessions().await.unwrap();
+            let mut out = Vec::new();
+            for id in ids {
+                let exists = sessions.iter().any(|s| s.session_id == id.to_string());
+                let history = storage
+                    .get_history(&id.to_string())
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|entry| (entry.provider_backend_id, entry.payload))
+                    .collect();
+                out.push((exists, history));
             }
-        ));
-    }
+            out
+        }
 
-    #[tokio::test]
-    async fn recover_keeps_session_ending_in_completed_message() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000a1");
-        seed_session(&storage, id, &[user(), assistant_message()]).await;
+        #[tokio::test]
+        async fn given_an_open_tool_call_when_recovering_should_close_it_with_the_error_reason() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    assistant_message(),
+                    user(),
+                    reasoning(),
+                    function_call(),
+                ],
+            )
+            .await;
 
-        storage.recover_history().await.unwrap();
+            storage.recover_history().await.unwrap();
 
-        assert_eq!(history_len(&storage, id).await, 2);
-    }
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 6);
+            let last = &history.last().unwrap().payload.item;
+            let Some(Item::ToolResult(result)) = last else {
+                panic!("expected a tool result, got {last:?}");
+            };
+            assert_eq!(result.call_id, "c1");
+            assert_eq!(result.output, TURN_ERROR_REASON);
+        }
 
-    #[tokio::test]
-    async fn recover_empties_session_with_no_completed_turn() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000a2");
-        seed_session(&storage, id, &[user(), reasoning()]).await;
+        #[tokio::test]
+        async fn given_a_completed_turn_when_recovering_should_keep_it() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), assistant_message()]).await;
 
-        storage.recover_history().await.unwrap();
+            storage.recover_history().await.unwrap();
 
-        assert_eq!(history_len(&storage, id).await, 0);
-        let sessions = storage.all_sessions().await.unwrap();
-        assert!(sessions.iter().all(|s| s.session_id != id.to_string()));
-    }
+            assert_eq!(history_len(&storage, id).await, 2);
+        }
 
-    #[tokio::test]
-    async fn recover_prunes_dangling_user_prompt() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000a3");
-        seed_session(&storage, id, &[user(), assistant_message(), user()]).await;
+        #[tokio::test]
+        async fn given_only_a_prompt_and_reasoning_when_recovering_should_remove_the_session() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), reasoning()]).await;
 
-        storage.recover_history().await.unwrap();
+            storage.recover_history().await.unwrap();
 
-        assert_eq!(history_len(&storage, id).await, 2);
-    }
+            assert_eq!(history_len(&storage, id).await, 0);
+            let sessions = storage.all_sessions().await.unwrap();
+            assert!(sessions.iter().all(|s| s.session_id != id.to_string()));
+        }
 
-    #[tokio::test]
-    async fn recover_prunes_tool_result_and_hosted_tool_tails() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let tool_result_tail = uuid("019e1234-5678-7000-8000-0000000000a9");
-        let hosted_tool_tail = uuid("019e1234-5678-7000-8000-0000000000aa");
+        #[tokio::test]
+        async fn given_a_trailing_prompt_when_recovering_should_drop_just_that_prompt() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), assistant_message(), user()]).await;
 
-        seed_session(
-            &storage,
-            tool_result_tail,
-            &[
-                user(),
-                assistant_message(),
-                user(),
-                tool_result_with("finished_call"),
-            ],
-        )
-        .await;
-        seed_session(
-            &storage,
-            hosted_tool_tail,
-            &[user(), assistant_message(), user(), hosted_tool()],
-        )
-        .await;
+            storage.recover_history().await.unwrap();
 
-        storage.recover_history().await.unwrap();
+            assert_eq!(history_len(&storage, id).await, 2);
+        }
 
-        assert_eq!(history_len(&storage, tool_result_tail).await, 2);
-        assert_eq!(history_len(&storage, hosted_tool_tail).await, 2);
-    }
+        #[tokio::test]
+        async fn given_a_hosted_tool_turn_when_recovering_should_keep_it() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[user(), assistant_message(), user(), hosted_tool()],
+            )
+            .await;
 
-    #[tokio::test]
-    async fn recover_only_touches_unfinished_sessions() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
+            storage.recover_history().await.unwrap();
 
-        // Two finished sessions (one single-turn, one multi-turn) stay intact;
-        // three unfinished sessions with different broken tails are each pruned
-        // back to their last completed turn in a single recover pass.
-        let finished_single = uuid("019e1234-5678-7000-8000-0000000000a4");
-        let finished_multi = uuid("019e1234-5678-7000-8000-0000000000a5");
-        let dropped_tool_call = uuid("019e1234-5678-7000-8000-0000000000a6");
-        let no_completed_turn = uuid("019e1234-5678-7000-8000-0000000000a7");
-        let dangling_prompt = uuid("019e1234-5678-7000-8000-0000000000a8");
+            assert_eq!(history_len(&storage, id).await, 4);
+        }
 
-        seed_session(&storage, finished_single, &[user(), assistant_message()]).await;
-        seed_session(
-            &storage,
-            finished_multi,
-            &[user(), assistant_message(), user(), assistant_message()],
-        )
-        .await;
-        seed_session(
-            &storage,
-            dropped_tool_call,
-            &[
-                user(),
-                assistant_message(),
-                user(),
-                reasoning(),
-                function_call(),
-            ],
-        )
-        .await;
-        seed_session(&storage, no_completed_turn, &[user(), reasoning()]).await;
-        seed_session(
-            &storage,
-            dangling_prompt,
-            &[user(), assistant_message(), user()],
-        )
-        .await;
+        #[tokio::test]
+        async fn given_trailing_reasoning_when_recovering_should_drop_it() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    reasoning(),
+                ],
+            )
+            .await;
 
-        storage.recover_history().await.unwrap();
+            storage.recover_history().await.unwrap();
 
-        assert_eq!(history_len(&storage, finished_single).await, 2);
-        assert_eq!(history_len(&storage, finished_multi).await, 4);
-        assert_eq!(history_len(&storage, dropped_tool_call).await, 2);
-        assert_eq!(history_len(&storage, no_completed_turn).await, 0);
-        assert_eq!(history_len(&storage, dangling_prompt).await, 2);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 3);
+            assert!(matches!(
+                history.last().unwrap().payload,
+                ConversationItem {
+                    item: Some(Item::ToolResult(_))
+                }
+            ));
+        }
+
+        #[tokio::test]
+        async fn given_a_session_without_history_when_recovering_should_remove_it() {
+            let storage = fresh_storage().await;
+            let id = Uuid::now_v7();
+            storage.create_new_session(id, "s").await.unwrap();
+
+            storage.recover_history().await.unwrap();
+
+            assert!(storage.all_sessions().await.unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn given_many_broken_sessions_when_recovering_should_repair_each_in_one_pass() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+
+            let finished_single = Uuid::now_v7();
+            let finished_multi = Uuid::now_v7();
+            let open_tool_call = Uuid::now_v7();
+            let no_completed_turn = Uuid::now_v7();
+            let dangling_prompt = Uuid::now_v7();
+
+            seed_session(&storage, finished_single, &[user(), assistant_message()]).await;
+            seed_session(
+                &storage,
+                finished_multi,
+                &[user(), assistant_message(), user(), assistant_message()],
+            )
+            .await;
+            seed_session(
+                &storage,
+                open_tool_call,
+                &[
+                    user(),
+                    assistant_message(),
+                    user(),
+                    reasoning(),
+                    function_call(),
+                ],
+            )
+            .await;
+            seed_session(&storage, no_completed_turn, &[user(), reasoning()]).await;
+            seed_session(
+                &storage,
+                dangling_prompt,
+                &[user(), assistant_message(), user()],
+            )
+            .await;
+
+            storage.recover_history().await.unwrap();
+
+            assert_eq!(history_len(&storage, finished_single).await, 2);
+            assert_eq!(history_len(&storage, finished_multi).await, 4);
+            assert_eq!(history_len(&storage, open_tool_call).await, 6);
+            assert_eq!(history_len(&storage, no_completed_turn).await, 0);
+            assert_eq!(history_len(&storage, dangling_prompt).await, 2);
+        }
+
+        #[tokio::test]
+        async fn given_the_same_call_id_answered_elsewhere_when_recovering_should_still_close_the_open_one()
+         {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let answered = Uuid::now_v7();
+            let open = Uuid::now_v7();
+            seed_session(
+                &storage,
+                answered,
+                &[user(), function_call_with("c1"), tool_result_with("c1")],
+            )
+            .await;
+            seed_session(&storage, open, &[user(), function_call_with("c1")]).await;
+
+            storage.recover_history().await.unwrap();
+
+            assert_eq!(history_len(&storage, answered).await, 3);
+            let history = storage.get_history(&open.to_string()).await.unwrap();
+            assert_eq!(history.len(), 3);
+            let Some(Item::ToolResult(result)) = &history[2].payload.item else {
+                panic!("expected a tool result for the open call");
+            };
+            assert_eq!(result.output, TURN_ERROR_REASON);
+        }
+
+        #[tokio::test]
+        async fn given_the_same_broken_sessions_when_recovering_or_cleaning_up_should_leave_identical_rows()
+         {
+            let shapes: Vec<Vec<ConversationItem>> = vec![
+                vec![],
+                vec![user()],
+                vec![user(), reasoning()],
+                vec![user(), assistant_message()],
+                vec![user(), assistant_message(), user()],
+                vec![user(), assistant_message(), user(), reasoning()],
+                vec![user(), hosted_tool()],
+                vec![user(), reasoning(), function_call_with("c1")],
+                vec![user(), reasoning(), function_call_with("c1"), reasoning()],
+                vec![
+                    user(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    function_call_with("c2"),
+                ],
+                vec![
+                    user(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    reasoning(),
+                ],
+                vec![assistant_message()],
+            ];
+            let ids: Vec<Uuid> = shapes.iter().map(|_| Uuid::now_v7()).collect();
+
+            let cleaned = fresh_storage().await;
+            let recovered = fresh_storage().await;
+            for storage in [&cleaned, &recovered] {
+                seed_provider(storage).await;
+                for (id, items) in ids.iter().zip(&shapes) {
+                    seed_session(storage, *id, items).await;
+                }
+            }
+
+            for id in &ids {
+                cleaned
+                    .cleanup_session_history(&id.to_string(), TURN_ERROR_REASON)
+                    .await
+                    .unwrap();
+            }
+            recovered.recover_history().await.unwrap();
+
+            let cleaned = snapshot(&cleaned, &ids).await;
+            assert_eq!(cleaned, snapshot(&recovered, &ids).await);
+
+            let closed_calls = cleaned
+                .iter()
+                .flat_map(|(_, history)| history)
+                .filter(|(_, item)| {
+                    matches!(&item.item, Some(Item::ToolResult(r)) if r.output == TURN_ERROR_REASON)
+                })
+                .count();
+            assert_eq!(closed_calls, 3);
+        }
     }
 
     mod cleanup {

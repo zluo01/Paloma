@@ -40,12 +40,9 @@ pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");
 
 pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.sql");
 
-pub const RECOVER: &str = include_str!("queries/history/recover_history.sql");
-
 pub const CLEANUP_HISTORY: &str = include_str!("queries/history/cleanup_history.sql");
 
-pub const DELETE_ALL_EMPTY_SESSIONS: &str =
-    include_str!("queries/sessions/delete_all_empty_sessions.sql");
+pub const CLEANUP_HISTORIES: &str = include_str!("queries/history/cleanup_histories.sql");
 
 pub const INSERT_PLUGIN_QUERY: &str = include_str!("queries/plugins/insert_plugin.sql");
 

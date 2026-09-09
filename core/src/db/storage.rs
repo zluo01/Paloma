@@ -20,6 +20,10 @@ use crate::{
     entity::{CapabilityFacet, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport},
 };
 
+pub const USER_CANCEL_REASON: &str = "Tool call cancelled by user.";
+
+pub const TURN_ERROR_REASON: &str = "Tool call interrupted before a result was produced.";
+
 #[derive(Clone)]
 pub struct Storage {
     pool: Pool<Sqlite>,
@@ -443,13 +447,11 @@ impl Storage {
         Ok(entries)
     }
 
-    /// Prune partially-written turns left by a crash or cold start: for every
-    /// session whose newest history item isn't an assistant message, drop
-    /// everything back to (and including) the last user prompt.
+    /// try to repair any broken session caused by situation like crush or db corruptions,
     pub async fn recover_history(&self) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query(queries::RECOVER).execute(&mut *tx).await?;
-        sqlx::query(queries::DELETE_ALL_EMPTY_SESSIONS)
+        sqlx::query(queries::CLEANUP_HISTORIES)
+            .bind(TURN_ERROR_REASON)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
