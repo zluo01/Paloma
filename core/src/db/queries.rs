@@ -42,9 +42,7 @@ pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.
 
 pub const RECOVER: &str = include_str!("queries/history/recover_history.sql");
 
-pub const ROLLBACK: &str = include_str!("queries/history/rollback_history.sql");
-
-pub const DELETE_EMPTY_SESSION: &str = include_str!("queries/sessions/delete_empty_session.sql");
+pub const CLEANUP_HISTORY: &str = include_str!("queries/history/cleanup_history.sql");
 
 pub const DELETE_ALL_EMPTY_SESSIONS: &str =
     include_str!("queries/sessions/delete_all_empty_sessions.sql");

@@ -456,23 +456,24 @@ impl Storage {
         Ok(())
     }
 
-    /// Roll one session back to its last completed assistant message, then delete
-    /// the session if no history remains. Returns whether the session was removed.
-    pub async fn rollback_session_history(&self, session_id: &str) -> Result<bool> {
+    /// handle llm error or user cancel turn
+    pub async fn cleanup_session_history(
+        &self,
+        session_id: &str,
+        cleanup_reason: &str,
+    ) -> Result<bool> {
+        // run within a single transaction such that
+        // all statements is a single atomic action and rollback cleanly on db error
         let mut tx = self.pool.begin().await?;
 
-        sqlx::query(queries::ROLLBACK)
+        let removed = sqlx::query(queries::CLEANUP_HISTORY)
             .bind(session_id)
-            .execute(&mut *tx)
-            .await?;
-
-        let result = sqlx::query(queries::DELETE_EMPTY_SESSION)
-            .bind(session_id)
-            .execute(&mut *tx)
+            .bind(cleanup_reason)
+            .fetch_all(&mut *tx)
             .await?;
 
         tx.commit().await?;
-        Ok(result.rows_affected() > 0)
+        Ok(!removed.is_empty())
     }
 }
 

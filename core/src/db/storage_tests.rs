@@ -1361,93 +1361,426 @@ mod history {
         assert_eq!(history_len(&storage, dangling_prompt).await, 2);
     }
 
-    // ---- rollback ----
+    mod cleanup {
+        use super::*;
 
-    #[tokio::test]
-    async fn rollback_drops_items_after_last_completed_message() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000b0");
-        seed_session(
-            &storage,
-            id,
-            &[
-                user(),
-                assistant_message(),
-                user(),
-                reasoning(),
-                function_call(),
-            ],
-        )
-        .await;
+        const REASON: &str = "cancelled by user";
 
-        let removed = storage
-            .rollback_session_history(&id.to_string())
-            .await
-            .unwrap();
+        async fn cleanup(storage: &Storage, id: Uuid) -> bool {
+            storage
+                .cleanup_session_history(&id.to_string(), REASON)
+                .await
+                .unwrap()
+        }
 
-        assert!(!removed);
-        let history = storage.get_history(&id.to_string()).await.unwrap();
-        assert_eq!(history.len(), 2);
-        assert!(matches!(
-            history.last().unwrap().payload,
-            ConversationItem {
-                item: Some(Item::Message(_))
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn rollback_empties_session_without_completed_message() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let id = uuid("019e1234-5678-7000-8000-0000000000b2");
-        seed_session(&storage, id, &[user(), reasoning()]).await;
-
-        let removed = storage
-            .rollback_session_history(&id.to_string())
-            .await
-            .unwrap();
-
-        assert!(removed);
-        assert!(
+        async fn session_exists(storage: &Storage, id: Uuid) -> bool {
             storage
                 .all_sessions()
                 .await
                 .unwrap()
                 .iter()
-                .all(|s| s.session_id != id.to_string())
-        );
-        assert_eq!(history_len(&storage, id).await, 0);
-    }
+                .any(|s| s.session_id == id.to_string())
+        }
 
-    #[tokio::test]
-    async fn rollback_only_affects_target_session() {
-        let storage = fresh_storage().await;
-        seed_provider(&storage).await;
-        let target = uuid("019e1234-5678-7000-8000-0000000000b3");
-        let other = uuid("019e1234-5678-7000-8000-0000000000b4");
-        seed_session(
-            &storage,
-            target,
-            &[user(), assistant_message(), user(), reasoning()],
-        )
-        .await;
-        seed_session(
-            &storage,
-            other,
-            &[user(), assistant_message(), user(), reasoning()],
-        )
-        .await;
+        fn tool_results(history: &[HistoryEntry]) -> Vec<&v1::ToolResult> {
+            history
+                .iter()
+                .filter_map(|entry| match &entry.payload.item {
+                    Some(Item::ToolResult(result)) => Some(result),
+                    _ => None,
+                })
+                .collect()
+        }
 
-        let removed = storage
-            .rollback_session_history(&target.to_string())
-            .await
-            .unwrap();
+        #[tokio::test]
+        async fn prompt_only_turn_removes_turn_and_session() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user()]).await;
 
-        assert!(!removed);
-        assert_eq!(history_len(&storage, target).await, 2);
-        assert_eq!(history_len(&storage, other).await, 4);
+            assert!(cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 0);
+            assert!(!session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn prompt_with_reasoning_only_removes_turn_and_session() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), reasoning()]).await;
+
+            assert!(cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 0);
+            assert!(!session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn prompt_only_second_turn_drops_just_that_prompt() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), assistant_message(), user()]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 2);
+            assert!(matches!(
+                history.last().unwrap().payload,
+                ConversationItem {
+                    item: Some(Item::Message(_))
+                }
+            ));
+            assert!(session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn unanswered_tool_call_gets_a_result_with_the_reason() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[user(), reasoning(), function_call_with("c1")],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 4);
+            let results = tool_results(&history);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].call_id, "c1");
+            assert_eq!(results[0].name, "example_tool");
+            assert_eq!(results[0].output, REASON);
+            assert_eq!(history[3].provider_backend_id, *CODEX);
+        }
+
+        #[tokio::test]
+        async fn answered_tool_calls_are_left_alone() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    function_call_with("c2"),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 5);
+            let results = tool_results(&history);
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].call_id, "c1");
+            assert_eq!(results[0].output, "ok");
+            assert_eq!(results[1].call_id, "c2");
+            assert_eq!(results[1].output, REASON);
+        }
+
+        #[tokio::test]
+        async fn completed_turn_is_unchanged() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), assistant_message()]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 2);
+            assert!(session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn only_the_latest_turn_is_scanned() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    function_call_with("c1"),
+                    assistant_message(),
+                    user(),
+                    function_call_with("c2"),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 6);
+            let results = tool_results(&history);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].call_id, "c2");
+        }
+
+        #[tokio::test]
+        async fn only_affects_target_session() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let target = Uuid::now_v7();
+            let other = Uuid::now_v7();
+            seed_session(&storage, target, &[user(), reasoning(), function_call()]).await;
+            seed_session(&storage, other, &[user(), reasoning(), function_call()]).await;
+
+            assert!(!cleanup(&storage, target).await);
+            assert_eq!(history_len(&storage, target).await, 4);
+            assert_eq!(history_len(&storage, other).await, 3);
+            assert!(session_exists(&storage, other).await);
+        }
+
+        #[tokio::test]
+        async fn session_without_a_prompt_is_untouched() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[assistant_message()]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 1);
+            assert!(session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn restore_history_marks_the_closed_call_finished() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), function_call_with("c1")]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            let entries = storage.restore_history(&id.to_string()).await.unwrap();
+            assert_eq!(entries.len(), 2);
+            assert!(matches!(
+                entries[1].payload,
+                ConversationItem {
+                    item: Some(Item::ToolCall(_))
+                }
+            ));
+            assert!(entries[1].finished);
+        }
+
+        #[tokio::test]
+        async fn cancel_result_copies_provider_from_its_tool_call() {
+            let storage = fresh_storage().await;
+            seed_provider_id(&storage, &CODEX).await;
+            seed_provider_id(&storage, &ANTHROPIC).await;
+            let id = Uuid::now_v7();
+            storage.create_new_session(id, "s").await.unwrap();
+            storage
+                .insert_history(&id.to_string(), &CODEX, &user())
+                .await
+                .unwrap();
+            storage
+                .insert_history(&id.to_string(), &ANTHROPIC, &function_call_with("c1"))
+                .await
+                .unwrap();
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 3);
+            assert_eq!(history[2].provider_backend_id, *ANTHROPIC);
+            assert_eq!(tool_results(&history)[0].call_id, "c1");
+        }
+
+        #[tokio::test]
+        async fn parallel_calls_only_the_unanswered_ones_get_results() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    function_call_with("c1"),
+                    function_call_with("c2"),
+                    function_call_with("c3"),
+                    tool_result_with("c1"),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 7);
+            let results = tool_results(&history);
+            assert_eq!(results.len(), 3);
+            assert_eq!(results[0].call_id, "c1");
+            assert_eq!(results[0].output, "ok");
+            let mut closed: Vec<&str> = results[1..]
+                .iter()
+                .map(|result| result.call_id.as_str())
+                .collect();
+            closed.sort_unstable();
+            assert_eq!(closed, ["c2", "c3"]);
+            assert!(results[1..].iter().all(|result| result.output == REASON));
+        }
+
+        #[tokio::test]
+        async fn running_cleanup_twice_adds_nothing() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), function_call_with("c1")]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 3);
+
+            assert!(!cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 3);
+        }
+
+        #[tokio::test]
+        async fn turn_with_hosted_tool_is_kept() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[user(), hosted_tool()]).await;
+
+            assert!(!cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 2);
+            assert!(session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn trailing_reasoning_is_dropped_from_a_kept_turn() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    reasoning(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    reasoning(),
+                    reasoning(),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 4);
+            assert!(matches!(
+                history[1].payload,
+                ConversationItem {
+                    item: Some(Item::Reasoning(_))
+                }
+            ));
+            assert!(matches!(
+                history[3].payload,
+                ConversationItem {
+                    item: Some(Item::ToolResult(_))
+                }
+            ));
+            assert_eq!(tool_results(&history).len(), 1);
+        }
+
+        #[tokio::test]
+        async fn trailing_reasoning_of_an_earlier_turn_is_left_alone() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    assistant_message(),
+                    reasoning(),
+                    user(),
+                    function_call_with("c1"),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 6);
+            assert!(matches!(
+                history[2].payload,
+                ConversationItem {
+                    item: Some(Item::Reasoning(_))
+                }
+            ));
+        }
+
+        #[tokio::test]
+        async fn trailing_reasoning_is_dropped_and_the_open_call_is_closed() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[user(), reasoning(), function_call_with("c1"), reasoning()],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 4);
+            assert!(matches!(
+                history[1].payload,
+                ConversationItem {
+                    item: Some(Item::Reasoning(_))
+                }
+            ));
+            assert!(matches!(
+                history[2].payload,
+                ConversationItem {
+                    item: Some(Item::ToolCall(_))
+                }
+            ));
+            let results = tool_results(&history);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].call_id, "c1");
+            assert_eq!(results[0].output, REASON);
+        }
+
+        #[tokio::test]
+        async fn second_turn_with_only_reasoning_is_dropped_and_session_kept() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    user(),
+                    reasoning(),
+                    assistant_message(),
+                    user(),
+                    reasoning(),
+                ],
+            )
+            .await;
+
+            assert!(!cleanup(&storage, id).await);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 3);
+            assert!(matches!(
+                history[2].payload,
+                ConversationItem {
+                    item: Some(Item::Message(_))
+                }
+            ));
+            assert!(session_exists(&storage, id).await);
+        }
     }
 }
 

@@ -19,6 +19,10 @@ use crate::{
     utils::Gated,
 };
 
+const USER_CANCEL_REASON: &str = "Tool call cancelled by user.";
+
+const TURN_ERROR_REASON: &str = "Tool call interrupted before a result was produced.";
+
 #[derive(Clone, Debug)]
 pub struct SessionListItem {
     pub session_id: Uuid,
@@ -275,10 +279,11 @@ impl SessionManager {
             }
         }
 
-        // a failed turn left partial items; roll the session back to its last
-        // completed message so the next request starts from a valid state.
+        // a failed turn left partial items,
+        // cleanup the session for canceled tool calls
+        // so the next request starts from a valid state.
         if errored {
-            self.rollback_session(session_id).await?;
+            self.cancel_session(session_id, TURN_ERROR_REASON).await?;
         }
 
         Ok(())
@@ -305,18 +310,18 @@ impl SessionManager {
             if let Some(subscriber) = session.subscriber.take() {
                 let _ = subscriber.send(RenderEvent::Cancel);
             }
-            self.rollback_session(session_id).await?;
+            self.cancel_session(session_id, USER_CANCEL_REASON).await?;
         }
         Ok(())
     }
 
-    /// rollback current session history due to error or cancel
+    /// cancel current session history due to error or cancel
     /// if it is the first prompt of the session triggered, we delete the session from db
     /// then cleanup the in-memory cache for session and permission.
-    async fn rollback_session(&mut self, session_id: Uuid) -> Result<()> {
+    async fn cancel_session(&mut self, session_id: Uuid, cancel_reason: &str) -> Result<()> {
         if self
             .storage
-            .rollback_session_history(&session_id.to_string())
+            .cleanup_session_history(&session_id.to_string(), cancel_reason)
             .await?
         {
             self.sessions.remove(&session_id);
