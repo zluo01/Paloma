@@ -14,8 +14,11 @@ use log::{error, warn};
 use paloma_utils::{Element, attempt_with_retry};
 use rmcp::{
     RoleClient, ServiceExt,
-    model::{CallToolRequest, CallToolRequestParams, ClientRequest, ServerResult, Tool},
-    service::{PeerRequestOptions, RunningService, ServiceError},
+    model::{
+        CallToolRequest, CallToolRequestParams, CancelledNotification, CancelledNotificationParam,
+        ClientNotification, ClientRequest, RequestId, ServerResult, Tool,
+    },
+    service::{Peer, PeerRequestOptions, RunningService, ServiceError},
     transport::{
         AuthClient, AuthError, AuthorizationManager, StreamableHttpClientTransport,
         TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -27,7 +30,6 @@ use tokio::{
     process::Command,
     time::timeout,
 };
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
@@ -38,6 +40,8 @@ use crate::{
 };
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+const CANCEL_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct McpPluginInfo {
@@ -55,6 +59,49 @@ pub struct McpPlugin {
     client: Option<RunningService<RoleClient, ()>>,
     status: AtomicU8,
     error: Option<String>,
+}
+
+struct CancellableRequest {
+    id: RequestId,
+    peer: Peer<RoleClient>,
+    done: bool,
+}
+
+impl CancellableRequest {
+    fn finish(mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for CancellableRequest {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        // unlikely to happen, safeguard to make sure current thread runtime is still within tokio,
+        // otherwise, direct spawn will panic
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            let thread = std::thread::current();
+            warn!(
+                "Current thread {:?} ({:?}) runtime is not tokio. This indicates a bug.",
+                thread.name(),
+                thread.id()
+            );
+            return;
+        };
+        let peer = self.peer.clone();
+        let notification = CancelledNotification::new(CancelledNotificationParam::new(
+            Some(self.id.clone()),
+            Some("session cancelled".into()),
+        ));
+        runtime.spawn(async move {
+            let _ = timeout(
+                CANCEL_TIMEOUT,
+                peer.send_notification(ClientNotification::CancelledNotification(notification)),
+            )
+            .await;
+        });
+    }
 }
 
 impl McpPlugin {
@@ -189,7 +236,6 @@ impl McpPlugin {
     pub async fn call(
         &self,
         tool_name: String, // mcp tool name
-        cancel: CancellationToken,
         call_id: String,
         args: Value,
     ) -> Result<ToolResult> {
@@ -212,9 +258,8 @@ impl McpPlugin {
                 || {
                     let params = CallToolRequestParams::new(tool_name.clone())
                         .with_arguments(arguments.clone());
-                    let cancel = cancel.clone();
                     async move {
-                        let mut handle = client
+                        let handle = client
                             .send_cancellable_request(
                                 ClientRequest::CallToolRequest(CallToolRequest::new(params)),
                                 PeerRequestOptions::no_options(),
@@ -222,22 +267,20 @@ impl McpPlugin {
                             .await
                             .map_err(McpPluginError::Service)?;
 
-                        tokio::select! {
-                            result = &mut handle.rx => {
-                                let response = result
-                                    .unwrap_or(Err(ServiceError::TransportClosed))
-                                    .map_err(McpPluginError::Service)?;
-                                match response {
-                                    ServerResult::CallToolResult(result) => Ok(result),
-                                    _ => Err(McpPluginError::Service(
-                                        ServiceError::UnexpectedResponse,
-                                    )),
-                                }
-                            },
-                            _ = cancel.cancelled() => {
-                                let _ = handle.cancel(Some("session cancelled".into())).await;
-                                Err(McpPluginError::Cancelled)
-                            },
+                        let request = CancellableRequest {
+                            id: handle.id.clone(),
+                            peer: handle.peer.clone(),
+                            done: false,
+                        };
+                        let result = handle.rx.await;
+                        request.finish();
+
+                        let response = result
+                            .unwrap_or(Err(ServiceError::TransportClosed))
+                            .map_err(McpPluginError::Service)?;
+                        match response {
+                            ServerResult::CallToolResult(result) => Ok(result),
+                            _ => Err(McpPluginError::Service(ServiceError::UnexpectedResponse)),
                         }
                     }
                 },
@@ -439,7 +482,7 @@ pub enum McpPluginError {
     InitTimeout(u64),
 
     #[error("MCP request failed: {0}")]
-    Service(#[from] rmcp::service::ServiceError),
+    Service(#[from] ServiceError),
 
     #[error("MCP authorization failed: {0}")]
     Auth(#[from] AuthError),
@@ -449,9 +492,6 @@ pub enum McpPluginError {
 
     #[error("mcp tool `{tool}` timed out after {seconds}s")]
     CallTimeout { tool: String, seconds: u32 },
-
-    #[error("mcp tool call was cancelled")]
-    Cancelled,
 
     #[error("fail to list tools, timed out after {0}s")]
     ListToolsTimeout(u32),

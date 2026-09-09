@@ -370,7 +370,7 @@ impl ExtensionController {
             .await;
         for result in results {
             if let Err(e) = result {
-                warn!("failed to cancel extension tool session {session_id}: {e}");
+                warn!("failed to cancel extension tool for session {session_id}: {e}");
             }
         }
     }

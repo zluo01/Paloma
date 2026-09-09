@@ -108,7 +108,7 @@ impl ToolController {
                 .map_err(|err| err.to_string())
         } else {
             self.mcp_controller
-                .call(call.name.clone(), session_id, call_id.clone(), args)
+                .call(call.name.clone(), call_id.clone(), args)
                 .await
                 .map_err(|err| err.to_string())
         };
@@ -142,7 +142,6 @@ impl ToolController {
     }
 
     pub async fn cancel_session(&self, session_id: Uuid) {
-        self.mcp_controller.cancel(session_id);
         self.extension_controller.cancel(session_id).await;
     }
 }
