@@ -1523,7 +1523,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn prompt_only_turn_removes_turn_and_session() {
+        async fn given_a_prompt_only_turn_when_cleaning_up_should_remove_turn_and_session() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1535,7 +1535,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn prompt_with_reasoning_only_removes_turn_and_session() {
+        async fn given_a_prompt_with_only_reasoning_when_cleaning_up_should_remove_turn_and_session()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1547,7 +1548,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn prompt_only_second_turn_drops_just_that_prompt() {
+        async fn given_a_prompt_only_second_turn_when_cleaning_up_should_drop_just_that_prompt() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1566,7 +1567,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn unanswered_tool_call_gets_a_result_with_the_reason() {
+        async fn given_an_unanswered_tool_call_when_cleaning_up_should_add_a_result_with_the_reason()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1589,7 +1591,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn answered_tool_calls_are_left_alone() {
+        async fn given_answered_tool_calls_when_cleaning_up_should_leave_them_alone() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1617,7 +1619,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn completed_turn_is_unchanged() {
+        async fn given_a_completed_turn_when_cleaning_up_should_change_nothing() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1629,7 +1631,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn only_the_latest_turn_is_scanned() {
+        async fn given_an_open_call_in_an_earlier_turn_when_cleaning_up_should_only_touch_the_latest_turn()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1655,7 +1658,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn only_affects_target_session() {
+        async fn given_another_broken_session_when_cleaning_up_should_only_touch_the_target_session()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let target = Uuid::now_v7();
@@ -1670,7 +1674,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn session_without_a_prompt_is_untouched() {
+        async fn given_a_session_without_a_prompt_when_cleaning_up_should_change_nothing() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1682,7 +1686,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn restore_history_marks_the_closed_call_finished() {
+        async fn given_a_closed_call_when_restoring_history_should_mark_it_finished() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1701,7 +1705,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn cancel_result_copies_provider_from_its_tool_call() {
+        async fn given_a_call_from_another_provider_when_cleaning_up_should_copy_its_provider_to_the_result()
+         {
             let storage = fresh_storage().await;
             seed_provider_id(&storage, &CODEX).await;
             seed_provider_id(&storage, &ANTHROPIC).await;
@@ -1724,7 +1729,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn parallel_calls_only_the_unanswered_ones_get_results() {
+        async fn given_parallel_calls_when_cleaning_up_should_only_close_the_unanswered_ones() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1758,7 +1763,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn running_cleanup_twice_adds_nothing() {
+        async fn given_an_already_cleaned_turn_when_cleaning_up_again_should_add_nothing() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1772,7 +1777,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn turn_with_hosted_tool_is_kept() {
+        async fn given_a_hosted_tool_turn_when_cleaning_up_should_keep_it() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1784,7 +1789,7 @@ mod history {
         }
 
         #[tokio::test]
-        async fn trailing_reasoning_is_dropped_from_a_kept_turn() {
+        async fn given_trailing_reasoning_in_a_kept_turn_when_cleaning_up_should_drop_it() {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1821,7 +1826,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn trailing_reasoning_of_an_earlier_turn_is_left_alone() {
+        async fn given_trailing_reasoning_in_an_earlier_turn_when_cleaning_up_should_leave_it_alone()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1850,7 +1856,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn trailing_reasoning_is_dropped_and_the_open_call_is_closed() {
+        async fn given_trailing_reasoning_after_an_open_call_when_cleaning_up_should_drop_it_and_close_the_call()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
@@ -1883,7 +1890,8 @@ mod history {
         }
 
         #[tokio::test]
-        async fn second_turn_with_only_reasoning_is_dropped_and_session_kept() {
+        async fn given_a_second_turn_with_only_reasoning_when_cleaning_up_should_drop_it_and_keep_the_session()
+         {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
