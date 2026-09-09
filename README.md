@@ -94,6 +94,7 @@ Paloma provides these optional plugins as separate downloads:
 
 | Plugin | Type | What it adds | Installation |
 | --- | --- | --- | --- |
+| Amazon Bedrock | Provider | Adds foundation models through the Bedrock Converse API. Supports a long-term Bedrock API key or locally configured AWS credentials. | [Install Amazon Bedrock](plugins/providers/bedrock/README.md#installation) |
 | DeepSeek | Provider | Adds DeepSeek models through the official API. A DeepSeek API key is required. | [Install DeepSeek](plugins/providers/deepseek/README.md#installation) |
 | WebFetch | Extension | Lets models read public web pages as markdown, plain text, or raw HTML. Useful for models without built-in web search, such as DeepSeek. | [Install WebFetch](plugins/extensions/webfetch/README.md#installation) |
 
