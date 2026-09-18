@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     ChatRenderEvent, RenderEvent,
     controller::{PermissionWorkflowError, PermissionWorkflowManagerClient},
-    entity::ProviderBackendId,
+    entity::{ProviderBackendId, UserPromptAttachment},
     permission::{PermissionState, UserDecision},
     provider::ProviderControllerError,
     session::{
@@ -52,13 +52,19 @@ impl RemoteQuery {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     ) -> ChatRenderStream {
         match self
-            .start_chat_stream(session_id, provider_backend_id, prompt.clone())
+            .start_chat_stream(
+                session_id,
+                provider_backend_id,
+                prompt.clone(),
+                attachments.clone(),
+            )
             .await
         {
             Ok(stream) => stream,
-            Err(error) => self.chat_stream_error(&prompt, error).await,
+            Err(error) => self.chat_stream_error(&prompt, attachments, error).await,
         }
     }
 
@@ -67,6 +73,7 @@ impl RemoteQuery {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     ) -> std::result::Result<ChatRenderStream, ChatStreamError> {
         let (session_id, is_new_session) = self
             .session_manager_client
@@ -85,7 +92,7 @@ impl RemoteQuery {
                 .await?;
 
             self.turn_manager_client
-                .start_chat(session_id, provider_backend_id, prompt)
+                .start_chat(session_id, provider_backend_id, prompt, attachments)
                 .await?;
 
             Ok::<_, RemoteQueryError>(rx)
@@ -103,7 +110,12 @@ impl RemoteQuery {
         })
     }
 
-    async fn chat_stream_error(&self, prompt: &str, error: ChatStreamError) -> ChatRenderStream {
+    async fn chat_stream_error(
+        &self,
+        prompt: &str,
+        attachments: Vec<UserPromptAttachment>,
+        error: ChatStreamError,
+    ) -> ChatRenderStream {
         let ChatStreamError {
             session_id,
             is_new_session,
@@ -128,6 +140,7 @@ impl RemoteQuery {
             stream: stream::iter([
                 RenderEvent::Chat(ChatRenderEvent::UserPrompt {
                     text: prompt.to_string(),
+                    attachments,
                 }),
                 RenderEvent::Error {
                     message: CHAT_START_ERROR_MESSAGE.to_string(),

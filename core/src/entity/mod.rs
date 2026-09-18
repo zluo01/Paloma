@@ -1,7 +1,11 @@
 use std::{collections::HashMap, fmt};
 
+use base64::prelude::*;
 use paloma_extension_protocol::v1::Item;
-use paloma_provider_protocol::v1::{ProviderHealthStatus, ToolDefinition};
+use paloma_provider_protocol::v1::{
+    ProviderHealthStatus, ToolDefinition, UserPromptContent, UserPromptImage,
+    user_prompt_content::Item as ContentItem,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -232,6 +236,7 @@ pub struct QueryResponse {
 pub enum ChatRenderEvent {
     UserPrompt {
         text: String,
+        attachments: Vec<UserPromptAttachment>,
     },
     TextDelta {
         provider_backend_id: ProviderBackendId,
@@ -246,4 +251,55 @@ pub enum ChatRenderEvent {
         description: Option<String>,
         decisions: Vec<UserDecision>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum UserPromptAttachment {
+    Image {
+        id: u32,
+        media_type: String,
+        data: Vec<u8>,
+    },
+}
+
+impl From<UserPromptAttachment> for UserPromptContent {
+    fn from(content: UserPromptAttachment) -> Self {
+        match content {
+            UserPromptAttachment::Image {
+                id,
+                media_type,
+                data,
+            } => Self {
+                item: Some(ContentItem::Image(UserPromptImage {
+                    id,
+                    media_type,
+                    data: BASE64_STANDARD.encode(data),
+                })),
+            },
+        }
+    }
+}
+
+impl TryFrom<&UserPromptContent> for UserPromptAttachment {
+    type Error = UserPromptAttachmentError;
+
+    fn try_from(content: &UserPromptContent) -> Result<Self, Self::Error> {
+        match &content.item {
+            Some(ContentItem::Image(image)) => Ok(Self::Image {
+                id: image.id,
+                media_type: image.media_type.clone(),
+                data: BASE64_STANDARD.decode(&image.data)?,
+            }),
+            None => Err(UserPromptAttachmentError::Empty),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UserPromptAttachmentError {
+    #[error("attachment has no content")]
+    Empty,
+
+    #[error("attachment data is not valid base64: {0}")]
+    Base64(#[from] base64::DecodeError),
 }

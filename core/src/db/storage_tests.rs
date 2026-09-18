@@ -600,6 +600,7 @@ mod sessions {
                 &ConversationItem {
                     item: Some(Item::UserPrompt(v1::UserPrompt {
                         prompt: "deploy the staging cluster".into(),
+                        content: vec![],
                     })),
                 },
             )
@@ -628,6 +629,7 @@ mod sessions {
                 &ConversationItem {
                     item: Some(Item::UserPrompt(v1::UserPrompt {
                         prompt: "something else".into(),
+                        content: vec![],
                     })),
                 },
             )
@@ -735,6 +737,7 @@ mod sessions {
                 &ConversationItem {
                     item: Some(Item::UserPrompt(v1::UserPrompt {
                         prompt: "hello".into(),
+                        content: vec![],
                     })),
                 },
             )
@@ -1144,6 +1147,7 @@ mod history {
         ConversationItem {
             item: Some(Item::UserPrompt(v1::UserPrompt {
                 prompt: "example prompt".to_string(),
+                content: vec![],
             })),
         }
     }

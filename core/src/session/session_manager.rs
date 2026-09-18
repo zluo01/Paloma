@@ -15,7 +15,7 @@ use crate::{
     constants::SESSION_MANAGER_CHANNEL_CAPACITY,
     controller::{PermissionWorkflowError, PermissionWorkflowManagerClient, ToolController},
     db::{Session as StorageSession, Storage, StorageError, TURN_ERROR_REASON, USER_CANCEL_REASON},
-    entity::{ChatRenderEvent, ProviderBackendId, RenderEvent},
+    entity::{ChatRenderEvent, ProviderBackendId, RenderEvent, UserPromptAttachment},
     utils::Gated,
 };
 
@@ -63,7 +63,7 @@ enum SessionStreamingEvent {
 
 #[derive(Debug)]
 pub enum SessionEvent {
-    UserPrompt(String),
+    UserPrompt(UserPrompt),
     Chat(chat_response::Payload),
     Err(String),
 }
@@ -237,9 +237,7 @@ impl SessionManager {
 
         let entry = match &payload {
             SessionEvent::UserPrompt(prompt) => Some(ConversationItem {
-                item: Some(Item::UserPrompt(UserPrompt {
-                    prompt: prompt.clone(),
-                })),
+                item: Some(Item::UserPrompt(prompt.clone())),
             }),
             SessionEvent::Chat(chat_response::Payload::OutputItem(item)) => Some(item.clone()),
             SessionEvent::Chat(_) | SessionEvent::Err(_) => None,
@@ -345,7 +343,7 @@ impl SessionManager {
             .await?
         {
             let render = match entry.payload.item {
-                Some(Item::UserPrompt(UserPrompt { prompt })) => {
+                Some(Item::UserPrompt(prompt)) => {
                     match SessionEvent::UserPrompt(prompt)
                         .to_render_event(
                             &self.permission_workflow_client,
@@ -481,7 +479,18 @@ impl SessionEvent {
             },
             SessionEvent::UserPrompt(prompt) => {
                 Some(RenderEvent::Chat(ChatRenderEvent::UserPrompt {
-                    text: prompt.clone(),
+                    text: prompt.prompt.clone(),
+                    attachments: prompt
+                        .content
+                        .iter()
+                        .filter_map(|content| match UserPromptAttachment::try_from(content) {
+                            Ok(attachment) => Some(attachment),
+                            Err(e) => {
+                                error!("invalid prompt content {e}");
+                                None
+                            },
+                        })
+                        .collect(),
                 }))
             },
             SessionEvent::Chat(chat_response::Payload::OutputItem(item)) => match &item.item {
@@ -843,7 +852,10 @@ mod tests {
 
     fn running_session() -> Session {
         let mut session = Session::default();
-        session.update(SessionEvent::UserPrompt("prompt".into()));
+        session.update(SessionEvent::UserPrompt(UserPrompt {
+            prompt: "prompt".into(),
+            content: vec![],
+        }));
         session
     }
 

@@ -60,6 +60,7 @@ pub use utils::OAuthCallbackState;
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
     controller::ChatRenderStream,
+    entity::UserPromptAttachment,
     mcp::{McpController, McpControllerError},
 };
 
@@ -177,9 +178,10 @@ impl AppContext {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     ) -> ChatRenderStream {
         self.remote_query
-            .chat(session_id, provider_backend_id, prompt)
+            .chat(session_id, provider_backend_id, prompt, attachments)
             .await
     }
 

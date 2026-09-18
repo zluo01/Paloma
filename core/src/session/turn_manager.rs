@@ -18,7 +18,7 @@ use crate::{
     constants::{INSTRUCTION, TURN_MANAGER_CHANNEL_CAPACITY},
     controller::{PermissionWorkflowManagerClient, ToolCallPayload, ToolController},
     db::{Storage, StorageError},
-    entity::ProviderBackendId,
+    entity::{ProviderBackendId, UserPromptAttachment},
     provider::{ChatStream, ProviderController, ProviderControllerError},
     session::{SessionEvent, SessionManagerClient, SessionManagerError},
 };
@@ -52,6 +52,7 @@ enum TurnStepEvent {
         session_id: Uuid,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        content: Vec<UserPromptAttachment>,
         reply: oneshot::Sender<Result<()>>,
     },
     /// Self calling intermediate state, should never be called outside
@@ -112,9 +113,10 @@ impl TurnManager {
                 provider_backend_id,
                 session_id,
                 prompt,
+                content,
                 reply,
             } => {
-                self.start_chat(provider_backend_id, session_id, prompt, reply)
+                self.start_chat(provider_backend_id, session_id, prompt, content, reply)
                     .await;
             },
             TurnStepEvent::ToolCall {
@@ -141,6 +143,7 @@ impl TurnManager {
         provider_backend_id: ProviderBackendId,
         session_id: Uuid,
         prompt: String,
+        content: Vec<UserPromptAttachment>,
         reply: oneshot::Sender<Result<()>>,
     ) {
         let provider_controller = self.provider_controller.clone();
@@ -161,6 +164,7 @@ impl TurnManager {
                     provider_backend_id.clone(),
                     session_id,
                     Some(prompt),
+                    content,
                 )
                 .await?;
                 Ok::<_, TurnManagerError>((messages, config))
@@ -289,6 +293,7 @@ impl TurnManager {
                     provider_backend_id.clone(),
                     session_id,
                     None,
+                    vec![],
                 )
                 .await?;
 
@@ -439,6 +444,7 @@ async fn construct_messages(
     provider_backend_id: ProviderBackendId,
     session_id: Uuid,
     prompt: Option<String>,
+    content: Vec<UserPromptAttachment>,
 ) -> Result<Vec<ChatRequestMessage>> {
     let mut messages: Vec<ChatRequestMessage> = storage
         .get_history(&session_id.to_string())
@@ -452,6 +458,10 @@ async fn construct_messages(
         .collect();
 
     if let Some(prompt) = prompt {
+        let prompt = UserPrompt {
+            prompt,
+            content: content.into_iter().map(Into::into).collect(),
+        };
         session_client
             .add_event(
                 session_id,
@@ -464,7 +474,7 @@ async fn construct_messages(
             provider_id: provider_backend_id.provider_id,
             backend_id: provider_backend_id.backend_id,
             item: Some(ConversationItem {
-                item: Some(Item::UserPrompt(UserPrompt { prompt })),
+                item: Some(Item::UserPrompt(prompt)),
             }),
         });
     }
@@ -563,6 +573,7 @@ impl TurnManagerClient {
         session_id: Uuid,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        content: Vec<UserPromptAttachment>,
     ) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.event_tx
@@ -570,6 +581,7 @@ impl TurnManagerClient {
                 session_id,
                 provider_backend_id,
                 prompt,
+                content,
                 reply: reply_tx,
             })
             .await

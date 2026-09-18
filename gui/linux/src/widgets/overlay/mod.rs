@@ -499,7 +499,7 @@ impl Overlay {
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let mut chat_render_stream = app_context
-                .chat(session_id, provider_backend_id, prompt)
+                .chat(session_id, provider_backend_id, prompt, vec![])
                 .await;
             let session_id = chat_render_stream.session_id;
             let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::RequestStarted {
@@ -524,7 +524,7 @@ impl Overlay {
 
     fn render_chat_event(&self, event: RenderEvent) {
         match event {
-            RenderEvent::Chat(ChatRenderEvent::UserPrompt { text }) => {
+            RenderEvent::Chat(ChatRenderEvent::UserPrompt { text, .. }) => {
                 self.chat.append_user_prompt(&text);
             },
             RenderEvent::Chat(ChatRenderEvent::TextDelta {
