@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use paloma_provider_protocol::v1::{
-    ConversationItem, EncodeMode, MessageContentItem, SummaryItem, conversation_item::Item,
+    ConversationItem, EncodeMode, MessageContentItem, SummaryItem, UserPrompt,
+    conversation_item::Item,
 };
 use serde_json::Value;
 
@@ -16,7 +17,7 @@ pub trait ProviderEncoder: Send + Sync {
         encode_mode: EncodeMode,
     ) -> Option<Value> {
         match item.item.as_ref()? {
-            Item::UserPrompt(prompt) => Some(self.encode_user_prompt(&prompt.prompt)),
+            Item::UserPrompt(prompt) => Some(self.encode_user_prompt(prompt)),
             Item::Message(message) => {
                 Some(self.encode_message(&message.message, &message.provider_meta, encode_mode))
             },
@@ -45,7 +46,7 @@ pub trait ProviderEncoder: Send + Sync {
 
     fn encode_env_context(&self, envs: &BTreeMap<&'static str, String>) -> Value;
 
-    fn encode_user_prompt(&self, prompt: &str) -> Value;
+    fn encode_user_prompt(&self, prompt: &UserPrompt) -> Value;
 
     fn encode_message(
         &self,

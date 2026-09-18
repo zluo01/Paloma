@@ -470,6 +470,15 @@ fn parse_model_response(data: Value) -> Vec<Model> {
                 return None;
             }
 
+            // filter all models do not support image
+            if !item
+                .pointer("/capabilities/image_input/supported")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                return None;
+            }
+
             // filter all models do not support adaptive thinking
             if !item
                 .pointer("/capabilities/thinking/types/adaptive/supported")
@@ -1031,6 +1040,7 @@ mod parse_model_response_tests {
                     "id": "claude-test",
                     "display_name": "Claude Test",
                     "capabilities": {
+                        "image_input": { "supported": true },
                         "effort": {
                             "supported": true,
                             "low": { "supported": true },

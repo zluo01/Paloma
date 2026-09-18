@@ -18,11 +18,6 @@ use crate::{constant::PROVIDER_ID, runtime::codec::CodexCodec};
 pub(super) const MODELS_FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub(super) fn build_request_body(request: &ChatRequest, backend_id: String) -> Value {
-    // Wrap each backend-agnostic ToolSchema in the OpenAI Responses API
-    // function-tool envelope. `strict: false` matches Codex CLI's behaviour
-    // — strict mode requires the schema to be exhaustively closed (every
-    // object marks `additionalProperties: false`), which schemars-generated
-    // schemas don't guarantee.
     let mut tools: Vec<Value> = request
         .tools
         .iter()
@@ -47,14 +42,7 @@ pub(super) fn build_request_body(request: &ChatRequest, backend_id: String) -> V
         })
         .collect();
 
-    // Append the hosted `web_search` tool. The Responses API runs the
-    // search server-side (no shell/curl scraping needed) and emits the
-    // finalized call as a `web_search_call` item on the `output_item.done`
-    // SSE frame, which our generic `OutputItem` handler persists so later
-    // turns can reference the results. `external_web_access: true` selects
-    // the live (non-cached) variant — matches Codex CLI's
-    // `WebSearchMode::Live`. See
-    // <https://platform.openai.com/docs/guides/tools-web-search>.
+    // https://platform.openai.com/docs/guides/tools-web-search
     tools.push(serde_json::json!({
         "type": "web_search",
         "external_web_access": true,
@@ -317,6 +305,11 @@ pub(super) fn models_from_response(response: ModelsResponse) -> Vec<Model> {
         .models
         .into_iter()
         .filter(|m| m.supported_in_api && m.visibility == "list")
+        .filter(|m| {
+            m.input_modalities
+                .iter()
+                .any(|modality| modality == "image")
+        })
         .collect();
     // Higher priority first; tie-break alphabetically on slug.
     models.sort_by(|a, b| {
@@ -367,6 +360,8 @@ struct RawModel {
     default_reasoning_level: Option<String>,
     #[serde(default)]
     supported_reasoning_levels: Vec<RawReasoningEffortPreset>,
+    #[serde(default)]
+    input_modalities: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,8 +389,26 @@ mod models_from_response_tests {
               "visibility": "list",
               "supported_in_api": true,
               "priority": 1,
+              "input_modalities": ["text", "image"],
               "default_reasoning_level": "medium",
               "supported_reasoning_levels": []
+            }]}"#,
+        );
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn model_without_image_input_is_dropped() {
+        let parsed = models(
+            r#"{"models": [{
+              "slug": "text-only",
+              "display_name": "Text Only",
+              "visibility": "list",
+              "supported_in_api": true,
+              "priority": 1,
+              "input_modalities": ["text"],
+              "default_reasoning_level": "medium",
+              "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
             }]}"#,
         );
         assert!(parsed.is_empty());
@@ -410,6 +423,7 @@ mod models_from_response_tests {
               "visibility": "list",
               "supported_in_api": true,
               "priority": 1,
+              "input_modalities": ["text", "image"],
               "default_reasoning_level": "medium",
               "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
             }]}"#,
@@ -432,6 +446,7 @@ mod models_from_response_tests {
               "visibility": "list",
               "supported_in_api": true,
               "priority": 1,
+              "input_modalities": ["text", "image"],
               "default_reasoning_level": "high",
               "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
             }]}"#,

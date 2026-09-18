@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, Message, ReasoningContentBlock, ReasoningTextBlock,
-    SystemContentBlock, Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock,
-    ToolResultContentBlock, ToolSpecification, ToolUseBlock,
+    ContentBlock, ConversationRole, ImageBlock, ImageFormat, ImageSource, Message,
+    ReasoningContentBlock, ReasoningTextBlock, SystemContentBlock, Tool, ToolConfiguration,
+    ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolSpecification, ToolUseBlock,
 };
 use aws_smithy_types::{Blob, Document, Number, base64};
 use log::warn;
 use paloma_provider_base::{ENVIRONMENT_CONTEXT, ProviderError, Result, provider_meta_to_map};
-use paloma_provider_protocol::v1::{ChatRequest, conversation_item::Item};
+use paloma_provider_protocol::v1::{
+    ChatRequest, UserPrompt, conversation_item::Item, user_prompt_content::Item as ContentItem,
+};
 use paloma_utils::Element;
 use serde_json::Value;
 
@@ -81,13 +83,13 @@ pub(super) fn construct_messages(request: &ChatRequest) -> Result<Vec<Message>> 
         let Some(item) = message.item.as_ref().and_then(|i| i.item.as_ref()) else {
             continue;
         };
-        let Some((role, block)) = construct_content_block(item, same_provider)? else {
+        let Some((role, new_blocks)) = construct_content_block(item, same_provider)? else {
             continue;
         };
 
         match folded.last_mut() {
-            Some((last_role, blocks)) if *last_role == role => blocks.push(block),
-            _ => folded.push((role, vec![block])),
+            Some((last_role, blocks)) if *last_role == role => blocks.extend(new_blocks),
+            _ => folded.push((role, new_blocks)),
         }
     }
 
@@ -106,15 +108,17 @@ pub(super) fn construct_messages(request: &ChatRequest) -> Result<Vec<Message>> 
 fn construct_content_block(
     item: &Item,
     same_provider: bool,
-) -> Result<Option<(ConversationRole, ContentBlock)>> {
+) -> Result<Option<(ConversationRole, Vec<ContentBlock>)>> {
     let block = match item {
         Item::UserPrompt(prompt) => Some((
             ConversationRole::User,
-            ContentBlock::Text(prompt.prompt.clone()),
+            construct_user_prompt_blocks(prompt)?,
         )),
         Item::Message(message) => Some((
             ConversationRole::Assistant,
-            ContentBlock::Text(message.message.iter().map(|m| m.content.as_str()).collect()),
+            vec![ContentBlock::Text(
+                message.message.iter().map(|m| m.content.as_str()).collect(),
+            )],
         )),
         Item::Reasoning(reasoning) if same_provider => {
             let meta = provider_meta_to_map(&reasoning.provider_meta, true);
@@ -133,7 +137,7 @@ fn construct_content_block(
             })?);
             Some((
                 ConversationRole::Assistant,
-                ContentBlock::ReasoningContent(block),
+                vec![ContentBlock::ReasoningContent(block)],
             ))
         },
         Item::Unknown(unknown) if same_provider => {
@@ -146,9 +150,9 @@ fn construct_content_block(
             })?;
             Some((
                 ConversationRole::Assistant,
-                ContentBlock::ReasoningContent(ReasoningContentBlock::RedactedContent(Blob::new(
-                    bytes,
-                ))),
+                vec![ContentBlock::ReasoningContent(
+                    ReasoningContentBlock::RedactedContent(Blob::new(bytes)),
+                )],
             ))
         },
         Item::ToolCall(call) => {
@@ -165,7 +169,10 @@ fn construct_content_block(
                 .input(json_to_document(&input))
                 .build()
                 .map_err(|e| ProviderError::Other(format!("fail to build tool use block: {e}")))?;
-            Some((ConversationRole::Assistant, ContentBlock::ToolUse(block)))
+            Some((
+                ConversationRole::Assistant,
+                vec![ContentBlock::ToolUse(block)],
+            ))
         },
         Item::ToolResult(result) => {
             let block = ToolResultBlock::builder()
@@ -175,11 +182,43 @@ fn construct_content_block(
                 .map_err(|e| {
                     ProviderError::Other(format!("fail to build tool result block: {e}"))
                 })?;
-            Some((ConversationRole::User, ContentBlock::ToolResult(block)))
+            Some((
+                ConversationRole::User,
+                vec![ContentBlock::ToolResult(block)],
+            ))
         },
         Item::Reasoning(_) | Item::Unknown(_) | Item::HostedTool(_) => None,
     };
     Ok(block)
+}
+
+fn construct_user_prompt_blocks(prompt: &UserPrompt) -> Result<Vec<ContentBlock>> {
+    let mut blocks = Vec::with_capacity(prompt.content.len() + 1);
+
+    for item in &prompt.content {
+        match &item.item {
+            None => {},
+            Some(ContentItem::Image(image)) => {
+                let bytes = base64::decode(&image.data).map_err(|e| {
+                    ProviderError::Other(format!("malformed image data for {}: {e}", image.id))
+                })?;
+                let block = ImageBlock::builder()
+                    .format(ImageFormat::from(
+                        image
+                            .media_type
+                            .strip_prefix("image/")
+                            .unwrap_or(&image.media_type),
+                    ))
+                    .source(ImageSource::Bytes(Blob::new(bytes)))
+                    .build()
+                    .map_err(|e| ProviderError::Other(format!("fail to build image block: {e}")))?;
+                blocks.push(ContentBlock::Image(block));
+            },
+        }
+    }
+
+    blocks.push(ContentBlock::Text(prompt.prompt.clone()));
+    Ok(blocks)
 }
 
 pub(super) fn construct_tool_config(request: &ChatRequest) -> Result<Option<ToolConfiguration>> {
@@ -256,7 +295,8 @@ fn json_to_document(value: &Value) -> Document {
 mod tests {
     use paloma_provider_protocol::v1::{
         ChatRequestMessage, ConversationItem, ConversationMessage, MessageContentItem, Reasoning,
-        SummaryItem, ToolCall, ToolDefinition, ToolResult, Unknown, UserPrompt,
+        SummaryItem, ToolCall, ToolDefinition, ToolResult, Unknown, UserPrompt, UserPromptContent,
+        UserPromptImage,
     };
 
     use super::*;
@@ -285,8 +325,23 @@ mod tests {
     }
 
     fn user_prompt(prompt: &str) -> Item {
+        user_prompt_with_images(prompt, &[])
+    }
+
+    fn user_prompt_with_images(prompt: &str, images: &[(&str, &[u8])]) -> Item {
         Item::UserPrompt(UserPrompt {
             prompt: prompt.into(),
+            content: images
+                .iter()
+                .enumerate()
+                .map(|(i, (media_type, bytes))| UserPromptContent {
+                    item: Some(ContentItem::Image(UserPromptImage {
+                        id: (i + 1) as u32,
+                        media_type: (*media_type).into(),
+                        data: base64::encode(bytes),
+                    })),
+                })
+                .collect(),
         })
     }
 
@@ -394,6 +449,62 @@ mod tests {
 
     mod messages {
         use super::*;
+
+        #[test]
+        fn user_prompt_images_come_before_text_in_one_user_message() {
+            let mut request = request(ADAPTIVE_THINKING_MODEL, "high");
+            request.messages = vec![message(
+                PROVIDER_ID,
+                user_prompt_with_images(
+                    "compare [Image #1] with [Image #2]",
+                    &[("image/png", b"png-bytes"), ("image/jpeg", b"jpeg-bytes")],
+                ),
+            )];
+
+            let messages = construct_messages(&request).unwrap();
+
+            assert_eq!(messages.len(), 1);
+            assert_eq!(*messages[0].role(), ConversationRole::User);
+            let content = messages[0].content();
+            assert_eq!(content.len(), 3);
+
+            let png = content[0].as_image().unwrap();
+            assert_eq!(*png.format(), ImageFormat::Png);
+            assert_eq!(
+                png.source().unwrap().as_bytes().unwrap().as_ref(),
+                b"png-bytes"
+            );
+
+            let jpeg = content[1].as_image().unwrap();
+            assert_eq!(*jpeg.format(), ImageFormat::Jpeg);
+            assert_eq!(
+                jpeg.source().unwrap().as_bytes().unwrap().as_ref(),
+                b"jpeg-bytes"
+            );
+
+            assert_eq!(
+                content[2].as_text().unwrap(),
+                "compare [Image #1] with [Image #2]"
+            );
+        }
+
+        #[test]
+        fn user_prompt_with_unknown_image_type_is_passed_through_to_api() {
+            let mut request = request(ADAPTIVE_THINKING_MODEL, "high");
+            request.messages = vec![message(
+                PROVIDER_ID,
+                user_prompt_with_images("random", &[("image/random", b"random-bytes")]),
+            )];
+
+            let messages = construct_messages(&request).unwrap();
+
+            let image = messages[0].content()[0].as_image().unwrap();
+            assert_eq!(image.format().as_str(), "random");
+            assert_eq!(
+                image.source().unwrap().as_bytes().unwrap().as_ref(),
+                b"random-bytes"
+            );
+        }
 
         #[test]
         fn consecutive_assistant_items_become_one_message_and_tool_result_becomes_user_message() {

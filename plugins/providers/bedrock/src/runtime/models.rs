@@ -121,6 +121,7 @@ async fn models(
         })
         .filter(|summary| !summary.inference_types_supported().is_empty())
         .filter(|summary| summary.response_streaming_supported().unwrap_or(false))
+        .filter(|summary| summary.input_modalities().contains(&ModelModality::Image))
         .filter(|summary| {
             !CONVERSE_UNSUPPORTED
                 .iter()

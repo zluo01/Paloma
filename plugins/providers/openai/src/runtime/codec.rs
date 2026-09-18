@@ -7,7 +7,7 @@ use paloma_provider_base::{
 };
 use paloma_provider_protocol::v1::{
     ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
-    SummaryItem, ToolCall, conversation_item,
+    SummaryItem, ToolCall, UserPrompt, conversation_item, user_prompt_content::Item,
 };
 use paloma_utils::Element;
 use serde_json::Value;
@@ -23,17 +23,26 @@ impl ProviderEncoder for CodexCodec {
                 |element, (key, value)| element.child(Element::new(*key).plain_text(value)),
             )
             .to_string();
-        self.encode_user_prompt(&env_instruction)
+        user_message(&[input_text(&env_instruction)])
     }
 
-    fn encode_user_prompt(&self, prompt: &str) -> Value {
-        serde_json::json!({
-            "type": "message",
-            "role": "user",
-            "content": [
-                { "type": "input_text", "text": prompt }
-            ]
-        })
+    /// https://developers.openai.com/api/docs/guides/images-vision?api-mode=responses&format=base64-encoded#analyze-images
+    fn encode_user_prompt(&self, prompt: &UserPrompt) -> Value {
+        let mut content = vec![input_text(&prompt.prompt)];
+
+        for item in &prompt.content {
+            match &item.item {
+                None => {},
+                Some(Item::Image(image)) => {
+                    content.push(serde_json::json!({
+                        "type": "input_image",
+                        "image_url": format!("data:{};base64,{}", image.media_type, image.data),
+                    }));
+                },
+            }
+        }
+
+        user_message(&content)
     }
 
     fn encode_message(
@@ -182,6 +191,21 @@ impl ProviderEncoder for CodexCodec {
     ) -> Option<Value> {
         None
     }
+}
+
+fn user_message(content: &[Value]) -> Value {
+    serde_json::json!({
+        "type": "message",
+        "role": "user",
+        "content": content
+    })
+}
+
+fn input_text(value: &str) -> Value {
+    serde_json::json!({
+        "type": "input_text",
+        "text": value
+    })
 }
 
 impl ProviderDecoder for CodexCodec {
@@ -339,7 +363,7 @@ fn decode_hosted_tool_item(response_type: &str, item: &Value) -> Result<Conversa
 
 #[cfg(test)]
 mod encoder_tests {
-    use paloma_provider_protocol::v1::EncodeMode;
+    use paloma_provider_protocol::v1::{EncodeMode, UserPromptContent, UserPromptImage};
 
     use super::*;
 
@@ -370,7 +394,20 @@ mod encoder_tests {
 
     #[test]
     fn encodes_user_prompt() {
-        let item = CodexCodec.encode_user_prompt("example prompt");
+        let image = |id: u32, media_type: &str, data: &str| UserPromptContent {
+            item: Some(Item::Image(UserPromptImage {
+                id,
+                media_type: media_type.to_string(),
+                data: data.to_string(),
+            })),
+        };
+        let item = CodexCodec.encode_user_prompt(&UserPrompt {
+            prompt: "example prompt".to_string(),
+            content: vec![
+                image(1, "image/png", "image1"),
+                image(2, "image/jpeg", "image2"),
+            ],
+        });
 
         assert_eq!(
             item,
@@ -381,6 +418,14 @@ mod encoder_tests {
                     {
                         "type": "input_text",
                         "text": "example prompt",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,image1",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/jpeg;base64,image2",
                     }
                 ],
             })

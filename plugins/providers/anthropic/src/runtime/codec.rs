@@ -7,7 +7,7 @@ use paloma_provider_base::{
 };
 use paloma_provider_protocol::v1::{
     ConversationItem, ConversationMessage, EncodeMode, HostedTool, MessageContentItem, Reasoning,
-    SummaryItem, ToolCall, Unknown, conversation_item,
+    SummaryItem, ToolCall, Unknown, UserPrompt, conversation_item, user_prompt_content::Item,
 };
 use paloma_utils::Element;
 use serde_json::Value;
@@ -42,10 +42,26 @@ impl ProviderEncoder for ClaudeCodec {
         })
     }
 
-    fn encode_user_prompt(&self, prompt: &str) -> Value {
+    /// https://platform.claude.com/docs/en/build-with-claude/working-with-messages#vision
+    fn encode_user_prompt(&self, prompt: &UserPrompt) -> Value {
+        let mut content = vec![];
+
+        // as official doc suggested, better to put image in front of text
+        // https://platform.claude.com/docs/en/build-with-claude/vision
+        for item in &prompt.content {
+            match &item.item {
+                None => {},
+                Some(Item::Image(image)) => {
+                    content.push(input_image(&image.media_type, &image.data));
+                },
+            }
+        }
+
+        content.push(input_text(&prompt.prompt));
+
         serde_json::json!({
             "role": "user",
-            "content": prompt
+            "content": content
         })
     }
 
@@ -186,6 +202,24 @@ fn message_param(role: &'static str, content: Value) -> Value {
     serde_json::json!({
         "role": role,
         "content": [content],
+    })
+}
+
+fn input_text(value: &str) -> Value {
+    serde_json::json!({
+        "type": "text",
+        "text": value
+    })
+}
+
+fn input_image(media_type: &str, data: &str) -> Value {
+    serde_json::json!({
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": data,
+        },
     })
 }
 
@@ -333,6 +367,8 @@ fn decode_input_arguments(item: &Value) -> Result<String> {
 
 #[cfg(test)]
 mod encoder_tests {
+    use paloma_provider_protocol::v1::{UserPromptContent, UserPromptImage};
+
     use super::*;
 
     #[test]
@@ -356,13 +392,54 @@ mod encoder_tests {
 
     #[test]
     fn encodes_user_prompt_as_user_message() {
-        let item = ClaudeCodec.encode_user_prompt("Hello");
+        let item = ClaudeCodec.encode_user_prompt(&UserPrompt {
+            prompt: "Hello".to_string(),
+            content: vec![],
+        });
 
         assert_eq!(
             item,
             serde_json::json!({
                 "role": "user",
-                "content": "Hello"
+                "content": [
+                    { "type": "text", "text": "Hello" }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn encodes_user_prompt_images_before_text() {
+        let image = |id: u32, media_type: &str, data: &str| UserPromptContent {
+            item: Some(Item::Image(UserPromptImage {
+                id,
+                media_type: media_type.to_string(),
+                data: data.to_string(),
+            })),
+        };
+        let item = ClaudeCodec.encode_user_prompt(&UserPrompt {
+            prompt: "compare [image:1] with [image:2]".to_string(),
+            content: vec![
+                image(1, "image/png", "image1"),
+                image(2, "image/jpeg", "image2"),
+            ],
+        });
+
+        assert_eq!(
+            item,
+            serde_json::json!({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": { "type": "base64", "media_type": "image/png", "data": "image1" }
+                    },
+                    {
+                        "type": "image",
+                        "source": { "type": "base64", "media_type": "image/jpeg", "data": "image2" }
+                    },
+                    { "type": "text", "text": "compare [image:1] with [image:2]" }
+                ]
             })
         );
     }
