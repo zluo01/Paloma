@@ -19,6 +19,19 @@ message ConversationItem {
 
 message UserPrompt {
   string prompt = 1;
+  repeated UserPromptContent content = 2;
+}
+
+message UserPromptContent {
+  oneof item {
+    UserPromptImage image = 1;
+  }
+}
+
+message UserPromptImage {
+  uint32 id = 1;
+  string media_type = 2;
+  string data = 3;
 }
 
 message ConversationMessage {

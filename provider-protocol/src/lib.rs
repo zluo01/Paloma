@@ -79,9 +79,40 @@ mod stored_shape_tests {
     fn user_prompt_serializes_in_stored_shape() {
         let value = serde_json::to_value(item(Item::UserPrompt(v1::UserPrompt {
             prompt: "hello".into(),
+            content: vec![],
         })))
         .unwrap();
         assert_eq!(value, json!({"kind": "user_prompt", "prompt": "hello"}));
+    }
+
+    #[test]
+    fn user_prompt_with_images_serializes_in_stored_shape() {
+        let image = |id: u32, media_type: &str, data: &str| v1::UserPromptContent {
+            item: Some(v1::user_prompt_content::Item::Image(v1::UserPromptImage {
+                id,
+                media_type: media_type.into(),
+                data: data.into(),
+            })),
+        };
+        let value = serde_json::to_value(item(Item::UserPrompt(v1::UserPrompt {
+            prompt: "compare [image:1] with [image:2]".into(),
+            content: vec![
+                image(1, "image/png", "asdfg"),
+                image(2, "image/jpeg", "qwert"),
+            ],
+        })))
+        .unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "kind": "user_prompt",
+                "prompt": "compare [image:1] with [image:2]",
+                "content": [
+                    {"item": {"kind": "image", "id": 1, "media_type": "image/png", "data": "asdfg"}},
+                    {"item": {"kind": "image", "id": 2, "media_type": "image/jpeg", "data": "qwert"}}
+                ]
+            })
+        );
     }
 
     #[test]

@@ -25,6 +25,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     const SERDE_DERIVE: &str = "#[derive(serde::Serialize, serde::Deserialize)]";
     for message in [
         "UserPrompt",
+        "UserPromptContent",
+        "UserPromptImage",
         "ConversationMessage",
         "Reasoning",
         "ToolCall",
@@ -60,6 +62,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             "#[serde(default, skip_serializing_if = \"::std::collections::HashMap::is_empty\")]",
         );
     }
+    config.type_attribute(
+        ".paloma.provider.runtime.v1.UserPromptContent.item",
+        "#[serde(tag = \"kind\", rename_all = \"snake_case\")]",
+    );
+    config.field_attribute(
+        ".paloma.provider.runtime.v1.UserPrompt.content",
+        "#[serde(default, skip_serializing_if = \"Vec::is_empty\")]",
+    );
     config.field_attribute(
         ".paloma.provider.runtime.v1.HostedTool.content",
         "#[serde(default, skip_serializing_if = \"::core::option::Option::is_none\")]",
