@@ -72,8 +72,12 @@ final class DeepSeekCodec {
   private static JsonObject encodeConversationItem(
       final ConversationItem item, final boolean sameProvider) {
     return switch (item.getItemCase()) {
-      case USER_PROMPT ->
-          new JsonObject().put("role", "user").put("content", item.getUserPrompt().getPrompt());
+      case USER_PROMPT -> {
+        if (item.getUserPrompt().getContentCount() > 0) {
+          throw new IllegalArgumentException("Model does not support images.");
+        }
+        yield new JsonObject().put("role", "user").put("content", item.getUserPrompt().getPrompt());
+      }
       case MESSAGE -> {
         final var content = new StringBuilder();
         item.getMessage().getMessageList().forEach(m -> content.append(m.getContent()));
