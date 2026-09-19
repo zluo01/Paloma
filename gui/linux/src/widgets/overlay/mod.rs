@@ -281,6 +281,7 @@ impl Overlay {
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.footer.show_search();
         self.show_content();
+        self.input.focus();
     }
 
     fn show_chat_view(&self) {
@@ -288,6 +289,7 @@ impl Overlay {
         self.content_stack.set_visible_child_name(CHAT_VIEW_KEY);
         self.footer.show_chat_idle();
         self.show_content();
+        self.input.focus();
     }
 
     fn show_session_view(&self) {
@@ -298,6 +300,7 @@ impl Overlay {
         self.show_content();
         self.footer.show_session();
         self.scroller.vadjustment().set_value(0.0);
+        self.input.focus();
     }
 
     fn toggle_launcher(&self) {
