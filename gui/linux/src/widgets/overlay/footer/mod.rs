@@ -4,20 +4,36 @@ mod status;
 use std::sync::Arc;
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, Button, Orientation, prelude::*};
+use gtk4::{
+    Align, Box as GtkBox, Button, Label, Orientation, Stack, StackTransitionType, prelude::*,
+};
+use libadwaita::ShortcutLabel;
 use paloma_core::AppContext;
 
-use crate::widgets::overlay::{
-    footer::{picker::ModelPicker, status::Status},
-    model::{LauncherMsg, Msg, SessionMsg},
+use crate::widgets::{
+    keymap::{self, BindingId},
+    overlay::{
+        CHAT_VIEW_KEY, SEARCH_VIEW_KEY, SESSION_VIEW_KEY,
+        footer::{picker::ModelPicker, status::Status},
+        model::{LauncherMsg, Msg, SessionMsg},
+    },
 };
+
+const SEARCH_HINTS: &[BindingId] = &[BindingId::SearchSubmit, BindingId::SearchShowActions];
+
+const CHAT_HINTS: &[BindingId] = &[BindingId::ChatScrollPage];
+
+const SESSION_HINTS: &[BindingId] = &[BindingId::SessionOpen, BindingId::SessionDelete];
 
 pub(crate) struct FooterView {
     view: GtkBox,
+    report: Stack,
     models_status: Status,
     plugins_status: Status,
     model_picker: ModelPicker,
 }
+
+const IDLE_STATUS: &str = "idle";
 
 impl FooterView {
     pub(super) fn new(
@@ -27,14 +43,37 @@ impl FooterView {
         let view = GtkBox::builder()
             .orientation(Orientation::Horizontal)
             .height_request(47)
-            .spacing(18)
             .css_classes(["paloma-footer"])
             .build();
 
+        // idle shows model + plugin status
+        // with content, show associate shortcut hints
+        let report = Stack::builder()
+            .transition_type(StackTransitionType::None)
+            .valign(Align::Center)
+            .hhomogeneous(false)
+            .build();
+
+        let status_view = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .valign(Align::Center)
+            .spacing(18)
+            .build();
         let models_status = Status::models(app_context.clone());
         let plugins_status = Status::plugins(app_context.clone());
-        view.append(models_status.widget());
-        view.append(plugins_status.widget());
+        status_view.append(models_status.widget());
+        status_view.append(plugins_status.widget());
+
+        report.add_named(&status_view, Some(IDLE_STATUS));
+        for (key, hints) in [
+            (SEARCH_VIEW_KEY, SEARCH_HINTS),
+            (CHAT_VIEW_KEY, CHAT_HINTS),
+            (SESSION_VIEW_KEY, SESSION_HINTS),
+        ] {
+            report.add_named(&shortcut_hints(hints), Some(key));
+        }
+
+        view.append(&report);
         view.append(&GtkBox::builder().hexpand(true).build());
 
         let controls = GtkBox::builder()
@@ -66,6 +105,7 @@ impl FooterView {
 
         Self {
             view,
+            report,
             models_status,
             plugins_status,
             model_picker,
@@ -81,6 +121,22 @@ impl FooterView {
         self.plugins_status.refresh();
         self.model_picker.refresh();
     }
+
+    pub(crate) fn show_idle(&self) {
+        self.report.set_visible_child_name(IDLE_STATUS);
+    }
+
+    pub(crate) fn show_search(&self) {
+        self.report.set_visible_child_name(SEARCH_VIEW_KEY);
+    }
+
+    pub(crate) fn show_chat_idle(&self) {
+        self.report.set_visible_child_name(CHAT_VIEW_KEY);
+    }
+
+    pub(crate) fn show_session(&self) {
+        self.report.set_visible_child_name(SESSION_VIEW_KEY);
+    }
 }
 
 fn icon_button(icon_name: &str, tooltip: &str) -> Button {
@@ -90,104 +146,35 @@ fn icon_button(icon_name: &str, tooltip: &str) -> Button {
         // keep keyboard focus on the entry so type-to-filter keeps working
         .focus_on_click(false)
         .valign(Align::Center)
-        .css_classes(["flat", "circular"])
+        .css_classes(["flat", "circular", "dimmed"])
         .build()
 }
 
-/*
-const SEARCH_HINTS: &[(BindingId, &str)] = &[
-    (BindingId::SearchSubmit, "open"),
-    (BindingId::SearchShowActions, "actions"),
-    (BindingId::OpenSessions, "sessions"),
-];
-
-const CHAT_HINTS: &[(BindingId, &str)] = &[
-    (BindingId::ChatSend, "send"),
-    (BindingId::ChatInterrupt, "stop"),
-    (BindingId::ChatScrollPage, "scroll"),
-    (BindingId::ChatScrollEdge, "top/bottom"),
-    (BindingId::OpenSessions, "sessions"),
-];
-
-const SESSION_HINTS: &[(BindingId, &str)] = &[
-    (BindingId::SessionOpen, "restore"),
-    (BindingId::SessionDelete, "delete"),
-];
-
-pub(super) fn build() -> Stack {
-    let stack = Stack::builder()
-        .transition_type(StackTransitionType::None)
-        .css_classes(["paloma-footer"])
-        .build();
-    for (key, hints) in [
-        (SEARCH_VIEW_KEY, SEARCH_HINTS),
-        (CHAT_VIEW_KEY, CHAT_HINTS),
-        (SESSION_VIEW_KEY, SESSION_HINTS),
-    ] {
-        stack.add_named(&hint_row(hints), Some(key));
-    }
-    stack
-}
-
-fn hint_row(hints: &[(BindingId, &str)]) -> GtkBox {
+fn shortcut_hints(hints: &[BindingId]) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(8)
         .halign(Align::Center)
+        .spacing(12)
         .build();
-    for (index, (id, wording)) in hints.iter().enumerate() {
-        if index > 0 {
-            row.append(&Label::new(Some("·")));
-        }
-        let item = GtkBox::builder()
+    for binding_id in hints {
+        let hint = GtkBox::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(5)
+            .valign(Align::Center)
+            .spacing(8)
             .build();
-        let keys = Label::new(Some(&accel_text(keymap::binding(*id).shown)));
-        keys.add_css_class("paloma-footer-key");
-        item.append(&keys);
-        item.append(&Label::new(Some(wording)));
-        row.append(&item);
+        let binding = keymap::binding(*binding_id);
+        for chord in binding.shown {
+            let accel = gtk4::accelerator_name(chord.accel.0, chord.accel.1);
+            let short_cut = ShortcutLabel::new(accel.as_str());
+            short_cut.add_css_class("dimmed");
+            hint.append(&short_cut);
+        }
+        let description = Label::builder()
+            .label(binding.label)
+            .css_classes(["dimmed"])
+            .build();
+        hint.append(&description);
+        row.append(&hint);
     }
     row
 }
-
-fn accel_text(chords: &[Chord]) -> String {
-    chords.iter().map(chord_text).collect::<Vec<_>>().join("/")
-}
-
-fn chord_text(chord: &Chord) -> String {
-    let (key, mods) = chord.accel;
-    let mut text = String::new();
-    if mods.contains(ModifierType::CONTROL_MASK) {
-        text.push_str("Ctrl+");
-    }
-    if mods.contains(ModifierType::SHIFT_MASK) {
-        text.push_str("Shift+");
-    }
-    if mods.contains(ModifierType::ALT_MASK) {
-        text.push_str("Alt+");
-    }
-    text.push_str(&key_glyph(key));
-    text
-}
-
-fn key_glyph(key: Key) -> String {
-    match key {
-        Key::Up => "↑".into(),
-        Key::Down => "↓".into(),
-        Key::Return => "⏎".into(),
-        Key::Escape => "Esc".into(),
-        Key::Delete => "Del".into(),
-        Key::Page_Up => "PgUp".into(),
-        Key::Page_Down => "PgDn".into(),
-        Key::Home => "Home".into(),
-        Key::End => "End".into(),
-        other => other
-            .name()
-            .map(|name| name.to_uppercase())
-            .unwrap_or_default(),
-    }
-}
-
- */

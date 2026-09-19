@@ -1,7 +1,7 @@
 use futures::channel::mpsc;
 use gtk4::{
-    Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow, Orientation, Revealer,
-    RevealerTransitionType, Separator, SizeGroup, StateFlags, Widget, prelude::*,
+    Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow, Orientation, Separator,
+    SizeGroup, Widget, prelude::*,
 };
 use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item};
 
@@ -135,13 +135,6 @@ fn build_item_row(
     let row = flat_row(&content, None);
 
     if item.actions.len() > 1 {
-        let chip = Label::builder()
-            .label("Ctrl ↵")
-            .valign(Align::Center)
-            .css_classes(["paloma-keycap"])
-            .build();
-        content.append(&chip);
-
         let more_action_button = Button::builder()
             .icon_name("view-more-symbolic")
             .tooltip_text("More actions")
@@ -160,18 +153,7 @@ fn build_item_row(
             let _ = action_dispatcher.unbounded_send(Msg::Search(SearchMsg::OpenActionPanel));
         });
 
-        // zero width until hovered, so the time sits flush right otherwise
-        let reveal = Revealer::builder()
-            .child(&more_action_button)
-            .transition_type(RevealerTransitionType::SlideLeft)
-            .transition_duration(150)
-            .valign(Align::Center)
-            .build();
-        content.append(&reveal);
-
-        row.connect_state_flags_changed(move |row, _| {
-            reveal.set_reveal_child(row.state_flags().contains(StateFlags::PRELIGHT));
-        });
+        content.append(&more_action_button);
     }
 
     let primary_index = item

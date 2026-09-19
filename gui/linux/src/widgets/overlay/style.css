@@ -15,10 +15,6 @@
     box-shadow: none;
 }
 
-.paloma-footer-key {
-    color: alpha(var(--window-fg-color), 0.85);
-}
-
 .paloma-query {
     padding: 0 18px;
 }
