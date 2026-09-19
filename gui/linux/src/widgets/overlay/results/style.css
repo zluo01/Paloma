@@ -1,15 +1,13 @@
 /* Results panel; the card chrome comes from .paloma-surface. */
 .paloma-result-card {
-    padding: 16px 20px;
+    padding: 0 6px 6px;
 }
 
-/* Per-handler section header (e.g. "Applications"): small and dim so
-   the items dominate. */
 .paloma-section-header {
     color: alpha(currentColor, 0.55);
-    font-size: 11px;
-    font-weight: 600;
-    margin: 6px 4px 4px 4px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0 12px;
 }
 
 /* One list holds every row; headers and dividers ride along as static rows. */
@@ -20,13 +18,12 @@
 /* header / divider carriers: no list-row chrome */
 .paloma-static-row {
     padding: 0;
-    min-height: 0;
     background: transparent;
 }
 
 .paloma-item {
-    padding: 6px 8px;
-    border-radius: 8px;
+    padding: 6px 12px;
+    border-radius: 6px;
 }
 
 .paloma-item:hover {
@@ -45,17 +42,13 @@
     font-weight: 600;
 }
 
-.paloma-item-icon {
-    margin-right: 4px;
-}
-
 .paloma-item-title {
     font-size: 14px;
 }
 
 /* Secondary line under the title (e.g. file paths, app generic names). */
 .paloma-item-subtitle {
-    font-size: 11px;
+    font-size: 12px;
     color: alpha(currentColor, 0.55);
 }
 
@@ -346,7 +339,7 @@
 
 .paloma-sessions-list > row {
     border-radius: 8px;
-    padding: 3px 8px;
+    padding: 3px 0;
     margin: 1px 0;
 }
 

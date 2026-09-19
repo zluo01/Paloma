@@ -1,7 +1,7 @@
 use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Button, Image, Label, ListBox, ListBoxRow, Orientation, Revealer,
-    RevealerTransitionType, Separator, StateFlags, Widget, prelude::*,
+    RevealerTransitionType, Separator, SizeGroup, StateFlags, Widget, prelude::*,
 };
 use paloma_core::{Action, CapabilityIcon, ExtensionCapabilityId, Item};
 
@@ -38,11 +38,13 @@ pub(super) fn append_search_section(
     handler_name: &str,
     mut items: Vec<Item>,
     dispatcher: &mpsc::UnboundedSender<Msg>,
+    row_height_group: &SizeGroup,
 ) {
     let header = Label::builder()
         .label(handler_name)
         .xalign(0.0)
         .halign(Align::Start)
+        .height_request(28)
         .css_classes(["paloma-section-header"])
         .build();
     list.append(&build_static_row(&header));
@@ -54,7 +56,12 @@ pub(super) fn append_search_section(
     };
 
     for item in items {
-        let entry = build_item_row(extension_capability_id.clone(), item, dispatcher);
+        let entry = build_item_row(
+            extension_capability_id.clone(),
+            item,
+            dispatcher,
+            row_height_group,
+        );
         list.append(&entry.row);
         rows.push(entry);
     }
@@ -65,7 +72,12 @@ pub(super) fn append_search_section(
 
         let mut tail_entries = Vec::with_capacity(tail.len());
         for item in tail {
-            let entry = build_item_row(extension_capability_id.clone(), item, dispatcher);
+            let entry = build_item_row(
+                extension_capability_id.clone(),
+                item,
+                dispatcher,
+                row_height_group,
+            );
             entry.row.set_visible(false);
             list.append(&entry.row);
             tail_entries.push(entry);
@@ -81,7 +93,11 @@ pub(super) fn append_search_section(
     }
 }
 
-pub(super) fn append_chat_row(list: &ListBox, rows: &mut Vec<RowEntry>) {
+pub(super) fn append_chat_row(
+    list: &ListBox,
+    rows: &mut Vec<RowEntry>,
+    row_height_group: &SizeGroup,
+) {
     if !rows.is_empty() {
         let separator = Separator::builder()
             .orientation(Orientation::Horizontal)
@@ -98,7 +114,10 @@ pub(super) fn append_chat_row(list: &ListBox, rows: &mut Vec<RowEntry>) {
         icon: Some(CapabilityIcon::name("dialog-question-symbolic")),
         actions: Vec::new(),
     };
-    let row = flat_row(&item_content_row(&item), Some("paloma-chat-action"));
+    let row = flat_row(
+        &item_content_row(&item, row_height_group),
+        Some("paloma-chat-action"),
+    );
     list.append(&row);
     rows.push(RowEntry {
         row,
@@ -110,8 +129,9 @@ fn build_item_row(
     extension_capability_id: ExtensionCapabilityId,
     item: Item,
     dispatcher: &mpsc::UnboundedSender<Msg>,
+    row_height_group: &SizeGroup,
 ) -> RowEntry {
-    let content = item_content_row(&item);
+    let content = item_content_row(&item, row_height_group);
     let row = flat_row(&content, None);
 
     if item.actions.len() > 1 {
@@ -206,15 +226,15 @@ fn flat_row(content: &impl IsA<Widget>, extra_class: Option<&str>) -> ListBoxRow
     row
 }
 
-fn item_content_row(item: &Item) -> GtkBox {
+fn item_content_row(item: &Item, row_height_group: &SizeGroup) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(10)
+        .spacing(12)
         .build();
+    row_height_group.add_widget(&row);
 
     let icon = item.icon.as_ref().and_then(|icon| icon.icon.as_ref());
-    let image = icon_image(icon.map(Into::into), 28, None);
-    image.add_css_class("paloma-item-icon");
+    let image = icon_image(icon.map(Into::into), 24, None);
     row.append(&image);
 
     let text = GtkBox::builder()

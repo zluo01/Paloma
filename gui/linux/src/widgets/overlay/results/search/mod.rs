@@ -4,7 +4,10 @@ mod section;
 use std::{cell::RefCell, rc::Rc};
 
 use futures::channel::mpsc;
-use gtk4::{Align, Box as GtkBox, ListBox, ListBoxRow, Orientation, SelectionMode, prelude::*};
+use gtk4::{
+    Align, Box as GtkBox, ListBox, ListBoxRow, Orientation, SelectionMode, SizeGroup,
+    SizeGroupMode, prelude::*,
+};
 use paloma_core::{ExtensionCapabilityId, Item};
 
 use crate::{
@@ -26,6 +29,7 @@ pub struct SearchView {
     widget: GtkBox,
     list: ListBox,
     rows: Rc<RefCell<Vec<RowEntry>>>,
+    row_height_group: SizeGroup,
     action_panel: RefCell<Option<ActionPanel>>,
     dispatcher: mpsc::UnboundedSender<Msg>,
 }
@@ -87,6 +91,7 @@ impl SearchView {
             widget,
             list,
             rows,
+            row_height_group: SizeGroup::new(SizeGroupMode::Vertical),
             action_panel: RefCell::new(None),
             dispatcher,
         }
@@ -128,13 +133,18 @@ impl SearchView {
             handler_name,
             items,
             &self.dispatcher,
+            &self.row_height_group,
         );
         self.reveal();
         true
     }
 
     pub(crate) fn append_chat_action(&self) {
-        section::append_chat_row(&self.list, &mut self.rows.borrow_mut());
+        section::append_chat_row(
+            &self.list,
+            &mut self.rows.borrow_mut(),
+            &self.row_height_group,
+        );
         self.reveal();
     }
 
