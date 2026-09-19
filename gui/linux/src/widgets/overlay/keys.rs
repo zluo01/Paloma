@@ -71,7 +71,7 @@ impl Overlay {
                 }
             },
             Some(BindingId::ChatInterrupt) => {
-                if self.launcher.has_selection() {
+                if self.input.has_selection() {
                     return Propagation::Proceed;
                 }
                 if self.chat.copy_selection() {

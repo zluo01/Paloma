@@ -1,25 +1,34 @@
 use std::{cell::Cell, rc::Rc};
 
 use futures::channel::mpsc;
-use gtk4::{SearchEntry, prelude::*};
+use gtk4::{Box as GtkBox, Orientation, SearchEntry, prelude::*};
 
 use crate::widgets::overlay::model::{LauncherMsg, Mode, Msg};
 
 const SEARCH_DEBOUNCE_MS: u32 = 200;
 
-pub(super) struct Search {
-    pub(super) entry: SearchEntry,
+pub(crate) struct InputView {
+    view: GtkBox,
+    entry: SearchEntry,
     suppress: Rc<Cell<bool>>,
 }
 
-impl Search {
+impl InputView {
     pub(super) fn new(dispatcher: mpsc::UnboundedSender<Msg>) -> Self {
+        let view = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .height_request(64)
+            .spacing(12)
+            .css_classes(["paloma-query"])
+            .build();
+
         let entry = SearchEntry::builder()
             .placeholder_text(placeholder(Mode::Search))
             .hexpand(true)
             .search_delay(SEARCH_DEBOUNCE_MS)
             .css_classes(["paloma-entry"])
             .build();
+        view.append(&entry);
 
         let suppress = Rc::new(Cell::new(false));
 
@@ -34,25 +43,33 @@ impl Search {
                 .unbounded_send(Msg::Launcher(LauncherMsg::QueryChanged { content }));
         });
 
-        Self { entry, suppress }
+        Self {
+            view,
+            entry,
+            suppress,
+        }
+    }
+
+    pub(crate) fn widget(&self) -> &GtkBox {
+        &self.view
     }
 
     pub(crate) fn query(&self) -> String {
         self.entry.text().trim().to_string()
     }
 
-    pub(super) fn focus(&self) {
+    pub(crate) fn focus(&self) {
         self.entry.grab_focus();
         // Focusing the entry selects its text, which would make the first
         // keystroke after a summon discard a restored query.
         self.entry.set_position(-1);
     }
 
-    pub(super) fn has_selection(&self) -> bool {
+    pub(crate) fn has_selection(&self) -> bool {
         self.entry.selection_bounds().is_some()
     }
 
-    pub(super) fn clear(&self) {
+    pub(crate) fn clear(&self) {
         if self.entry.text().is_empty() {
             return;
         }
@@ -60,7 +77,7 @@ impl Search {
         self.entry.set_text("");
     }
 
-    pub(super) fn set_mode(&self, mode: Mode) {
+    pub(crate) fn set_mode(&self, mode: Mode) {
         self.entry.set_placeholder_text(Some(placeholder(mode)));
     }
 }

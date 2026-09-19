@@ -6,8 +6,8 @@ use std::{
 
 use futures::{StreamExt, channel::mpsc};
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Orientation, Overflow, PolicyType, ScrolledWindow, Separator,
-    Stack, StackTransitionType, gdk::Monitor, glib, prelude::*,
+    Align, ApplicationWindow, Box as GtkBox, Orientation, Overflow, PolicyType, ScrolledWindow,
+    Separator, Stack, StackTransitionType, gdk::Monitor, glib, prelude::*,
 };
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::Application;
@@ -16,8 +16,8 @@ use tokio::sync::{broadcast, broadcast::error::RecvError};
 use uuid::Uuid;
 
 mod footer;
+mod input;
 mod keys;
-mod launcher;
 mod model;
 mod results;
 mod window;
@@ -30,7 +30,8 @@ use paloma_core::{
 use crate::{
     runtime,
     widgets::overlay::{
-        launcher::LauncherView,
+        footer::FooterView,
+        input::InputView,
         model::{
             ChatMsg, ChatScroll, Command, LauncherMsg, Mode, Model, Msg, SearchMsg, SessionMsg,
         },
@@ -38,10 +39,9 @@ use crate::{
     },
 };
 
-const SEARCH_BAR_HEIGHT_PX: i32 = 94;
-const OVERLAY_WIDTH_PX: i32 = 640;
+const SEARCH_BAR_HEIGHT_PX: i32 = 64;
+const OVERLAY_WIDTH_PX: i32 = 720;
 const OVERLAY_CONTENT_HEIGHT_PX: i32 = 420;
-const PANEL_GAP_PX: i32 = 8;
 
 const SEARCH_VIEW_KEY: &str = "searches";
 const CHAT_VIEW_KEY: &str = "chats";
@@ -52,7 +52,7 @@ const SELECTED_CLASS: &str = "selected";
 const CSS: &str = include_str!("style.css");
 
 /// Overlay stylesheet fragments loaded into the global GTK provider.
-pub(crate) const CSS_PARTS: &[&str] = &[CSS, launcher::CSS, results::CSS];
+pub(crate) const CSS_PARTS: &[&str] = &[CSS, results::CSS];
 
 pub(crate) fn new(
     app: &Application,
@@ -65,10 +65,11 @@ pub(crate) fn new(
 pub(crate) struct Overlay {
     gapp: Application,
     launcher_window: ApplicationWindow,
-    content_window: ApplicationWindow,
+    content: GtkBox,
     scroller: ScrolledWindow,
     content_stack: Stack,
-    launcher: LauncherView,
+    input: InputView,
+    footer: FooterView,
     search: SearchView,
     chat: ChatView,
     sessions: SessionsView,
@@ -102,8 +103,17 @@ impl Overlay {
 
         let (dispatcher, mut receiver) = mpsc::unbounded::<Msg>();
 
-        let launcher = LauncherView::new(app_context.clone(), dispatcher.clone());
-        launcher_window.set_child(Some(launcher.widget()));
+        let view = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .halign(Align::Start)
+            .valign(Align::Start)
+            .width_request(OVERLAY_WIDTH_PX)
+            .overflow(Overflow::Hidden)
+            .css_classes(["paloma-surface"])
+            .build();
+
+        let input = InputView::new(dispatcher.clone());
+        view.append(input.widget());
 
         let content_stack = Stack::builder()
             .transition_type(StackTransitionType::None)
@@ -132,30 +142,24 @@ impl Overlay {
             .build();
         scroller.set_child(Some(&content_stack));
 
-        let footer = footer::build();
-        content_stack
-            .bind_property("visible-child-name", &footer, "visible-child-name")
-            .sync_create()
-            .build();
-
-        let panel = GtkBox::builder()
+        let content = GtkBox::builder()
             .orientation(Orientation::Vertical)
-            .overflow(Overflow::Hidden)
-            .css_classes(["paloma-surface"])
+            .visible(false)
             .build();
-        panel.append(&scroller);
-        panel.append(&Separator::new(Orientation::Horizontal));
-        panel.append(&footer);
+        content.append(&scroller);
+        view.append(&content);
 
-        let content_window =
-            layer_window(app, "paloma-content", OVERLAY_WIDTH_PX, KeyboardMode::None);
-        content_window.set_child(Some(&panel));
+        view.append(&Separator::new(Orientation::Horizontal));
+        let footer = FooterView::new(app_context.clone(), dispatcher.clone());
+        view.append(footer.widget());
+        launcher_window.set_child(Some(&view));
 
         let overlay = Rc::new(Self {
             gapp: app.clone(),
             launcher_window,
-            content_window,
-            launcher,
+            content,
+            input,
+            footer,
             scroller,
             content_stack,
             search,
@@ -220,8 +224,8 @@ impl Overlay {
             } => {
                 self.run_action(extension_capability_id, action);
             },
-            Command::FocusSearchEntry => self.launcher.focus(),
-            Command::ClearQuery => self.launcher.clear(),
+            Command::FocusSearchEntry => self.input.focus(),
+            Command::ClearQuery => self.input.clear(),
             Command::OpenSelectedSession => self.sessions.activate_selected(),
             Command::DeleteSelectedSession => self.sessions.delete_selected(),
             Command::RestoreSession {
@@ -271,19 +275,19 @@ impl Overlay {
     }
 
     fn show_search_view(&self) {
-        self.launcher.set_mode(Mode::Search);
+        self.input.set_mode(Mode::Search);
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
         self.show_content();
     }
 
     fn show_chat_view(&self) {
-        self.launcher.set_mode(Mode::Chat);
+        self.input.set_mode(Mode::Chat);
         self.content_stack.set_visible_child_name(CHAT_VIEW_KEY);
         self.show_content();
     }
 
     fn show_session_view(&self) {
-        self.launcher.set_mode(Mode::Session);
+        self.input.set_mode(Mode::Session);
         self.sessions.clear();
         self.sessions.refresh();
         self.content_stack.set_visible_child_name(SESSION_VIEW_KEY);
@@ -314,22 +318,21 @@ impl Overlay {
             self.launcher_window.present();
         }
         if self.restore_content.replace(false) {
-            self.content_window.present();
+            self.content.set_visible(true);
         }
-        self.launcher.refresh();
-        self.launcher.focus();
+        self.footer.refresh();
+        self.input.focus();
     }
 
     /// Hide launcher without clear the content
     fn conceal(&self) {
-        self.restore_content.set(self.content_window.is_visible());
-        self.content_window.set_visible(false);
+        self.restore_content.set(self.content.is_visible());
         self.launcher_window.set_visible(false);
     }
 
     /// Hide launcher and clear the content
     fn hide(&self) {
-        self.launcher.clear();
+        self.input.clear();
         self.close_content();
         self.launcher_window.set_visible(false);
     }
@@ -352,9 +355,7 @@ impl Overlay {
             self.restore_content.set(true);
             return;
         }
-        if !self.content_window.is_visible() {
-            self.content_window.present();
-        }
+        self.content.set_visible(true);
     }
 
     fn close_content(&self) {
@@ -363,9 +364,9 @@ impl Overlay {
         self.sessions.clear();
 
         self.restore_content.set(false);
-        self.launcher.set_mode(Mode::Search);
+        self.input.set_mode(Mode::Search);
         self.content_stack.set_visible_child_name(SEARCH_VIEW_KEY);
-        self.content_window.set_visible(false);
+        self.content.set_visible(false);
         // Mode is back to Search before content hides, so this reset does not
         // affect chat stickiness.
         self.scroller.vadjustment().set_value(0.0);
@@ -443,7 +444,7 @@ impl Overlay {
     fn exit_search(&self) {
         if self.render_any() {
             self.close_content();
-            self.launcher.clear();
+            self.input.clear();
         } else {
             self.hide()
         }
@@ -453,8 +454,8 @@ impl Overlay {
 /// Chat related actions
 impl Overlay {
     fn construct_chat_prompt(&self, turn_id: u64) {
-        let prompt = self.launcher.query();
-        self.launcher.clear();
+        let prompt = self.input.query();
+        self.input.clear();
         if prompt.is_empty() {
             let _ = self
                 .dispatcher

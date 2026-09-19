@@ -1,15 +1,9 @@
-//! Layer-window placement and chat scroll behavior for the overlay.
-//!
-//! The bar and content windows are anchored top-left and positioned with
-//! pixel margins. Dragging updates the shared bar position; monitor changes
-//! recenter the overlay on the output that actually receives the bar.
-
 use std::{cell::Cell, rc::Rc};
 
 use gtk4::{ApplicationWindow, GestureDrag, prelude::*};
 use gtk4_layer_shell::{Edge, LayerShell};
 
-use super::{OVERLAY_WIDTH_PX, Overlay, PANEL_GAP_PX, SEARCH_BAR_HEIGHT_PX};
+use super::{OVERLAY_WIDTH_PX, Overlay, SEARCH_BAR_HEIGHT_PX};
 use crate::widgets::overlay::model::Mode;
 
 impl Overlay {
@@ -19,14 +13,8 @@ impl Overlay {
         }
     }
 
-    /// Place content below the bar.
     pub(super) fn layout_at(&self, x: i32, y: i32) {
         set_position(&self.launcher_window, x, y);
-        set_position(
-            &self.content_window,
-            x,
-            y + SEARCH_BAR_HEIGHT_PX + PANEL_GAP_PX,
-        );
     }
 
     /// Keep chat pinned to the bottom until the user scrolls up.
@@ -100,7 +88,6 @@ impl Overlay {
                     return;
                 }
                 *overlay.monitor.borrow_mut() = Some(monitor.clone());
-                overlay.content_window.set_monitor(Some(monitor));
                 // Positions from another output are not meaningful, so recenter
                 // and resize the content panel for the new monitor.
                 let panel = (monitor.geometry().height() as f64 * GOLDEN_SECTION_FROM_TOP) as i32;
@@ -144,7 +131,7 @@ impl Overlay {
             });
         }
 
-        self.launcher.widget().add_controller(drag);
+        self.footer.widget().add_controller(drag);
     }
 }
 
