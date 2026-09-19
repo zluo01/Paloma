@@ -15,7 +15,7 @@ use crate::widgets::{
     overlay::{
         CHAT_VIEW_KEY, SEARCH_VIEW_KEY, SESSION_VIEW_KEY,
         footer::{picker::ModelPicker, status::Status},
-        model::{LauncherMsg, Msg, SessionMsg},
+        model::{ChatMsg, LauncherMsg, Msg, SessionMsg},
     },
 };
 
@@ -28,12 +28,16 @@ const SESSION_HINTS: &[BindingId] = &[BindingId::SessionOpen, BindingId::Session
 pub(crate) struct FooterView {
     view: GtkBox,
     report: Stack,
+    control: Stack,
     models_status: Status,
     plugins_status: Status,
     model_picker: ModelPicker,
 }
 
 const IDLE_STATUS: &str = "idle";
+
+const DEFAULT_CONTROL: &str = "default_control";
+const CHAT_CONTROL: &str = "chat_control";
 
 impl FooterView {
     pub(super) fn new(
@@ -76,14 +80,22 @@ impl FooterView {
         view.append(&report);
         view.append(&GtkBox::builder().hexpand(true).build());
 
-        let controls = GtkBox::builder()
+        // idle show controls
+        // chat running show cancel button
+        let control = Stack::builder()
+            .transition_type(StackTransitionType::None)
+            .valign(Align::Center)
+            .hhomogeneous(false)
+            .build();
+
+        let default_control_box = GtkBox::builder()
             .orientation(Orientation::Horizontal)
             .valign(Align::Center)
             .spacing(2)
             .build();
 
         let model_picker = ModelPicker::new(app_context);
-        controls.append(model_picker.widget());
+        default_control_box.append(model_picker.widget());
 
         let settings_button = icon_button("emblem-system-symbolic", "Settings");
         let settings_dispatcher = dispatcher.clone();
@@ -93,19 +105,24 @@ impl FooterView {
         });
 
         let sessions_button = icon_button("document-open-recent-symbolic", "Sessions");
-        let sessions_dispatcher = dispatcher;
+        let sessions_dispatcher = dispatcher.clone();
         sessions_button.connect_clicked(move |_| {
             let _ =
                 sessions_dispatcher.unbounded_send(Msg::Session(SessionMsg::ToggleViewRequested));
         });
 
-        controls.append(&settings_button);
-        controls.append(&sessions_button);
-        view.append(&controls);
+        default_control_box.append(&settings_button);
+        default_control_box.append(&sessions_button);
+
+        control.add_named(&default_control_box, Some(DEFAULT_CONTROL));
+        control.add_named(&stop_button(dispatcher), Some(CHAT_CONTROL));
+
+        view.append(&control);
 
         Self {
             view,
             report,
+            control,
             models_status,
             plugins_status,
             model_picker,
@@ -124,18 +141,27 @@ impl FooterView {
 
     pub(crate) fn show_idle(&self) {
         self.report.set_visible_child_name(IDLE_STATUS);
+        self.control.set_visible_child_name(DEFAULT_CONTROL);
     }
 
     pub(crate) fn show_search(&self) {
         self.report.set_visible_child_name(SEARCH_VIEW_KEY);
+        self.control.set_visible_child_name(DEFAULT_CONTROL);
     }
 
     pub(crate) fn show_chat_idle(&self) {
         self.report.set_visible_child_name(CHAT_VIEW_KEY);
+        self.control.set_visible_child_name(DEFAULT_CONTROL);
+    }
+
+    pub(crate) fn show_chat_streaming(&self) {
+        self.report.set_visible_child_name(CHAT_VIEW_KEY);
+        self.control.set_visible_child_name(CHAT_CONTROL);
     }
 
     pub(crate) fn show_session(&self) {
         self.report.set_visible_child_name(SESSION_VIEW_KEY);
+        self.control.set_visible_child_name(DEFAULT_CONTROL);
     }
 }
 
@@ -148,6 +174,41 @@ fn icon_button(icon_name: &str, tooltip: &str) -> Button {
         .valign(Align::Center)
         .css_classes(["flat", "circular", "dimmed"])
         .build()
+}
+
+fn stop_button(dispatcher: mpsc::UnboundedSender<Msg>) -> Button {
+    let content = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .valign(Align::Center)
+        .spacing(6)
+        .build();
+
+    content.append(
+        &gtk4::Image::builder()
+            .icon_name("media-playback-stop-symbolic")
+            .pixel_size(12)
+            .build(),
+    );
+    content.append(&Label::new(Some("Stop")));
+
+    let accel = keymap::binding(BindingId::ChatInterrupt)
+        .shown
+        .first()
+        .map(|chord| gtk4::accelerator_get_label(chord.accel.0, chord.accel.1))
+        .unwrap_or_default();
+    content.append(&Label::new(Some(accel.as_str())));
+
+    let button = Button::builder()
+        .height_request(34)
+        .child(&content)
+        .focus_on_click(false)
+        .valign(Align::Center)
+        .css_classes(["dimmed"])
+        .build();
+    button.connect_clicked(move |_| {
+        let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::InterruptRequested));
+    });
+    button
 }
 
 fn shortcut_hints(hints: &[BindingId]) -> GtkBox {

@@ -260,6 +260,8 @@ impl Overlay {
             Command::ScrollChat(scroll) => self.scroll_chat(scroll),
             Command::OpenActionPanel => self.search.open_action_panel(),
             Command::ClearActionPanel => self.search.clear_action_panel(),
+            Command::RenderChatStart => self.footer.show_chat_streaming(),
+            Command::RenderChatFinish => self.footer.show_chat_idle(),
         }
     }
 }

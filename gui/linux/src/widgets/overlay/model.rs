@@ -162,9 +162,11 @@ pub(super) enum Command {
         provider_backend_id: ProviderBackendId,
         prompt: String,
     },
+    RenderChatStart,
     RenderChatEvent {
         event: RenderEvent,
     },
+    RenderChatFinish,
     CancelChatSession {
         session_id: Uuid,
     },
@@ -304,6 +306,7 @@ impl Model {
 
                 vec![
                     Command::ShowChatView,
+                    Command::RenderChatStart,
                     Command::SendChat {
                         turn_id,
                         session_id: self.current_session,
@@ -325,13 +328,16 @@ impl Model {
                 if !self.chat_status.is_current(turn_id) {
                     return vec![];
                 }
+                let mut commands = vec![];
                 if matches!(
                     &event,
                     RenderEvent::Done | RenderEvent::Error { .. } | RenderEvent::Cancel
                 ) {
-                    self.chat_status.finish()
+                    self.chat_status.finish();
+                    commands.push(Command::RenderChatFinish)
                 }
-                vec![Command::RenderChatEvent { event }]
+                commands.push(Command::RenderChatEvent { event });
+                commands
             },
             ChatMsg::InterruptRequested => {
                 let Some(session_id) = self.current_session else {
@@ -439,6 +445,7 @@ impl Model {
                     Command::ClearQuery,
                     Command::ClearChatContent,
                     Command::ShowChatView,
+                    Command::RenderChatStart,
                     Command::RestoreSession {
                         turn_id,
                         session_id,
@@ -449,7 +456,7 @@ impl Model {
                 if self.chat_status.is_current(turn_id) {
                     self.chat_status.finish();
                     self.current_session = None;
-                    return vec![Command::ReportError { error }];
+                    return vec![Command::RenderChatFinish, Command::ReportError { error }];
                 }
                 vec![]
             },
@@ -499,6 +506,7 @@ mod tests {
         }));
         let [
             Command::ShowChatView,
+            Command::RenderChatStart,
             Command::SendChat {
                 turn_id: sent_turn_id,
                 session_id,
@@ -524,6 +532,7 @@ mod tests {
             Command::ClearQuery,
             Command::ClearChatContent,
             Command::ShowChatView,
+            Command::RenderChatStart,
             Command::RestoreSession {
                 turn_id,
                 session_id: restored_session_id,
@@ -776,6 +785,7 @@ mod tests {
         }));
         let [
             Command::ShowChatView,
+            Command::RenderChatStart,
             Command::SendChat {
                 turn_id: sent_turn_id,
                 session_id,
@@ -864,7 +874,7 @@ mod tests {
         }));
         assert!(matches!(
             commands.as_slice(),
-            [Command::RenderChatEvent { .. }]
+            [Command::RenderChatFinish, Command::RenderChatEvent { .. }]
         ));
         assert_chat_idle(&model);
 
@@ -1118,7 +1128,7 @@ mod tests {
         }));
         assert!(matches!(
             commands.as_slice(),
-            [Command::RenderChatEvent { .. }]
+            [Command::RenderChatFinish, Command::RenderChatEvent { .. }]
         ));
         assert_chat_idle(&model);
     }
@@ -1133,7 +1143,8 @@ mod tests {
             turn_id,
             error: AppError::Io(std::io::Error::other("restore failed")),
         }));
-        let [Command::ReportError { error }] = commands.as_slice() else {
+        let [Command::RenderChatFinish, Command::ReportError { error }] = commands.as_slice()
+        else {
             panic!("expected current restore failure to report the error");
         };
         assert!(error.to_string().contains("restore failed"));
@@ -1171,7 +1182,7 @@ mod tests {
         }));
         assert!(matches!(
             commands.as_slice(),
-            [Command::RenderChatEvent { .. }]
+            [Command::RenderChatFinish, Command::RenderChatEvent { .. }]
         ));
         assert_chat_idle(&model);
     }
@@ -1188,6 +1199,7 @@ mod tests {
             },
         }));
         let [
+            Command::RenderChatFinish,
             Command::RenderChatEvent {
                 event: RenderEvent::Error { message },
             },
@@ -1308,9 +1320,12 @@ mod tests {
         }));
         assert!(matches!(
             commands.as_slice(),
-            [Command::RenderChatEvent {
-                event: RenderEvent::Done
-            }]
+            [
+                Command::RenderChatFinish,
+                Command::RenderChatEvent {
+                    event: RenderEvent::Done
+                }
+            ]
         ));
         assert_chat_idle(&model);
     }
