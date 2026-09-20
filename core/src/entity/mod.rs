@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use base64::prelude::*;
+use bytes::Bytes;
 use paloma_extension_protocol::v1::Item;
 use paloma_provider_protocol::v1::{
     ProviderHealthStatus, ToolDefinition, UserPromptContent, UserPromptImage,
@@ -258,7 +259,7 @@ pub enum UserPromptAttachment {
     Image {
         id: u32,
         media_type: String,
-        data: Vec<u8>,
+        data: Bytes,
     },
 }
 
@@ -288,7 +289,7 @@ impl TryFrom<&UserPromptContent> for UserPromptAttachment {
             Some(ContentItem::Image(image)) => Ok(Self::Image {
                 id: image.id,
                 media_type: image.media_type.clone(),
-                data: BASE64_STANDARD.decode(&image.data)?,
+                data: BASE64_STANDARD.decode(&image.data)?.into(),
             }),
             None => Err(UserPromptAttachmentError::Empty),
         }

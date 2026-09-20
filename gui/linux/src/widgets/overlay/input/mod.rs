@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use bytes::Bytes;
 use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Image, Inscription, Orientation, Overflow, Overlay, Picture, PolicyType,
@@ -41,7 +42,7 @@ impl Attachment {
         UserPromptAttachment::Image {
             id,
             media_type: self.media_type.clone(),
-            data: self.data.to_vec(),
+            data: Bytes::from_owner(self.data.clone()),
         }
     }
 }
