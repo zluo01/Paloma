@@ -543,8 +543,8 @@ impl Overlay {
 
     fn render_chat_event(&self, event: RenderEvent) {
         match event {
-            RenderEvent::Chat(ChatRenderEvent::UserPrompt { text, .. }) => {
-                self.chat.append_user_prompt(&text);
+            RenderEvent::Chat(ChatRenderEvent::UserPrompt { text, attachments }) => {
+                self.chat.append_user_prompt(&text, attachments);
             },
             RenderEvent::Chat(ChatRenderEvent::TextDelta {
                 text,

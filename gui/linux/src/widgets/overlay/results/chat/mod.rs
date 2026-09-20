@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use futures::channel::mpsc;
 use gtk4::{Align, Box as GtkBox, Label, Orientation, TextView, Widget, prelude::*};
 use log::error;
-use paloma_core::{PermissionState, ProviderBackendId, UserDecision};
+use paloma_core::{PermissionState, ProviderBackendId, UserDecision, UserPromptAttachment};
 
 use crate::helper::Clear;
 
@@ -69,11 +69,11 @@ impl ChatView {
         *self.prev_section.borrow_mut() = None;
     }
 
-    pub(crate) fn append_user_prompt(&self, prompt: &str) {
+    pub(crate) fn append_user_prompt(&self, prompt: &str, attachments: Vec<UserPromptAttachment>) {
         if let Some(prev) = self.prev_section.borrow().as_ref() {
             prev.complete();
         }
-        let user_prompt = UserPromptSection::new(prompt);
+        let user_prompt = UserPromptSection::new(prompt, attachments);
         self.turns.append(user_prompt.widget());
         *self.prev_section.borrow_mut() = Some(Section::UserPrompt(()));
         self.status.start();

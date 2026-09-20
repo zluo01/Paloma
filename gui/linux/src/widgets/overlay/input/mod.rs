@@ -9,27 +9,31 @@ use std::{
 use bytes::Bytes;
 use futures::{channel::mpsc, future::join_all};
 use gtk4::{
-    Align, Box as GtkBox, Image, Inscription, Orientation, Overflow, Overlay, Picture, PolicyType,
-    ScrolledWindow, TextBuffer, TextChildAnchor, TextIter, TextView, WrapMode, gdk,
+    Align, Box as GtkBox, Image, Inscription, Orientation, Overlay, PolicyType, ScrolledWindow,
+    TextBuffer, TextChildAnchor, TextIter, TextView, WrapMode, gdk,
     gdk::{Clipboard, Paintable},
     gio, glib,
     glib::shell_quote,
-    graphene, gsk,
     prelude::*,
 };
 use log::warn;
 use paloma_core::UserPromptAttachment;
 
-use crate::widgets::overlay::{
-    input::view::ComposerView,
-    model::{LauncherMsg, Mode, Msg},
+use crate::{
+    helper::{
+        ImageHelperError, LoadedImage, attach_image, decode_image, image_placeholder, thumbnail,
+    },
+    widgets::overlay::{
+        input::view::ComposerView,
+        model::{LauncherMsg, Mode, Msg},
+    },
 };
 
 const SEARCH_DEBOUNCE_MS: u64 = 200;
 const MAX_CONTENT_HEIGHT_PX: i32 = 171;
 const THUMBNAIL_HEIGHT_PX: i32 = 22;
 const PREVIEW_HEIGHT_PX: i32 = 240;
-const MAX_THUMBNAIL_ASPECT: f32 = 3.0;
+
 const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
 // this will show when trying to Ctrl+Z a deleted image
 const OBJECT_REPLACEMENT_CHARACTER: char = '\u{FFFC}';
@@ -49,12 +53,6 @@ impl Attachment {
             data: Bytes::from_owner(self.data.clone()),
         }
     }
-}
-
-struct LoadedImage {
-    media_type: String,
-    data: glib::Bytes,
-    texture: gdk::Texture,
 }
 
 struct Thumbnails {
@@ -228,7 +226,7 @@ impl InputView {
         for (anchor, attachment) in anchored {
             text.push_str(&buffer.text(&cursor, &anchor, false));
             let id = images.len() as u32 + 1;
-            text.push_str(&format!("[Image #{id}]"));
+            text.push_str(&image_placeholder(id));
             images.push(attachment.to_user_prompt(id));
             cursor = anchor;
             cursor.forward_char();
@@ -300,7 +298,12 @@ async fn handle_clipboard_images(
         },
     };
     write_clipboard_to_buffer(view, |buffer| {
-        attach_image(view, attachments, image, thumbnails);
+        let anchor = attach_image(view, &thumbnails.inline, Some(&thumbnails.preview));
+        attachments.borrow_mut().push(Attachment {
+            anchor,
+            media_type: image.media_type,
+            data: image.data,
+        });
         buffer.insert_interactive_at_cursor(" ", view.is_editable());
     });
 }
@@ -359,7 +362,14 @@ async fn handle_clipboard_files(
     write_clipboard_to_buffer(view, |buffer| {
         for (path, image) in pasted {
             match image {
-                Some((image, thumbnails)) => attach_image(view, attachments, image, thumbnails),
+                Some((image, thumbnails)) => {
+                    let anchor = attach_image(view, &thumbnails.inline, Some(&thumbnails.preview));
+                    attachments.borrow_mut().push(Attachment {
+                        anchor,
+                        media_type: image.media_type,
+                        data: image.data,
+                    });
+                },
                 None => {
                     buffer.insert_interactive_at_cursor(&path, view.is_editable());
                 },
@@ -398,7 +408,7 @@ async fn read_in_memory_image(clipboard: &Clipboard) -> Result<LoadedImage, Inpu
     if data.len() as i64 > MAX_IMAGE_BYTES {
         return Err(InputViewError::ImageTooLarge(data.len() as i64));
     }
-    decode_image(&media_type, data).await
+    Ok(decode_image(&media_type, data).await?)
 }
 
 async fn load_image(file: &gio::File) -> Result<Option<LoadedImage>, InputViewError> {
@@ -428,31 +438,9 @@ async fn load_image(file: &gio::File) -> Result<Option<LoadedImage>, InputViewEr
         .load_contents_future()
         .await
         .map_err(InputViewError::Read)?;
-    decode_image(&media_type, glib::Bytes::from_owned(data))
-        .await
-        .map(Some)
-}
-
-async fn decode_image(media_type: &str, data: glib::Bytes) -> Result<LoadedImage, InputViewError> {
-    let decoded =
-        gio::spawn_blocking(move || gdk::Texture::from_bytes(&data).map(|texture| (data, texture)))
-            .await;
-    match decoded {
-        Ok(Ok((data, texture))) => Ok(LoadedImage {
-            media_type: media_type.to_string(),
-            data,
-            texture,
-        }),
-        Ok(Err(err)) => Err(InputViewError::Decode(err)),
-        Err(panic) => {
-            let reason = panic
-                .downcast_ref::<&str>()
-                .map(|reason| reason.to_string())
-                .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown".to_string());
-            Err(InputViewError::Panic(reason))
-        },
-    }
+    Ok(Some(
+        decode_image(&media_type, glib::Bytes::from_owned(data)).await?,
+    ))
 }
 
 fn prepare_thumbnails(view: &TextView, image: &LoadedImage) -> Result<Thumbnails, InputViewError> {
@@ -463,76 +451,6 @@ fn prepare_thumbnails(view: &TextView, image: &LoadedImage) -> Result<Thumbnails
         return Err(InputViewError::Render);
     };
     Ok(Thumbnails { inline, preview })
-}
-
-fn attach_image(
-    view: &TextView,
-    attachments: &RefCell<Vec<Attachment>>,
-    image: LoadedImage,
-    thumbnails: Thumbnails,
-) {
-    let buffer = view.buffer();
-    let mut iter = buffer.iter_at_mark(&buffer.get_insert());
-    let anchor = buffer.create_child_anchor(&mut iter);
-    let picture = Picture::builder()
-        .paintable(&thumbnails.inline)
-        .can_shrink(false)
-        .overflow(Overflow::Hidden)
-        .css_classes(["paloma-attachment"])
-        .has_tooltip(true)
-        .build();
-    let preview = Picture::for_paintable(&thumbnails.preview);
-    picture.connect_query_tooltip(move |_, _, _, _, tooltip| {
-        tooltip.set_custom(Some(&preview));
-        true
-    });
-    view.add_child_at_anchor(&picture, &anchor);
-    attachments.borrow_mut().push(Attachment {
-        anchor,
-        media_type: image.media_type,
-        data: image.data,
-    });
-}
-
-/// aspect ratio scale along the provided height, center-cropped past MAX_THUMBNAIL_ASPECT
-fn thumbnail(view: &TextView, texture: &gdk::Texture, height: i32) -> Option<Paintable> {
-    let height = height as f32;
-    let (texture_width, texture_height) = (texture.width() as f32, texture.height() as f32);
-    let aspect =
-        (texture_width / texture_height).clamp(1.0 / MAX_THUMBNAIL_ASPECT, MAX_THUMBNAIL_ASPECT);
-    let width = (height * aspect).round().max(1.0);
-    let bounds = graphene::Rect::new(0.0, 0.0, width, height);
-    let cover = (width / texture_width).max(height / texture_height);
-    let (covered_width, covered_height) = (texture_width * cover, texture_height * cover);
-    let device_scale = view.scale_factor() as f32;
-    let snapshot = gtk4::Snapshot::new();
-    snapshot.scale(device_scale, device_scale);
-    snapshot.push_clip(&bounds);
-    snapshot.append_scaled_texture(
-        texture,
-        gsk::ScalingFilter::Trilinear,
-        &graphene::Rect::new(
-            (width - covered_width) / 2.0,
-            (height - covered_height) / 2.0,
-            covered_width,
-            covered_height,
-        ),
-    );
-    snapshot.pop();
-    let node = snapshot.to_node()?;
-    let renderer = view.native()?.renderer()?;
-    let pixels = renderer.render_texture(
-        &node,
-        Some(&graphene::Rect::new(
-            0.0,
-            0.0,
-            width * device_scale,
-            height * device_scale,
-        )),
-    );
-    let snapshot = gtk4::Snapshot::new();
-    snapshot.append_texture(&pixels, &bounds);
-    snapshot.to_paintable(Some(&graphene::Size::new(width, height)))
 }
 
 fn placeholder(mode: Mode) -> &'static str {
@@ -549,12 +467,10 @@ enum InputViewError {
     ImageTooLarge(i64),
     #[error("read failed: {0}")]
     Read(glib::Error),
-    #[error("decode failed: {0}")]
-    Decode(glib::Error),
-    #[error("decoder panicked: {0}")]
-    Panic(String),
     #[error("no renderer to draw the thumbnail")]
     Render,
+    #[error(transparent)]
+    Image(#[from] ImageHelperError),
 }
 
 #[cfg(test)]

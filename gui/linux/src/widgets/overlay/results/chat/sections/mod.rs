@@ -1,4 +1,5 @@
 mod assistant;
+mod lazy_image;
 mod reasoning;
 mod tool_call;
 mod user_prompt;
