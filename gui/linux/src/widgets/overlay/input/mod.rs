@@ -5,8 +5,9 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Image, Inscription, Orientation, Overlay, PolicyType, ScrolledWindow,
-    TextView, WrapMode, glib, prelude::*,
+    TextView, WrapMode, gdk, gio, glib, glib::shell_quote, prelude::*,
 };
+use log::warn;
 
 use crate::widgets::overlay::{
     input::view::ComposerView,
@@ -114,6 +115,55 @@ impl InputView {
         let preedit_placeholder = placeholder.clone();
         text.connect_preedit_changed(move |view, preedit| {
             preedit_placeholder.set_visible(view.buffer().char_count() == 0 && preedit.is_empty());
+        });
+
+        text.connect_paste_clipboard(|view| {
+            let clipboard = view.clipboard();
+            if !clipboard
+                .formats()
+                .contains_type(gdk::FileList::static_type())
+            {
+                return;
+            }
+            view.stop_signal_emission_by_name("paste-clipboard");
+            let view = view.clone();
+            glib::spawn_future_local(async move {
+                let files = match clipboard
+                    .read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT)
+                    .await
+                {
+                    Ok(value) => value
+                        .get::<gdk::FileList>()
+                        .map(|list| list.files())
+                        .unwrap_or_default(),
+                    Err(err) => {
+                        warn!("fail to read from clipboard. {err}");
+                        Vec::new()
+                    },
+                };
+                let buffer = view.buffer();
+                let is_link = |file: &gio::File| {
+                    matches!(file.uri_scheme().as_deref(), Some("http" | "https"))
+                };
+                if files.is_empty() || files.iter().all(is_link) {
+                    buffer.paste_clipboard(&clipboard, None, view.is_editable());
+                    return;
+                }
+                let paths: Vec<String> = files
+                    .iter()
+                    .map(|file| match file.path() {
+                        Some(path) => shell_quote(path),
+                        None => shell_quote(file.uri().as_str()),
+                    })
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                // allow Ctrl+z to revert the paste
+                buffer.begin_user_action();
+                buffer.delete_selection(true, view.is_editable()); // replace the highlighted text
+                buffer.insert_interactive_at_cursor(&paths.join(" "), view.is_editable());
+                buffer.end_user_action();
+                view.scroll_mark_onscreen(&buffer.get_insert());
+            });
         });
 
         Self {
