@@ -233,6 +233,8 @@ impl InputView {
         self.text.scroll_mark_onscreen(&buffer.get_insert());
     }
 
+    /// programmatically move the cursor for multiline text input
+    /// true if moved, false if it is either the first or last line
     pub(crate) fn move_cursor(&self, delta: i32) -> bool {
         let buffer = self.text.buffer();
         let mut iter = buffer.iter_at_mark(&buffer.get_insert());
