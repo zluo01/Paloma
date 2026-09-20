@@ -1,6 +1,6 @@
 use paloma_core::{
     Action, AppError, ExtensionCapabilityId, PermissionState, ProviderBackendId, RenderEvent,
-    SearchRenderEvent, UserDecision,
+    SearchRenderEvent, UserDecision, UserPromptAttachment,
 };
 use uuid::Uuid;
 
@@ -101,6 +101,7 @@ pub(super) enum ChatMsg {
     PromptPrepared {
         turn_id: u64,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
         provider_backend_id: ProviderBackendId,
     },
     RequestStarted {
@@ -161,6 +162,7 @@ pub(super) enum Command {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     },
     RenderChatStart,
     RenderChatEvent {
@@ -296,6 +298,7 @@ impl Model {
             ChatMsg::PromptPrepared {
                 turn_id,
                 prompt,
+                attachments,
                 provider_backend_id,
             } => {
                 if !self.chat_status.is_current(turn_id) {
@@ -312,6 +315,7 @@ impl Model {
                         session_id: self.current_session,
                         provider_backend_id,
                         prompt,
+                        attachments,
                     },
                 ]
             },
@@ -466,6 +470,7 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use paloma_core::{ChatRenderEvent, ProviderBackendId, QueryResponse, RenderEvent};
 
     use super::*;
@@ -502,6 +507,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: prompt.into(),
+            attachments: vec![],
             provider_backend_id: codex(),
         }));
         let [
@@ -512,6 +518,7 @@ mod tests {
                 session_id,
                 provider_backend_id,
                 prompt: sent_prompt,
+                attachments,
             },
         ] = commands.as_slice()
         else {
@@ -521,6 +528,7 @@ mod tests {
         assert_eq!(*session_id, model.current_session);
         assert_eq!(*provider_backend_id, codex());
         assert_eq!(sent_prompt, prompt);
+        assert!(attachments.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_chat_running(model, turn_id);
         turn_id
@@ -775,12 +783,50 @@ mod tests {
     }
 
     #[test]
+    fn prepared_attachments_are_forwarded_to_send_chat() {
+        let mut model = Model::new();
+        let turn_id = expect_submit_prompt(&mut model);
+        let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
+            turn_id,
+            prompt: "[Image #1] what is this".into(),
+            attachments: vec![UserPromptAttachment::Image {
+                id: 1,
+                media_type: "image/png".into(),
+                data: Bytes::from_static(b"png"),
+            }],
+            provider_backend_id: codex(),
+        }));
+        let [
+            Command::ShowChatView,
+            Command::RenderChatStart,
+            Command::SendChat { attachments, .. },
+        ] = commands.as_slice()
+        else {
+            panic!("expected chat view to show and chat to start");
+        };
+        let [
+            UserPromptAttachment::Image {
+                id,
+                media_type,
+                data,
+            },
+        ] = attachments.as_slice()
+        else {
+            panic!("expected the prepared attachment to be forwarded");
+        };
+        assert_eq!(*id, 1);
+        assert_eq!(media_type, "image/png");
+        assert_eq!(data.as_ref(), b"png");
+    }
+
+    #[test]
     fn accepted_prompt_enters_chat_and_uses_the_backend_session_id() {
         let mut model = Model::new();
         let turn_id = expect_submit_prompt(&mut model);
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
+            attachments: vec![],
             provider_backend_id: codex(),
         }));
         let [
@@ -791,6 +837,7 @@ mod tests {
                 session_id,
                 provider_backend_id,
                 prompt,
+                attachments,
             },
         ] = commands.as_slice()
         else {
@@ -800,6 +847,7 @@ mod tests {
         assert_eq!(*session_id, None);
         assert_eq!(*provider_backend_id, codex());
         assert_eq!(prompt, "hello");
+        assert!(attachments.is_empty());
         assert!(matches!(model.mode, Mode::Chat));
         assert_eq!(model.current_session, None);
         assert_chat_running(&model, turn_id);
@@ -999,6 +1047,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id,
             prompt: "hello".into(),
+            attachments: vec![],
             provider_backend_id: codex(),
         }));
         assert!(commands.is_empty());
@@ -1066,6 +1115,7 @@ mod tests {
         let commands = model.update(Msg::Chat(ChatMsg::PromptPrepared {
             turn_id: stale_turn_id,
             prompt: "hello".into(),
+            attachments: vec![],
             provider_backend_id: codex(),
         }));
         assert!(commands.is_empty());

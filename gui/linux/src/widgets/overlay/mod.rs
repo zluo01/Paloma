@@ -24,7 +24,7 @@ mod window;
 
 use paloma_core::{
     Action, AppContext, ChatRenderEvent, ExtensionCapabilityId, PermissionState, ProviderBackendId,
-    RenderEvent, SearchRenderEvent, UserDecision,
+    RenderEvent, SearchRenderEvent, UserDecision, UserPromptAttachment,
 };
 
 use crate::{
@@ -245,7 +245,14 @@ impl Overlay {
                 session_id,
                 provider_backend_id,
                 prompt,
-            } => self.send_chat(turn_id, session_id, provider_backend_id, prompt),
+                attachments,
+            } => self.send_chat(
+                turn_id,
+                session_id,
+                provider_backend_id,
+                prompt,
+                attachments,
+            ),
             Command::CancelChatSession { session_id } => self.cancel_chat_session(session_id),
             Command::RenderChatEvent { event } => self.render_chat_event(event),
             Command::ShowChatView => self.show_chat_view(),
@@ -463,7 +470,7 @@ impl Overlay {
 /// Chat related actions
 impl Overlay {
     fn construct_chat_prompt(&self, turn_id: u64) {
-        let prompt = self.input.query();
+        let (prompt, attachments) = self.input.query();
         self.input.clear();
         if prompt.is_empty() {
             let _ = self
@@ -481,6 +488,7 @@ impl Overlay {
                     let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::PromptPrepared {
                         turn_id,
                         prompt,
+                        attachments,
                         provider_backend_id,
                     }));
                 },
@@ -504,12 +512,13 @@ impl Overlay {
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     ) {
         let app_context = self.app_context.clone();
         let dispatcher = self.dispatcher.clone();
         drop(runtime::tokio_runtime().spawn(async move {
             let mut chat_render_stream = app_context
-                .chat(session_id, provider_backend_id, prompt, vec![])
+                .chat(session_id, provider_backend_id, prompt, attachments)
                 .await;
             let session_id = chat_render_stream.session_id;
             let _ = dispatcher.unbounded_send(Msg::Chat(ChatMsg::RequestStarted {

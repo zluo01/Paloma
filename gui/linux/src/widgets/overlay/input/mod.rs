@@ -9,10 +9,11 @@ use std::{
 use futures::channel::mpsc;
 use gtk4::{
     Align, Box as GtkBox, Image, Inscription, Orientation, Overflow, Overlay, Picture, PolicyType,
-    ScrolledWindow, TextChildAnchor, TextView, WrapMode, gdk, gio, glib, glib::shell_quote,
-    graphene, gsk, prelude::*,
+    ScrolledWindow, TextChildAnchor, TextIter, TextView, WrapMode, gdk, gio, glib,
+    glib::shell_quote, graphene, gsk, prelude::*,
 };
 use log::warn;
+use paloma_core::UserPromptAttachment;
 
 use crate::widgets::overlay::{
     input::view::ComposerView,
@@ -25,13 +26,24 @@ const THUMBNAIL_HEIGHT_PX: i32 = 22;
 const PREVIEW_HEIGHT_PX: i32 = 240;
 const MAX_THUMBNAIL_ASPECT: f32 = 3.0;
 const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
+// this will show when trying to Ctrl+Z a deleted image
+const OBJECT_REPLACEMENT_CHARACTER: char = '\u{FFFC}';
 const IMAGE_MEDIA_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-#[allow(dead_code)]
 struct Attachment {
     anchor: TextChildAnchor,
     media_type: String,
     data: glib::Bytes,
+}
+
+impl Attachment {
+    fn to_user_prompt(&self, id: u32) -> UserPromptAttachment {
+        UserPromptAttachment::Image {
+            id,
+            media_type: self.media_type.clone(),
+            data: self.data.to_vec(),
+        }
+    }
 }
 
 struct LoadedImage {
@@ -96,16 +108,22 @@ impl InputView {
 
         let suppress = Rc::new(Cell::new(false));
         let debounce: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
+        let attachments: Rc<RefCell<Vec<Attachment>>> = Rc::new(RefCell::new(Vec::new()));
 
         let changed_placeholder = placeholder.clone();
         let changed_suppress = suppress.clone();
         let changed_debounce = debounce.clone();
+        let changed_attachments = attachments.clone();
         text.buffer().connect_changed(move |buffer| {
             let (start, end) = buffer.bounds();
             let empty = start == end;
 
             // show placeholder when no text
             changed_placeholder.set_visible(empty);
+            // proactively cleanup any leftover on each edit.
+            changed_attachments
+                .borrow_mut()
+                .retain(|attachment| !attachment.anchor.is_deleted());
 
             if changed_suppress.replace(false) {
                 return;
@@ -140,8 +158,6 @@ impl InputView {
         text.connect_preedit_changed(move |view, preedit| {
             preedit_placeholder.set_visible(view.buffer().char_count() == 0 && preedit.is_empty());
         });
-
-        let attachments: Rc<RefCell<Vec<Attachment>>> = Rc::new(RefCell::new(Vec::new()));
 
         let paste_attachments = attachments.clone();
         text.connect_paste_clipboard(move |view| {
@@ -216,10 +232,30 @@ impl InputView {
         &self.view
     }
 
-    pub(crate) fn query(&self) -> String {
+    pub(crate) fn query(&self) -> (String, Vec<UserPromptAttachment>) {
         let buffer = self.text.buffer();
-        let (start, end) = buffer.bounds();
-        buffer.text(&start, &end, false).trim().to_string()
+        let attachments = self.attachments.borrow();
+        let mut anchored: Vec<(TextIter, &Attachment)> = attachments
+            .iter()
+            .filter(|attachment| !attachment.anchor.is_deleted())
+            .map(|attachment| (buffer.iter_at_child_anchor(&attachment.anchor), attachment))
+            .collect();
+        anchored.sort_by_key(|(anchor, _)| *anchor);
+
+        let mut text = String::new();
+        let mut images = Vec::with_capacity(anchored.len());
+        let mut cursor = buffer.start_iter();
+        for (anchor, attachment) in anchored {
+            text.push_str(&buffer.text(&cursor, &anchor, false));
+            let id = images.len() as u32 + 1;
+            text.push_str(&format!("[Image #{id}]"));
+            images.push(attachment.to_user_prompt(id));
+            cursor = anchor;
+            cursor.forward_char();
+        }
+        text.push_str(&buffer.text(&cursor, &buffer.end_iter(), false));
+        text.retain(|c| c != OBJECT_REPLACEMENT_CHARACTER);
+        (text.trim().to_string(), images)
     }
 
     pub(crate) fn focus(&self) {

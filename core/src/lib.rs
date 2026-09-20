@@ -41,7 +41,7 @@ pub use db::Permission;
 pub use entity::{
     CapabilityFacet, CapabilityInfo, ChatRenderEvent, ExtensionCapabilityId, HealthLevel,
     HealthStatus, Icon, Plugin, PluginArgs, PluginType, ProviderBackendId, QueryResponse,
-    RenderEvent, SearchRenderEvent, ToolSchema, ToolSpec, Transport,
+    RenderEvent, SearchRenderEvent, ToolSchema, ToolSpec, Transport, UserPromptAttachment,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;
@@ -60,7 +60,6 @@ pub use utils::OAuthCallbackState;
 use crate::{
     constants::{APP_NAME, DATABASE_FILE},
     controller::ChatRenderStream,
-    entity::UserPromptAttachment,
     mcp::{McpController, McpControllerError},
 };
 
