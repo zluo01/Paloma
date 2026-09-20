@@ -50,6 +50,7 @@ pub(in crate::widgets) enum BindingId {
     SearchSubmit,
     SearchShowActions,
     OpenSessions,
+    InsertNewline,
     SearchClose,
     ChatSend,
     ChatInterrupt,
@@ -135,6 +136,14 @@ const ALL: &[Binding] = &[
         label: "Open sessions",
         shown: &[shift(Key::Down)],
         hidden: &[],
+    },
+    Binding {
+        id: BindingId::InsertNewline,
+        group: Group::Search,
+        context: Context::Global,
+        label: "New line",
+        shown: &[shift(Key::Return)],
+        hidden: &[shift(Key::KP_Enter)],
     },
     Binding {
         id: BindingId::SearchClose,
@@ -448,6 +457,18 @@ mod tests {
         assert_eq!(
             match_binding(Context::Search, Key::F1, ModifierType::empty()),
             None
+        );
+    }
+
+    #[test]
+    fn shift_return_resolves_to_newline_globally() {
+        assert_eq!(
+            match_binding(Context::Global, Key::Return, ModifierType::SHIFT_MASK),
+            Some(BindingId::InsertNewline)
+        );
+        assert_eq!(
+            match_binding(Context::Global, Key::KP_Enter, ModifierType::SHIFT_MASK),
+            Some(BindingId::InsertNewline)
         );
     }
 
