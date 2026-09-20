@@ -146,6 +146,16 @@ impl InputView {
         self.text.scroll_mark_onscreen(&buffer.get_insert());
     }
 
+    pub(crate) fn move_cursor(&self, delta: i32) -> bool {
+        let buffer = self.text.buffer();
+        let mut iter = buffer.iter_at_mark(&buffer.get_insert());
+        if delta < 0 {
+            !self.text.backward_display_line(&mut iter)
+        } else {
+            !self.text.forward_display_line(&mut iter)
+        }
+    }
+
     pub(crate) fn has_selection(&self) -> bool {
         self.text.buffer().has_selection()
     }

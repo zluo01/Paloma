@@ -49,7 +49,9 @@ impl Overlay {
                 let _ = self.dispatcher.unbounded_send(Msg::ContentCloseRequested);
             },
             Some(BindingId::ChatMovePrompt) => {
-                if !self.chat.navigate(move_delta(key)) {
+                let delta = move_delta(key);
+                // move the input cursor until either top or bottom, then move the tool selectionsd
+                if !self.input.move_cursor(delta) || !self.chat.navigate(delta) {
                     return Propagation::Proceed;
                 }
             },
@@ -97,7 +99,9 @@ impl Overlay {
                     .unbounded_send(Msg::Search(SearchMsg::ExitRequested));
             },
             Some(BindingId::SearchMove) => {
-                if !self.search.navigate(move_delta(key)) {
+                let delta = move_delta(key);
+                // move the input cursor until either top or bottom, then move the search result
+                if !self.input.move_cursor(delta) || !self.search.navigate(delta) {
                     return Propagation::Proceed;
                 }
             },
@@ -128,7 +132,14 @@ impl Overlay {
 
     fn handle_sessions_key(&self, key: Key, state: ModifierType) -> Propagation {
         match keymap::match_binding(Context::Sessions, key, state) {
-            Some(BindingId::SessionMove) => self.sessions.navigate(move_delta(key)),
+            Some(BindingId::SessionMove) => {
+                let delta = move_delta(key);
+                // move the input cursor first, then move the session result
+                if !self.input.move_cursor(delta) {
+                    return Propagation::Proceed;
+                }
+                self.sessions.navigate(delta)
+            },
             Some(BindingId::SessionOpen) => {
                 let _ = self
                     .dispatcher
