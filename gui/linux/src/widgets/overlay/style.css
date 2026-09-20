@@ -19,9 +19,6 @@
     padding: 0 18px;
 }
 
-/* Flatten the search entry: no border, no focus ring, transparent
-   fill. The entry node and its inner `text` node both need overriding
-   because the theme styles both. */
 .paloma-entry,
 .paloma-entry > text {
     background: transparent;
@@ -33,24 +30,22 @@
     font-weight: 400;
 }
 
-/* Zero the entry's own horizontal padding so the magnifier position
-   is fully determined by the icon rule below. */
 .paloma-entry {
-    padding-left: 0;
-    padding-right: 0;
+    padding: 18px 0;
 }
 
-.paloma-entry > image {
+.paloma-query-glyph {
+    margin-top: 22px;
     color: alpha(currentColor, 0.5);
-    margin: 0 12px 0 0;
     -gtk-icon-size: 20px;
 }
 
-.paloma-entry > text > placeholder {
+.paloma-entry-placeholder {
     color: alpha(currentColor, 0.45);
+    font-size: 20px;
 }
 
-.paloma-entry > text > selection {
+.paloma-entry > text selection {
     background: var(--accent-bg-color);
     color: var(--accent-fg-color);
 }
