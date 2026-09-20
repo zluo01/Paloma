@@ -7,11 +7,15 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::channel::mpsc;
+use futures::{channel::mpsc, future::join_all};
 use gtk4::{
     Align, Box as GtkBox, Image, Inscription, Orientation, Overflow, Overlay, Picture, PolicyType,
-    ScrolledWindow, TextChildAnchor, TextIter, TextView, WrapMode, gdk, gio, glib,
-    glib::shell_quote, graphene, gsk, prelude::*,
+    ScrolledWindow, TextBuffer, TextChildAnchor, TextIter, TextView, WrapMode, gdk,
+    gdk::{Clipboard, Paintable},
+    gio, glib,
+    glib::shell_quote,
+    graphene, gsk,
+    prelude::*,
 };
 use log::warn;
 use paloma_core::UserPromptAttachment;
@@ -51,6 +55,11 @@ struct LoadedImage {
     media_type: String,
     data: glib::Bytes,
     texture: gdk::Texture,
+}
+
+struct Thumbnails {
+    inline: Paintable,
+    preview: Paintable,
 }
 
 pub(crate) struct InputView {
@@ -163,59 +172,29 @@ impl InputView {
         let paste_attachments = attachments.clone();
         text.connect_paste_clipboard(move |view| {
             let clipboard = view.clipboard();
-            if !clipboard
-                .formats()
-                .contains_type(gdk::FileList::static_type())
-            {
-                return;
-            }
+            let formats = clipboard.formats();
+
+            let formats = [
+                formats.contains_type(gdk::FileList::static_type()), // files
+                formats.contains_type(glib::Type::STRING),           // has text type, text/plain
+                formats.contains_type(gdk::Texture::static_type()),  // displayable image type
+            ];
+
+            let has_files = match formats {
+                [true, _, _] => true,          // only files
+                [false, false, true] => false, // only in-memory images
+                _ => return,                   // every else hand back to default handler
+            };
+
             view.stop_signal_emission_by_name("paste-clipboard");
             let view = view.clone();
             let attachments = paste_attachments.clone();
             glib::spawn_future_local(async move {
-                let files = match clipboard
-                    .read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT)
-                    .await
-                {
-                    Ok(value) => value
-                        .get::<gdk::FileList>()
-                        .map(|list| list.files())
-                        .unwrap_or_default(),
-                    Err(err) => {
-                        warn!("fail to read from clipboard. {err}");
-                        Vec::new()
-                    },
-                };
-                let buffer = view.buffer();
-                let is_link = |file: &gio::File| {
-                    matches!(file.uri_scheme().as_deref(), Some("http" | "https"))
-                };
-                if files.is_empty() || files.iter().all(is_link) {
-                    buffer.paste_clipboard(&clipboard, None, view.is_editable());
-                    return;
+                if has_files {
+                    handle_clipboard_files(&clipboard, &view, &attachments).await
+                } else {
+                    handle_clipboard_images(&clipboard, &view, &attachments).await
                 }
-                let mut pasted = Vec::new();
-                for file in &files {
-                    let file_path = match file.path() {
-                        Some(path) => shell_quote(path),
-                        None => shell_quote(file.uri().as_str()),
-                    };
-                    pasted.push((
-                        file_path.to_string_lossy().into_owned(),
-                        load_image(file).await,
-                    ));
-                }
-                // allow Ctrl+z to revert the paste
-                buffer.begin_user_action();
-                buffer.delete_selection(true, view.is_editable()); // replace the highlighted text
-                for (path, image) in pasted {
-                    if !image.is_some_and(|image| attach_image(&view, &attachments, image)) {
-                        buffer.insert_interactive_at_cursor(&path, view.is_editable());
-                    }
-                    buffer.insert_interactive_at_cursor(" ", view.is_editable());
-                }
-                buffer.end_user_action();
-                view.scroll_mark_onscreen(&buffer.get_insert());
             });
         });
 
@@ -304,79 +283,205 @@ impl InputView {
     }
 }
 
-async fn load_image(file: &gio::File) -> Option<LoadedImage> {
-    let path = file.path()?;
-    let (content_type, _) = gio::content_type_guess(Some(&path), None);
-    let media_type = gio::content_type_get_mime_type(&content_type)?;
-    if !IMAGE_MEDIA_TYPES.contains(&media_type.as_str()) {
-        return None;
+/// in-memory images such as screenshot or copy from web
+async fn handle_clipboard_images(
+    clipboard: &Clipboard,
+    view: &TextView,
+    attachments: &RefCell<Vec<Attachment>>,
+) {
+    let loaded = read_in_memory_image(clipboard)
+        .await
+        .and_then(|image| prepare_thumbnails(view, &image).map(|thumbnails| (image, thumbnails)));
+    let (image, thumbnails) = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            warn!("fail to paste image from clipboard. {err}");
+            return;
+        },
+    };
+    write_clipboard_to_buffer(view, |buffer| {
+        attach_image(view, attachments, image, thumbnails);
+        buffer.insert_interactive_at_cursor(" ", view.is_editable());
+    });
+}
+
+async fn handle_clipboard_files(
+    clipboard: &Clipboard,
+    view: &TextView,
+    attachments: &RefCell<Vec<Attachment>>,
+) {
+    let buffer = view.buffer();
+    let files = match clipboard
+        .read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT)
+        .await
+    {
+        Ok(value) => value
+            .get::<gdk::FileList>()
+            .map(|list| list.files())
+            .unwrap_or_default(),
+        Err(err) => {
+            warn!("fail to read from clipboard. {err}");
+            Vec::new()
+        },
+    };
+    let is_link = |file: &gio::File| matches!(file.uri_scheme().as_deref(), Some("http" | "https"));
+    if files.is_empty() || files.iter().all(is_link) {
+        buffer.paste_clipboard(clipboard, None, view.is_editable());
+        return;
     }
-    let size = match file
+
+    let images = join_all(files.iter().map(load_image)).await;
+    let pasted: Vec<_> = files
+        .iter()
+        .zip(images)
+        .map(|(file, image)| {
+            let file_path = match file.path() {
+                Some(path) => shell_quote(path),
+                None => shell_quote(file.uri().as_str()),
+            };
+            let file_path = file_path.to_string_lossy().into_owned();
+            let image = match image {
+                Ok(Some(image)) => {
+                    prepare_thumbnails(view, &image).map(|thumbnails| (image, thumbnails))
+                },
+                Ok(None) => return (file_path, None),
+                Err(err) => Err(err),
+            };
+            let image = image
+                .inspect_err(|err| {
+                    warn!("fail to paste image {file_path}, fallback to file path. {err}")
+                })
+                .ok();
+            (file_path, image)
+        })
+        .collect();
+
+    write_clipboard_to_buffer(view, |buffer| {
+        for (path, image) in pasted {
+            match image {
+                Some((image, thumbnails)) => attach_image(view, attachments, image, thumbnails),
+                None => {
+                    buffer.insert_interactive_at_cursor(&path, view.is_editable());
+                },
+            }
+            buffer.insert_interactive_at_cursor(" ", view.is_editable());
+        }
+    });
+}
+
+fn write_clipboard_to_buffer(view: &TextView, writer: impl FnOnce(&TextBuffer)) {
+    let buffer = view.buffer();
+
+    // allow Ctrl+Z to revert the paste
+    buffer.begin_user_action();
+    buffer.delete_selection(true, view.is_editable()); // replace the highlighted text
+    writer(&buffer);
+    buffer.end_user_action();
+    view.scroll_mark_onscreen(&buffer.get_insert());
+}
+
+async fn read_in_memory_image(clipboard: &Clipboard) -> Result<LoadedImage, InputViewError> {
+    let (stream, media_type) = clipboard
+        .read_future(IMAGE_MEDIA_TYPES, glib::Priority::DEFAULT)
+        .await
+        .map_err(InputViewError::Read)?;
+    let output_stream = gio::MemoryOutputStream::new_resizable();
+    output_stream
+        .splice_future(
+            &stream,
+            gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
+            glib::Priority::DEFAULT,
+        )
+        .await
+        .map_err(InputViewError::Read)?;
+    let data = output_stream.steal_as_bytes();
+    if data.len() as i64 > MAX_IMAGE_BYTES {
+        return Err(InputViewError::ImageTooLarge(data.len() as i64));
+    }
+    decode_image(&media_type, data).await
+}
+
+async fn load_image(file: &gio::File) -> Result<Option<LoadedImage>, InputViewError> {
+    let Some(path) = file.path() else {
+        return Ok(None);
+    };
+    let (content_type, _) = gio::content_type_guess(Some(&path), None);
+    let Some(media_type) = gio::content_type_get_mime_type(&content_type) else {
+        return Ok(None);
+    };
+    if !IMAGE_MEDIA_TYPES.contains(&media_type.as_str()) {
+        return Ok(None);
+    }
+    let size = file
         .query_info_future(
             gio::FILE_ATTRIBUTE_STANDARD_SIZE,
             gio::FileQueryInfoFlags::NONE,
             glib::Priority::DEFAULT,
         )
         .await
-    {
-        Ok(info) => info.size(),
-        Err(err) => {
-            warn!("fail to query image {}. {err}", path.display());
-            return None;
-        },
-    };
+        .map_err(InputViewError::Read)?
+        .size();
     if size > MAX_IMAGE_BYTES {
-        warn!(
-            "image {} is {size} bytes, over the {MAX_IMAGE_BYTES} limit, fallback to file path",
-            path.display()
-        );
-        return None;
+        return Err(InputViewError::ImageTooLarge(size));
     }
-    let (data, _) = match file.load_contents_future().await {
-        Ok(contents) => contents,
-        Err(err) => {
-            warn!("fail to read image {}. {err}", path.display());
-            return None;
+    let (data, _) = file
+        .load_contents_future()
+        .await
+        .map_err(InputViewError::Read)?;
+    decode_image(&media_type, glib::Bytes::from_owned(data))
+        .await
+        .map(Some)
+}
+
+async fn decode_image(media_type: &str, data: glib::Bytes) -> Result<LoadedImage, InputViewError> {
+    let decoded =
+        gio::spawn_blocking(move || gdk::Texture::from_bytes(&data).map(|texture| (data, texture)))
+            .await;
+    match decoded {
+        Ok(Ok((data, texture))) => Ok(LoadedImage {
+            media_type: media_type.to_string(),
+            data,
+            texture,
+        }),
+        Ok(Err(err)) => Err(InputViewError::Decode(err)),
+        Err(panic) => {
+            let reason = panic
+                .downcast_ref::<&str>()
+                .map(|reason| reason.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown".to_string());
+            Err(InputViewError::Panic(reason))
         },
+    }
+}
+
+fn prepare_thumbnails(view: &TextView, image: &LoadedImage) -> Result<Thumbnails, InputViewError> {
+    let (Some(preview), Some(inline)) = (
+        thumbnail(view, &image.texture, PREVIEW_HEIGHT_PX),
+        thumbnail(view, &image.texture, THUMBNAIL_HEIGHT_PX),
+    ) else {
+        return Err(InputViewError::Render);
     };
-    let data = glib::Bytes::from_owned(data);
-    let texture = match gdk::Texture::from_bytes(&data) {
-        Ok(texture) => texture,
-        Err(err) => {
-            warn!("fail to decode image {}. {err}", path.display());
-            return None;
-        },
-    };
-    Some(LoadedImage {
-        media_type: media_type.to_string(),
-        data,
-        texture,
-    })
+    Ok(Thumbnails { inline, preview })
 }
 
 fn attach_image(
     view: &TextView,
     attachments: &RefCell<Vec<Attachment>>,
     image: LoadedImage,
-) -> bool {
-    let (Some(preview), Some(thumbnail)) = (
-        thumbnail(view, &image.texture, PREVIEW_HEIGHT_PX),
-        thumbnail(view, &image.texture, THUMBNAIL_HEIGHT_PX),
-    ) else {
-        warn!("fail to render image thumbnail, fallback to file path");
-        return false;
-    };
+    thumbnails: Thumbnails,
+) {
     let buffer = view.buffer();
     let mut iter = buffer.iter_at_mark(&buffer.get_insert());
     let anchor = buffer.create_child_anchor(&mut iter);
     let picture = Picture::builder()
-        .paintable(&thumbnail)
+        .paintable(&thumbnails.inline)
         .can_shrink(false)
         .overflow(Overflow::Hidden)
         .css_classes(["paloma-attachment"])
         .has_tooltip(true)
         .build();
-    let preview = Picture::for_paintable(&preview);
+    let preview = Picture::for_paintable(&thumbnails.preview);
     picture.connect_query_tooltip(move |_, _, _, _, tooltip| {
         tooltip.set_custom(Some(&preview));
         true
@@ -387,11 +492,10 @@ fn attach_image(
         media_type: image.media_type,
         data: image.data,
     });
-    true
 }
 
 /// aspect ratio scale along the provided height, center-cropped past MAX_THUMBNAIL_ASPECT
-fn thumbnail(view: &TextView, texture: &gdk::Texture, height: i32) -> Option<gdk::Paintable> {
+fn thumbnail(view: &TextView, texture: &gdk::Texture, height: i32) -> Option<Paintable> {
     let height = height as f32;
     let (texture_width, texture_height) = (texture.width() as f32, texture.height() as f32);
     let aspect =
@@ -437,6 +541,20 @@ fn placeholder(mode: Mode) -> &'static str {
         Mode::Chat => "Reply…",
         Mode::Session => "Search sessions…",
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum InputViewError {
+    #[error("{0} bytes, over the {MAX_IMAGE_BYTES} limit")]
+    ImageTooLarge(i64),
+    #[error("read failed: {0}")]
+    Read(glib::Error),
+    #[error("decode failed: {0}")]
+    Decode(glib::Error),
+    #[error("decoder panicked: {0}")]
+    Panic(String),
+    #[error("no renderer to draw the thumbnail")]
+    Render,
 }
 
 #[cfg(test)]
