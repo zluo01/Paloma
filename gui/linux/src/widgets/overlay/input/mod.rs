@@ -1,11 +1,16 @@
 mod view;
 
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::Duration,
+};
 
 use futures::channel::mpsc;
 use gtk4::{
-    Align, Box as GtkBox, Image, Inscription, Orientation, Overlay, PolicyType, ScrolledWindow,
-    TextView, WrapMode, gdk, gio, glib, glib::shell_quote, prelude::*,
+    Align, Box as GtkBox, Image, Inscription, Orientation, Overflow, Overlay, Picture, PolicyType,
+    ScrolledWindow, TextChildAnchor, TextView, WrapMode, gdk, gio, glib, glib::shell_quote,
+    graphene, gsk, prelude::*,
 };
 use log::warn;
 
@@ -16,6 +21,24 @@ use crate::widgets::overlay::{
 
 const SEARCH_DEBOUNCE_MS: u64 = 200;
 const MAX_CONTENT_HEIGHT_PX: i32 = 171;
+const THUMBNAIL_HEIGHT_PX: i32 = 22;
+const PREVIEW_HEIGHT_PX: i32 = 240;
+const MAX_THUMBNAIL_ASPECT: f32 = 3.0;
+const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
+const IMAGE_MEDIA_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+#[allow(dead_code)]
+struct Attachment {
+    anchor: TextChildAnchor,
+    media_type: String,
+    data: glib::Bytes,
+}
+
+struct LoadedImage {
+    media_type: String,
+    data: glib::Bytes,
+    texture: gdk::Texture,
+}
 
 pub(crate) struct InputView {
     view: GtkBox,
@@ -24,6 +47,7 @@ pub(crate) struct InputView {
     // signal to tell if change is programmatic change or user input change
     suppress: Rc<Cell<bool>>,
     debounce: Rc<Cell<Option<glib::SourceId>>>,
+    attachments: Rc<RefCell<Vec<Attachment>>>,
 }
 
 impl InputView {
@@ -117,7 +141,10 @@ impl InputView {
             preedit_placeholder.set_visible(view.buffer().char_count() == 0 && preedit.is_empty());
         });
 
-        text.connect_paste_clipboard(|view| {
+        let attachments: Rc<RefCell<Vec<Attachment>>> = Rc::new(RefCell::new(Vec::new()));
+
+        let paste_attachments = attachments.clone();
+        text.connect_paste_clipboard(move |view| {
             let clipboard = view.clipboard();
             if !clipboard
                 .formats()
@@ -127,6 +154,7 @@ impl InputView {
             }
             view.stop_signal_emission_by_name("paste-clipboard");
             let view = view.clone();
+            let attachments = paste_attachments.clone();
             glib::spawn_future_local(async move {
                 let files = match clipboard
                     .read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT)
@@ -149,18 +177,26 @@ impl InputView {
                     buffer.paste_clipboard(&clipboard, None, view.is_editable());
                     return;
                 }
-                let paths: Vec<String> = files
-                    .iter()
-                    .map(|file| match file.path() {
+                let mut pasted = Vec::new();
+                for file in &files {
+                    let file_path = match file.path() {
                         Some(path) => shell_quote(path),
                         None => shell_quote(file.uri().as_str()),
-                    })
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect();
+                    };
+                    pasted.push((
+                        file_path.to_string_lossy().into_owned(),
+                        load_image(file).await,
+                    ));
+                }
                 // allow Ctrl+z to revert the paste
                 buffer.begin_user_action();
                 buffer.delete_selection(true, view.is_editable()); // replace the highlighted text
-                buffer.insert_interactive_at_cursor(&paths.join(" "), view.is_editable());
+                for (path, image) in pasted {
+                    if !image.is_some_and(|image| attach_image(&view, &attachments, image)) {
+                        buffer.insert_interactive_at_cursor(&path, view.is_editable());
+                    }
+                    buffer.insert_interactive_at_cursor(" ", view.is_editable());
+                }
                 buffer.end_user_action();
                 view.scroll_mark_onscreen(&buffer.get_insert());
             });
@@ -172,6 +208,7 @@ impl InputView {
             placeholder,
             suppress,
             debounce,
+            attachments,
         }
     }
 
@@ -211,6 +248,7 @@ impl InputView {
     }
 
     pub(crate) fn clear(&self) {
+        self.attachments.borrow_mut().clear();
         let buffer = self.text.buffer();
         if buffer.char_count() == 0 {
             return;
@@ -225,6 +263,133 @@ impl InputView {
     pub(crate) fn set_mode(&self, mode: Mode) {
         self.placeholder.set_text(Some(placeholder(mode)));
     }
+}
+
+async fn load_image(file: &gio::File) -> Option<LoadedImage> {
+    let path = file.path()?;
+    let (content_type, _) = gio::content_type_guess(Some(&path), None);
+    let media_type = gio::content_type_get_mime_type(&content_type)?;
+    if !IMAGE_MEDIA_TYPES.contains(&media_type.as_str()) {
+        return None;
+    }
+    let size = match file
+        .query_info_future(
+            gio::FILE_ATTRIBUTE_STANDARD_SIZE,
+            gio::FileQueryInfoFlags::NONE,
+            glib::Priority::DEFAULT,
+        )
+        .await
+    {
+        Ok(info) => info.size(),
+        Err(err) => {
+            warn!("fail to query image {}. {err}", path.display());
+            return None;
+        },
+    };
+    if size > MAX_IMAGE_BYTES {
+        warn!(
+            "image {} is {size} bytes, over the {MAX_IMAGE_BYTES} limit, fallback to file path",
+            path.display()
+        );
+        return None;
+    }
+    let (data, _) = match file.load_contents_future().await {
+        Ok(contents) => contents,
+        Err(err) => {
+            warn!("fail to read image {}. {err}", path.display());
+            return None;
+        },
+    };
+    let data = glib::Bytes::from_owned(data);
+    let texture = match gdk::Texture::from_bytes(&data) {
+        Ok(texture) => texture,
+        Err(err) => {
+            warn!("fail to decode image {}. {err}", path.display());
+            return None;
+        },
+    };
+    Some(LoadedImage {
+        media_type: media_type.to_string(),
+        data,
+        texture,
+    })
+}
+
+fn attach_image(
+    view: &TextView,
+    attachments: &RefCell<Vec<Attachment>>,
+    image: LoadedImage,
+) -> bool {
+    let (Some(preview), Some(thumbnail)) = (
+        thumbnail(view, &image.texture, PREVIEW_HEIGHT_PX),
+        thumbnail(view, &image.texture, THUMBNAIL_HEIGHT_PX),
+    ) else {
+        warn!("fail to render image thumbnail, fallback to file path");
+        return false;
+    };
+    let buffer = view.buffer();
+    let mut iter = buffer.iter_at_mark(&buffer.get_insert());
+    let anchor = buffer.create_child_anchor(&mut iter);
+    let picture = Picture::builder()
+        .paintable(&thumbnail)
+        .can_shrink(false)
+        .overflow(Overflow::Hidden)
+        .css_classes(["paloma-attachment"])
+        .has_tooltip(true)
+        .build();
+    let preview = Picture::for_paintable(&preview);
+    picture.connect_query_tooltip(move |_, _, _, _, tooltip| {
+        tooltip.set_custom(Some(&preview));
+        true
+    });
+    view.add_child_at_anchor(&picture, &anchor);
+    attachments.borrow_mut().push(Attachment {
+        anchor,
+        media_type: image.media_type,
+        data: image.data,
+    });
+    true
+}
+
+/// aspect ratio scale along the provided height, center-cropped past MAX_THUMBNAIL_ASPECT
+fn thumbnail(view: &TextView, texture: &gdk::Texture, height: i32) -> Option<gdk::Paintable> {
+    let height = height as f32;
+    let (texture_width, texture_height) = (texture.width() as f32, texture.height() as f32);
+    let aspect =
+        (texture_width / texture_height).clamp(1.0 / MAX_THUMBNAIL_ASPECT, MAX_THUMBNAIL_ASPECT);
+    let width = (height * aspect).round().max(1.0);
+    let bounds = graphene::Rect::new(0.0, 0.0, width, height);
+    let cover = (width / texture_width).max(height / texture_height);
+    let (covered_width, covered_height) = (texture_width * cover, texture_height * cover);
+    let device_scale = view.scale_factor() as f32;
+    let snapshot = gtk4::Snapshot::new();
+    snapshot.scale(device_scale, device_scale);
+    snapshot.push_clip(&bounds);
+    snapshot.append_scaled_texture(
+        texture,
+        gsk::ScalingFilter::Trilinear,
+        &graphene::Rect::new(
+            (width - covered_width) / 2.0,
+            (height - covered_height) / 2.0,
+            covered_width,
+            covered_height,
+        ),
+    );
+    snapshot.pop();
+    let node = snapshot.to_node()?;
+    let renderer = view.native()?.renderer()?;
+    let pixels = renderer.render_texture(
+        &node,
+        Some(&graphene::Rect::new(
+            0.0,
+            0.0,
+            width * device_scale,
+            height * device_scale,
+        )),
+    );
+    let snapshot = gtk4::Snapshot::new();
+    snapshot.append_texture(&pixels, &bounds);
+    snapshot.to_paintable(Some(&graphene::Size::new(width, height)))
 }
 
 fn placeholder(mode: Mode) -> &'static str {
