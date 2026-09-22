@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use futures::FutureExt;
 use gtk4::{
-    Box as GtkBox, Orientation, TextBuffer, TextView, WrapMode, glib,
+    Box as GtkBox, TextBuffer, TextView, WrapMode, glib,
     prelude::{BoxExt, TextBufferExt, WidgetExt},
 };
+use libadwaita::WrapBox;
 use paloma_core::UserPromptAttachment;
 
 use crate::{
@@ -42,9 +43,9 @@ impl UserPromptSection {
             .build();
         view.append(&text_view);
 
-        let image_row = GtkBox::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(6)
+        let image_row = WrapBox::builder()
+            .child_spacing(6)
+            .line_spacing(6)
             .margin_top(6)
             .visible(false)
             .build();

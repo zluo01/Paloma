@@ -1,6 +1,6 @@
 use gtk4::{
-    Overflow, Picture, TextChildAnchor, TextView, Widget, gdk, gdk::Paintable, gio, glib, graphene,
-    gsk, prelude::*,
+    ContentFit, Overflow, Picture, TextChildAnchor, TextView, Widget, gdk, gdk::Paintable, gio,
+    glib, graphene, gsk, prelude::*,
 };
 use log::warn;
 
@@ -74,6 +74,7 @@ pub(crate) fn image_picture(inline: &impl IsA<Paintable>, preview: Option<&Paint
     let picture = Picture::builder()
         .paintable(inline)
         .can_shrink(false)
+        .content_fit(ContentFit::ScaleDown)
         .overflow(Overflow::Hidden)
         .css_classes(["paloma-attachment"])
         .has_tooltip(preview.is_some())
