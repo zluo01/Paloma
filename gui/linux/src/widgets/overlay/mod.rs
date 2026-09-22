@@ -97,7 +97,7 @@ impl Overlay {
             app,
             "paloma-launcher",
             OVERLAY_WIDTH_PX,
-            KeyboardMode::Exclusive,
+            KeyboardMode::OnDemand,
         );
         launcher_window.set_title(Some("Paloma"));
 
@@ -176,6 +176,7 @@ impl Overlay {
 
         overlay.install_scroll_stickiness();
         overlay.install_launcher_drag();
+        overlay.install_click_away();
         overlay.install_monitor_watcher();
         overlay.register_key_binding();
 

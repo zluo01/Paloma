@@ -1,10 +1,12 @@
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, rc::Rc, time::Duration};
 
-use gtk4::{ApplicationWindow, GestureDrag, prelude::*};
+use gtk4::{ApplicationWindow, GestureDrag, glib, prelude::*};
 use gtk4_layer_shell::{Edge, LayerShell};
 
 use super::{OVERLAY_WIDTH_PX, Overlay, SEARCH_BAR_HEIGHT_PX};
 use crate::widgets::overlay::model::Mode;
+
+const FOCUS_GRACE: Duration = Duration::from_millis(70);
 
 impl Overlay {
     pub(super) fn layout(&self) {
@@ -96,6 +98,27 @@ impl Overlay {
                 overlay.layout();
             });
         });
+    }
+
+    /// Hide once focus has moved to another window and stayed there past a short grace period.
+    pub(super) fn install_click_away(self: &Rc<Self>) {
+        let overlay = Rc::downgrade(self);
+        self.launcher_window
+            .connect_is_active_notify(move |window| {
+                if window.is_active() || !window.is_visible() {
+                    return;
+                }
+                let overlay = overlay.clone();
+                glib::timeout_add_local_once(FOCUS_GRACE, move || {
+                    let Some(overlay) = overlay.upgrade() else {
+                        return;
+                    };
+                    if !overlay.launcher_window.is_active() && overlay.launcher_window.is_visible()
+                    {
+                        overlay.conceal();
+                    }
+                });
+            });
     }
 
     pub(super) fn install_launcher_drag(self: &Rc<Self>) {
