@@ -100,36 +100,21 @@ impl Overlay {
 
     pub(super) fn install_launcher_drag(self: &Rc<Self>) {
         let drag = GestureDrag::new();
-        let drag_start = Rc::new(Cell::new((0, 0)));
 
-        {
-            let overlay = Rc::downgrade(self);
-            let drag_start = drag_start.clone();
-            drag.connect_drag_begin(move |_, _, _| {
-                let Some(overlay) = overlay.upgrade() else {
-                    return;
-                };
-                let position = overlay
-                    .position
-                    .get()
-                    .unwrap_or_else(|| centered_position(&overlay.launcher_window));
-                drag_start.set(position);
-            });
-        }
-
-        {
-            let overlay = Rc::downgrade(self);
-            drag.connect_drag_update(move |_, dx, dy| {
-                let Some(overlay) = overlay.upgrade() else {
-                    return;
-                };
-                let (start_x, start_y) = drag_start.get();
-                let x = (start_x + dx.round() as i32).max(0);
-                let y = (start_y + dy.round() as i32).max(0);
-                overlay.position.set(Some((x, y)));
-                overlay.layout();
-            });
-        }
+        let overlay = Rc::downgrade(self);
+        drag.connect_drag_update(move |_, dx, dy| {
+            let Some(overlay) = overlay.upgrade() else {
+                return;
+            };
+            let (current_x, current_y) = overlay
+                .position
+                .get()
+                .unwrap_or_else(|| centered_position(&overlay.launcher_window));
+            let x = (current_x + dx.round() as i32).max(0);
+            let y = (current_y + dy.round() as i32).max(0);
+            overlay.position.set(Some((x, y)));
+            overlay.layout();
+        });
 
         self.footer.widget().add_controller(drag);
     }
@@ -174,12 +159,12 @@ fn monitor_geometry(window: &ApplicationWindow) -> Option<gtk4::gdk::Rectangle> 
     window
         .monitor()
         .or_else(|| surface_monitor(window))
-        .or_else(|| largest_monitor(&gtk4::prelude::WidgetExt::display(window)))
+        .or_else(|| largest_monitor(&WidgetExt::display(window)))
         .map(|monitor| monitor.geometry())
 }
 
 fn surface_monitor(window: &ApplicationWindow) -> Option<gtk4::gdk::Monitor> {
-    let display = gtk4::prelude::WidgetExt::display(window);
+    let display = WidgetExt::display(window);
     window
         .surface()
         .and_then(|surface| display.monitor_at_surface(&surface))
