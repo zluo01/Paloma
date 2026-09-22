@@ -459,11 +459,11 @@ impl Overlay {
     }
 
     fn exit_search(&self) {
-        if self.render_any() {
+        if self.input.is_empty() {
+            self.hide()
+        } else {
             self.close_content();
             self.input.clear();
-        } else {
-            self.hide()
         }
     }
 }

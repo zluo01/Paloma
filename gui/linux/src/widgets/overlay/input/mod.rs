@@ -259,6 +259,10 @@ impl InputView {
         }
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.text.buffer().char_count() == 0
+    }
+
     pub(crate) fn has_selection(&self) -> bool {
         self.text.buffer().has_selection()
     }
