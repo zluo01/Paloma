@@ -9,13 +9,13 @@ publish = false
 [dependencies]
 async-trait = { workspace = true }
 exmex = "0.21.0"
-ignore = "0.4.27"
+ignore = "0.4.33"
 log = { workspace = true }
 mime_guess = "2.0.5"
 notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
-open = { version = "5.3.6", features = ["shellexecute-on-windows"] }
+open = { version = "5.4.4", features = ["shellexecute-on-windows"] }
 paloma-extension-base = { workspace = true }
 paloma-extension-protocol = { workspace = true }
 paloma-utils = { workspace = true }
@@ -27,14 +27,14 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-freedesktop-desktop-entry = "0.8.1"
+freedesktop-desktop-entry = "0.8.3"
 wl-clipboard-rs = "0.9.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard"] }
 objc2-foundation = { workspace = true, default-features = false, features = ["std", "NSArray", "NSString", "NSEnumerator"] }
-plist = "1.10.0"
+plist = "1.10.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, default-features = false, features = [

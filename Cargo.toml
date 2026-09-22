@@ -31,15 +31,15 @@ redundant_clone = "warn"
 implicit_clone = "warn"
 
 [workspace.dependencies]
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 backon = "1.6.0"
 bytes = "1.12.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 dashmap = "6.2.1"
 env_logger = "0.11.11"
 eventsource-stream = "0.2.3"
-futures = "0.3.32"
-log = "0.4.33"
+futures = "0.3.34"
+log = "0.4.34"
 oauth2 = { version = "5.0.0", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
 paloma-core = { path = "core" }
@@ -55,23 +55,23 @@ paloma-utils = { path = "utils" }
 prost = "0.14.4"
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.2.0"
-regex = "1.12.4"
-reqwest = { version = "0.13.4", default-features = false, features = [
+regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false, features = [
     "json",
     "form",
     "rustls",
     "http2",
     "stream",
 ] }
-schemars = "1.2.1"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
+schemars = "1.2.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 tempfile = "3.27.0"
-thiserror = "2.0.18"
-tokio = { version = "1.52.3", default-features = false }
-tokio-util = { version = "0.7.18", features = ["codec"] }
-uniffi = "0.31.0"
-uuid = { version = "1.23.4", default-features = false, features = ["v7", "std"] }
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", default-features = false }
+tokio-util = { version = "0.7.19", features = ["codec"] }
+uniffi = "0.31.2"
+uuid = { version = "1.26.1", default-features = false, features = ["v7", "std"] }
 windows = { version = "0.62", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false }
 
