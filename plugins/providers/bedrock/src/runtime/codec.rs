@@ -9,7 +9,8 @@ use aws_smithy_types::{Blob, Document, Number, base64};
 use log::warn;
 use paloma_provider_base::{ENVIRONMENT_CONTEXT, ProviderError, Result, provider_meta_to_map};
 use paloma_provider_protocol::v1::{
-    ChatRequest, UserPrompt, conversation_item::Item, user_prompt_content::Item as ContentItem,
+    ChatRequest, ChatRequestMessage, UserPrompt, conversation_item::Item,
+    user_prompt_content::Item as ContentItem,
 };
 use paloma_utils::Element;
 use serde_json::Value;
@@ -75,12 +76,12 @@ pub(super) fn construct_reasoning_config(request: &ChatRequest) -> Option<Docume
     ])))
 }
 
-pub(super) fn construct_messages(request: &ChatRequest) -> Result<Vec<Message>> {
+pub(super) fn construct_messages(messages: Vec<ChatRequestMessage>) -> Result<Vec<Message>> {
     let mut folded: Vec<(ConversationRole, Vec<ContentBlock>)> = Vec::new();
 
-    for message in &request.messages {
+    for message in messages {
         let same_provider = message.provider_id == PROVIDER_ID;
-        let Some(item) = message.item.as_ref().and_then(|i| i.item.as_ref()) else {
+        let Some(item) = message.item.and_then(|i| i.item) else {
             continue;
         };
         let Some((role, new_blocks)) = construct_content_block(item, same_provider)? else {
@@ -106,7 +107,7 @@ pub(super) fn construct_messages(request: &ChatRequest) -> Result<Vec<Message>> 
 }
 
 fn construct_content_block(
-    item: &Item,
+    item: Item,
     same_provider: bool,
 ) -> Result<Option<(ConversationRole, Vec<ContentBlock>)>> {
     let block = match item {
@@ -177,7 +178,7 @@ fn construct_content_block(
         Item::ToolResult(result) => {
             let block = ToolResultBlock::builder()
                 .tool_use_id(&result.call_id)
-                .content(ToolResultContentBlock::Text(result.output.clone()))
+                .content(ToolResultContentBlock::Text(result.output))
                 .build()
                 .map_err(|e| {
                     ProviderError::Other(format!("fail to build tool result block: {e}"))
@@ -192,16 +193,13 @@ fn construct_content_block(
     Ok(block)
 }
 
-fn construct_user_prompt_blocks(prompt: &UserPrompt) -> Result<Vec<ContentBlock>> {
+fn construct_user_prompt_blocks(prompt: UserPrompt) -> Result<Vec<ContentBlock>> {
     let mut blocks = Vec::with_capacity(prompt.content.len() + 1);
 
-    for item in &prompt.content {
-        match &item.item {
+    for item in prompt.content {
+        match item.item {
             None => {},
             Some(ContentItem::Image(image)) => {
-                let bytes = base64::decode(&image.data).map_err(|e| {
-                    ProviderError::Other(format!("malformed image data for {}: {e}", image.id))
-                })?;
                 let block = ImageBlock::builder()
                     .format(ImageFormat::from(
                         image
@@ -209,7 +207,7 @@ fn construct_user_prompt_blocks(prompt: &UserPrompt) -> Result<Vec<ContentBlock>
                             .strip_prefix("image/")
                             .unwrap_or(&image.media_type),
                     ))
-                    .source(ImageSource::Bytes(Blob::new(bytes)))
+                    .source(ImageSource::Bytes(Blob::new(image.data)))
                     .build()
                     .map_err(|e| ProviderError::Other(format!("fail to build image block: {e}")))?;
                 blocks.push(ContentBlock::Image(block));
@@ -217,7 +215,7 @@ fn construct_user_prompt_blocks(prompt: &UserPrompt) -> Result<Vec<ContentBlock>
         }
     }
 
-    blocks.push(ContentBlock::Text(prompt.prompt.clone()));
+    blocks.push(ContentBlock::Text(prompt.prompt));
     Ok(blocks)
 }
 
@@ -293,10 +291,13 @@ fn json_to_document(value: &Value) -> Document {
 
 #[cfg(test)]
 mod tests {
-    use paloma_provider_protocol::v1::{
-        ChatRequestMessage, ConversationItem, ConversationMessage, MessageContentItem, Reasoning,
-        SummaryItem, ToolCall, ToolDefinition, ToolResult, Unknown, UserPrompt, UserPromptContent,
-        UserPromptImage,
+    use paloma_provider_protocol::{
+        Bytes,
+        v1::{
+            ChatRequestMessage, ConversationItem, ConversationMessage, MessageContentItem,
+            Reasoning, SummaryItem, ToolCall, ToolDefinition, ToolResult, Unknown, UserPrompt,
+            UserPromptContent, UserPromptImage,
+        },
     };
 
     use super::*;
@@ -328,7 +329,7 @@ mod tests {
         user_prompt_with_images(prompt, &[])
     }
 
-    fn user_prompt_with_images(prompt: &str, images: &[(&str, &[u8])]) -> Item {
+    fn user_prompt_with_images(prompt: &str, images: &[(&str, &'static [u8])]) -> Item {
         Item::UserPrompt(UserPrompt {
             prompt: prompt.into(),
             content: images
@@ -338,7 +339,7 @@ mod tests {
                     item: Some(ContentItem::Image(UserPromptImage {
                         id: (i + 1) as u32,
                         media_type: (*media_type).into(),
-                        data: base64::encode(bytes),
+                        data: Bytes::from_static(bytes),
                     })),
                 })
                 .collect(),
@@ -461,7 +462,7 @@ mod tests {
                 ),
             )];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             assert_eq!(messages.len(), 1);
             assert_eq!(*messages[0].role(), ConversationRole::User);
@@ -496,7 +497,7 @@ mod tests {
                 user_prompt_with_images("random", &[("image/random", b"random-bytes")]),
             )];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             let image = messages[0].content()[0].as_image().unwrap();
             assert_eq!(image.format().as_str(), "random");
@@ -517,7 +518,7 @@ mod tests {
                 message(PROVIDER_ID, tool_result("call-1", "88F")),
             ];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             assert_eq!(messages.len(), 3);
             assert_eq!(*messages[0].role(), ConversationRole::User);
@@ -562,7 +563,7 @@ mod tests {
                 message("OpenAI", assistant_text("foreign answer")),
             ];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             assert_eq!(messages.len(), 2);
             assert_eq!(messages[1].content().len(), 1);
@@ -581,7 +582,7 @@ mod tests {
                 message(PROVIDER_ID, assistant_text("answer")),
             ];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             let blob = messages[1].content()[0]
                 .as_reasoning_content()
@@ -605,7 +606,7 @@ mod tests {
                 ),
             ];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             assert_eq!(messages.len(), 1);
         }
@@ -618,7 +619,7 @@ mod tests {
                 message(PROVIDER_ID, tool_call("call-1", "not json")),
             ];
 
-            let messages = construct_messages(&request).unwrap();
+            let messages = construct_messages(request.messages).unwrap();
 
             let tool_use = messages[1].content()[0].as_tool_use().unwrap();
             assert!(tool_use.input().as_object().unwrap().is_empty());

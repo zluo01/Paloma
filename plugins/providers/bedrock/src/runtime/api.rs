@@ -108,13 +108,14 @@ impl ProviderClient for BedrockRuntime {
         backend_id::BEDROCK_API.into()
     }
 
-    async fn chat(&self, request: ChatRequest, dispatcher: Dispatcher) -> Result<()> {
+    async fn chat(&self, mut request: ChatRequest, dispatcher: Dispatcher) -> Result<()> {
+        let messages = construct_messages(std::mem::take(&mut request.messages))?;
         let output = self
             .runtime_client
             .converse_stream()
             .model_id(&request.model)
             .set_system(Some(construct_system_prompt(&request)))
-            .set_messages(Some(construct_messages(&request)?))
+            .set_messages(Some(messages))
             .set_tool_config(construct_tool_config(&request)?)
             .set_additional_model_request_fields(construct_reasoning_config(&request))
             .send()

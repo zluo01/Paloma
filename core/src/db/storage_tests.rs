@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use bytes::Bytes;
 use paloma_provider_protocol::v1::{self, conversation_item::Item};
 use serde_json::json;
 use sqlx::Row;
@@ -887,7 +888,7 @@ mod history {
         let storage = fresh_storage().await;
         seed_provider(&storage).await;
         let id = uuid("019e1234-5678-7000-8000-0000000000ab");
-        seed_session(&storage, id, &[user()]).await;
+        seed_session(&storage, id, &[prompt()]).await;
 
         // The payload column keeps the pre-protocol JSON shape the SQL queries
         // and existing rows rely on.
@@ -915,7 +916,7 @@ mod history {
             .await
             .unwrap();
 
-        let user = user();
+        let user = prompt();
         let message = assistant_message();
         storage
             .insert_history(&session_id.to_string(), &CODEX, &user)
@@ -992,7 +993,7 @@ mod history {
             .await
             .unwrap();
         for (provider_id, item) in [
-            (CODEX.clone(), user()),
+            (CODEX.clone(), prompt()),
             (OPENAI.clone(), pending_tool_call.clone()),
             (CODEX.clone(), reasoning()),
             (OPENAI.clone(), finished_tool_call.clone()),
@@ -1017,7 +1018,7 @@ mod history {
                 .map(|entry| entry.payload.clone())
                 .collect::<Vec<_>>(),
             vec![
-                user(),
+                prompt(),
                 pending_tool_call,
                 reasoning(),
                 finished_tool_call,
@@ -1143,13 +1144,70 @@ mod history {
         storage.get_history(&id.to_string()).await.unwrap().len()
     }
 
-    fn user() -> ConversationItem {
+    fn prompt() -> ConversationItem {
         ConversationItem {
             item: Some(Item::UserPrompt(v1::UserPrompt {
                 prompt: "example prompt".to_string(),
                 content: vec![],
             })),
         }
+    }
+
+    fn prompt_with_images(images: &[(&str, &'static [u8])]) -> ConversationItem {
+        ConversationItem {
+            item: Some(Item::UserPrompt(v1::UserPrompt {
+                prompt: "look at these".to_string(),
+                content: images
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (media_type, bytes))| UserPromptContent {
+                        item: Some(v1::user_prompt_content::Item::Image(UserPromptImage {
+                            id: i as u32 + 1,
+                            media_type: (*media_type).to_string(),
+                            data: Bytes::from_static(bytes),
+                        })),
+                    })
+                    .collect(),
+            })),
+        }
+    }
+
+    fn images(item: &ConversationItem) -> Vec<(u32, &str, &[u8])> {
+        match &item.item {
+            Some(Item::UserPrompt(prompt)) => prompt
+                .content
+                .iter()
+                .filter_map(|content| {
+                    content
+                        .item
+                        .as_ref()
+                        .map(|v1::user_prompt_content::Item::Image(image)| {
+                            (image.id, image.media_type.as_str(), image.data.as_ref())
+                        })
+                })
+                .collect(),
+            _ => vec![],
+        }
+    }
+
+    async fn attachment_rows(storage: &Storage, id: Uuid) -> Vec<(i64, String, String, Vec<u8>)> {
+        sqlx::query_as(
+            "SELECT a.ordinal, a.kind, a.media_type, a.data
+             FROM attachments a JOIN history h ON h.id = a.history_id
+             WHERE h.session_id = ?
+             ORDER BY a.history_id, a.ordinal",
+        )
+        .bind(id.to_string())
+        .fetch_all(storage.pool())
+        .await
+        .unwrap()
+    }
+
+    async fn attachment_count(storage: &Storage) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM attachments")
+            .fetch_one(storage.pool())
+            .await
+            .unwrap()
     }
 
     fn assistant_message() -> ConversationItem {
@@ -1214,6 +1272,223 @@ mod history {
         .unwrap();
     }
 
+    mod attachments {
+        use super::*;
+
+        const PNG: &[u8] = b"png-bytes";
+        const JPEG: &[u8] = b"jpeg-bytes";
+        const GIF: &[u8] = b"gif-bytes";
+
+        async fn stored_prompt_payload(storage: &Storage, id: Uuid) -> Value {
+            let payload: String = sqlx::query_scalar(
+                "SELECT payload FROM history WHERE session_id = ? AND payload_type = 'user_prompt'",
+            )
+            .bind(id.to_string())
+            .fetch_one(storage.pool())
+            .await
+            .unwrap();
+            serde_json::from_str(&payload).unwrap()
+        }
+
+        #[tokio::test]
+        async fn given_a_prompt_with_images_when_inserting_should_keep_bytes_out_of_the_payload() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[prompt_with_images(&[
+                    ("image/png", PNG),
+                    ("image/jpeg", JPEG),
+                ])],
+            )
+            .await;
+
+            assert_eq!(
+                stored_prompt_payload(&storage, id).await,
+                json!({"kind": "user_prompt", "prompt": "look at these"})
+            );
+            assert_eq!(
+                attachment_rows(&storage, id).await,
+                vec![
+                    (1, "image".into(), "image/png".into(), PNG.to_vec()),
+                    (2, "image".into(), "image/jpeg".into(), JPEG.to_vec()),
+                ]
+            );
+        }
+
+        #[tokio::test]
+        async fn given_a_prompt_without_images_when_inserting_should_write_no_attachment() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(&storage, id, &[prompt(), assistant_message()]).await;
+
+            assert_eq!(attachment_count(&storage).await, 0);
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 2);
+            assert!(images(&history[0].payload).is_empty());
+        }
+
+        #[tokio::test]
+        async fn given_images_declared_out_of_order_when_getting_history_should_rebuild_content_by_ordinal()
+         {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            let mut prompt = prompt_with_images(&[("image/png", PNG), ("image/jpeg", JPEG)]);
+            if let Some(Item::UserPrompt(prompt)) = &mut prompt.item {
+                prompt.content.reverse();
+            }
+            seed_session(&storage, id, &[prompt]).await;
+
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 1);
+            assert_eq!(
+                images(&history[0].payload),
+                vec![(1, "image/png", PNG), (2, "image/jpeg", JPEG)]
+            );
+        }
+
+        #[tokio::test]
+        async fn given_mixed_items_when_getting_history_should_return_one_entry_per_item() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    prompt_with_images(&[("image/png", PNG), ("image/jpeg", JPEG)]),
+                    assistant_message(),
+                    prompt(),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                ],
+            )
+            .await;
+
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 5);
+            assert_eq!(
+                images(&history[0].payload),
+                vec![(1, "image/png", PNG), (2, "image/jpeg", JPEG)]
+            );
+            assert!(matches!(history[1].payload.item, Some(Item::Message(_))));
+            assert!(matches!(history[2].payload.item, Some(Item::UserPrompt(_))));
+            assert!(images(&history[2].payload).is_empty());
+            assert!(matches!(history[3].payload.item, Some(Item::ToolCall(_))));
+            assert!(matches!(history[4].payload.item, Some(Item::ToolResult(_))));
+        }
+
+        #[tokio::test]
+        async fn given_two_prompts_with_images_when_getting_history_should_attach_each_to_its_own_prompt()
+         {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    prompt_with_images(&[("image/png", PNG)]),
+                    assistant_message(),
+                    prompt_with_images(&[("image/jpeg", JPEG), ("image/gif", GIF)]),
+                ],
+            )
+            .await;
+
+            let history = storage.get_history(&id.to_string()).await.unwrap();
+            assert_eq!(history.len(), 3);
+            assert_eq!(images(&history[0].payload), vec![(1, "image/png", PNG)]);
+            assert_eq!(
+                images(&history[2].payload),
+                vec![(1, "image/jpeg", JPEG), (2, "image/gif", GIF)]
+            );
+        }
+
+        #[tokio::test]
+        async fn given_mixed_items_when_restoring_history_should_rebuild_content_and_keep_finished()
+        {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[
+                    prompt_with_images(&[("image/png", PNG), ("image/jpeg", JPEG)]),
+                    function_call_with("c1"),
+                    tool_result_with("c1"),
+                    function_call_with("c2"),
+                ],
+            )
+            .await;
+
+            let restored = storage.restore_history(&id.to_string()).await.unwrap();
+            assert_eq!(restored.len(), 3);
+            assert_eq!(
+                images(&restored[0].payload),
+                vec![(1, "image/png", PNG), (2, "image/jpeg", JPEG)]
+            );
+            assert!(!restored[0].finished);
+            assert!(matches!(restored[1].payload.item, Some(Item::ToolCall(_))));
+            assert!(restored[1].finished);
+            assert!(matches!(restored[2].payload.item, Some(Item::ToolCall(_))));
+            assert!(!restored[2].finished);
+        }
+
+        #[tokio::test]
+        async fn given_two_sessions_with_images_when_getting_history_should_only_return_own_attachments()
+         {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let first = Uuid::now_v7();
+            let second = Uuid::now_v7();
+            seed_session(
+                &storage,
+                first,
+                &[prompt_with_images(&[("image/png", PNG)])],
+            )
+            .await;
+            seed_session(
+                &storage,
+                second,
+                &[prompt_with_images(&[("image/jpeg", JPEG)])],
+            )
+            .await;
+
+            let history = storage.get_history(&first.to_string()).await.unwrap();
+            assert_eq!(images(&history[0].payload), vec![(1, "image/png", PNG)]);
+            let history = storage.get_history(&second.to_string()).await.unwrap();
+            assert_eq!(images(&history[0].payload), vec![(1, "image/jpeg", JPEG)]);
+        }
+
+        #[tokio::test]
+        async fn given_a_session_with_attachments_when_deleting_the_session_should_remove_them() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let kept = Uuid::now_v7();
+            let deleted = Uuid::now_v7();
+            seed_session(&storage, kept, &[prompt_with_images(&[("image/png", PNG)])]).await;
+            seed_session(
+                &storage,
+                deleted,
+                &[prompt_with_images(&[("image/jpeg", JPEG)])],
+            )
+            .await;
+
+            storage.delete_session(&deleted.to_string()).await.unwrap();
+
+            assert_eq!(attachment_count(&storage).await, 1);
+            assert_eq!(
+                attachment_rows(&storage, kept).await,
+                vec![(1, "image".into(), "image/png".into(), PNG.to_vec())]
+            );
+        }
+    }
+
     mod recover {
         use super::*;
 
@@ -1246,9 +1521,9 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     assistant_message(),
-                    user(),
+                    prompt(),
                     reasoning(),
                     function_call(),
                 ],
@@ -1272,7 +1547,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), assistant_message()]).await;
+            seed_session(&storage, id, &[prompt(), assistant_message()]).await;
 
             storage.recover_history().await.unwrap();
 
@@ -1284,7 +1559,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), reasoning()]).await;
+            seed_session(&storage, id, &[prompt(), reasoning()]).await;
 
             storage.recover_history().await.unwrap();
 
@@ -1298,7 +1573,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), assistant_message(), user()]).await;
+            seed_session(&storage, id, &[prompt(), assistant_message(), prompt()]).await;
 
             storage.recover_history().await.unwrap();
 
@@ -1313,7 +1588,7 @@ mod history {
             seed_session(
                 &storage,
                 id,
-                &[user(), assistant_message(), user(), hosted_tool()],
+                &[prompt(), assistant_message(), prompt(), hosted_tool()],
             )
             .await;
 
@@ -1331,7 +1606,7 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     tool_result_with("c1"),
                     reasoning(),
@@ -1373,30 +1648,30 @@ mod history {
             let no_completed_turn = Uuid::now_v7();
             let dangling_prompt = Uuid::now_v7();
 
-            seed_session(&storage, finished_single, &[user(), assistant_message()]).await;
+            seed_session(&storage, finished_single, &[prompt(), assistant_message()]).await;
             seed_session(
                 &storage,
                 finished_multi,
-                &[user(), assistant_message(), user(), assistant_message()],
+                &[prompt(), assistant_message(), prompt(), assistant_message()],
             )
             .await;
             seed_session(
                 &storage,
                 open_tool_call,
                 &[
-                    user(),
+                    prompt(),
                     assistant_message(),
-                    user(),
+                    prompt(),
                     reasoning(),
                     function_call(),
                 ],
             )
             .await;
-            seed_session(&storage, no_completed_turn, &[user(), reasoning()]).await;
+            seed_session(&storage, no_completed_turn, &[prompt(), reasoning()]).await;
             seed_session(
                 &storage,
                 dangling_prompt,
-                &[user(), assistant_message(), user()],
+                &[prompt(), assistant_message(), prompt()],
             )
             .await;
 
@@ -1419,10 +1694,10 @@ mod history {
             seed_session(
                 &storage,
                 answered,
-                &[user(), function_call_with("c1"), tool_result_with("c1")],
+                &[prompt(), function_call_with("c1"), tool_result_with("c1")],
             )
             .await;
-            seed_session(&storage, open, &[user(), function_call_with("c1")]).await;
+            seed_session(&storage, open, &[prompt(), function_call_with("c1")]).await;
 
             storage.recover_history().await.unwrap();
 
@@ -1440,22 +1715,22 @@ mod history {
          {
             let shapes: Vec<Vec<ConversationItem>> = vec![
                 vec![],
-                vec![user()],
-                vec![user(), reasoning()],
-                vec![user(), assistant_message()],
-                vec![user(), assistant_message(), user()],
-                vec![user(), assistant_message(), user(), reasoning()],
-                vec![user(), hosted_tool()],
-                vec![user(), reasoning(), function_call_with("c1")],
-                vec![user(), reasoning(), function_call_with("c1"), reasoning()],
+                vec![prompt()],
+                vec![prompt(), reasoning()],
+                vec![prompt(), assistant_message()],
+                vec![prompt(), assistant_message(), prompt()],
+                vec![prompt(), assistant_message(), prompt(), reasoning()],
+                vec![prompt(), hosted_tool()],
+                vec![prompt(), reasoning(), function_call_with("c1")],
+                vec![prompt(), reasoning(), function_call_with("c1"), reasoning()],
                 vec![
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     tool_result_with("c1"),
                     function_call_with("c2"),
                 ],
                 vec![
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     tool_result_with("c1"),
                     reasoning(),
@@ -1531,11 +1806,28 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user()]).await;
+            seed_session(&storage, id, &[prompt()]).await;
 
             assert!(cleanup(&storage, id).await);
             assert_eq!(history_len(&storage, id).await, 0);
             assert!(!session_exists(&storage, id).await);
+        }
+
+        #[tokio::test]
+        async fn given_a_prompt_only_turn_with_images_when_cleaning_up_should_remove_attachments() {
+            let storage = fresh_storage().await;
+            seed_provider(&storage).await;
+            let id = Uuid::now_v7();
+            seed_session(
+                &storage,
+                id,
+                &[prompt_with_images(&[("image/png", b"png-bytes")])],
+            )
+            .await;
+
+            assert!(cleanup(&storage, id).await);
+            assert_eq!(history_len(&storage, id).await, 0);
+            assert_eq!(attachment_count(&storage).await, 0);
         }
 
         #[tokio::test]
@@ -1544,7 +1836,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), reasoning()]).await;
+            seed_session(&storage, id, &[prompt(), reasoning()]).await;
 
             assert!(cleanup(&storage, id).await);
             assert_eq!(history_len(&storage, id).await, 0);
@@ -1556,7 +1848,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), assistant_message(), user()]).await;
+            seed_session(&storage, id, &[prompt(), assistant_message(), prompt()]).await;
 
             assert!(!cleanup(&storage, id).await);
             let history = storage.get_history(&id.to_string()).await.unwrap();
@@ -1579,7 +1871,7 @@ mod history {
             seed_session(
                 &storage,
                 id,
-                &[user(), reasoning(), function_call_with("c1")],
+                &[prompt(), reasoning(), function_call_with("c1")],
             )
             .await;
 
@@ -1603,7 +1895,7 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     tool_result_with("c1"),
                     function_call_with("c2"),
@@ -1627,7 +1919,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), assistant_message()]).await;
+            seed_session(&storage, id, &[prompt(), assistant_message()]).await;
 
             assert!(!cleanup(&storage, id).await);
             assert_eq!(history_len(&storage, id).await, 2);
@@ -1644,10 +1936,10 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     assistant_message(),
-                    user(),
+                    prompt(),
                     function_call_with("c2"),
                 ],
             )
@@ -1668,8 +1960,8 @@ mod history {
             seed_provider(&storage).await;
             let target = Uuid::now_v7();
             let other = Uuid::now_v7();
-            seed_session(&storage, target, &[user(), reasoning(), function_call()]).await;
-            seed_session(&storage, other, &[user(), reasoning(), function_call()]).await;
+            seed_session(&storage, target, &[prompt(), reasoning(), function_call()]).await;
+            seed_session(&storage, other, &[prompt(), reasoning(), function_call()]).await;
 
             assert!(!cleanup(&storage, target).await);
             assert_eq!(history_len(&storage, target).await, 4);
@@ -1694,7 +1986,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), function_call_with("c1")]).await;
+            seed_session(&storage, id, &[prompt(), function_call_with("c1")]).await;
 
             assert!(!cleanup(&storage, id).await);
             let entries = storage.restore_history(&id.to_string()).await.unwrap();
@@ -1717,7 +2009,7 @@ mod history {
             let id = Uuid::now_v7();
             storage.create_new_session(id, "s").await.unwrap();
             storage
-                .insert_history(&id.to_string(), &CODEX, &user())
+                .insert_history(&id.to_string(), &CODEX, &prompt())
                 .await
                 .unwrap();
             storage
@@ -1741,7 +2033,7 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                     function_call_with("c2"),
                     function_call_with("c3"),
@@ -1771,7 +2063,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), function_call_with("c1")]).await;
+            seed_session(&storage, id, &[prompt(), function_call_with("c1")]).await;
 
             assert!(!cleanup(&storage, id).await);
             assert_eq!(history_len(&storage, id).await, 3);
@@ -1785,7 +2077,7 @@ mod history {
             let storage = fresh_storage().await;
             seed_provider(&storage).await;
             let id = Uuid::now_v7();
-            seed_session(&storage, id, &[user(), hosted_tool()]).await;
+            seed_session(&storage, id, &[prompt(), hosted_tool()]).await;
 
             assert!(!cleanup(&storage, id).await);
             assert_eq!(history_len(&storage, id).await, 2);
@@ -1801,7 +2093,7 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     reasoning(),
                     function_call_with("c1"),
                     tool_result_with("c1"),
@@ -1839,10 +2131,10 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     assistant_message(),
                     reasoning(),
-                    user(),
+                    prompt(),
                     function_call_with("c1"),
                 ],
             )
@@ -1868,7 +2160,7 @@ mod history {
             seed_session(
                 &storage,
                 id,
-                &[user(), reasoning(), function_call_with("c1"), reasoning()],
+                &[prompt(), reasoning(), function_call_with("c1"), reasoning()],
             )
             .await;
 
@@ -1903,10 +2195,10 @@ mod history {
                 &storage,
                 id,
                 &[
-                    user(),
+                    prompt(),
                     reasoning(),
                     assistant_message(),
-                    user(),
+                    prompt(),
                     reasoning(),
                 ],
             )

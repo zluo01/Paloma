@@ -57,3 +57,18 @@ pub struct RestoreEntry {
     pub payload: ConversationItem,
     pub finished: bool,
 }
+
+#[derive(Debug, FromRow)]
+pub struct HistoryRow {
+    pub id: i64,
+    #[sqlx(flatten)]
+    pub provider_backend_id: ProviderBackendId,
+    #[sqlx(json)]
+    pub payload: ConversationItem,
+    #[sqlx(default)]
+    pub finished: bool,
+    pub ordinal: Option<i64>,
+    pub kind: Option<String>,
+    pub media_type: Option<String>,
+    pub data: Option<Vec<u8>>,
+}

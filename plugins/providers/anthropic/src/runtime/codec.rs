@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use base64::prelude::*;
 use log::warn;
 use paloma_provider_base::{
     ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
@@ -212,13 +213,13 @@ fn input_text(value: &str) -> Value {
     })
 }
 
-fn input_image(media_type: &str, data: &str) -> Value {
+fn input_image(media_type: &str, data: &[u8]) -> Value {
     serde_json::json!({
         "type": "image",
         "source": {
             "type": "base64",
             "media_type": media_type,
-            "data": data,
+            "data": BASE64_STANDARD.encode(data),
         },
     })
 }
@@ -367,7 +368,10 @@ fn decode_input_arguments(item: &Value) -> Result<String> {
 
 #[cfg(test)]
 mod encoder_tests {
-    use paloma_provider_protocol::v1::{UserPromptContent, UserPromptImage};
+    use paloma_provider_protocol::{
+        Bytes,
+        v1::{UserPromptContent, UserPromptImage},
+    };
 
     use super::*;
 
@@ -410,18 +414,18 @@ mod encoder_tests {
 
     #[test]
     fn encodes_user_prompt_images_before_text() {
-        let image = |id: u32, media_type: &str, data: &str| UserPromptContent {
+        let image = |id: u32, media_type: &str, data: &'static [u8]| UserPromptContent {
             item: Some(Item::Image(UserPromptImage {
                 id,
                 media_type: media_type.to_string(),
-                data: data.to_string(),
+                data: Bytes::from_static(data),
             })),
         };
         let item = ClaudeCodec.encode_user_prompt(&UserPrompt {
             prompt: "compare [image:1] with [image:2]".to_string(),
             content: vec![
-                image(1, "image/png", "image1"),
-                image(2, "image/jpeg", "image2"),
+                image(1, "image/png", b"image1"),
+                image(2, "image/jpeg", b"image2"),
             ],
         });
 
@@ -432,11 +436,11 @@ mod encoder_tests {
                 "content": [
                     {
                         "type": "image",
-                        "source": { "type": "base64", "media_type": "image/png", "data": "image1" }
+                        "source": { "type": "base64", "media_type": "image/png", "data": "aW1hZ2Ux" }
                     },
                     {
                         "type": "image",
-                        "source": { "type": "base64", "media_type": "image/jpeg", "data": "image2" }
+                        "source": { "type": "base64", "media_type": "image/jpeg", "data": "aW1hZ2Uy" }
                     },
                     { "type": "text", "text": "compare [image:1] with [image:2]" }
                 ]

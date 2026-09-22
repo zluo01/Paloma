@@ -4,7 +4,10 @@ use std::{
     time::Duration,
 };
 
-use paloma_provider_protocol::v1::ConversationItem;
+use paloma_provider_protocol::v1::{
+    ConversationItem, UserPromptContent, UserPromptImage, conversation_item::Item,
+    user_prompt_content::Item as ContentItem,
+};
 use serde_json::Value;
 use sqlx::{
     Pool, Sqlite,
@@ -15,7 +18,8 @@ use uuid::Uuid;
 use super::{AuthKind, queries};
 use crate::{
     db::entity::{
-        ConnectedBackend, HistoryEntry, Permission, PreferModelConfig, RestoreEntry, Session,
+        ConnectedBackend, HistoryEntry, HistoryRow, Permission, PreferModelConfig, RestoreEntry,
+        Session,
     },
     entity::{CapabilityFacet, Plugin, PluginArgs, PluginType, ProviderBackendId, Transport},
 };
@@ -414,37 +418,71 @@ impl Storage {
         Ok(())
     }
 
+    /// Prompt content is not part of the stored JSON; each item goes to
+    /// `attachments` keyed by the new history row id, in the same transaction.
     pub async fn insert_history(
         &self,
         session_id: &str,
         provider_backend_id: &ProviderBackendId,
         payload: &ConversationItem,
     ) -> Result<()> {
-        sqlx::query(queries::INSERT_HISTORY)
+        let mut tx = self.pool.begin().await?;
+        let history_id: i64 = sqlx::query_scalar(queries::INSERT_HISTORY)
             .bind(session_id)
             .bind(provider_backend_id.provider_id.as_str())
             .bind(provider_backend_id.backend_id.as_str())
             .bind(payload.payload_type())
             .bind(serde_json::to_string(payload)?)
-            .execute(&self.pool)
+            .fetch_one(&mut *tx)
             .await?;
+        if let Some(Item::UserPrompt(prompt)) = &payload.item {
+            for content in &prompt.content {
+                let Some(ContentItem::Image(image)) = &content.item else {
+                    continue;
+                };
+                sqlx::query(queries::INSERT_ATTACHMENT)
+                    .bind(history_id)
+                    .bind(i64::from(image.id))
+                    .bind("image")
+                    .bind(image.media_type.as_str())
+                    .bind(image.data.as_ref())
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>> {
-        Ok(sqlx::query_as::<_, HistoryEntry>(queries::GET_HISTORY)
-            .bind(session_id)
-            .fetch_all(&self.pool)
-            .await?)
-    }
-
-    pub async fn restore_history(&self, session_id: &str) -> Result<Vec<RestoreEntry>> {
-        let entries = sqlx::query_as::<_, RestoreEntry>(queries::RESTORE_HISTORY)
+        let rows = sqlx::query_as::<_, HistoryRow>(queries::GET_HISTORY)
             .bind(session_id)
             .fetch_all(&self.pool)
             .await?;
+        Ok(reconstruct_history(
+            rows,
+            |provider_backend_id, payload, _| HistoryEntry {
+                provider_backend_id,
+                payload,
+            },
+            |entry| &mut entry.payload,
+        ))
+    }
 
-        Ok(entries)
+    pub async fn restore_history(&self, session_id: &str) -> Result<Vec<RestoreEntry>> {
+        let rows = sqlx::query_as::<_, HistoryRow>(queries::RESTORE_HISTORY)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(reconstruct_history(
+            rows,
+            |provider_backend_id, payload, finished| RestoreEntry {
+                provider_backend_id,
+                payload,
+                finished,
+            },
+            |entry| &mut entry.payload,
+        ))
     }
 
     /// try to repair any broken session caused by situation like crush or db corruptions,
@@ -495,6 +533,44 @@ async fn create_pool(db_path: &Path) -> Result<Pool<Sqlite>> {
 async fn initialize(pool: &Pool<Sqlite>) -> Result<()> {
     sqlx::query(queries::INIT_TABLE_QUERY).execute(pool).await?;
     Ok(())
+}
+
+fn reconstruct_history<E>(
+    rows: Vec<HistoryRow>,
+    new_entry: impl Fn(ProviderBackendId, ConversationItem, bool) -> E,
+    payload: impl Fn(&mut E) -> &mut ConversationItem,
+) -> Vec<E> {
+    let mut entries: Vec<E> = Vec::with_capacity(rows.len());
+    let mut current = None;
+    for row in rows {
+        if current != Some(row.id) {
+            current = Some(row.id);
+            entries.push(new_entry(
+                row.provider_backend_id,
+                row.payload,
+                row.finished,
+            ));
+        }
+        let (Some(ordinal), Some(kind), Some(media_type), Some(data)) =
+            (row.ordinal, row.kind, row.media_type, row.data)
+        else {
+            continue;
+        };
+        let item = match kind.as_str() {
+            "image" => ContentItem::Image(UserPromptImage {
+                id: u32::try_from(ordinal).unwrap_or_default(),
+                media_type,
+                data: data.into(),
+            }),
+            _ => continue,
+        };
+        if let Some(entry) = entries.last_mut()
+            && let Some(Item::UserPrompt(prompt)) = &mut payload(entry).item
+        {
+            prompt.content.push(UserPromptContent { item: Some(item) });
+        }
+    }
+    entries
 }
 
 #[derive(Debug, thiserror::Error)]

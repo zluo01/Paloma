@@ -33,6 +33,7 @@ implicit_clone = "warn"
 [workspace.dependencies]
 async-trait = "0.1.92"
 backon = "1.6.0"
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 bytes = "1.12.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 dashmap = "6.2.1"

@@ -93,6 +93,16 @@ BEGIN
     WHERE session_id = NEW.session_id;
 END;
 
+CREATE TABLE IF NOT EXISTS attachments
+(
+    history_id INTEGER NOT NULL REFERENCES history (id) ON DELETE CASCADE,
+    kind       TEXT    NOT NULL CHECK (kind IN ('image')),
+    ordinal    INTEGER NOT NULL,
+    media_type TEXT    NOT NULL,
+    data       BLOB    NOT NULL,
+    PRIMARY KEY (history_id, ordinal)
+);
+
 CREATE TABLE IF NOT EXISTS plugins
 (
     name        TEXT PRIMARY KEY NOT NULL,

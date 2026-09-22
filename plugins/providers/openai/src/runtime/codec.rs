@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use base64::prelude::*;
 use log::warn;
 use paloma_provider_base::{
     ProviderDecoder, ProviderEncoder, ProviderError, ProviderMeta, Result, provider_meta,
@@ -36,7 +37,11 @@ impl ProviderEncoder for CodexCodec {
                 Some(Item::Image(image)) => {
                     content.push(serde_json::json!({
                         "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", image.media_type, image.data),
+                        "image_url": format!(
+                            "data:{};base64,{}",
+                            image.media_type,
+                            BASE64_STANDARD.encode(&image.data)
+                        ),
                     }));
                 },
             }
@@ -363,7 +368,10 @@ fn decode_hosted_tool_item(response_type: &str, item: &Value) -> Result<Conversa
 
 #[cfg(test)]
 mod encoder_tests {
-    use paloma_provider_protocol::v1::{EncodeMode, UserPromptContent, UserPromptImage};
+    use paloma_provider_protocol::{
+        Bytes,
+        v1::{EncodeMode, UserPromptContent, UserPromptImage},
+    };
 
     use super::*;
 
@@ -394,18 +402,18 @@ mod encoder_tests {
 
     #[test]
     fn encodes_user_prompt() {
-        let image = |id: u32, media_type: &str, data: &str| UserPromptContent {
+        let image = |id: u32, media_type: &str, data: &'static [u8]| UserPromptContent {
             item: Some(Item::Image(UserPromptImage {
                 id,
                 media_type: media_type.to_string(),
-                data: data.to_string(),
+                data: Bytes::from_static(data),
             })),
         };
         let item = CodexCodec.encode_user_prompt(&UserPrompt {
             prompt: "example prompt".to_string(),
             content: vec![
-                image(1, "image/png", "image1"),
-                image(2, "image/jpeg", "image2"),
+                image(1, "image/png", b"image1"),
+                image(2, "image/jpeg", b"image2"),
             ],
         });
 
@@ -421,11 +429,11 @@ mod encoder_tests {
                     },
                     {
                         "type": "input_image",
-                        "image_url": "data:image/png;base64,image1",
+                        "image_url": "data:image/png;base64,aW1hZ2Ux",
                     },
                     {
                         "type": "input_image",
-                        "image_url": "data:image/jpeg;base64,image2",
+                        "image_url": "data:image/jpeg;base64,aW1hZ2Uy",
                     }
                 ],
             })

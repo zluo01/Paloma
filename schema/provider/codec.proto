@@ -31,7 +31,7 @@ message UserPromptContent {
 message UserPromptImage {
   uint32 id = 1;
   string media_type = 2;
-  string data = 3;
+  bytes data = 3;
 }
 
 message ConversationMessage {

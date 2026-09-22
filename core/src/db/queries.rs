@@ -36,6 +36,8 @@ pub const DELETE_PERMISSION_QUERY: &str = include_str!("queries/permissions/dele
 
 pub const INSERT_HISTORY: &str = include_str!("queries/history/insert_history.sql");
 
+pub const INSERT_ATTACHMENT: &str = include_str!("queries/history/insert_attachment.sql");
+
 pub const GET_HISTORY: &str = include_str!("queries/history/get_history.sql");
 
 pub const RESTORE_HISTORY: &str = include_str!("queries/history/restore_history.sql");
