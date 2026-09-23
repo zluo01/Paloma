@@ -46,8 +46,6 @@ struct SearchView: View {
                                 item: item,
                                 index: index,
                                 selected: index == selection,
-                                actionHint: index == selection && panelSelection == nil
-                                    && item.actions.count > 1,
                                 onEvent: onEvent
                             )
                             .id(index)

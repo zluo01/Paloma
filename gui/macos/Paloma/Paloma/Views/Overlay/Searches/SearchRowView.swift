@@ -10,7 +10,6 @@ struct SearchRowView: View {
     let item: Item
     let index: Int
     let selected: Bool
-    let actionHint: Bool
     let onEvent: (SearchEvent) -> Void
 
     @State private var hovering = false
@@ -30,7 +29,7 @@ struct SearchRowView: View {
                 }
             }
             Spacer(minLength: 0)
-            if hovering, item.actions.count > 1 {
+            if item.actions.count > 1 {
                 Button {
                     onEvent(.showActions(index: index))
                 } label: {
@@ -40,10 +39,6 @@ struct SearchRowView: View {
                 }
                 .buttonStyle(.ghostIcon)
                 .help("Show actions")
-            } else if actionHint {
-                Text("⌘⏎")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
         .searchRow(selected: selected, hovering: $hovering) {
