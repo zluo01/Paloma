@@ -129,10 +129,11 @@ struct OverlayView: View {
             Divider()
             FooterView(
                 model: launcher,
-                mode: mode,
+                state: footerState,
                 onOpenSettings: onOpenSettings,
                 onOpenSession: toggleSession,
-                onSelectModel: selectModel
+                onSelectModel: selectModel,
+                onStop: chats.interrupt
             )
         }
         .frame(width: 640)
@@ -155,6 +156,14 @@ struct OverlayView: View {
             if current == .session {
                 sessions.refresh()
             }
+        }
+    }
+
+    private var footerState: FooterState {
+        switch mode {
+        case .search: searches.sections.isEmpty ? .idle : .search
+        case .chat: .chat(streaming: chats.chatStatus == .streaming)
+        case .session: .session
         }
     }
 
