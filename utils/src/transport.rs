@@ -80,6 +80,19 @@ impl Encoder<Bytes> for VarintDelimitedCodec {
     }
 }
 
+/// Directly Serialize Protobuf Msg into write buffer
+impl<M: Message> Encoder<&M> for VarintDelimitedCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, message: &M, dst: &mut BytesMut) -> io::Result<()> {
+        let len = message.encoded_len();
+        dst.reserve(encoded_len_varint(len as u64) + len);
+        message
+            .encode_length_delimited(dst)
+            .map_err(io::Error::other)
+    }
+}
+
 pub async fn serve_plugin<Req, Res>(
     capacity: usize,
     mut handle: impl AsyncFnMut(Req, mpsc::Sender<Res>),
@@ -95,7 +108,7 @@ where
     let writer = tokio::spawn(async move {
         let mut output = FramedWrite::new(tokio::io::stdout(), VarintDelimitedCodec);
         while let Some(response) = rx.recv().await {
-            output.send(Bytes::from(response.encode_to_vec())).await?;
+            output.send(&response).await?;
         }
         Ok::<_, io::Error>(())
     });
@@ -145,6 +158,28 @@ mod tests {
         }
         assert!(src.is_empty(), "decoder left {} trailing bytes", src.len());
         frames
+    }
+
+    #[test]
+    fn message_encoder_matches_prost_length_delimited_encoding() {
+        // prost implements `Message` for `String` (wrapper type), enough to exercise the encoder
+        let message = String::from("hello");
+        let mut dst = BytesMut::new();
+        VarintDelimitedCodec.encode(&message, &mut dst).unwrap();
+        assert_eq!(&dst[..], &message.encode_length_delimited_to_vec()[..]);
+
+        let frame = VarintDelimitedCodec.decode(&mut dst).unwrap().unwrap();
+        assert_eq!(String::decode(frame.freeze()).unwrap(), message);
+        assert!(dst.is_empty());
+    }
+
+    #[test]
+    fn empty_message_encodes_to_a_single_zero() {
+        let mut dst = BytesMut::new();
+        VarintDelimitedCodec
+            .encode(&String::new(), &mut dst)
+            .unwrap();
+        assert_eq!(&dst[..], &[0x00]);
     }
 
     #[test]

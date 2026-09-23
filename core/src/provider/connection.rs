@@ -15,7 +15,7 @@ use futures::{
 };
 use log::{error, warn};
 use paloma_provider_protocol::{
-    Bytes, Message, PROTOCOL_VERSION,
+    Message, PROTOCOL_VERSION,
     v1::{
         BackendAuth, BackendHealthStatusRequest, BackendInitErrorRequest, CancelChatRequest,
         CancelConnectionRequest, ChatRequest, ConnectionPayload, FinalizeConnectionRequest,
@@ -81,7 +81,7 @@ impl ProviderPlugin {
         tokio::spawn(async move {
             let mut output = FramedWrite::new(stdin, VarintDelimitedCodec);
             while let Some(request) = writer_rx.recv().await {
-                if let Err(e) = output.send(Bytes::from(request.encode_to_vec())).await {
+                if let Err(e) = output.send(&request).await {
                     // pipe closed: child is gone
                     let _ = write_error.set(format!("plugin stopped accepting requests: {e}"));
                     health.store(HealthStatus::Unhealthy as u8, Ordering::SeqCst);

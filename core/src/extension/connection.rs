@@ -13,7 +13,7 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use log::{error, warn};
 use paloma_extension_protocol::{
-    Bytes, Message, PROTOCOL_VERSION,
+    Message, PROTOCOL_VERSION,
     v1::{
         Action, CancelToolRequest, HandshakeRequest, HandshakeResponse, InvokeToolRequest, Item,
         RequestEvent, ResponseEvent, RunActionRequest, SearchRequest, ToolContent, request_event,
@@ -68,7 +68,7 @@ impl ExtensionPlugin {
         tokio::spawn(async move {
             let mut output = FramedWrite::new(stdin, VarintDelimitedCodec);
             while let Some(request) = writer_rx.recv().await {
-                if let Err(e) = output.send(Bytes::from(request.encode_to_vec())).await {
+                if let Err(e) = output.send(&request).await {
                     // pipe closed: child is gone
                     let _ = write_error.set(format!("plugin stopped accepting requests: {e}"));
                     health.store(HealthStatus::Unhealthy as u8, Ordering::SeqCst);

@@ -77,10 +77,7 @@ mod test_support {
 
 mod encoder_tests {
     use paloma_utils::transport::VarintDelimitedCodec;
-    use prost::{
-        Message,
-        bytes::{Bytes, BytesMut},
-    };
+    use prost::{Message, bytes::BytesMut};
     use tokio_util::codec::Encoder;
 
     use super::test_support::{JAVA_FIXTURE, expected_events};
@@ -88,7 +85,7 @@ mod encoder_tests {
     fn encode(message: &impl Message) -> BytesMut {
         let mut dst = BytesMut::new();
         VarintDelimitedCodec
-            .encode(Bytes::from(message.encode_to_vec()), &mut dst)
+            .encode(message, &mut dst)
             .expect("encode is infallible");
         dst
     }
