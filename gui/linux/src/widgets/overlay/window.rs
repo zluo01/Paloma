@@ -3,7 +3,7 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 use gtk4::{ApplicationWindow, GestureDrag, glib, prelude::*};
 use gtk4_layer_shell::{Edge, LayerShell};
 
-use super::{OVERLAY_WIDTH_PX, Overlay, SEARCH_BAR_HEIGHT_PX};
+use super::{OVERLAY_WIDTH_PX, Overlay};
 use crate::widgets::overlay::model::Mode;
 
 const FOCUS_GRACE: Duration = Duration::from_millis(70);
@@ -94,7 +94,9 @@ impl Overlay {
                 // and resize the content panel for the new monitor.
                 let panel = (monitor.geometry().height() as f64 * GOLDEN_SECTION_FROM_TOP) as i32;
                 overlay.scroller.set_max_content_height(panel);
-                overlay.position.set(Some(centered_on(monitor)));
+                overlay
+                    .position
+                    .set(Some(centered_on(monitor, overlay.launcher_height())));
                 overlay.layout();
             });
         });
@@ -129,10 +131,9 @@ impl Overlay {
             let Some(overlay) = overlay.upgrade() else {
                 return;
             };
-            let (current_x, current_y) = overlay
-                .position
-                .get()
-                .unwrap_or_else(|| centered_position(&overlay.launcher_window));
+            let (current_x, current_y) = overlay.position.get().unwrap_or_else(|| {
+                centered_position(&overlay.launcher_window, overlay.launcher_height())
+            });
             let x = (current_x + dx.round() as i32).max(0);
             let y = (current_y + dy.round() as i32).max(0);
             overlay.position.set(Some((x, y)));
@@ -153,26 +154,26 @@ fn set_position(window: &ApplicationWindow, x: i32, y: i32) {
 /// The monitor watcher replaces this once the compositor reports the actual
 /// output. Until then, use the best monitor GDK can name, falling back to
 /// 1920x1080.
-pub(super) fn centered_position(window: &ApplicationWindow) -> (i32, i32) {
+pub(super) fn centered_position(window: &ApplicationWindow, launcher_height: i32) -> (i32, i32) {
     let geometry =
         monitor_geometry(window).unwrap_or_else(|| gtk4::gdk::Rectangle::new(0, 0, 1920, 1080));
-    centered_in(&geometry)
+    centered_in(&geometry, launcher_height)
 }
 
-pub(super) fn centered_on(monitor: &gtk4::gdk::Monitor) -> (i32, i32) {
-    centered_in(&monitor.geometry())
+pub(super) fn centered_on(monitor: &gtk4::gdk::Monitor, launcher_height: i32) -> (i32, i32) {
+    centered_in(&monitor.geometry(), launcher_height)
 }
 
 /// Bar center: 38.2% down from the top, or 61.8% up from the bottom.
 const GOLDEN_SECTION_FROM_TOP: f64 = 1.0 - 0.618;
 
-fn centered_in(geometry: &gtk4::gdk::Rectangle) -> (i32, i32) {
-    centered_coords(geometry.width(), geometry.height())
+fn centered_in(geometry: &gtk4::gdk::Rectangle, launcher_height: i32) -> (i32, i32) {
+    centered_coords(geometry.width(), geometry.height(), launcher_height)
 }
 
-fn centered_coords(width: i32, height: i32) -> (i32, i32) {
+fn centered_coords(width: i32, height: i32, launcher_height: i32) -> (i32, i32) {
     let x = ((width - OVERLAY_WIDTH_PX) / 2).max(0);
-    let y = ((height as f64 * GOLDEN_SECTION_FROM_TOP) as i32 - SEARCH_BAR_HEIGHT_PX / 2).max(0);
+    let y = ((height as f64 * GOLDEN_SECTION_FROM_TOP) as i32 - launcher_height / 2).max(0);
     (x, y)
 }
 
@@ -218,23 +219,25 @@ fn largest_monitor(display: &gtk4::gdk::Display) -> Option<gtk4::gdk::Monitor> {
 mod tests {
     use super::*;
 
+    const LAUNCHER_HEIGHT_PX: i32 = 112;
+
     #[test]
     fn centers_horizontally() {
-        let (x, _) = centered_coords(1920, 1080);
+        let (x, _) = centered_coords(1920, 1080, LAUNCHER_HEIGHT_PX);
         assert_eq!(x, (1920 - OVERLAY_WIDTH_PX) / 2);
     }
 
     #[test]
-    fn places_vertically_at_golden_section() {
-        let (_, y) = centered_coords(1920, 1080);
+    fn places_bar_center_at_golden_section() {
+        let (_, y) = centered_coords(1920, 1080, LAUNCHER_HEIGHT_PX);
         assert_eq!(
-            y,
-            (1080.0 * GOLDEN_SECTION_FROM_TOP) as i32 - SEARCH_BAR_HEIGHT_PX / 2
+            y + LAUNCHER_HEIGHT_PX / 2,
+            (1080.0 * GOLDEN_SECTION_FROM_TOP) as i32
         );
     }
 
     #[test]
     fn clamps_to_zero_on_tiny_screens() {
-        assert_eq!(centered_coords(100, 10), (0, 0));
+        assert_eq!(centered_coords(100, 10, LAUNCHER_HEIGHT_PX), (0, 0));
     }
 }

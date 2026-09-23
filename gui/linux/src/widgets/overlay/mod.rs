@@ -39,7 +39,6 @@ use crate::{
     },
 };
 
-const SEARCH_BAR_HEIGHT_PX: i32 = 64;
 const OVERLAY_WIDTH_PX: i32 = 720;
 const OVERLAY_CONTENT_HEIGHT_PX: i32 = 420;
 
@@ -311,6 +310,16 @@ impl Overlay {
         self.input.focus();
     }
 
+    pub(super) fn launcher_height(&self) -> i32 {
+        [
+            self.input.widget().upcast_ref::<gtk4::Widget>(),
+            self.footer.widget().upcast_ref(),
+        ]
+        .into_iter()
+        .map(|widget| widget.measure(Orientation::Vertical, OVERLAY_WIDTH_PX).1)
+        .sum()
+    }
+
     fn toggle_launcher(&self) {
         if self.is_visible() {
             self.conceal();
@@ -327,7 +336,8 @@ impl Overlay {
                     // Provisional guess for the first frame; the monitor
                     // watcher finalizes once the compositor has placed
                     // the surface on its real output.
-                    let (x, y) = window::centered_position(&self.launcher_window);
+                    let (x, y) =
+                        window::centered_position(&self.launcher_window, self.launcher_height());
                     self.layout_at(x, y);
                 },
             }
