@@ -67,7 +67,8 @@ final class ChatModel {
                 let chat = try await app.chat(
                     sessionId: sessionId,
                     providerBackendId: providerBackendId,
-                    prompt: prompt
+                    prompt: prompt,
+                    attachments: []
                 )
                 guard isCurrent(turn) else { return }
                 sessionId = chat.sessionId()
@@ -249,7 +250,7 @@ final class ChatModel {
     /// Deltas accumulate into the trailing section of the same kind.
     private func renderChat(_ event: ChatRenderEvent) {
         switch event {
-        case let .userPrompt(text):
+        case let .userPrompt(text, _):
             transcript.append(.user(id: nextSectionId(), text: text))
         case let .textDelta(providerBackendId, text):
             if case let .assistant(id, current, existing) = transcript.last,

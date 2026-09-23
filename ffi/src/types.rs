@@ -9,10 +9,12 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 pub use paloma_core::{
     Action, CapabilityFacet, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus,
     Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
     ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
+    UserPromptAttachment,
 };
 use uuid::Uuid;
 
@@ -435,10 +437,27 @@ impl From<paloma_core::SearchRenderEvent> for SearchRenderEvent {
     }
 }
 
+// Attachment payloads cross the boundary as plain byte arrays.
+uniffi::custom_type!(Bytes, Vec<u8>, {
+    remote,
+    lower: |value| value.to_vec(),
+    try_lift: |value| Ok(Bytes::from(value)),
+});
+
+#[uniffi::remote(Enum)]
+pub enum UserPromptAttachment {
+    Image {
+        id: u32,
+        media_type: String,
+        data: Bytes,
+    },
+}
+
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum ChatRenderEvent {
     UserPrompt {
         text: String,
+        attachments: Vec<UserPromptAttachment>,
     },
     TextDelta {
         provider_backend_id: ProviderBackendId,
@@ -458,7 +477,9 @@ pub enum ChatRenderEvent {
 impl From<paloma_core::ChatRenderEvent> for ChatRenderEvent {
     fn from(value: paloma_core::ChatRenderEvent) -> Self {
         match value {
-            paloma_core::ChatRenderEvent::UserPrompt { text } => Self::UserPrompt { text },
+            paloma_core::ChatRenderEvent::UserPrompt { text, attachments } => {
+                Self::UserPrompt { text, attachments }
+            },
             paloma_core::ChatRenderEvent::TextDelta {
                 provider_backend_id,
                 text,
@@ -504,5 +525,29 @@ impl From<paloma_core::RenderEvent> for RenderEvent {
             paloma_core::RenderEvent::Done => Self::Done,
             paloma_core::RenderEvent::Error { message } => Self::Error { message },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use uniffi::{Lift, Lower};
+
+    use crate::UniFfiTag;
+
+    #[test]
+    fn bytes_round_trip_through_the_custom_type() {
+        let original = Bytes::from_static(b"\x89PNG\r\n\x1a\n");
+        let buffer = <Bytes as Lower<UniFfiTag>>::lower(original.clone());
+        let lifted = <Bytes as Lift<UniFfiTag>>::try_lift(buffer).expect("lift bytes");
+        assert_eq!(lifted, original);
+    }
+
+    #[test]
+    fn bytes_lower_to_the_same_buffer_as_a_byte_vector() {
+        let raw = vec![1_u8, 2, 3, 0, 255];
+        let from_bytes = <Bytes as Lower<UniFfiTag>>::lower(Bytes::from(raw.clone()));
+        let from_vec = <Vec<u8> as Lower<UniFfiTag>>::lower(raw);
+        assert_eq!(from_bytes.destroy_into_vec(), from_vec.destroy_into_vec());
     }
 }

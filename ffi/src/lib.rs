@@ -272,17 +272,18 @@ impl PalomaApp {
         .into())
     }
 
-    /// Start (or continue) a chat turn. `session_id` of `None` opens a new
-    /// session; the created id is reported by [`ChatStream::session_id`].
     pub async fn chat(
         &self,
         session_id: Option<Uuid>,
         provider_backend_id: ProviderBackendId,
         prompt: String,
+        attachments: Vec<UserPromptAttachment>,
     ) -> Result<Arc<ChatStream>, PalomaError> {
         let inner = Arc::clone(&self.inner);
         let stream = on_runtime(async move {
-            let chat = inner.chat(session_id, provider_backend_id, prompt).await;
+            let chat = inner
+                .chat(session_id, provider_backend_id, prompt, attachments)
+                .await;
             ChatStream {
                 session_id: chat.session_id,
                 events: EventStream::pump(chat.stream),

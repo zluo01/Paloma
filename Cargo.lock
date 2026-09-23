@@ -3342,6 +3342,7 @@ dependencies = [
 name = "paloma-ffi"
 version = "0.0.1"
 dependencies = [
+ "bytes",
  "chrono",
  "env_logger",
  "futures",
