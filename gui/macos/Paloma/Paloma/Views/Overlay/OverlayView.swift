@@ -28,32 +28,10 @@ struct OverlayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            QueryView(query: $query, mode: mode, onSearch: dispatchQuery)
-                .onSubmit {
-                    handleSubmit()
-                }
-                .onKeyPress(keys: [.upArrow]) { press in
-                    guard press.chord() else {
-                        return .ignored
-                    }
-                    handleNavigate(-1)
-                    return .handled
-                }
+            QueryView(query: $query, mode: mode, onSearch: dispatchQuery, onSubmit: handleSubmit, onNavigate: handleNavigate, onEscape: handleEscape)
                 .onKeyPress(keys: [.downArrow]) { press in
-                    if press.chord(.shift) {
-                        toggleSession()
-                    } else if press.chord() {
-                        handleNavigate(1)
-                    } else {
-                        return .ignored
-                    }
-                    return .handled
-                }
-                .onKeyPress(keys: [.escape]) { press in
-                    guard press.chord() else {
-                        return .ignored
-                    }
-                    handleEscape()
+                    guard press.chord(.shift) else { return .ignored }
+                    toggleSession()
                     return .handled
                 }
                 .onKeyPress(keys: [.return]) { press in
@@ -310,28 +288,24 @@ struct OverlayView: View {
     }
 
     private func handleEscape() {
+        // An open action panel swallows the first escape.
+        if searches.closePanel() {
+            return
+        }
+        if sessions.pendingDeletion != nil {
+            sessions.cancelDelete()
+            return
+        }
+        // clean anything in the input view first
+        if !query.isEmpty {
+            query.removeAll()
+            return
+        }
         switch mode {
         case .search:
-            // An open action panel swallows the first escape.
-            if searches.closePanel() {
-                return
-            }
-
-            // If there is search result, clear it first
-            if !query.isEmpty {
-                query.removeAll()
-                return
-            }
-
             onHide()
-        case .chat:
+        case .chat, .session:
             mode = .search
-        case .session:
-            if sessions.pendingDeletion != nil {
-                sessions.cancelDelete()
-            } else {
-                mode = .search
-            }
         }
     }
 

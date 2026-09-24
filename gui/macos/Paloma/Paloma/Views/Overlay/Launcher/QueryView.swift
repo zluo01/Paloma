@@ -10,7 +10,14 @@ struct QueryView: View {
     @Binding var query: String
     let mode: OverlayMode
     let onSearch: (String) -> Void
+    let onSubmit: () -> Void
+    let onNavigate: (Int) -> Void
+    let onEscape: () -> Void
     @FocusState private var focused: Bool
+
+    private var composing: Bool {
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
+    }
 
     private var placeholder: String {
         switch mode {
@@ -37,6 +44,17 @@ struct QueryView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .light))
                 .focused($focused)
+                .onSubmit(onSubmit)
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    guard press.chord(), !composing else { return .ignored }
+                    onNavigate(press.key == .upArrow ? -1 : 1)
+                    return .handled
+                }
+                .onKeyPress(keys: [.escape]) { press in
+                    guard press.chord(), !composing else { return .ignored }
+                    onEscape()
+                    return .handled
+                }
                 .task(id: query) {
                     if !query.isEmpty {
                         guard await (try? Task.sleep(for: .milliseconds(150))) != nil else { return }
