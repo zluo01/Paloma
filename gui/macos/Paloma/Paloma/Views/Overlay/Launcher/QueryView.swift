@@ -6,6 +6,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct QueryView: View {
     @Binding var query: String
@@ -169,9 +170,24 @@ private struct ComposerView: NSViewRepresentable {
 }
 
 final class ComposerTextView: NSTextView {
-    static let font = NSFont.systemFont(ofSize: 22, weight: .light)
-    static let maxLines = 6
+    private static let font = NSFont.systemFont(ofSize: 22, weight: .light)
     static let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
+    static let maxLines = 6
+    static let maxImageBytes = 20 * 1024 * 1024
+
+    private static let imageTypes: [UTType] = [.png, .jpeg, .gif, .webP]
+    private static let imagePasteboardTypes: [NSPasteboard.PasteboardType] = imageTypes.map { NSPasteboard.PasteboardType($0.identifier) } + [.tiff]
+    private static let previewMaxSize = CGSize(width: 360, height: 240)
+    private static let previewDelay: TimeInterval = 0.2
+
+    let preview: NSPopover = {
+        let popover = NSPopover()
+        popover.behavior = .applicationDefined
+        return popover
+    }()
+
+    private var hoveredImage: NSTextAttachment?
+    private var pendingPreview: DispatchWorkItem?
 
     var onSubmit: () -> Void = {}
     var onNavigate: (Int) -> Void = { _ in }
@@ -244,10 +260,22 @@ final class ComposerTextView: NSTextView {
         if availableTypes.contains(.fileURL) {
             return .fileURL
         }
+        if !availableTypes.contains(.string), let imageType = Self.imagePasteboardTypes.first(where: availableTypes.contains) {
+            return imageType
+        }
         return super.preferredPasteboardType(from: availableTypes, restrictedToTypesFrom: allowedTypes)
     }
 
+    /// allow to paste with additional image types
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + Self.imagePasteboardTypes
+    }
+
     override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        if Self.imagePasteboardTypes.contains(type), let image = readImageBuffer(from: pboard, type: type) {
+            insertText(image, replacementRange: selectedRange())
+            return true
+        }
         guard type == .fileURL else {
             return super.readSelection(from: pboard, type: type)
         }
@@ -258,13 +286,137 @@ final class ComposerTextView: NSTextView {
             return super.readSelection(from: pboard, type: type)
         }
 
-        let quotedPaths = fileURLs.map { Self.singleQuoted($0.path(percentEncoded: false)) }
-        insertText(quotedPaths.joined(separator: " "), replacementRange: selectedRange())
+        let content = NSMutableAttributedString()
+        for fileURL in fileURLs {
+            content.append(readImageFile(at: fileURL) ?? NSAttributedString(
+                string: Self.singleQuoted(fileURL.path(percentEncoded: false)),
+                attributes: typingAttributes
+            ))
+            content.append(NSAttributedString(string: " ", attributes: typingAttributes))
+        }
+        insertText(content, replacementRange: selectedRange())
         return true
     }
 
-    private static func singleQuoted(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    /// read image buffer from pasteboard
+    private func readImageBuffer(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> NSAttributedString? {
+        guard let data = pboard.data(forType: type), data.count <= Self.maxImageBytes else { return nil }
+        guard type == .tiff else {
+            return image(data, type: UTType(type.rawValue))
+        }
+        let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:])
+        return png.flatMap { image($0, type: .png) }
+    }
+
+    /// read image from file
+    private func readImageFile(at fileURL: URL) -> NSAttributedString? {
+        guard let values = try? fileURL.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey]),
+              let contentType = values.contentType,
+              let imageType = Self.imageTypes.first(where: contentType.conforms),
+              let size = values.fileSize, size <= Self.maxImageBytes,
+              let data = try? Data(contentsOf: fileURL)
+        else {
+            return nil
+        }
+        return image(data, type: imageType)
+    }
+
+    private func image(_ data: Data, type: UTType?) -> NSAttributedString? {
+        guard let type, let image = NSImage(data: data), image.size.height > 0 else { return nil }
+        let attachment = NSTextAttachment(data: data, ofType: type.identifier)
+        let height = min(image.size.height, Self.lineHeight)
+        let width = min(image.size.width * height / image.size.height, height * 3)
+        attachment.bounds = CGRect(x: 0, y: Self.font.descender, width: width, height: height)
+        let content = NSMutableAttributedString(attachment: attachment)
+        content.addAttributes(typingAttributes, range: NSRange(location: 0, length: content.length))
+        return content
+    }
+
+    /// make sure when dragg and drop images, still stay focus
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        super.concludeDragOperation(sender)
+        window?.makeKeyAndOrderFront(nil)
+        window?.makeFirstResponder(self)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updatePreview(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hidePreview()
+    }
+
+    /// check if pointer is on an image attachment and return associate reference
+    func imageAttachment(at point: CGPoint) -> (attachment: NSTextAttachment, frame: CGRect)? {
+        let origin = textContainerOrigin
+        let location = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        guard let storage = textStorage, let layout = textLayoutManager, let content = layout.textContentManager,
+              let fragment = layout.textLayoutFragment(for: location)
+        else {
+            return nil
+        }
+        let fragmentStart = content.offset(from: content.documentRange.location, to: fragment.rangeInElement.location)
+        let fragmentLength = content.offset(from: fragment.rangeInElement.location, to: fragment.rangeInElement.endLocation)
+        var hit: (attachment: NSTextAttachment, frame: CGRect)?
+        storage.enumerateAttribute(.attachment, in: NSRange(location: fragmentStart, length: fragmentLength)) { value, range, stop in
+            guard let attachment = value as? NSTextAttachment,
+                  let attachmentLocation = content.location(content.documentRange.location, offsetBy: range.location)
+            else {
+                return
+            }
+            let frame = fragment.frameForTextAttachment(at: attachmentLocation).offsetBy(
+                dx: fragment.layoutFragmentFrame.minX + origin.x,
+                dy: fragment.layoutFragmentFrame.minY + origin.y
+            )
+            if frame.contains(point) {
+                hit = (attachment, frame)
+                stop.pointee = true
+            }
+        }
+        return hit
+    }
+
+    private func updatePreview(at point: CGPoint) {
+        guard let (attachment, frame) = imageAttachment(at: point) else {
+            hidePreview()
+            return
+        }
+        guard attachment !== hoveredImage else { return }
+        hidePreview()
+        hoveredImage = attachment
+        let work = DispatchWorkItem { [weak self] in
+            self?.showPreview(of: attachment, relativeTo: frame)
+        }
+        pendingPreview = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.previewDelay, execute: work)
+    }
+
+    private func showPreview(of attachment: NSTextAttachment, relativeTo frame: CGRect) {
+        guard let data = attachment.contents, let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
+            return
+        }
+        let scale = min(1, Self.previewMaxSize.width / image.size.width, Self.previewMaxSize.height / image.size.height)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let imageView = NSImageView(image: image)
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.frame = CGRect(origin: .zero, size: size)
+        let controller = NSViewController()
+        controller.view = imageView
+        preview.contentViewController = controller
+        preview.contentSize = size
+        preview.show(relativeTo: frame, of: self, preferredEdge: .maxY)
+    }
+
+    private func hidePreview() {
+        pendingPreview?.cancel()
+        pendingPreview = nil
+        hoveredImage = nil
+        if preview.isShown {
+            preview.close()
+        }
     }
 
     override func doCommand(by selector: Selector) {
@@ -328,5 +480,9 @@ final class ComposerTextView: NSTextView {
             return false
         }
         return y
+    }
+
+    private static func singleQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }
