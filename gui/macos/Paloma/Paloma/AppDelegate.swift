@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launcher = LauncherModel()
 
     func applicationDidFinishLaunching(_: Notification) {
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         NSApp.setActivationPolicy(.accessory)
         // Single instance only: hand off to an already running Paloma.
         if let bundleId = Bundle.main.bundleIdentifier {
