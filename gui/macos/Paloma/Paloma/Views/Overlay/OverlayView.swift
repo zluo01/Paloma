@@ -70,21 +70,6 @@ struct OverlayView: View {
                     chats.scroll(press.key == .end ? .bottom : .top)
                     return .handled
                 }
-                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
-                    if mode != .chat {
-                        return .ignored
-                    }
-
-                    if press.chord(.option) {
-                        chats.scroll(press.key == .downArrow ? .pageDown : .pageUp)
-                    } else if press.chord(.command) {
-                        chats.scroll(press.key == .downArrow ? .bottom : .top)
-                    } else {
-                        return .ignored
-                    }
-
-                    return .handled
-                }
                 .onKeyPress(phases: .down) { press in
                     // Text edits are blocked while the action panel is open.
                     guard mode == .search, searches.panelSelection != nil else {
