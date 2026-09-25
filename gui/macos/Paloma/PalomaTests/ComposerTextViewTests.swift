@@ -347,9 +347,86 @@ struct ComposerTextViewTests {
         #expect(changed)
     }
 
+    // MARK: - Pasting files
+
+    @Test func givenFilesOnPasteboardWhenChoosingTypeShouldPreferFileURL() {
+        let board = pasteboard(files: ["/Users/a/a.jpg"])
+        #expect(textView.preferredPasteboardType(from: board.types ?? [], restrictedToTypesFrom: nil) == .fileURL)
+    }
+
+    @Test func givenSingleFileOnPasteboardWhenPastingShouldInsertQuotedPath() {
+        layOut("")
+        paste(pasteboard(files: ["/Users/a/a.jpg"]))
+        #expect(textView.string == "'/Users/a/a.jpg'")
+    }
+
+    @Test func givenTwoFilesOnPasteboardWhenPastingShouldInsertQuotedPathsJoinedBySpace() {
+        layOut("")
+        paste(pasteboard(files: ["/Users/a/a.jpg", "/Users/a/b.jpg"]))
+        #expect(textView.string == "'/Users/a/a.jpg' '/Users/a/b.jpg'")
+    }
+
+    @Test func givenFilePathWithSpacesWhenPastingShouldKeepSpacesInsideQuotes() {
+        layOut("")
+        paste(pasteboard(files: ["/Users/a/My Notes/plan b.txt"]))
+        #expect(textView.string == "'/Users/a/My Notes/plan b.txt'")
+    }
+
+    @Test func givenFilePathWithSingleQuoteWhenPastingShouldEscapeTheQuote() {
+        layOut("")
+        paste(pasteboard(files: ["/Users/a/it's.txt"]))
+        #expect(textView.string == #"'/Users/a/it'\''s.txt'"#)
+    }
+
+    @Test func givenCaretInsideTextWhenPastingFilesShouldInsertAtCaret() {
+        layOut("see  now")
+        placeCaret(at: 4)
+        paste(pasteboard(files: ["/Users/a/a.jpg"]))
+        #expect(textView.string == "see '/Users/a/a.jpg' now")
+    }
+
+    @Test func givenSelectedTextWhenPastingFilesShouldReplaceSelection() {
+        layOut("see this now")
+        textView.setSelectedRange(NSRange(location: 4, length: 4))
+        paste(pasteboard(files: ["/Users/a/a.jpg"]))
+        #expect(textView.string == "see '/Users/a/a.jpg' now")
+    }
+
+    @Test func givenPlainTextOnPasteboardWhenPastingShouldInsertTextUnchanged() {
+        layOut("")
+        paste(pasteboard { $0.setString("hello world", forType: .string) })
+        #expect(textView.string == "hello world")
+    }
+
+    @Test func givenWebLinkOnPasteboardWhenPastingShouldInsertLinkUnchanged() {
+        layOut("")
+        paste(pasteboard {
+            $0.writeObjects([URL(string: "https://example.com/a%20b")! as NSURL])
+            $0.setString("https://example.com/a%20b", forType: .string)
+        })
+        #expect(textView.string == "https://example.com/a%20b")
+    }
+
     // MARK: - Helpers
 
     private static let noReplacement = NSRange(location: NSNotFound, length: 0)
+
+    private func pasteboard(_ fill: (NSPasteboard) -> Void) -> NSPasteboard {
+        let board = NSPasteboard(name: NSPasteboard.Name("ComposerTextViewTests-\(UUID())"))
+        board.clearContents()
+        fill(board)
+        return board
+    }
+
+    private func pasteboard(files paths: [String]) -> NSPasteboard {
+        pasteboard { $0.writeObjects(paths.map { URL(fileURLWithPath: $0) as NSURL }) }
+    }
+
+    private func paste(_ board: NSPasteboard) {
+        defer { board.releaseGlobally() }
+        guard let type = textView.preferredPasteboardType(from: board.types ?? [], restrictedToTypesFrom: nil) else { return }
+        _ = textView.readSelection(from: board, type: type)
+    }
 
     private func compose(_ text: String) {
         textView.setMarkedText(text, selectedRange: NSRange(location: (text as NSString).length, length: 0), replacementRange: Self.noReplacement)

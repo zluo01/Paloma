@@ -225,6 +225,37 @@ final class ComposerTextView: NSTextView {
         onMarkedTextChange()
     }
 
+    override func preferredPasteboardType(
+        from availableTypes: [NSPasteboard.PasteboardType],
+        restrictedToTypesFrom allowedTypes: [NSPasteboard.PasteboardType]?
+    ) -> NSPasteboard.PasteboardType? {
+        // if it is a file, use fileURL as type so we get the file path
+        if availableTypes.contains(.fileURL) {
+            return .fileURL
+        }
+        return super.preferredPasteboardType(from: availableTypes, restrictedToTypesFrom: allowedTypes)
+    }
+
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard type == .fileURL else {
+            return super.readSelection(from: pboard, type: type)
+        }
+
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let fileURLs = pboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] ?? []
+        guard !fileURLs.isEmpty else {
+            return super.readSelection(from: pboard, type: type)
+        }
+
+        let quotedPaths = fileURLs.map { Self.singleQuoted($0.path(percentEncoded: false)) }
+        insertText(quotedPaths.joined(separator: " "), replacementRange: selectedRange())
+        return true
+    }
+
+    private static func singleQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
     override func doCommand(by selector: Selector) {
         switch selector {
         case #selector(insertNewline(_:)):
