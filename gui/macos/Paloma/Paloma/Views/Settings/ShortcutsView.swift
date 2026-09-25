@@ -16,12 +16,12 @@ struct ShortcutsView: View {
             Section("Search") {
                 LabeledContent("Open / run action", value: "⏎")
                 LabeledContent("Show actions", value: "⌘⏎")
-                LabeledContent("Open sessions", value: "⇧↓")
+                LabeledContent("Open sessions", value: "⌘Y")
             }
             Section("Chat") {
                 LabeledContent("Send message", value: "⏎")
                 LabeledContent("Stop generating", value: "⌃C")
-                LabeledContent("Open sessions", value: "⇧↓")
+                LabeledContent("Open sessions", value: "⌘Y")
                 LabeledContent("Page up", value: "⇞ / ⌥↑")
                 LabeledContent("Page down", value: "⇟ / ⌥↓")
                 LabeledContent("Top", value: "↖ / ⌘↑")

@@ -29,8 +29,8 @@ struct OverlayView: View {
     var body: some View {
         VStack(spacing: 0) {
             QueryView(query: $query, mode: mode, onSearch: dispatchQuery, onSubmit: handleSubmit, onNavigate: handleNavigate, onEscape: handleEscape)
-                .onKeyPress(keys: [.downArrow]) { press in
-                    guard press.chord(.shift) else { return .ignored }
+                .onKeyPress(keys: ["y"]) { press in
+                    guard press.chord(.command) else { return .ignored }
                     toggleSession()
                     return .handled
                 }
