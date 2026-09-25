@@ -407,7 +407,71 @@ struct ComposerTextViewTests {
         #expect(textView.string == "https://example.com/a%20b")
     }
 
+    // MARK: - Undo
+
+    @Test func givenTypedTextWhenUndoingShouldRemoveTypedText() async throws {
+        let panel = try await keyPanel()
+        defer { panel.close() }
+        try typeUndoably("hello")
+
+        try await pressCommandZ(in: panel)
+
+        #expect(textView.string.isEmpty)
+    }
+
+    @Test func givenTypedTextReplacedProgrammaticallyWhenUndoingShouldUndoOrHaveNothingToUndo() async throws {
+        let panel = try await keyPanel()
+        defer { panel.close() }
+        try typeUndoably("hello")
+
+        textView.string = ""
+        let hadSomethingToUndo = textView.undoManager?.canUndo == true
+        try await pressCommandZ(in: panel)
+
+        #expect(!hadSomethingToUndo || textView.string == "hello")
+    }
+
     // MARK: - Helpers
+
+    private func keyPanel() async throws -> NSPanel {
+        let panel = NSPanel(contentRect: textView.frame, styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.contentView = textView
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(textView)
+        for _ in 0 ..< 20 where !panel.isKeyWindow {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        try #require(panel.isKeyWindow)
+        return panel
+    }
+
+    private func typeUndoably(_ text: String) throws {
+        let undoManager = try #require(textView.undoManager)
+        undoManager.groupsByEvent = false
+        undoManager.beginUndoGrouping()
+        textView.insertText(text, replacementRange: textView.selectedRange())
+        undoManager.endUndoGrouping()
+    }
+
+    private func pressCommandZ(in panel: NSPanel) async throws {
+        let before = textView.string
+        let commandZ = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+            isARepeat: false,
+            keyCode: 6
+        ))
+        NSApp.postEvent(commandZ, atStart: false)
+        for _ in 0 ..< 10 where textView.string == before {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
 
     private static let noReplacement = NSRange(location: NSNotFound, length: 0)
 

@@ -210,6 +210,17 @@ final class ComposerTextView: NSTextView {
         return max(layout.usageBoundsForTextContainer.height, Self.lineHeight)
     }
 
+    override var string: String {
+        get { super.string }
+        set {
+            super.string = newValue
+            // proactively remove all undo actions when text is in-sync (i.e. manual text clear on submit)
+            if let textStorage {
+                undoManager?.removeAllActions(withTarget: textStorage)
+            }
+        }
+    }
+
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         onMarkedTextChange()
