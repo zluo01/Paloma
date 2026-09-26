@@ -7,19 +7,37 @@
 import SwiftUI
 
 struct ChatSectionView: View {
+    private static let inlineImageHeight: CGFloat = 16
+    private static let displayImageHeight: CGFloat = 120
+
     let section: ChatSection
     let model: ChatModel
 
     var body: some View {
         switch section {
-        case let .user(_, text):
+        case let .user(_, text, images):
+            let segments = PromptSegment.split(text)
             HStack {
                 Spacer(minLength: 60)
-                Text(text)
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.selection, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Self.promptText(segments, images: images)
+                    let shown = Self.shownImages(segments, images: images)
+                    if !shown.isEmpty {
+                        WrapLayout {
+                            ForEach(shown.indices, id: \.self) { index in
+                                let image = shown[index]
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: min(image.size.height, Self.displayImageHeight))
+                            }
+                        }
+                    }
+                }
+                .font(.system(size: 13))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.selection, in: RoundedRectangle(cornerRadius: 12))
             }
         case let .assistant(_, providerBackendId, text):
             VStack(alignment: .leading, spacing: 3) {
@@ -32,6 +50,37 @@ struct ChatSectionView: View {
             ReasoningView(text: text)
         case let .tool(tool):
             ToolCallView(tool: tool, model: model)
+        }
+    }
+
+    private static func promptText(_ segments: [PromptSegment], images: [UInt32: NSImage]) -> Text {
+        segments.reduce(Text(verbatim: "")) { result, segment in
+            switch segment {
+            case let .text(run):
+                Text("\(result)\(Text(verbatim: run))")
+            case let .image(id):
+                if let image = images[id] {
+                    Text("\(result)\(Image(nsImage: inlineImage(image)))")
+                } else {
+                    Text("\(result)\(Text(verbatim: PromptSegment.placeholder(id)))")
+                }
+            }
+        }
+    }
+
+    private static func shownImages(_ segments: [PromptSegment], images: [UInt32: NSImage]) -> [NSImage] {
+        segments.compactMap { segment in
+            guard case let .image(id) = segment else { return nil }
+            return images[id]
+        }
+    }
+
+    private static func inlineImage(_ image: NSImage) -> NSImage {
+        let height = min(image.size.height, inlineImageHeight)
+        let size = CGSize(width: image.size.width * height / max(image.size.height, 1), height: height)
+        return NSImage(size: size, flipped: false) { rect in
+            image.draw(in: rect)
+            return true
         }
     }
 }

@@ -41,7 +41,7 @@ final class QueryModel {
                 return
             }
             let id = UInt32(attachments.count + 1)
-            text += "[Image #\(id)]"
+            text += PromptSegment.placeholder(id)
             attachments.append(.image(id: id, mediaType: mediaType, data: data))
         }
         let prompt = text.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)

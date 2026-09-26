@@ -4,7 +4,7 @@
 //
 //
 
-import Foundation
+import AppKit
 import Observation
 
 enum ScrollCommand: Equatable {
@@ -232,7 +232,7 @@ final class ChatModel {
         return scrollCommand
     }
 
-    private func render(_ event: RenderEvent) {
+    func render(_ event: RenderEvent) {
         switch event {
         case let .chat(event):
             renderChat(event)
@@ -250,8 +250,12 @@ final class ChatModel {
     /// Deltas accumulate into the trailing section of the same kind.
     private func renderChat(_ event: ChatRenderEvent) {
         switch event {
-        case let .userPrompt(text, _):
-            transcript.append(.user(id: nextSectionId(), text: text))
+        case let .userPrompt(text, attachments):
+            var images: [UInt32: NSImage] = [:]
+            for case let .image(id, _, data) in attachments {
+                images[id] = NSImage(data: data)
+            }
+            transcript.append(.user(id: nextSectionId(), text: text, images: images))
         case let .textDelta(providerBackendId, text):
             if case let .assistant(id, current, existing) = transcript.last,
                current == providerBackendId

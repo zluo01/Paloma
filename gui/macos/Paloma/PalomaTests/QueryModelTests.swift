@@ -6,6 +6,7 @@
 import AppKit
 @testable import Paloma
 import Testing
+import UniformTypeIdentifiers
 
 @MainActor
 struct QueryModelTests {
@@ -75,7 +76,7 @@ struct QueryModelTests {
     @Test func givenTwoImagesWhenBuildingPromptShouldNumberThemInOrder() throws {
         let first = try pasteImage()
         textView.insertText(" and ", replacementRange: textView.selectedRange())
-        let second = try pasteImage(.jpeg, as: NSPasteboard.PasteboardType("public.jpeg"))
+        let second = try pasteImage(.jpeg)
         query.sync()
         let prompt = query.prompt()
         #expect(prompt.text == "[Image #1] and [Image #2]")
@@ -104,18 +105,12 @@ struct QueryModelTests {
     }
 
     @discardableResult
-    private func pasteImage(_ type: NSBitmapImageRep.FileType = .png, as pasteboardType: NSPasteboard.PasteboardType = .png) throws -> Data {
-        let image = NSImage(size: NSSize(width: 4, height: 2), flipped: false) { rect in
-            NSColor.systemTeal.setFill()
-            rect.fill()
-            return true
-        }
-        let tiff = try #require(image.tiffRepresentation)
-        let data = try #require(NSBitmapImageRep(data: tiff)?.representation(using: type, properties: [:]))
+    private func pasteImage(_ type: UTType = .png) throws -> Data {
+        let data = try imageData(type)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         board.clearContents()
-        board.setData(data, forType: pasteboardType)
+        board.setData(data, forType: NSPasteboard.PasteboardType(type.identifier))
         try #require(textView.readSelection(from: board))
         return data
     }
