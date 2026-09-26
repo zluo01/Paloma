@@ -54,7 +54,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         string prompt,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        using var chat = await app.Chat(sessionId, backend, prompt);
+        using var chat = await app.Chat(sessionId, backend, prompt, attachments: []);
         if (chat.SessionId() is { } started)
         {
             yield return new ChatStreamEvent.SessionStarted(started);
