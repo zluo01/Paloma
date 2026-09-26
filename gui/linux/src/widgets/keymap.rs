@@ -134,7 +134,7 @@ const ALL: &[Binding] = &[
         group: Group::Search,
         context: Context::Global,
         label: "Open sessions",
-        shown: &[shift(Key::Down)],
+        shown: &[ctrl(Key::h)],
         hidden: &[],
     },
     Binding {
@@ -456,6 +456,18 @@ mod tests {
     fn unbound_key_resolves_to_none() {
         assert_eq!(
             match_binding(Context::Search, Key::F1, ModifierType::empty()),
+            None
+        );
+    }
+
+    #[test]
+    fn ctrl_h_resolves_to_open_sessions_globally() {
+        assert_eq!(
+            match_binding(Context::Global, Key::h, ModifierType::CONTROL_MASK),
+            Some(BindingId::OpenSessions)
+        );
+        assert_eq!(
+            match_binding(Context::Global, Key::Down, ModifierType::SHIFT_MASK),
             None
         );
     }
