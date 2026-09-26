@@ -2,7 +2,7 @@ using Microsoft.UI.Xaml.Navigation;
 
 namespace Paloma.Views.Settings.Shortcuts;
 
-internal sealed record ShortcutEntry(string Keys, string Description);
+internal sealed record ShortcutEntry(string Description, IReadOnlyList<string> Keys);
 
 public sealed partial class ShortcutsPage
 {
@@ -16,28 +16,28 @@ public sealed partial class ShortcutsPage
     {
         Search =
         [
-            new ShortcutEntry("↑ ↓", "Move selection"),
-            new ShortcutEntry("Enter", "Submit"),
-            new ShortcutEntry("Ctrl+Enter", "Show actions"),
-            new ShortcutEntry("Shift+↓", "Open sessions"),
-            new ShortcutEntry("Esc", "Close overlay"),
+            new("Move selection", ["↑", "↓"]),
+            new("Submit", ["Enter"]),
+            new("Show actions", ["Ctrl", "Enter"]),
+            new("Open sessions", ["Shift", "↓"]),
+            new("Close overlay", ["Esc"]),
         ];
         Chat =
         [
-            new ShortcutEntry("Enter", "Send message"),
-            new ShortcutEntry("Ctrl+C", "Interrupt response"),
-            new ShortcutEntry("↑ ↓", "Move between pending decisions"),
-            new ShortcutEntry("PgUp PgDn", "Scroll by page"),
-            new ShortcutEntry("Ctrl+Home Ctrl+End", "Scroll to top / bottom"),
-            new ShortcutEntry("Shift+↓", "Open sessions"),
-            new ShortcutEntry("Esc", "Exit chat"),
+            new("Send message", ["Enter"]),
+            new("Interrupt response", ["Ctrl", "C"]),
+            new("Move between pending decisions", ["↑", "↓"]),
+            new("Scroll by page", ["PgUp", "PgDn"]),
+            new("Scroll to top / bottom", ["Ctrl", "Home", "Ctrl", "End"]),
+            new("Open sessions", ["Shift", "↓"]),
+            new("Exit chat", ["Esc"]),
         ];
         Sessions =
         [
-            new ShortcutEntry("↑ ↓", "Move between sessions"),
-            new ShortcutEntry("Enter", "Open session"),
-            new ShortcutEntry("Del", "Delete session (Enter confirms)"),
-            new ShortcutEntry("Esc", "Close"),
+            new("Move between sessions", ["↑", "↓"]),
+            new("Open session", ["Enter"]),
+            new("Delete session (Enter confirms)", ["Del"]),
+            new("Close", ["Esc"]),
         ];
         NavigationCacheMode = NavigationCacheMode.Required;
         InitializeComponent();

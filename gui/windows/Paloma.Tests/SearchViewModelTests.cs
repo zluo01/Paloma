@@ -325,29 +325,18 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
-    public void RowHints_YieldToTheHoveringMouse()
+    public void ForItem_OffersTheActionMenuOnlyWithMoreThanOneAction()
     {
         var row = LauncherRow.ForItem(
             new ExtensionCapabilityId("ext", "cap"),
             new Item("title", null, null, [new ExtAction("Open", [], true), new ExtAction("Copy", [], false)]));
 
-        row.IsSelected = true;
-        Assert.True(row.ShowActionHint);
-        Assert.False(row.ShowMoreButton);
+        Assert.True(row.HasActionMenu);
 
-        // The mouse on the row swaps the keyboard chip for the more button.
-        row.IsHovered = true;
-        Assert.False(row.ShowActionHint);
-        Assert.True(row.ShowMoreButton);
-
-        // A single-action row offers neither affordance.
         var single = LauncherRow.ForItem(
             new ExtensionCapabilityId("ext", "cap"),
             new Item("one", null, null, [new ExtAction("Open", [], true)]));
-        single.IsSelected = true;
-        single.IsHovered = true;
-        Assert.False(single.ShowActionHint);
-        Assert.False(single.ShowMoreButton);
+        Assert.False(single.HasActionMenu);
     }
 
     [Fact]

@@ -45,8 +45,7 @@
                             <ItemsControl ItemsSource="{x:Bind Items}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="viewmodels:LauncherRow">
-                                        <shared:RowItem Hovered="{x:Bind IsHovered, Mode=TwoWay}"
-                                                        RightTapped="OnRowRightTapped"
+                                        <shared:RowItem RightTapped="OnRowRightTapped"
                                                         Selected="{x:Bind IsSelected, Mode=OneWay}"
                                                         Tapped="OnRowTapped">
                                             <Grid Padding="12,7">
@@ -79,21 +78,6 @@
                                                         TextTrimming="CharacterEllipsis"
                                                         Visibility="{x:Bind Item.Subtitle, Converter={StaticResource EmptyToCollapsed}}" />
                                                 </StackPanel>
-                                                <Border
-                                                    Grid.Column="2"
-                                                    Margin="10,0,0,0"
-                                                    Padding="6,1"
-                                                    VerticalAlignment="Center"
-                                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="{ThemeResource ControlCornerRadius}"
-                                                    Visibility="{x:Bind ShowActionHint, Mode=OneWay}">
-                                                    <TextBlock
-                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                        Style="{ThemeResource CaptionTextBlockStyle}"
-                                                        Text="Ctrl+Enter" />
-                                                </Border>
                                                 <Button
                                                     Grid.Column="2"
                                                     Margin="10,0,0,0"
@@ -103,7 +87,7 @@
                                                     Style="{StaticResource IconButton}"
                                                     Tapped="OnRowMoreTapped"
                                                     ToolTipService.ToolTip="Actions"
-                                                    Visibility="{x:Bind ShowMoreButton, Mode=OneWay}">
+                                                    Visibility="{x:Bind HasActionMenu}">
                                                     <FontIcon FontSize="13" Glyph="&#xE712;" />
                                                 </Button>
                                             </Grid>

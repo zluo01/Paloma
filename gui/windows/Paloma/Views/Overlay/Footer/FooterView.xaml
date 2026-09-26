@@ -10,6 +10,16 @@
     xmlns:overlay="using:Paloma.Views.Overlay"
     mc:Ignorable="d">
 
+    <UserControl.Resources>
+        <Style
+            x:Key="FooterHint"
+            BasedOn="{StaticResource CaptionTextBlockStyle}"
+            TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+
     <Grid
         Padding="14,7"
         Background="Transparent"
@@ -18,130 +28,159 @@
         ColumnSpacing="10">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel
-            Grid.Column="0"
-            VerticalAlignment="Center"
-            AutomationProperties.Name="{x:Bind ViewModel.ServicesHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Services}"
-            Orientation="Horizontal"
-            Spacing="5"
-            ToolTipService.ToolTip="{x:Bind ViewModel.ServicesHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Services}">
-            <Ellipse
-                Width="8"
-                Height="8"
+        <Grid Grid.Column="0">
+            <Grid Visibility="{x:Bind overlay:OverlayView.WhenSearch(Mode), Mode=OneWay}">
+                <StackPanel
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    Visibility="{x:Bind HasResults, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
+                    <StackPanel
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="{x:Bind ViewModel.ServicesHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Services}"
+                        Orientation="Horizontal"
+                        Spacing="5"
+                        ToolTipService.ToolTip="{x:Bind ViewModel.ServicesHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Services}">
+                        <Ellipse
+                            Width="8"
+                            Height="8"
+                            VerticalAlignment="Center"
+                            Fill="{x:Bind local:FooterView.HealthBrush(ViewModel.ServicesHealth), Mode=OneWay}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Services" />
+                    </StackPanel>
+                    <StackPanel
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="{x:Bind ViewModel.PluginsHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Plugins}"
+                        Orientation="Horizontal"
+                        Spacing="5"
+                        ToolTipService.ToolTip="{x:Bind ViewModel.PluginsHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Plugins}">
+                        <Ellipse
+                            Width="8"
+                            Height="8"
+                            VerticalAlignment="Center"
+                            Fill="{x:Bind local:FooterView.HealthBrush(ViewModel.PluginsHealth), Mode=OneWay}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Plugins" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="12"
+                    Visibility="{x:Bind HasResults, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Style="{StaticResource FooterHint}" Text="Submit" />
+                        <ContentControl Content="Enter" Style="{StaticResource KeyCap}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Style="{StaticResource FooterHint}" Text="Show actions" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <ContentControl Content="Ctrl" Style="{StaticResource KeyCap}" />
+                            <ContentControl Content="Enter" Style="{StaticResource KeyCap}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+            <StackPanel
                 VerticalAlignment="Center"
-                Fill="{x:Bind local:FooterView.HealthBrush(ViewModel.ServicesHealth), Mode=OneWay}" />
-            <TextBlock
-                VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{ThemeResource CaptionTextBlockStyle}"
-                Text="Services" />
-        </StackPanel>
-        <StackPanel
-            Grid.Column="1"
-            VerticalAlignment="Center"
-            AutomationProperties.Name="{x:Bind ViewModel.PluginsHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Plugins}"
-            Orientation="Horizontal"
-            Spacing="5"
-            ToolTipService.ToolTip="{x:Bind ViewModel.PluginsHealth, Mode=OneWay, Converter={StaticResource HealthToLabel}, ConverterParameter=Plugins}">
-            <Ellipse
-                Width="8"
-                Height="8"
-                VerticalAlignment="Center"
-                Fill="{x:Bind local:FooterView.HealthBrush(ViewModel.PluginsHealth), Mode=OneWay}" />
-            <TextBlock
-                VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{ThemeResource CaptionTextBlockStyle}"
-                Text="Plugins" />
-        </StackPanel>
-        <Grid Grid.Column="2">
-            <TextBlock
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{ThemeResource CaptionTextBlockStyle}"
-                TextTrimming="CharacterEllipsis"
-                TextWrapping="NoWrap"
-                Visibility="{x:Bind overlay:OverlayView.WhenSearch(Mode), Mode=OneWay}">
-                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Shift+↓" />
-                <Run Text="sessions" />
-            </TextBlock>
-            <TextBlock
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{ThemeResource CaptionTextBlockStyle}"
-                TextTrimming="CharacterEllipsis"
-                TextWrapping="NoWrap"
+                Orientation="Horizontal"
+                Spacing="8"
                 Visibility="{x:Bind overlay:OverlayView.WhenChat(Mode), Mode=OneWay}">
-                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Ctrl+C" />
-                <Run Text="stop" />
-                <Run Text=" · " />
-                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Shift+↓" />
-                <Run Text="sessions" />
-            </TextBlock>
-            <TextBlock
-                HorizontalAlignment="Center"
+                <TextBlock Style="{StaticResource FooterHint}" Text="Scroll by page" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <ContentControl Content="PgUp" Style="{StaticResource KeyCap}" />
+                    <ContentControl Content="PgDn" Style="{StaticResource KeyCap}" />
+                </StackPanel>
+            </StackPanel>
+            <StackPanel
                 VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{ThemeResource CaptionTextBlockStyle}"
-                TextTrimming="CharacterEllipsis"
-                TextWrapping="NoWrap"
+                Orientation="Horizontal"
+                Spacing="12"
                 Visibility="{x:Bind overlay:OverlayView.WhenSessions(Mode), Mode=OneWay}">
-                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Enter" />
-                <Run Text="restore" />
-                <Run Text=" · " />
-                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Del" />
-                <Run Text="delete" />
-            </TextBlock>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Style="{StaticResource FooterHint}" Text="Open session" />
+                    <ContentControl Content="Enter" Style="{StaticResource KeyCap}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Style="{StaticResource FooterHint}" Text="Delete session" />
+                    <ContentControl Content="Del" Style="{StaticResource KeyCap}" />
+                </StackPanel>
+            </StackPanel>
         </Grid>
-        <DropDownButton
-            x:Name="ModelButton"
-            Grid.Column="3"
-            MinHeight="30"
-            Padding="9,3"
-            VerticalAlignment="Center"
-            Background="Transparent"
-            BorderThickness="0"
-            Content="{x:Bind ViewModel.ModelLabel, Mode=OneWay}"
-            FontSize="12"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            IsEnabled="{x:Bind ViewModel.HasSelectableProvider, Mode=OneWay}"
-            ToolTipService.ToolTip="Preferred model">
-            <DropDownButton.Flyout>
-                <!--  https://github.com/microsoft/microsoft-ui-xaml/issues/7384  -->
-                <MenuFlyout
-                    x:Name="ModelFlyout"
-                    Closed="OnModelFlyoutClosed"
-                    Opening="OnModelFlyoutOpening"
-                    Placement="Top" />
-            </DropDownButton.Flyout>
-        </DropDownButton>
-        <Button
-            x:Name="SettingsButton"
-            Grid.Column="4"
-            VerticalAlignment="Center"
-            AutomationProperties.Name="Settings"
-            Click="OnSettingsClick"
-            Style="{StaticResource IconButton}"
-            ToolTipService.ToolTip="Settings">
-            <FontIcon FontSize="14" Glyph="&#xE713;" />
-        </Button>
-        <Button
-            x:Name="SessionsButton"
-            Grid.Column="5"
-            VerticalAlignment="Center"
-            AutomationProperties.Name="Sessions"
-            Click="OnSessionsClick"
-            Style="{StaticResource IconButton}"
-            ToolTipService.ToolTip="Sessions (Shift+↓)">
-            <FontIcon FontSize="14" Glyph="&#xE81C;" />
-        </Button>
+        <Grid Grid.Column="2">
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="10"
+                Visibility="{x:Bind Streaming, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
+                <DropDownButton
+                    x:Name="ModelButton"
+                    MinHeight="30"
+                    Padding="9,3"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Content="{x:Bind ViewModel.ModelLabel, Mode=OneWay}"
+                    FontSize="12"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    IsEnabled="{x:Bind ViewModel.HasSelectableProvider, Mode=OneWay}"
+                    ToolTipService.ToolTip="Preferred model">
+                    <DropDownButton.Flyout>
+                        <!--  https://github.com/microsoft/microsoft-ui-xaml/issues/7384  -->
+                        <MenuFlyout
+                            x:Name="ModelFlyout"
+                            Closed="OnModelFlyoutClosed"
+                            Opening="OnModelFlyoutOpening"
+                            Placement="Top" />
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <Button
+                    x:Name="SettingsButton"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Settings"
+                    Click="OnSettingsClick"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Settings">
+                    <FontIcon FontSize="14" Glyph="&#xE713;" />
+                </Button>
+                <Button
+                    x:Name="SessionsButton"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Sessions"
+                    Click="OnSessionsClick"
+                    Style="{StaticResource IconButton}"
+                    ToolTipService.ToolTip="Sessions (Shift+↓)">
+                    <FontIcon FontSize="14" Glyph="&#xE81C;" />
+                </Button>
+            </StackPanel>
+            <Button
+                x:Name="StopButton"
+                MinHeight="30"
+                Padding="9,3"
+                VerticalAlignment="Center"
+                AllowFocusOnInteraction="False"
+                AutomationProperties.Name="Stop"
+                Click="OnStopClick"
+                FontSize="12"
+                ToolTipService.ToolTip="Interrupt the current response (Ctrl+C)"
+                Visibility="{x:Bind Streaming, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Glyph="&#xE73B;" />
+                    <TextBlock VerticalAlignment="Center" Text="Stop" />
+                </StackPanel>
+            </Button>
+        </Grid>
     </Grid>
 </UserControl>

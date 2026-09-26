@@ -95,9 +95,12 @@
         <footer:FooterView
             x:Name="FooterPanel"
             Grid.Row="3"
+            HasResults="{x:Bind Search.HasResults, Mode=OneWay}"
             Mode="{x:Bind Mode, Mode=OneWay}"
             ModelFlyoutClosed="OnModelFlyoutClosed"
             SessionsRequested="OnFooterSessionsRequested"
-            SizeChanged="OnSizeChanged" />
+            SizeChanged="OnSizeChanged"
+            StopRequested="OnFooterStopRequested"
+            Streaming="{x:Bind Chat.ViewModel.Streaming, Mode=OneWay}" />
     </Grid>
 </UserControl>

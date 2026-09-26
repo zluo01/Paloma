@@ -375,6 +375,11 @@ public sealed partial class OverlayView
         _ = OpenSessionsAsync();
     }
 
+    private void OnFooterStopRequested(object? sender, EventArgs args)
+    {
+        _ = Chat.ViewModel.InterruptAsync();
+    }
+
     private void OnSearchActionCompleted(object? sender, Behavior? behavior)
     {
         HandleBehavior(behavior);

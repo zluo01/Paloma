@@ -235,22 +235,11 @@ public sealed partial class LauncherRow : ObservableObject
 
     public bool HasActionMenu => Item.Actions.Length > 1;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowActionHint))]
-    public partial bool IsSelected { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowActionHint))]
-    [NotifyPropertyChangedFor(nameof(ShowMoreButton))]
-    public partial bool IsHovered { get; set; }
+    [ObservableProperty] public partial bool IsSelected { get; set; }
 
     [ObservableProperty] public partial IconElement? Icon { get; private set; }
 
     public bool ShowsIcon { get; private set; }
-
-    public bool ShowActionHint => IsSelected && !IsHovered && HasActionMenu;
-
-    public bool ShowMoreButton => IsHovered && HasActionMenu;
 
     private LauncherRow(ExtensionCapabilityId capabilityId, Item item)
     {

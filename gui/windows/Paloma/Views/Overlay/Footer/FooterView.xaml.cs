@@ -20,6 +20,12 @@ public sealed partial class FooterView
     public static readonly DependencyProperty ModeProperty = DependencyProperty.Register(
         nameof(Mode), typeof(OverlayMode), typeof(FooterView), new PropertyMetadata(OverlayMode.Search));
 
+    public static readonly DependencyProperty HasResultsProperty = DependencyProperty.Register(
+        nameof(HasResults), typeof(bool), typeof(FooterView), new PropertyMetadata(false));
+
+    public static readonly DependencyProperty StreamingProperty = DependencyProperty.Register(
+        nameof(Streaming), typeof(bool), typeof(FooterView), new PropertyMetadata(false));
+
     private static readonly SolidColorBrush InactiveHealthBrush =
         new(Color.FromArgb(0x66, 0x80, 0x80, 0x80));
 
@@ -31,7 +37,21 @@ public sealed partial class FooterView
         set => SetValue(ModeProperty, value);
     }
 
+    public bool HasResults
+    {
+        get => (bool)GetValue(HasResultsProperty);
+        set => SetValue(HasResultsProperty, value);
+    }
+
+    public bool Streaming
+    {
+        get => (bool)GetValue(StreamingProperty);
+        set => SetValue(StreamingProperty, value);
+    }
+
     public event EventHandler? SessionsRequested;
+
+    public event EventHandler? StopRequested;
 
     public event EventHandler? ModelFlyoutClosed;
 
@@ -57,7 +77,7 @@ public sealed partial class FooterView
     // Exclude following buttons from the dragging area
     internal IReadOnlyList<FrameworkElement> InteractiveControls()
     {
-        return [ModelButton, SettingsButton, SessionsButton];
+        return [ModelButton, SettingsButton, SessionsButton, StopButton];
     }
 
     private void OnModelFlyoutOpening(object sender, object args)
@@ -213,6 +233,11 @@ public sealed partial class FooterView
     private void OnSessionsClick(object sender, RoutedEventArgs args)
     {
         SessionsRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnStopClick(object sender, RoutedEventArgs args)
+    {
+        StopRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private static FontIcon CheckIcon()
