@@ -15,9 +15,9 @@ enum OverlayMode {
 
 struct OverlayView: View {
     @State private var mode: OverlayMode = .search
-    @State private var query: String = ""
     @State private var operationError: OperationError?
 
+    @State private var query = QueryModel()
     @State private var searches = SearchModel()
     @State private var chats = ChatModel()
     @State private var sessions = SessionModel()
@@ -28,7 +28,7 @@ struct OverlayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            QueryView(query: $query, mode: mode, onSearch: dispatchQuery, onSubmit: handleSubmit, onNavigate: handleNavigate, onEscape: handleEscape)
+            QueryView(query: query, mode: mode, onSearch: dispatchQuery, onSubmit: handleSubmit, onNavigate: handleNavigate, onEscape: handleEscape)
                 .onKeyPress(keys: ["y"]) { press in
                     guard press.chord(.command) else { return .ignored }
                     toggleSession()
@@ -107,7 +107,7 @@ struct OverlayView: View {
         }
         .onChange(of: mode) { previous, current in
             // Chat submissions capture the prompt before the transition clears the field.
-            query.removeAll()
+            query.clear()
             switch previous {
             case .search:
                 searches.clear()
@@ -135,7 +135,7 @@ struct OverlayView: View {
         switch mode {
         case .search:
             SearchView(
-                query: query,
+                query: query.text,
                 sections: searches.sections,
                 bases: searches.sectionBases,
                 selection: searches.selection,
@@ -190,14 +190,10 @@ struct OverlayView: View {
         }
     }
 
-    /// The mode only flips to chat for prompts that survive submitChat's trimming.
-    private var hasPrompt: Bool {
-        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private func startChat() {
-        guard hasPrompt else { return }
-        chats.submitChat(query)
+        guard query.hasQuery else { return }
+        let prompt = query.prompt()
+        chats.submitChat(prompt.text, attachments: prompt.attachments)
         mode = .chat
     }
 
@@ -206,7 +202,7 @@ struct OverlayView: View {
         OperationError.run("Failed to Run Action", into: $operationError) {
             await searches.runAction(sectionId, action: action)
         } onSuccess: {
-            query.removeAll()
+            query.clear()
             searches.clear()
             onHide()
         }
@@ -260,8 +256,9 @@ struct OverlayView: View {
             }
         case .chat:
             if !chats.decideSelected(), chats.chatStatus != .streaming {
-                chats.submitChat(query)
-                query.removeAll()
+                let prompt = query.prompt()
+                chats.submitChat(prompt.text, attachments: prompt.attachments)
+                query.clear()
             }
         case .session:
             if sessions.pendingDeletion != nil {
@@ -283,7 +280,7 @@ struct OverlayView: View {
         }
         // clean anything in the input view first
         if !query.isEmpty {
-            query.removeAll()
+            query.clear()
             return
         }
         switch mode {

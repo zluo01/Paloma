@@ -42,7 +42,7 @@ final class ChatModel {
         decisionCursor = min(max(decisionCursor + delta, -1), count - 1)
     }
 
-    func submitChat(_ query: String) {
+    func submitChat(_ query: String, attachments: [UserPromptAttachment]) {
         guard chatStatus != .streaming else {
             return
         }
@@ -68,7 +68,7 @@ final class ChatModel {
                     sessionId: sessionId,
                     providerBackendId: providerBackendId,
                     prompt: prompt,
-                    attachments: []
+                    attachments: attachments
                 )
                 guard isCurrent(turn) else { return }
                 sessionId = chat.sessionId()

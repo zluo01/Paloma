@@ -636,16 +636,60 @@ struct ComposerTextViewTests {
         #expect(textView.string.isEmpty)
     }
 
-    @Test func givenTypedTextReplacedProgrammaticallyWhenUndoingShouldUndoOrHaveNothingToUndo() async throws {
+    // MARK: - Clear
+
+    @Test func givenTypedTextWhenClearedShouldBeEmpty() {
+        layOut("hello")
+        textView.clear()
+        #expect(textView.string.isEmpty)
+    }
+
+    @Test func givenImageAndTextWhenClearedShouldRemoveBoth() throws {
+        layOut("")
+        try paste(pasteboard { try $0.setData(imageData(.png), forType: .png) })
+        textView.insertText("hello", replacementRange: textView.selectedRange())
+        textView.clear()
+        #expect(textView.string.isEmpty)
+        #expect(attachments().isEmpty)
+    }
+
+    @Test func givenEmptyTextWhenClearedShouldStayEmpty() {
+        layOut("")
+        textView.clear()
+        #expect(textView.string.isEmpty)
+    }
+
+    @Test func givenTypedTextWhenClearedShouldPostTextDidChange() {
+        let recorder = TextChangeRecorder()
+        textView.delegate = recorder
+        layOut("hello")
+        textView.clear()
+        #expect(recorder.changes == 1)
+    }
+
+    @Test func givenTypedTextWhenClearedThenUndoingShouldRestoreTypedText() async throws {
         let panel = try await keyPanel()
         defer { panel.close() }
         try typeUndoably("hello")
 
-        textView.string = ""
-        let hadSomethingToUndo = textView.undoManager?.canUndo == true
+        try clearUndoably()
+        try #require(textView.string.isEmpty)
         try await pressCommandZ(in: panel)
 
-        #expect(!hadSomethingToUndo || textView.string == "hello")
+        #expect(textView.string == "hello")
+    }
+
+    @Test func givenTypedTextWhenClearedThenUndoingTwiceShouldRemoveTypedText() async throws {
+        let panel = try await keyPanel()
+        defer { panel.close() }
+        try typeUndoably("hello")
+        try clearUndoably()
+
+        try await pressCommandZ(in: panel)
+        try #require(textView.string == "hello")
+        try await pressCommandZ(in: panel)
+
+        #expect(textView.string.isEmpty)
     }
 
     // MARK: - Helpers
@@ -667,6 +711,14 @@ struct ComposerTextViewTests {
         undoManager.groupsByEvent = false
         undoManager.beginUndoGrouping()
         textView.insertText(text, replacementRange: textView.selectedRange())
+        undoManager.endUndoGrouping()
+    }
+
+    private func clearUndoably() throws {
+        let undoManager = try #require(textView.undoManager)
+        undoManager.groupsByEvent = false
+        undoManager.beginUndoGrouping()
+        textView.clear()
         undoManager.endUndoGrouping()
     }
 
@@ -811,6 +863,15 @@ struct ComposerTextViewTests {
             return true
         }
         return starts
+    }
+}
+
+@MainActor
+private final class TextChangeRecorder: NSObject, NSTextViewDelegate {
+    private(set) var changes = 0
+
+    func textDidChange(_: Notification) {
+        changes += 1
     }
 }
 

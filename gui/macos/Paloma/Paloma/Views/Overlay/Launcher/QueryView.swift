@@ -9,7 +9,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct QueryView: View {
-    @Binding var query: String
+    let query: QueryModel
     let mode: OverlayMode
     let onSearch: (String) -> Void
     let onSubmit: () -> Void
@@ -48,7 +48,7 @@ struct QueryView: View {
                         .foregroundStyle(Color(nsColor: .placeholderTextColor))
                 }
                 ComposerView(
-                    text: $query,
+                    query: query,
                     composing: $composing,
                     onSubmit: onSubmit,
                     onNavigate: onNavigate,
@@ -58,17 +58,17 @@ struct QueryView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .task(id: query) {
-            if !query.isEmpty {
+        .task(id: query.text) {
+            if !query.text.isEmpty {
                 guard await (try? Task.sleep(for: .milliseconds(150))) != nil else { return }
             }
-            onSearch(query)
+            onSearch(query.text)
         }
     }
 }
 
 private struct ComposerView: NSViewRepresentable {
-    @Binding var text: String
+    let query: QueryModel
     @Binding var composing: Bool
     let onSubmit: () -> Void
     let onNavigate: (Int) -> Void
@@ -94,14 +94,8 @@ private struct ComposerView: NSViewRepresentable {
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        if let textView = scrollView.documentView as? ComposerTextView,
-           !textView.hasMarkedText(), textView.string != text
-        {
-            textView.string = text
-        }
-        context.coordinator.invalidateSize()
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context _: Context) -> CGSize? {
@@ -130,6 +124,7 @@ private struct ComposerView: NSViewRepresentable {
 
         func attach(_ textView: ComposerTextView) {
             self.textView = textView
+            parent.query.textView = textView
             textView.onSubmit = { [weak self] in self?.parent.onSubmit() }
             textView.onNavigate = { [weak self] delta in self?.parent.onNavigate(delta) }
             textView.onEscape = { [weak self] in self?.parent.onEscape() }
@@ -151,8 +146,7 @@ private struct ComposerView: NSViewRepresentable {
         }
 
         func textDidChange(_: Notification) {
-            guard let textView else { return }
-            parent.text = textView.string
+            parent.query.sync()
             invalidateSize()
         }
 
@@ -226,15 +220,9 @@ final class ComposerTextView: NSTextView {
         return max(layout.usageBoundsForTextContainer.height, Self.lineHeight)
     }
 
-    override var string: String {
-        get { super.string }
-        set {
-            super.string = newValue
-            // proactively remove all undo actions when text is in-sync (i.e. manual text clear on submit)
-            if let textStorage {
-                undoManager?.removeAllActions(withTarget: textStorage)
-            }
-        }
+    func clear() {
+        breakUndoCoalescing()
+        insertText("", replacementRange: NSRange(location: 0, length: textStorage?.length ?? 0))
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
