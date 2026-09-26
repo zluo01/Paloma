@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: PalomaPanel?
     private var settingsWindow: NSWindow?
     private let launcher = LauncherModel()
+    private let query = QueryModel()
 
     func applicationDidFinishLaunching(_: Notification) {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
@@ -94,14 +95,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPanel() {
         if panel == nil {
-            let view = OverlayView(launcher: launcher) { [weak self] in
+            let view = OverlayView(query: query, launcher: launcher) { [weak self] in
                 self?.panel?.orderOut(nil)
             } onOpenSettings: { [weak self] in
                 self?.showSettings()
             }
             let hosting = NSHostingView(rootView: view)
             hosting.sizingOptions = .preferredContentSize
-            panel = PalomaPanel(hosting: hosting)
+            panel = PalomaPanel(hosting: hosting, query: query)
         }
         launcher.refresh()
         panel?.show()

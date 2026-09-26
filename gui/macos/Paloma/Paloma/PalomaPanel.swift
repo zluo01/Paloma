@@ -9,8 +9,10 @@ final class PalomaPanel: NSPanel {
     private static let frameName = "PalomaLauncher"
     /// Frame autosave restores the position across launches; only a first run centers.
     private var needsCentering = true
+    private let query: QueryModel
 
-    init(hosting: NSView) {
+    init(hosting: NSView, query: QueryModel) {
+        self.query = query
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 86),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
@@ -50,6 +52,30 @@ final class PalomaPanel: NSPanel {
         if wasVisible {
             NotificationCenter.default.post(name: .panelDidHide, object: self)
         }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        refocusComposer(for: event)
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        refocusComposer(for: event)
+        super.sendEvent(event)
+    }
+
+    private func refocusComposer(for event: NSEvent) {
+        guard event.type == .keyDown, !(firstResponder is NSTextView), !isCopy(event),
+              let composer = query.textView
+        else {
+            return
+        }
+        makeFirstResponder(composer)
+    }
+
+    private func isCopy(_ event: NSEvent) -> Bool {
+        event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
+            && event.charactersIgnoringModifiers == "c"
     }
 
     /// Re-anchor so the panel grows downward as the content resizes.

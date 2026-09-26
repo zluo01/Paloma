@@ -17,11 +17,11 @@ struct OverlayView: View {
     @State private var mode: OverlayMode = .search
     @State private var operationError: OperationError?
 
-    @State private var query = QueryModel()
     @State private var searches = SearchModel()
     @State private var chats = ChatModel()
     @State private var sessions = SessionModel()
 
+    let query: QueryModel
     let launcher: LauncherModel
     var onHide: () -> Void
     var onOpenSettings: () -> Void
