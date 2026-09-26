@@ -33,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             switch await CoreClient.shared.bootstrap() {
             case .success:
-                KeyboardShortcuts.onKeyUp(for: .togglePaloma) { [weak self] in
-                    self?.togglePanel()
+                KeyboardShortcuts.onKeyUp(for: .togglePaloma) {
+                    self.togglePanel()
                 }
             case let .failure(error):
                 presentStartupFailure(error)
