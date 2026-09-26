@@ -1,169 +1,13 @@
 //
-//  QueryView.swift
+//  MultilineTextView.swift
 //  Paloma
 //
 //
 
 import AppKit
-import SwiftUI
 import UniformTypeIdentifiers
 
-struct QueryView: View {
-    let query: QueryModel
-    let mode: OverlayMode
-    let onSearch: (String) -> Void
-    let onSubmit: () -> Void
-    let onNavigate: (Int) -> Void
-    let onEscape: () -> Void
-
-    /// indicator to tell if current input through IME
-    @State private var composing = false
-
-    private var placeholder: String {
-        switch mode {
-        case .search: "Search, or ask anything…"
-        case .chat: "Reply…"
-        case .session: "Search sessions…"
-        }
-    }
-
-    private var icon: String {
-        switch mode {
-        case .search: "magnifyingglass"
-        case .chat: "sparkles"
-        case .session: "clock.arrow.circlepath"
-        }
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .light))
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
-            ZStack(alignment: .topLeading) {
-                if query.isEmpty, !composing {
-                    Text(placeholder)
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
-                }
-                ComposerView(
-                    query: query,
-                    composing: $composing,
-                    onSubmit: onSubmit,
-                    onNavigate: onNavigate,
-                    onEscape: onEscape
-                )
-            }
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .task(id: query.text) {
-            if !query.text.isEmpty {
-                guard await (try? Task.sleep(for: .milliseconds(150))) != nil else { return }
-            }
-            onSearch(query.text)
-        }
-    }
-}
-
-private struct ComposerView: NSViewRepresentable {
-    let query: QueryModel
-    @Binding var composing: Bool
-    let onSubmit: () -> Void
-    let onNavigate: (Int) -> Void
-    let onEscape: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let textView = ComposerTextView.make()
-        textView.delegate = context.coordinator
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = textView
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.hasHorizontalScroller = false
-
-        context.coordinator.attach(textView)
-        return scrollView
-    }
-
-    func updateNSView(_: NSScrollView, context: Context) {
-        context.coordinator.parent = self
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context _: Context) -> CGSize? {
-        guard let textView = scrollView.documentView as? ComposerTextView else { return nil }
-        let width = proposal.width ?? textView.frame.width
-        if textView.frame.width != width {
-            textView.frame.size.width = width
-        }
-        let cap = ComposerTextView.lineHeight * CGFloat(ComposerTextView.maxLines)
-        return CGSize(width: width, height: ceil(min(textView.contentHeight, cap)))
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: ComposerView
-        private weak var textView: ComposerTextView?
-        private var observers: [NSObjectProtocol] = []
-
-        init(_ parent: ComposerView) {
-            self.parent = parent
-        }
-
-        deinit {
-            observers.forEach(NotificationCenter.default.removeObserver)
-        }
-
-        func attach(_ textView: ComposerTextView) {
-            self.textView = textView
-            parent.query.textView = textView
-            textView.onSubmit = { [weak self] in self?.parent.onSubmit() }
-            textView.onNavigate = { [weak self] delta in self?.parent.onNavigate(delta) }
-            textView.onEscape = { [weak self] in self?.parent.onEscape() }
-            textView.onMarkedTextChange = { [weak self] in self?.syncComposing() }
-
-            // auto focus on the text view when launcher view is focused
-            observers.append(NotificationCenter.default.addObserver(
-                forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
-            ) { [weak self] note in
-                MainActor.assumeIsolated {
-                    guard note.object is PalomaPanel else { return }
-                    guard let textView = self?.textView else { return }
-                    textView.window?.makeFirstResponder(textView)
-                }
-            })
-            DispatchQueue.main.async {
-                textView.window?.makeFirstResponder(textView)
-            }
-        }
-
-        func textDidChange(_: Notification) {
-            parent.query.sync()
-            invalidateSize()
-        }
-
-        private func syncComposing() {
-            let composing = textView?.hasMarkedText() ?? false
-            if parent.composing != composing {
-                parent.composing = composing
-            }
-        }
-
-        func invalidateSize() {
-            textView?.enclosingScrollView?.invalidateIntrinsicContentSize()
-        }
-    }
-}
-
-final class ComposerTextView: NSTextView {
+final class MultilineTextView: NSTextView {
     private static let font = NSFont.systemFont(ofSize: 22, weight: .light)
     static let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
     static let maxLines = 6
@@ -188,8 +32,8 @@ final class ComposerTextView: NSTextView {
     var onEscape: () -> Void = {}
     var onMarkedTextChange: () -> Void = {}
 
-    static func make() -> ComposerTextView {
-        let textView = ComposerTextView(usingTextLayoutManager: true)
+    static func make() -> MultilineTextView {
+        let textView = MultilineTextView(usingTextLayoutManager: true)
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -471,22 +315,5 @@ final class ComposerTextView: NSTextView {
 
     private static func singleQuoted(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
-    }
-}
-
-final class ImageAttachment: NSTextAttachment {
-    let thumbnail: NSImage
-
-    init(data: Data, type: UTType, thumbnail: NSImage) {
-        self.thumbnail = thumbnail
-        super.init(data: data, ofType: type.identifier)
-    }
-
-    required init?(coder _: NSCoder) {
-        nil
-    }
-
-    override func image(forBounds _: CGRect, textContainer _: NSTextContainer?, characterIndex _: Int) -> NSImage? {
-        thumbnail
     }
 }

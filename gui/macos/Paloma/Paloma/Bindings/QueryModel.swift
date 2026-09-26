@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 @Observable
 final class QueryModel {
     private(set) var content = NSAttributedString()
-    @ObservationIgnored weak var textView: ComposerTextView?
+    @ObservationIgnored weak var textView: MultilineTextView?
 
     var text: String {
         content.string.replacingOccurrences(of: "\u{FFFC}", with: "")

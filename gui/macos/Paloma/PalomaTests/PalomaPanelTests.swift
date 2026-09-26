@@ -16,12 +16,12 @@ private final class FocusableView: NSView {
 @MainActor
 struct PalomaPanelTests {
     private let panel: PalomaPanel
-    private let textView: ComposerTextView
+    private let textView: MultilineTextView
     private let other: FocusableView
 
     init() {
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 80))
-        textView = ComposerTextView.make()
+        textView = MultilineTextView.make()
         textView.frame = NSRect(x: 0, y: 0, width: 640, height: 40)
         other = FocusableView(frame: NSRect(x: 0, y: 40, width: 640, height: 40))
         content.addSubview(textView)

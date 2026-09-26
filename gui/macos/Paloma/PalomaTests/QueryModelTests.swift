@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct QueryModelTests {
-    private let textView = ComposerTextView.make()
+    private let textView = MultilineTextView.make()
     private let query = QueryModel()
 
     init() {
