@@ -104,10 +104,10 @@ jobs:
         if: matrix.platform == 'macos'
         run: scripts/build-swift-bindings.sh --debug
 
-      - name: Build macOS application
+      - name: Build and test macOS application
         if: matrix.platform == 'macos'
         working-directory: gui/macos/Paloma
-        run: xcodebuild -scheme Paloma CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -scheme Paloma -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 
       - name: Install .NET 10
         if: matrix.platform == 'windows'

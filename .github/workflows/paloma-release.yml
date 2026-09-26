@@ -52,6 +52,10 @@ jobs:
       - name: Generate Swift bindings
         run: scripts/build-swift-bindings.sh
 
+      - name: Run Swift tests
+        working-directory: gui/macos/Paloma
+        run: xcodebuild -scheme Paloma -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
+
       - name: Build DMG
         env:
           VERSION: ${{ steps.release.outputs.version }}
