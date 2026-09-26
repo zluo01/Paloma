@@ -9,8 +9,8 @@ use std::{
 use bytes::Bytes;
 use futures::{channel::mpsc, future::join_all};
 use gtk4::{
-    Align, Box as GtkBox, Image, Inscription, Orientation, Overlay, PolicyType, ScrolledWindow,
-    TextBuffer, TextChildAnchor, TextIter, TextView, WrapMode, gdk,
+    Align, Box as GtkBox, DropTarget, Image, Inscription, Orientation, Overlay, PolicyType,
+    ScrolledWindow, TextBuffer, TextChildAnchor, TextIter, TextView, TextWindowType, WrapMode, gdk,
     gdk::{Clipboard, Paintable},
     gio, glib,
     glib::shell_quote,
@@ -196,6 +196,28 @@ impl InputView {
             });
         });
 
+        let drop_attachments = attachments.clone();
+        let drop_target = DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+        drop_target.connect_drop(move |target, value, x, y| {
+            let Ok(list) = value.get::<gdk::FileList>() else {
+                return false;
+            };
+            let Some(view) = target.widget().and_downcast::<TextView>() else {
+                return false;
+            };
+            // place the caret at the drop position
+            let (bx, by) = view.window_to_buffer_coords(TextWindowType::Widget, x as i32, y as i32);
+            if let Some(iter) = view.iter_at_location(bx, by) {
+                view.buffer().place_cursor(&iter);
+            }
+            let attachments = drop_attachments.clone();
+            glib::spawn_future_local(async move {
+                insert_files(&view, &attachments, list.files()).await;
+            });
+            true
+        });
+        text.add_controller(drop_target);
+
         Self {
             view,
             text,
@@ -337,6 +359,14 @@ async fn handle_clipboard_files(
         return;
     }
 
+    insert_files(view, attachments, files).await;
+}
+
+async fn insert_files(
+    view: &TextView,
+    attachments: &RefCell<Vec<Attachment>>,
+    files: Vec<gio::File>,
+) {
     let images = join_all(files.iter().map(load_image)).await;
     let pasted: Vec<_> = files
         .iter()
