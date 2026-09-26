@@ -26,10 +26,12 @@ struct ChatSectionView: View {
                         WrapLayout {
                             ForEach(shown.indices, id: \.self) { index in
                                 let image = shown[index]
+                                let size = ImageThumbnail.size(for: image.size, height: Self.displayImageHeight)
                                 Image(nsImage: image)
                                     .resizable()
-                                    .scaledToFit()
-                                    .frame(height: min(image.size.height, Self.displayImageHeight))
+                                    .scaledToFill()
+                                    .frame(width: size.width, height: size.height)
+                                    .clipped()
                             }
                         }
                     }

@@ -523,6 +523,24 @@ struct ComposerTextViewTests {
         #expect(bounds.size == CGSize(width: 20, height: 10))
     }
 
+    @Test func givenWideImageWhenPastingShouldDisplayACroppedThumbnailNotAStretchedOne() throws {
+        layOut("")
+        try paste(pasteboard { try $0.setData(imageData(.png, width: 400, height: 40), forType: .png) })
+        let storage = try #require(textView.textStorage)
+        let attachment = try #require(storage.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        let displayed = try #require(attachment.image(forBounds: attachment.bounds, textContainer: nil, characterIndex: 0))
+        #expect(attachment.bounds.size == CGSize(width: ComposerTextView.lineHeight * 3, height: ComposerTextView.lineHeight))
+        #expect(displayed.size == attachment.bounds.size)
+        #expect(try #require(displayed.cgImage(forProposedRect: nil, context: nil, hints: nil)).width == 120)
+    }
+
+    @Test func givenWideImageWhenPastingShouldKeepTheOriginalBytesForSending() throws {
+        layOut("")
+        let data = try imageData(.png, width: 400, height: 40)
+        paste(pasteboard { $0.setData(data, forType: .png) })
+        #expect(attachments().map(\.data) == [data])
+    }
+
     // MARK: - Image preview
 
     @Test func givenImageWhenFindingImageAtItsCenterShouldReturnIt() throws {

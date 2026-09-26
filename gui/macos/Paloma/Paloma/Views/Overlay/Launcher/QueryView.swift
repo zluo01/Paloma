@@ -311,10 +311,9 @@ final class ComposerTextView: NSTextView {
 
     private func image(_ data: Data, type: UTType?) -> NSAttributedString? {
         guard let type, let image = NSImage(data: data), image.size.height > 0 else { return nil }
-        let attachment = NSTextAttachment(data: data, ofType: type.identifier)
-        let height = min(image.size.height, Self.lineHeight)
-        let width = min(image.size.width * height / image.size.height, height * 3)
-        attachment.bounds = CGRect(x: 0, y: Self.font.descender, width: width, height: height)
+        guard let thumbnail = ImageThumbnail.image(image, height: Self.lineHeight) else { return nil }
+        let attachment = ImageAttachment(data: data, type: type, thumbnail: thumbnail)
+        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: Self.font.descender), size: thumbnail.size)
         let content = NSMutableAttributedString(attachment: attachment)
         content.addAttributes(typingAttributes, range: NSRange(location: 0, length: content.length))
         return content
@@ -472,5 +471,22 @@ final class ComposerTextView: NSTextView {
 
     private static func singleQuoted(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+}
+
+final class ImageAttachment: NSTextAttachment {
+    let thumbnail: NSImage
+
+    init(data: Data, type: UTType, thumbnail: NSImage) {
+        self.thumbnail = thumbnail
+        super.init(data: data, ofType: type.identifier)
+    }
+
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override func image(forBounds _: CGRect, textContainer _: NSTextContainer?, characterIndex _: Int) -> NSImage? {
+        thumbnail
     }
 }
