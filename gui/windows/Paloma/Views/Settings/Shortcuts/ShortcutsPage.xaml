@@ -38,6 +38,9 @@
     <ScrollViewer Padding="24">
         <StackPanel MaxWidth="720" Spacing="16">
             <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="Shortcuts" />
+            <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Global" />
+            <ItemsControl ItemsSource="{x:Bind Global}" Style="{StaticResource ShortcutList}" />
+
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Search" />
             <ItemsControl ItemsSource="{x:Bind Search}" Style="{StaticResource ShortcutList}" />
 

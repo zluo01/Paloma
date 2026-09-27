@@ -158,7 +158,7 @@
                     AutomationProperties.Name="Sessions"
                     Click="OnSessionsClick"
                     Style="{StaticResource IconButton}"
-                    ToolTipService.ToolTip="Sessions (Shift+↓)">
+                    ToolTipService.ToolTip="Ctrl+H">
                     <FontIcon FontSize="14" Glyph="&#xE81C;" />
                 </Button>
             </StackPanel>
@@ -171,7 +171,7 @@
                 AutomationProperties.Name="Stop"
                 Click="OnStopClick"
                 FontSize="12"
-                ToolTipService.ToolTip="Interrupt the current response (Ctrl+C)"
+                ToolTipService.ToolTip="Ctrl+C"
                 Visibility="{x:Bind Streaming, Mode=OneWay}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon

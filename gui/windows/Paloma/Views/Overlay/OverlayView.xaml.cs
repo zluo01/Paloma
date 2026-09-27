@@ -124,7 +124,7 @@ public sealed partial class OverlayView
 
         switch (args.Key)
         {
-            case VirtualKey.Down when modifiers == Modifiers.MOD_SHIFT:
+            case VirtualKey.H when modifiers == Modifiers.MOD_CONTROL:
                 args.Handled = true;
                 if (Mode == OverlayMode.Sessions)
                 {

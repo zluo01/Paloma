@@ -6,6 +6,8 @@ internal sealed record ShortcutEntry(string Description, IReadOnlyList<string> K
 
 public sealed partial class ShortcutsPage
 {
+    internal IReadOnlyList<ShortcutEntry> Global { get; }
+
     internal IReadOnlyList<ShortcutEntry> Search { get; }
 
     internal IReadOnlyList<ShortcutEntry> Chat { get; }
@@ -14,13 +16,16 @@ public sealed partial class ShortcutsPage
 
     public ShortcutsPage()
     {
+        Global =
+        [
+            new("Open sessions", ["Ctrl", "H"]),
+            new("New line", ["Shift", "Enter"]),
+        ];
         Search =
         [
             new("Move selection", ["↑", "↓"]),
             new("Submit", ["Enter"]),
             new("Show actions", ["Ctrl", "Enter"]),
-            new("Open sessions", ["Shift", "↓"]),
-            new("New line", ["Shift", "Enter"]),
             new("Close overlay", ["Esc"]),
         ];
         Chat =
@@ -30,7 +35,6 @@ public sealed partial class ShortcutsPage
             new("Move between pending decisions", ["↑", "↓"]),
             new("Scroll by page", ["PgUp", "PgDn"]),
             new("Scroll to top / bottom", ["Ctrl", "Home", "Ctrl", "End"]),
-            new("Open sessions", ["Shift", "↓"]),
             new("Exit chat", ["Esc"]),
         ];
         Sessions =
