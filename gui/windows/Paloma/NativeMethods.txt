@@ -43,9 +43,6 @@ CreateWindowEx
 DestroyWindow
 HWND_MESSAGE
 
-// Helpers/Keyboard.cs
-GetAsyncKeyState
-
 // Helpers/WindowFrame.cs
 DwmSetWindowAttribute
 

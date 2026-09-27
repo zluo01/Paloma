@@ -1,33 +1,36 @@
+using Microsoft.UI.Input;
 using Windows.System;
-using Windows.Win32;
+using Windows.UI.Core;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 
 namespace Paloma.Helpers;
 
 internal static class Keyboard
 {
-    // The most significant bit of GetAsyncKeyState's short marks a held key.
-    private const int KeyDownBit = 0x8000;
-
     public static HOT_KEY_MODIFIERS GetPressedModifiers()
     {
+        return GetPressedModifiers(IsDown);
+    }
+
+    internal static HOT_KEY_MODIFIERS GetPressedModifiers(Func<VirtualKey, bool> isDown)
+    {
         var modifiers = default(HOT_KEY_MODIFIERS);
-        if (IsDown(VirtualKey.Menu))
+        if (isDown(VirtualKey.Menu))
         {
             modifiers |= HOT_KEY_MODIFIERS.MOD_ALT;
         }
 
-        if (IsDown(VirtualKey.Control))
+        if (isDown(VirtualKey.Control))
         {
             modifiers |= HOT_KEY_MODIFIERS.MOD_CONTROL;
         }
 
-        if (IsDown(VirtualKey.Shift))
+        if (isDown(VirtualKey.Shift))
         {
             modifiers |= HOT_KEY_MODIFIERS.MOD_SHIFT;
         }
 
-        if (IsDown(VirtualKey.LeftWindows) || IsDown(VirtualKey.RightWindows))
+        if (isDown(VirtualKey.LeftWindows) || isDown(VirtualKey.RightWindows))
         {
             modifiers |= HOT_KEY_MODIFIERS.MOD_WIN;
         }
@@ -37,6 +40,6 @@ internal static class Keyboard
 
     private static bool IsDown(VirtualKey key)
     {
-        return (PInvoke.GetAsyncKeyState((int)key) & KeyDownBit) != 0;
+        return InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
     }
 }

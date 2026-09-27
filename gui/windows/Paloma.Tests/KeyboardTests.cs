@@ -6,11 +6,52 @@ using Xunit;
 
 namespace Paloma.Tests;
 
-// Injects real key events: the helper reads the physical keyboard state, so
-// a mock would only test the mock.
 public sealed class KeyboardTests
 {
     private const uint Release = 0x2;
+
+    [Fact]
+    public void GetPressedModifiers_WithNothingHeld_IsEmpty()
+    {
+        Assert.Equal(default, Keyboard.GetPressedModifiers(_ => false));
+    }
+
+    [Theory]
+    [InlineData(VirtualKey.Menu, HOT_KEY_MODIFIERS.MOD_ALT)]
+    [InlineData(VirtualKey.Control, HOT_KEY_MODIFIERS.MOD_CONTROL)]
+    [InlineData(VirtualKey.Shift, HOT_KEY_MODIFIERS.MOD_SHIFT)]
+    [InlineData(VirtualKey.LeftWindows, HOT_KEY_MODIFIERS.MOD_WIN)]
+    [InlineData(VirtualKey.RightWindows, HOT_KEY_MODIFIERS.MOD_WIN)]
+    public void GetPressedModifiers_MapsEachModifierKey(VirtualKey held, HOT_KEY_MODIFIERS expected)
+    {
+        Assert.Equal(expected, Keyboard.GetPressedModifiers(key => key == held));
+    }
+
+    [Fact]
+    public void GetPressedModifiers_CombinesHeldModifiers()
+    {
+        var held = new[] { VirtualKey.Control, VirtualKey.Shift, VirtualKey.LeftWindows };
+
+        Assert.Equal(
+            HOT_KEY_MODIFIERS.MOD_CONTROL | HOT_KEY_MODIFIERS.MOD_SHIFT | HOT_KEY_MODIFIERS.MOD_WIN,
+            Keyboard.GetPressedModifiers(held.Contains));
+    }
+
+    [Fact]
+    public void GetPressedModifiers_ProbesOnlyModifierKeys()
+    {
+        var probed = new List<VirtualKey>();
+
+        Keyboard.GetPressedModifiers(key =>
+        {
+            probed.Add(key);
+            return false;
+        });
+
+        Assert.Equal(
+            [VirtualKey.Menu, VirtualKey.Control, VirtualKey.Shift, VirtualKey.LeftWindows, VirtualKey.RightWindows],
+            probed);
+    }
 
     [Fact]
     public void GetPressedModifiers_SeesTheHeldShiftAndItsRelease()
