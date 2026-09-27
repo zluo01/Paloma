@@ -78,7 +78,7 @@ public sealed partial class OverlayView
     public void FocusInput()
     {
         Input.Focus(FocusState.Keyboard);
-        Input.Document.Selection.SetRange(0, int.MaxValue);
+        Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
         DispatcherQueue.TryEnqueue(
             DispatcherQueuePriority.Low,
             () => Input.Focus(FocusState.Keyboard));
@@ -260,14 +260,39 @@ public sealed partial class OverlayView
     {
         args.Handled = true;
         var content = Clipboard.GetContent();
-        if (!content.Contains(StandardDataFormats.Text))
+        if (content.Contains(StandardDataFormats.StorageItems))
         {
-            return;
+            var items = await content.GetStorageItemsAsync();
+            var paths = items
+                .Select(item => item.Path)
+                .Where(path => path.Length != 0)
+                .Select(Composer.QuotePath)
+                .ToList();
+            if (paths.Count != 0)
+            {
+                InsertAtCaret(paths);
+                return;
+            }
         }
 
-        var selection = Input.Document.Selection;
-        selection.SetText(TextSetOptions.None, await content.GetTextAsync());
-        selection.Collapse(false);
+        if (content.Contains(StandardDataFormats.Text))
+        {
+            InsertAtCaret([await content.GetTextAsync()]);
+        }
+    }
+
+    private void InsertAtCaret(List<string> parts)
+    {
+        var document = Input.Document;
+        var selection = document.Selection;
+        document.BeginUndoGroup();
+        for (var i = 0; i < parts.Count; i++)
+        {
+            selection.SetText(TextSetOptions.None, i == 0 ? parts[i] : " " + parts[i]);
+            selection.Collapse(false);
+        }
+
+        document.EndUndoGroup();
     }
 
     private void OnInputChanged(object sender, RoutedEventArgs args)

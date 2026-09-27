@@ -8,4 +8,9 @@ internal static class Composer
             ? text.AsSpan(0, caret).IndexOfAny('\r', '\v') < 0
             : text.AsSpan(caret).IndexOfAny('\r', '\v') < 0;
     }
+
+    public static string QuotePath(string path)
+    {
+        return $"\"{path}\"";
+    }
 }
