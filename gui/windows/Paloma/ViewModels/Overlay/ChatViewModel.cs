@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Paloma.Client;
 using Paloma.Helpers;
 using Paloma.Models;
@@ -348,6 +349,9 @@ public sealed partial class ReasoningSectionViewModel(
     Func<Action, bool>? delayFlush = null) : StreamingSectionViewModel(text, delayFlush)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
+
+    [RelayCommand]
+    private void ToggleExpanded() => IsExpanded = !IsExpanded;
 }
 
 public sealed partial class ToolSectionViewModel : ChatSectionViewModel

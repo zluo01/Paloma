@@ -50,7 +50,7 @@
                 <HyperlinkButton
                     Padding="4,3"
                     Margin="-4,0,0,0"
-                    Click="OnReasoningToggle"
+                    Command="{x:Bind ToggleExpandedCommand}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon

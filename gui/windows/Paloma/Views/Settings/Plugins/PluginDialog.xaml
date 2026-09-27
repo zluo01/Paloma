@@ -8,7 +8,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Title="{x:Bind ViewModel.Title}"
     CloseButtonText="Cancel"
-    Closing="OnClosing"
+    Closing="{x:Bind ViewModel.Cancel}"
     DefaultButton="Primary"
     IsPrimaryButtonEnabled="{x:Bind ViewModel.CanSubmit, Mode=OneWay}"
     PrimaryButtonClick="OnPrimaryButtonClick"

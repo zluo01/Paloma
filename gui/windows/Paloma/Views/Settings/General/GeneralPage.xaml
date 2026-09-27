@@ -49,7 +49,7 @@
                         Content="Record"
                         LostFocus="OnRecordLostFocus"
                         PreviewKeyDown="OnRecordKeyDown"
-                        Unchecked="OnRecordUnchecked" />
+                        Unchecked="{x:Bind ViewModel.EndShortcutRecording}" />
                 </StackPanel>
             </controls:SettingsCard>
         </StackPanel>

@@ -13,11 +13,6 @@ public sealed partial class PluginDialog
         InitializeComponent();
     }
 
-    private void OnClosing(ContentDialog sender, ContentDialogClosingEventArgs args)
-    {
-        ViewModel.Cancel();
-    }
-
     private async void OnPrimaryButtonClick(
         ContentDialog sender,
         ContentDialogButtonClickEventArgs args)

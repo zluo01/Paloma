@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Navigation;
 using Paloma.Helpers;
 using Paloma.ViewModels.Settings;
 using Plugin = PalomaCore.Plugin;
@@ -9,46 +8,15 @@ namespace Paloma.Views.Settings.Plugins;
 
 public sealed partial class PluginsPage
 {
-    private bool _hostVisible;
-
     public PluginsViewModel ViewModel { get; }
 
     public PluginsPage()
     {
         ViewModel = new PluginsViewModel(App.Current.Client);
-        NavigationCacheMode = NavigationCacheMode.Required;
         InitializeComponent();
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs args)
-    {
-        if (XamlRoot is { } root)
-        {
-            _hostVisible = root.IsHostVisible;
-            root.Changed += OnXamlRootChanged;
-        }
-
-        await ViewModel.LoadAsync();
-    }
-
-    private void OnUnloaded(object sender, RoutedEventArgs args)
-    {
-        if (XamlRoot is { } root)
-        {
-            root.Changed -= OnXamlRootChanged;
-        }
-    }
-
-    private async void OnXamlRootChanged(XamlRoot root, XamlRootChangedEventArgs args)
-    {
-        var visible = root.IsHostVisible;
-        if (visible && !_hostVisible)
-        {
-            await ViewModel.LoadAsync();
-        }
-
-        _hostVisible = visible;
-    }
+    protected override Task LoadAsync() => ViewModel.LoadAsync();
 
     private async void OnAddExtension(object sender, RoutedEventArgs args) =>
         await OpenDialogAsync(PluginType.Extension, null);

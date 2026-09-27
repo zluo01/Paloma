@@ -1,6 +1,5 @@
 using Windows.System;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Paloma.Helpers;
@@ -23,11 +22,6 @@ public sealed partial class GeneralPage
     {
         ViewModel.BeginShortcutRecording();
         RecordButton.Focus(FocusState.Programmatic);
-    }
-
-    private void OnRecordUnchecked(object sender, RoutedEventArgs args)
-    {
-        ViewModel.EndShortcutRecording();
     }
 
     private void OnRecordLostFocus(object sender, RoutedEventArgs args)

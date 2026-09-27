@@ -116,14 +116,6 @@ public sealed partial class ChatView
             null, SectionsScroller.ScrollableHeight, null, true);
     }
 
-    private void OnReasoningToggle(object sender, RoutedEventArgs args)
-    {
-        if (sender is FrameworkElement { DataContext: ReasoningSectionViewModel section })
-        {
-            section.IsExpanded = !section.IsExpanded;
-        }
-    }
-
     private void OnToolDescriptionTapped(object sender, TappedRoutedEventArgs args)
     {
         if (sender is TextBlock description)
