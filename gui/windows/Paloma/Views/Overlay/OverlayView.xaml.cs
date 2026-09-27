@@ -1,7 +1,9 @@
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.System;
 using CommunityToolkit.WinUI;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -46,6 +48,20 @@ public sealed partial class OverlayView
 
     public event Action<RectInt32[], RectInt32[]>? DragRegionsChanged;
 
+    public event Action? InputResized;
+
+    private string InputText
+    {
+        get
+        {
+            Input.Document.GetText(TextGetOptions.None, out var text);
+            return text.EndsWith('\r') ? text[..^1] : text;
+        }
+        set => Input.Document.SetText(TextSetOptions.None, value);
+    }
+
+    public double HeaderGrowth => Math.Max(0, Input.DesiredSize.Height - Input.MinHeight);
+
     public OverlayView()
     {
         ViewModel = new OverlayViewModel();
@@ -62,7 +78,7 @@ public sealed partial class OverlayView
     public void FocusInput()
     {
         Input.Focus(FocusState.Keyboard);
-        Input.SelectAll();
+        Input.Document.Selection.SetRange(0, int.MaxValue);
         DispatcherQueue.TryEnqueue(
             DispatcherQueuePriority.Low,
             () => Input.Focus(FocusState.Keyboard));
@@ -113,7 +129,7 @@ public sealed partial class OverlayView
                 if (Mode == OverlayMode.Sessions)
                 {
                     Sessions.CancelPendingDelete();
-                    Input.Text = string.Empty;
+                    InputText = string.Empty;
                     SetMode(OverlayMode.Search);
                 }
                 else
@@ -136,12 +152,12 @@ public sealed partial class OverlayView
                 args.Handled = true;
                 if (Mode is OverlayMode.Sessions or OverlayMode.Chat)
                 {
-                    Input.Text = string.Empty;
+                    InputText = string.Empty;
                     SetMode(OverlayMode.Search);
                 }
-                else if (Input.Text.Length > 0)
+                else if (InputText.Length > 0)
                 {
-                    Input.Text = string.Empty;
+                    InputText = string.Empty;
                 }
                 else
                 {
@@ -156,7 +172,7 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default:
+            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
                 SearchPanel.Move(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
@@ -171,7 +187,7 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default:
+            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
                 Chat.Navigate(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
@@ -189,7 +205,7 @@ public sealed partial class OverlayView
             case VirtualKey.C when modifiers == Modifiers.MOD_CONTROL
                                    && Chat.ViewModel.Streaming:
                 // select on the input prompt
-                if (Input.SelectionLength > 0)
+                if (Input.Document.Selection.Length != 0)
                 {
                     break;
                 }
@@ -209,7 +225,7 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default:
+            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
                 SessionsPanel.Move(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
@@ -224,18 +240,48 @@ public sealed partial class OverlayView
         }
     }
 
-    private void OnInputChanged(object sender, TextChangedEventArgs args)
+    // Check if the caret is either top or bottom
+    // when in multiple line, we only move the result with arrow keys when caret is moved.
+    private bool CaretOnEdge(VirtualKey key)
+    {
+        if (!ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), Input))
+        {
+            return true;
+        }
+
+        var delta = key == VirtualKey.Down ? MoveDown : MoveUp;
+        var text = InputText;
+        var selection = Input.Document.Selection;
+        var caret = Math.Min(delta < 0 ? selection.StartPosition : selection.EndPosition, text.Length);
+        return Composer.CaretOnEdge(delta, text, caret);
+    }
+
+    private async void OnInputPaste(object sender, TextControlPasteEventArgs args)
+    {
+        args.Handled = true;
+        var content = Clipboard.GetContent();
+        if (!content.Contains(StandardDataFormats.Text))
+        {
+            return;
+        }
+
+        var selection = Input.Document.Selection;
+        selection.SetText(TextSetOptions.None, await content.GetTextAsync());
+        selection.Collapse(false);
+    }
+
+    private void OnInputChanged(object sender, RoutedEventArgs args)
     {
         switch (Mode)
         {
             case OverlayMode.Search:
                 _inputDebounce.Debounce(
-                    () => _ = Search.SearchAsync(Input.Text),
+                    () => _ = Search.SearchAsync(InputText),
                     SearchDebounce);
                 break;
             case OverlayMode.Sessions:
                 _inputDebounce.Debounce(
-                    () => _ = Sessions.SearchAsync(Input.Text),
+                    () => _ = Sessions.SearchAsync(InputText),
                     SearchDebounce);
                 break;
         }
@@ -254,13 +300,13 @@ public sealed partial class OverlayView
                 }
 
                 // submit prompt if not in streaming
-                var prompt = Input.Text;
+                var prompt = InputText;
                 if (!Chat.ViewModel.CanSubmit(prompt))
                 {
                     return;
                 }
 
-                Input.Text = string.Empty;
+                InputText = string.Empty;
                 await Chat.ViewModel.SubmitAsync(prompt);
                 return;
             }
@@ -283,20 +329,20 @@ public sealed partial class OverlayView
 
     private async Task StartChatAsync()
     {
-        var prompt = Input.Text;
+        var prompt = InputText;
         if (!Chat.ViewModel.CanSubmit(prompt))
         {
             return;
         }
 
-        Input.Text = string.Empty;
+        InputText = string.Empty;
         SetMode(OverlayMode.Chat);
         await Chat.ViewModel.SubmitAsync(prompt);
     }
 
     private void RestoreSession(SessionRow row)
     {
-        Input.Text = string.Empty;
+        InputText = string.Empty;
         SetMode(OverlayMode.Chat);
         _ = Chat.ViewModel.RestoreAsync(row.Item.SessionId);
     }
@@ -308,7 +354,7 @@ public sealed partial class OverlayView
             return;
         }
 
-        Input.Text = string.Empty;
+        InputText = string.Empty;
         SetMode(OverlayMode.Sessions);
         await Sessions.LoadAsync();
         FocusInput();
@@ -342,13 +388,13 @@ public sealed partial class OverlayView
         switch (behavior)
         {
             case Behavior.Hide:
-                Input.Text = string.Empty;
+                InputText = string.Empty;
                 Search.Clear();
                 HideRequested?.Invoke();
                 break;
             case Behavior.Replace replace:
-                Input.Text = replace.Input;
-                Input.SelectionStart = Input.Text.Length;
+                InputText = replace.Input;
+                Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
                 break;
         }
     }
@@ -417,6 +463,11 @@ public sealed partial class OverlayView
     private void OnSizeChanged(object sender, SizeChangedEventArgs args)
     {
         ComputeDraggableArea();
+    }
+
+    private void OnInputSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        InputResized?.Invoke();
     }
 
     private void ComputeDraggableArea()

@@ -68,6 +68,8 @@ public sealed partial class OverlayWindow
         Overlay.Search.Groups.CollectionChanged += OnGroupsChanged;
         // resize for the error banner show or hide
         Overlay.ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        // resize for the input growing across lines
+        Overlay.InputResized += QueueResize;
     }
 
     public void Toggle()
@@ -147,17 +149,18 @@ public sealed partial class OverlayWindow
     }
 
     // compute the current display content height
-    // chat and session mode has fix height
+    // chat and session mode has fix content height, the window grows with the input
     // search mode height change along with the search result size
     private double ContentHeight()
     {
+        Overlay.Measure(new Size(OverlayWidth, double.PositiveInfinity));
+        var maxHeight = MaxOverlayHeight + Overlay.HeaderGrowth;
         if (Overlay.Mode != OverlayMode.Search)
         {
-            return MaxOverlayHeight;
+            return maxHeight;
         }
 
-        Overlay.Measure(new Size(OverlayWidth, double.PositiveInfinity));
-        return Math.Min(Overlay.DesiredSize.Height, MaxOverlayHeight);
+        return Math.Min(Overlay.DesiredSize.Height, maxHeight);
     }
 
     // recompute the required available height when search result changes

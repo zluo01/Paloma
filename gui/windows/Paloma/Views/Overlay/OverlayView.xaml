@@ -23,8 +23,7 @@
         <Grid
             x:Name="HeaderBar"
             Grid.Row="0"
-            Height="56"
-            Padding="18,0"
+            Padding="18,12"
             ColumnSpacing="12"
             SizeChanged="OnSizeChanged">
             <Grid.ColumnDefinitions>
@@ -33,30 +32,37 @@
             </Grid.ColumnDefinitions>
             <FontIcon
                 Grid.Column="0"
-                VerticalAlignment="Center"
+                Margin="0,3,0,0"
+                VerticalAlignment="Top"
                 FontSize="20"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Glyph="{x:Bind extensions:Display.Glyph(Mode), Mode=OneWay}" />
-            <TextBox
+            <RichEditBox
                 x:Name="Input"
                 Grid.Column="1"
+                MaxHeight="160"
                 Padding="0"
-                VerticalAlignment="Center"
+                VerticalAlignment="Top"
                 Background="Transparent"
                 BorderThickness="0"
+                ClipboardCopyFormat="PlainText"
+                DisabledFormattingAccelerators="All"
                 FontSize="20"
+                Paste="OnInputPaste"
                 PlaceholderText="{x:Bind extensions:Display.Placeholder(Mode), Mode=OneWay}"
-                SizeChanged="OnSizeChanged"
-                TextChanged="OnInputChanged">
-                <TextBox.Resources>
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                SizeChanged="OnInputSizeChanged"
+                TextChanged="OnInputChanged"
+                TextWrapping="Wrap">
+                <RichEditBox.Resources>
                     <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
-                </TextBox.Resources>
-            </TextBox>
+                </RichEditBox.Resources>
+            </RichEditBox>
         </Grid>
 
         <Border

@@ -20,6 +20,7 @@ public sealed partial class ShortcutsPage
             new("Submit", ["Enter"]),
             new("Show actions", ["Ctrl", "Enter"]),
             new("Open sessions", ["Shift", "↓"]),
+            new("New line", ["Shift", "Enter"]),
             new("Close overlay", ["Esc"]),
         ];
         Chat =
