@@ -4,42 +4,34 @@
     x:Class="Paloma.Views.Settings.Shortcuts.ShortcutsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Paloma.Views.Settings.Shortcuts"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
     <Page.Resources>
+        <x:Double x:Key="SettingsCardMinHeight">44</x:Double>
         <DataTemplate x:Key="KeyTemplate" x:DataType="x:String">
             <ContentControl Content="{x:Bind}" Style="{StaticResource KeyCap}" />
         </DataTemplate>
         <DataTemplate x:Key="ShortcutTemplate" x:DataType="local:ShortcutEntry">
-            <Grid Padding="16,10" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock VerticalAlignment="Center" Text="{x:Bind Description}" />
-                <ItemsControl
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    ItemTemplate="{StaticResource KeyTemplate}"
-                    ItemsSource="{x:Bind Keys}">
+            <controls:SettingsCard Header="{x:Bind Description}">
+                <ItemsControl ItemTemplate="{StaticResource KeyTemplate}" ItemsSource="{x:Bind Keys}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal" Spacing="4" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>
-            </Grid>
+            </controls:SettingsCard>
         </DataTemplate>
-        <Style x:Key="SectionCard" TargetType="ItemsControl">
-            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
-            <Setter Property="Padding" Value="0,4" />
+        <ItemsPanelTemplate x:Key="CardStack">
+            <StackPanel Spacing="4" />
+        </ItemsPanelTemplate>
+        <Style x:Key="ShortcutList" TargetType="ItemsControl">
             <Setter Property="ItemTemplate" Value="{StaticResource ShortcutTemplate}" />
+            <Setter Property="ItemsPanel" Value="{StaticResource CardStack}" />
         </Style>
     </Page.Resources>
 
@@ -47,13 +39,13 @@
         <StackPanel MaxWidth="720" Spacing="16">
             <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="Shortcuts" />
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Search" />
-            <ItemsControl ItemsSource="{x:Bind Search}" Style="{StaticResource SectionCard}" />
+            <ItemsControl ItemsSource="{x:Bind Search}" Style="{StaticResource ShortcutList}" />
 
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Chat" />
-            <ItemsControl ItemsSource="{x:Bind Chat}" Style="{StaticResource SectionCard}" />
+            <ItemsControl ItemsSource="{x:Bind Chat}" Style="{StaticResource ShortcutList}" />
 
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Sessions" />
-            <ItemsControl ItemsSource="{x:Bind Sessions}" Style="{StaticResource SectionCard}" />
+            <ItemsControl ItemsSource="{x:Bind Sessions}" Style="{StaticResource ShortcutList}" />
         </StackPanel>
     </ScrollViewer>
 </Page>

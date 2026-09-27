@@ -49,8 +49,12 @@ public sealed partial class PermissionsPage
         _hostVisible = visible;
     }
 
-    public static string Glyph(string prefix) =>
-        prefix.StartsWith("tool:", StringComparison.Ordinal) ? "\uEC7A" : "\uE756";
+    public static IconElement Icon(string prefix) => new FontIcon
+    {
+        Glyph = prefix.StartsWith("tool:", StringComparison.Ordinal) ? "\uEC7A" : "\uE756",
+    };
+
+    public static string MatchKind(bool withGlob) => withGlob ? "Glob match" : "Exact command";
 
     private void OnFilterChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {

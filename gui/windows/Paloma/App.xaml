@@ -24,12 +24,6 @@
             <Style x:Key="SettingsSectionHeaderPanel" TargetType="Grid">
                 <Setter Property="Margin" Value="1,8,0,-8" />
             </Style>
-            <Style x:Key="SettingsCard" TargetType="Grid">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
-            </Style>
             <Style x:Key="IconButton" TargetType="Button">
                 <Setter Property="Width" Value="30" />
                 <Setter Property="Height" Value="30" />
