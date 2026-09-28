@@ -259,7 +259,39 @@ public sealed partial class OverlayView
     private async void OnInputPaste(object sender, TextControlPasteEventArgs args)
     {
         args.Handled = true;
-        var content = Clipboard.GetContent();
+        await InsertContentAsync(Clipboard.GetContent());
+    }
+
+    private void OnInputDragOver(object sender, DragEventArgs args)
+    {
+        args.Handled = true;
+        if (args.DataView.Contains(StandardDataFormats.StorageItems)
+            || args.DataView.Contains(StandardDataFormats.Text))
+        {
+            args.AcceptedOperation = DataPackageOperation.Copy;
+        }
+    }
+
+    private async void OnInputDrop(object sender, DragEventArgs args)
+    {
+        args.Handled = true;
+        var deferral = args.GetDeferral();
+        try
+        {
+            var point = args.GetPosition(Input);
+            var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
+            Input.Document.Selection.SetRange(caret, caret);
+            await InsertContentAsync(args.DataView);
+        }
+        finally
+        {
+            deferral.Complete();
+            Input.Focus(FocusState.Keyboard);
+        }
+    }
+
+    private async Task InsertContentAsync(DataPackageView content)
+    {
         if (content.Contains(StandardDataFormats.StorageItems))
         {
             var items = await content.GetStorageItemsAsync();
