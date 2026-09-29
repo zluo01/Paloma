@@ -1,17 +1,13 @@
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.System;
 using CommunityToolkit.WinUI;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Paloma.Helpers;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
-using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 using Modifiers = Windows.Win32.UI.Input.KeyboardAndMouse.HOT_KEY_MODIFIERS;
 using Behavior = PalomaCore.Behavior;
@@ -48,20 +44,6 @@ public sealed partial class OverlayView
 
     public event Action<RectInt32[], RectInt32[]>? DragRegionsChanged;
 
-    public event Action? InputResized;
-
-    private string InputText
-    {
-        get
-        {
-            Input.Document.GetText(TextGetOptions.None, out var text);
-            return text.EndsWith('\r') ? text[..^1] : text;
-        }
-        set => Input.Document.SetText(TextSetOptions.None, value);
-    }
-
-    public double HeaderGrowth => Math.Max(0, Input.DesiredSize.Height - Input.MinHeight);
-
     public OverlayView()
     {
         ViewModel = new OverlayViewModel();
@@ -71,17 +53,6 @@ public sealed partial class OverlayView
         {
             control.SizeChanged += OnSizeChanged;
         }
-    }
-
-    /// Only keyboard focus renders a caret. The queued retry covers
-    /// a show that has not settled yet.
-    public void FocusInput()
-    {
-        Input.Focus(FocusState.Keyboard);
-        Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
-        DispatcherQueue.TryEnqueue(
-            DispatcherQueuePriority.Low,
-            () => Input.Focus(FocusState.Keyboard));
     }
 
     public static Visibility WhenSearch(OverlayMode mode)
@@ -129,7 +100,7 @@ public sealed partial class OverlayView
                 if (Mode == OverlayMode.Sessions)
                 {
                     Sessions.CancelPendingDelete();
-                    InputText = string.Empty;
+                    Query.Clear();
                     SetMode(OverlayMode.Search);
                 }
                 else
@@ -152,12 +123,12 @@ public sealed partial class OverlayView
                 args.Handled = true;
                 if (Mode is OverlayMode.Sessions or OverlayMode.Chat)
                 {
-                    InputText = string.Empty;
+                    Query.Clear();
                     SetMode(OverlayMode.Search);
                 }
-                else if (InputText.Length > 0)
+                else if (Query.Text.Length > 0)
                 {
-                    InputText = string.Empty;
+                    Query.Clear();
                 }
                 else
                 {
@@ -205,7 +176,7 @@ public sealed partial class OverlayView
             case VirtualKey.C when modifiers == Modifiers.MOD_CONTROL
                                    && Chat.ViewModel.Streaming:
                 // select on the input prompt
-                if (Input.Document.Selection.Length != 0)
+                if (Query.HasSelection)
                 {
                     break;
                 }
@@ -240,105 +211,28 @@ public sealed partial class OverlayView
         }
     }
 
-    // Check if the caret is either top or bottom
-    // when in multiple line, we only move the result with arrow keys when caret is moved.
     private bool CaretOnEdge(VirtualKey key)
     {
-        if (!ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), Input))
+        if (key == VirtualKey.Down)
         {
-            return true;
+            return Query.CaretOnEdge(MoveDown);
         }
 
-        var delta = key == VirtualKey.Down ? MoveDown : MoveUp;
-        var text = InputText;
-        var selection = Input.Document.Selection;
-        var caret = Math.Min(delta < 0 ? selection.StartPosition : selection.EndPosition, text.Length);
-        return Composer.CaretOnEdge(delta, text, caret);
+        return Query.CaretOnEdge(MoveUp);
     }
 
-    private async void OnInputPaste(object sender, TextControlPasteEventArgs args)
-    {
-        args.Handled = true;
-        await InsertContentAsync(Clipboard.GetContent());
-    }
-
-    private void OnInputDragOver(object sender, DragEventArgs args)
-    {
-        args.Handled = true;
-        if (args.DataView.Contains(StandardDataFormats.StorageItems)
-            || args.DataView.Contains(StandardDataFormats.Text))
-        {
-            args.AcceptedOperation = DataPackageOperation.Copy;
-        }
-    }
-
-    private async void OnInputDrop(object sender, DragEventArgs args)
-    {
-        args.Handled = true;
-        var deferral = args.GetDeferral();
-        try
-        {
-            var point = args.GetPosition(Input);
-            var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
-            Input.Document.Selection.SetRange(caret, caret);
-            await InsertContentAsync(args.DataView);
-        }
-        finally
-        {
-            deferral.Complete();
-            Input.Focus(FocusState.Keyboard);
-        }
-    }
-
-    private async Task InsertContentAsync(DataPackageView content)
-    {
-        if (content.Contains(StandardDataFormats.StorageItems))
-        {
-            var items = await content.GetStorageItemsAsync();
-            var paths = items
-                .Select(item => item.Path)
-                .Where(path => path.Length != 0)
-                .Select(Composer.QuotePath)
-                .ToList();
-            if (paths.Count != 0)
-            {
-                InsertAtCaret(paths);
-                return;
-            }
-        }
-
-        if (content.Contains(StandardDataFormats.Text))
-        {
-            InsertAtCaret([await content.GetTextAsync()]);
-        }
-    }
-
-    private void InsertAtCaret(List<string> parts)
-    {
-        var document = Input.Document;
-        var selection = document.Selection;
-        document.BeginUndoGroup();
-        for (var i = 0; i < parts.Count; i++)
-        {
-            selection.SetText(TextSetOptions.None, i == 0 ? parts[i] : " " + parts[i]);
-            selection.Collapse(false);
-        }
-
-        document.EndUndoGroup();
-    }
-
-    private void OnInputChanged(object sender, RoutedEventArgs args)
+    private void OnQueryChanged(object? sender, EventArgs args)
     {
         switch (Mode)
         {
             case OverlayMode.Search:
                 _inputDebounce.Debounce(
-                    () => _ = Search.SearchAsync(InputText),
+                    () => _ = Search.SearchAsync(Query.Text),
                     SearchDebounce);
                 break;
             case OverlayMode.Sessions:
                 _inputDebounce.Debounce(
-                    () => _ = Sessions.SearchAsync(InputText),
+                    () => _ = Sessions.SearchAsync(Query.Text),
                     SearchDebounce);
                 break;
         }
@@ -357,13 +251,13 @@ public sealed partial class OverlayView
                 }
 
                 // submit prompt if not in streaming
-                var prompt = InputText;
+                var prompt = Query.Text;
                 if (!Chat.ViewModel.CanSubmit(prompt))
                 {
                     return;
                 }
 
-                InputText = string.Empty;
+                Query.Clear();
                 await Chat.ViewModel.SubmitAsync(prompt);
                 return;
             }
@@ -386,20 +280,20 @@ public sealed partial class OverlayView
 
     private async Task StartChatAsync()
     {
-        var prompt = InputText;
+        var prompt = Query.Text;
         if (!Chat.ViewModel.CanSubmit(prompt))
         {
             return;
         }
 
-        InputText = string.Empty;
+        Query.Clear();
         SetMode(OverlayMode.Chat);
         await Chat.ViewModel.SubmitAsync(prompt);
     }
 
     private void RestoreSession(SessionRow row)
     {
-        InputText = string.Empty;
+        Query.Clear();
         SetMode(OverlayMode.Chat);
         _ = Chat.ViewModel.RestoreAsync(row.Item.SessionId);
     }
@@ -411,10 +305,10 @@ public sealed partial class OverlayView
             return;
         }
 
-        InputText = string.Empty;
+        Query.Clear();
         SetMode(OverlayMode.Sessions);
         await Sessions.LoadAsync();
-        FocusInput();
+        Query.FocusInput();
     }
 
     private void SetMode(OverlayMode mode)
@@ -445,27 +339,26 @@ public sealed partial class OverlayView
         switch (behavior)
         {
             case Behavior.Hide:
-                InputText = string.Empty;
+                Query.Clear();
                 Search.Clear();
                 HideRequested?.Invoke();
                 break;
             case Behavior.Replace replace:
-                InputText = replace.Input;
-                Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
+                Query.Text = replace.Input;
                 break;
         }
     }
 
     private void OnChatDecisionHandled(object? sender, EventArgs args)
     {
-        FocusInput();
+        Query.FocusInput();
     }
 
     // After picking a model, focus is left on the dropdown button.
     // Move it back to the input so the user can keep typing.
     private void OnModelFlyoutClosed(object? sender, EventArgs args)
     {
-        FocusInput();
+        Query.FocusInput();
     }
 
     private void OnSessionRowActivated(object? sender, SessionRow row)
@@ -497,7 +390,7 @@ public sealed partial class OverlayView
     // Move it back so the user can keep typing.
     private void OnSearchActionsFlyoutClosed(object? sender, EventArgs args)
     {
-        FocusInput();
+        Query.FocusInput();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)
@@ -522,11 +415,6 @@ public sealed partial class OverlayView
         ComputeDraggableArea();
     }
 
-    private void OnInputSizeChanged(object sender, SizeChangedEventArgs args)
-    {
-        InputResized?.Invoke();
-    }
-
     private void ComputeDraggableArea()
     {
         if (XamlRoot is null)
@@ -535,8 +423,8 @@ public sealed partial class OverlayView
         }
 
         DragRegionsChanged?.Invoke(
-            [Bounds(HeaderBar), Bounds(FooterPanel)],
-            [Bounds(Input), .. FooterPanel.InteractiveControls().Select(Bounds)]);
+            [Bounds(Query), Bounds(FooterPanel)],
+            [.. Query.InteractiveControls().Select(Bounds), .. FooterPanel.InteractiveControls().Select(Bounds)]);
     }
 
     private RectInt32 Bounds(FrameworkElement element)

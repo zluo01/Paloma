@@ -69,7 +69,7 @@ public sealed partial class OverlayWindow
         // resize for the error banner show or hide
         Overlay.ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         // resize for the input growing across lines
-        Overlay.InputResized += QueueResize;
+        Overlay.Query.InputResized += (_, _) => QueueResize();
     }
 
     public void Toggle()
@@ -108,7 +108,7 @@ public sealed partial class OverlayWindow
 
         // make sure we keep the launcher on top
         ForceForeground(hwnd);
-        Overlay.FocusInput();
+        Overlay.Query.FocusInput();
 
         // click to hide procedure is a global event,
         // hence only add the click to hide hook procedure on showing
@@ -154,7 +154,7 @@ public sealed partial class OverlayWindow
     private double ContentHeight()
     {
         Overlay.Measure(new Size(OverlayWidth, double.PositiveInfinity));
-        var maxHeight = MaxOverlayHeight + Overlay.HeaderGrowth;
+        var maxHeight = MaxOverlayHeight + Overlay.Query.Growth;
         if (Overlay.Mode != OverlayMode.Search)
         {
             return maxHeight;
@@ -196,7 +196,7 @@ public sealed partial class OverlayWindow
         var state = (uint)(wparam.Value & 0xFFFF);
         if (state != PInvoke.WA_INACTIVE)
         {
-            Overlay.FocusInput();
+            Overlay.Query.FocusInput();
         }
         else if (AppWindow.IsVisible)
         {
