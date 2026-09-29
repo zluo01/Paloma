@@ -227,12 +227,12 @@ public sealed partial class OverlayView
         {
             case OverlayMode.Search:
                 _inputDebounce.Debounce(
-                    () => _ = Search.SearchAsync(Query.Text),
+                    () => _ = Search.SearchAsync(Query.Prompt),
                     SearchDebounce);
                 break;
             case OverlayMode.Sessions:
                 _inputDebounce.Debounce(
-                    () => _ = Sessions.SearchAsync(Query.Text),
+                    () => _ = Sessions.SearchAsync(Query.Prompt),
                     SearchDebounce);
                 break;
         }
@@ -251,7 +251,7 @@ public sealed partial class OverlayView
                 }
 
                 // submit prompt if not in streaming
-                var prompt = Query.Text;
+                var prompt = Query.Prompt;
                 if (!Chat.ViewModel.CanSubmit(prompt))
                 {
                     return;
@@ -280,7 +280,7 @@ public sealed partial class OverlayView
 
     private async Task StartChatAsync()
     {
-        var prompt = Query.Text;
+        var prompt = Query.Prompt;
         if (!Chat.ViewModel.CanSubmit(prompt))
         {
             return;

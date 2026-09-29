@@ -1,17 +1,34 @@
+using Paloma.Models;
+
 namespace Paloma.ViewModels.Overlay;
 
 public sealed class QueryViewModel
 {
-    // Check if the caret is either top or bottom
-    // when in multiple line, we only move the result with arrow keys when caret is moved.
-    public static bool CaretOnEdge(int delta, string text, int caret)
+    private readonly Dictionary<string, InlineImage> _images = [];
+
+    public string Add(InlineImage image)
     {
-        var position = Math.Min(caret, text.Length);
-        if (delta < 0)
+        var key = Guid.NewGuid().ToString("N");
+        _images[key] = image;
+        return key;
+    }
+
+    public List<InlineImage> Attachments(IEnumerable<string> keys)
+    {
+        var images = new List<InlineImage>();
+        foreach (var key in keys)
         {
-            return text.AsSpan(0, position).IndexOfAny('\r', '\v') < 0;
+            if (_images.TryGetValue(key, out var image))
+            {
+                images.Add(image);
+            }
         }
 
-        return text.AsSpan(position).IndexOfAny('\r', '\v') < 0;
+        return images;
+    }
+
+    public void Clear()
+    {
+        _images.Clear();
     }
 }

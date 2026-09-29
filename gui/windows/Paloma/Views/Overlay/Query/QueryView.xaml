@@ -28,6 +28,8 @@
             Background="Transparent"
             BorderThickness="0"
             ClipboardCopyFormat="PlainText"
+            CopyingToClipboard="OnCopyingToClipboard"
+            CuttingToClipboard="OnCuttingToClipboard"
             DisabledFormattingAccelerators="All"
             DragOver="OnInputDragOver"
             Drop="OnInputDrop"

@@ -1,4 +1,5 @@
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -12,9 +13,10 @@ namespace Paloma.Views.Overlay.Query;
 
 public sealed partial class QueryView
 {
-    // requires to listen on mode change
     public static readonly DependencyProperty ModeProperty = DependencyProperty.Register(
         nameof(Mode), typeof(OverlayMode), typeof(QueryView), new PropertyMetadata(OverlayMode.Search));
+
+    public QueryViewModel ViewModel { get; } = new();
 
     public OverlayMode Mode
     {
@@ -30,18 +32,12 @@ public sealed partial class QueryView
 
     public bool HasSelection => Input.Document.Selection.Length != 0;
 
-    // Text set from outside goes into the box with the caret at the end.
     public string Text
     {
         get
         {
             Input.Document.GetText(TextGetOptions.None, out var text);
-            if (text.EndsWith('\r'))
-            {
-                return text[..^1];
-            }
-
-            return text;
+            return text.EndsWith('\r') ? text[..^1] : text;
         }
         set
         {
@@ -49,6 +45,8 @@ public sealed partial class QueryView
             Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
         }
     }
+
+    public string Prompt => Composer.Prompt(Text);
 
     public QueryView()
     {
@@ -58,6 +56,8 @@ public sealed partial class QueryView
     public void Clear()
     {
         Text = string.Empty;
+        Input.Document.ClearUndoRedoHistory();
+        ViewModel.Clear();
     }
 
     /// Only keyboard focus renders a caret. The queued retry covers
@@ -71,7 +71,6 @@ public sealed partial class QueryView
             () => Input.Focus(FocusState.Keyboard));
     }
 
-    // The input is only asked when it holds the focus.
     public bool CaretOnEdge(int delta)
     {
         if (!ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), Input))
@@ -80,18 +79,20 @@ public sealed partial class QueryView
         }
 
         var selection = Input.Document.Selection;
-        if (delta < 0)
-        {
-            return QueryViewModel.CaretOnEdge(delta, Text, selection.StartPosition);
-        }
-
-        return QueryViewModel.CaretOnEdge(delta, Text, selection.EndPosition);
+        var caret = delta < 0 ? selection.StartPosition : selection.EndPosition;
+        return Composer.CaretOnEdge(delta, Text, caret);
     }
 
     // Exclude the input from the dragging area
     internal IReadOnlyList<FrameworkElement> InteractiveControls()
     {
         return [Input];
+    }
+
+    private double LineHeight()
+    {
+        Input.Document.GetRange(0, 0).GetRect(PointOptions.ClientCoordinates, out var rect, out _);
+        return rect.Height > 0 ? rect.Height : Input.FontSize;
     }
 
     private void OnInputChanged(object sender, RoutedEventArgs args)
@@ -114,7 +115,8 @@ public sealed partial class QueryView
     {
         args.Handled = true;
         if (args.DataView.Contains(StandardDataFormats.StorageItems)
-            || args.DataView.Contains(StandardDataFormats.Text))
+            || args.DataView.Contains(StandardDataFormats.Text)
+            || args.DataView.Contains(StandardDataFormats.Bitmap))
         {
             args.AcceptedOperation = DataPackageOperation.Copy;
         }
@@ -142,36 +144,132 @@ public sealed partial class QueryView
     {
         if (content.Contains(StandardDataFormats.StorageItems))
         {
-            var items = await content.GetStorageItemsAsync();
-            var paths = items
-                .Select(item => item.Path)
-                .Where(path => path.Length != 0)
-                .Select(Composer.QuotePath)
-                .ToList();
-            if (paths.Count != 0)
+            var segments = new List<Segment>();
+            foreach (var item in await content.GetStorageItemsAsync())
             {
-                InsertAtCaret(paths);
+                if (item is StorageFile file)
+                {
+                    var loaded = await Images.LoadFileAsync(file, LineHeight(), XamlRoot.RasterizationScale);
+                    if (loaded != null)
+                    {
+                        segments.Add(new Segment.Image(loaded));
+                        continue;
+                    }
+                }
+
+                if (item.Path.Length != 0)
+                {
+                    segments.Add(new Segment.Text(Composer.QuotePath(item.Path)));
+                }
+            }
+
+            if (segments.Count != 0)
+            {
+                InsertAtCaret(segments, true);
                 return;
             }
         }
 
         if (content.Contains(StandardDataFormats.Text))
         {
-            InsertAtCaret([await content.GetTextAsync()]);
+            InsertAtCaret([new Segment.Text(await content.GetTextAsync())], false);
+            return;
+        }
+
+        if (content.Contains(StandardDataFormats.Bitmap))
+        {
+            var loaded = await Images.LoadBitmapAsync(await content.GetBitmapAsync(), LineHeight(), XamlRoot.RasterizationScale);
+            if (loaded != null)
+            {
+                InsertAtCaret([new Segment.Image(loaded)], true);
+            }
         }
     }
 
-    private void InsertAtCaret(List<string> parts)
+    private void InsertAtCaret(List<Segment> segments, bool spaceAfterEach)
     {
         var document = Input.Document;
         var selection = document.Selection;
         document.BeginUndoGroup();
-        for (var i = 0; i < parts.Count; i++)
+        foreach (var segment in segments)
         {
-            selection.SetText(TextSetOptions.None, i == 0 ? parts[i] : " " + parts[i]);
+            switch (segment)
+            {
+                case Segment.Image image:
+                    InsertImage(image.Loaded);
+                    break;
+                case Segment.Text text:
+                    selection.SetText(TextSetOptions.None, text.Value);
+                    selection.Collapse(false);
+                    break;
+            }
+
+            if (!spaceAfterEach) continue;
+            selection.SetText(TextSetOptions.None, " ");
             selection.Collapse(false);
         }
 
         document.EndUndoGroup();
+    }
+
+    private void InsertImage(Images.Loaded loaded)
+    {
+        var selection = Input.Document.Selection;
+        var caret = selection.StartPosition;
+        using (loaded.Thumbnail)
+        {
+            selection.InsertImage(
+                loaded.Width,
+                loaded.Height,
+                0,
+                VerticalCharacterAlignment.Bottom,
+                ViewModel.Add(loaded.Image),
+                loaded.Thumbnail);
+        }
+
+        selection.SetRange(caret + 1, caret + 1);
+    }
+
+    private void OnCopyingToClipboard(RichEditBox sender, TextControlCopyingToClipboardEventArgs args)
+    {
+        args.Handled = Copy();
+    }
+
+    private void OnCuttingToClipboard(RichEditBox sender, TextControlCuttingToClipboardEventArgs args)
+    {
+        args.Handled = Copy();
+        if (args.Handled)
+        {
+            Input.Document.Selection.SetText(TextSetOptions.None, string.Empty);
+        }
+    }
+
+    private bool Copy()
+    {
+        // fallback to built-in when no image
+        var selection = Input.Document.Selection;
+        selection.GetText(TextGetOptions.None, out var text);
+        if (!text.Contains(Images.ImageCharacter, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (text.EndsWith('\r')
+            && selection.EndPosition >= Input.Document.GetRange(0, int.MaxValue).EndPosition)
+        {
+            text = text[..^1];
+        }
+
+        var package = new DataPackage();
+        package.SetText(Composer.CopyText(text));
+        Clipboard.SetContent(package);
+        return true;
+    }
+
+    private abstract record Segment
+    {
+        public sealed record Text(string Value) : Segment;
+
+        public sealed record Image(Images.Loaded Loaded) : Segment;
     }
 }
