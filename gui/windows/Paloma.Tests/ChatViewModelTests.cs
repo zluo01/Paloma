@@ -615,14 +615,15 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         var vm = new ChatViewModel(mock);
         mock.OnChat = (_, _) => MockPalomaClient.Stream<ChatStreamEvent>(
             new ChatStreamEvent.SessionStarted("s"),
-            new ChatStreamEvent.UserPrompt("hello"),
+            new ChatStreamEvent.UserPrompt("hello", []),
             new ChatStreamEvent.TextDelta(Backend("gpt"), "hi"),
             new ChatStreamEvent.Done());
 
         await vm.SubmitAsync("hello", []);
 
         Assert.Equal(2, vm.Sections.Count);
-        Assert.Equal("hello", Assert.IsType<UserSectionViewModel>(vm.Sections[0]).Text);
+        var user = Assert.IsType<UserSectionViewModel>(vm.Sections[0]);
+        Assert.Equal("hello", Assert.IsType<UserSectionViewModel.Segment.Text>(Assert.Single(user.Segments)).Value);
         Assert.Equal("hi", Assert.IsType<AssistantSectionViewModel>(vm.Sections[1]).Text);
     }
 

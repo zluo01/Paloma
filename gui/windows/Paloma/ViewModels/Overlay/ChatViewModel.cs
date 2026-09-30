@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -215,7 +216,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
                 _sessionId = started.SessionId;
                 break;
             case ChatStreamEvent.UserPrompt prompt:
-                Sections.Add(new UserSectionViewModel(prompt.Text));
+                Sections.Add(new UserSectionViewModel(prompt.Text, prompt.Attachments));
                 break;
             case ChatStreamEvent.TextDelta delta:
                 if (Sections.LastOrDefault() is AssistantSectionViewModel assistant)
@@ -308,9 +309,78 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
 
 public abstract class ChatSectionViewModel : ObservableObject;
 
-public sealed partial class UserSectionViewModel(string text) : ChatSectionViewModel
+public sealed class UserSectionViewModel : ChatSectionViewModel
 {
-    public string Text { get; } = text;
+    private const string PlaceholderPrefix = "[Image #";
+
+    public IReadOnlyList<Segment> Segments { get; }
+
+    public IReadOnlyList<byte[]> Images { get; }
+
+    public UserSectionViewModel(string text, UserPromptAttachment[] attachments)
+    {
+        var data = new Dictionary<uint, byte[]>();
+        foreach (var attachment in attachments)
+        {
+            if (attachment is UserPromptAttachment.Image image)
+            {
+                data[image.Id] = image.Data;
+            }
+        }
+
+        var segments = new List<Segment>();
+        var images = new List<byte[]>();
+        var start = 0;
+        var search = 0;
+        while (true)
+        {
+            var open = text.IndexOf(PlaceholderPrefix, search, StringComparison.Ordinal);
+            if (open < 0)
+            {
+                break;
+            }
+
+            var numberStart = open + PlaceholderPrefix.Length;
+            var close = text.IndexOf(']', numberStart);
+            if (close < 0)
+            {
+                break;
+            }
+
+            var number = text.AsSpan(numberStart, close - numberStart);
+            if (!uint.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                || !data.TryGetValue(id, out var bytes))
+            {
+                search = numberStart;
+                continue;
+            }
+
+            if (open > start)
+            {
+                segments.Add(new Segment.Text(text[start..open]));
+            }
+
+            segments.Add(new Segment.Image(bytes));
+            images.Add(bytes);
+            start = close + 1;
+            search = start;
+        }
+
+        if (start < text.Length)
+        {
+            segments.Add(new Segment.Text(text[start..]));
+        }
+
+        Segments = segments;
+        Images = images;
+    }
+
+    public abstract record Segment
+    {
+        public sealed record Text(string Value) : Segment;
+
+        public sealed record Image(byte[] Data) : Segment;
+    }
 }
 
 public abstract partial class StreamingSectionViewModel : ChatSectionViewModel

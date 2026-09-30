@@ -3,6 +3,9 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Paloma.Models;
 using Serilog;
 
@@ -164,4 +167,26 @@ internal static class Images
     }
 
     public sealed record Loaded(InlineImage Image, int Width, int Height, InMemoryRandomAccessStream Thumbnail);
+
+    public static Image Picture(byte[] data, double height)
+    {
+        var bitmap = new BitmapImage { DecodePixelHeight = (int)height, DecodePixelType = DecodePixelType.Logical };
+        _ = LoadAsync(bitmap, data);
+        return new Image { MaxHeight = height, Stretch = Stretch.Uniform, Source = bitmap };
+    }
+
+    private static async Task LoadAsync(BitmapImage bitmap, byte[] data)
+    {
+        try
+        {
+            using var stream = new InMemoryRandomAccessStream();
+            await stream.WriteAsync(data.AsBuffer());
+            stream.Seek(0);
+            await bitmap.SetSourceAsync(stream);
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "fail to show a prompt image");
+        }
+    }
 }

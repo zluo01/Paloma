@@ -299,7 +299,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         return e switch
         {
             RenderEvent.Chat { Event: ChatRenderEvent.UserPrompt prompt } =>
-                new ChatStreamEvent.UserPrompt(prompt.Text),
+                new ChatStreamEvent.UserPrompt(prompt.Text, prompt.Attachments),
             RenderEvent.Chat { Event: ChatRenderEvent.TextDelta delta } =>
                 new ChatStreamEvent.TextDelta(delta.ProviderBackendId, delta.Text),
             RenderEvent.Chat { Event: ChatRenderEvent.ReasoningDelta delta } =>

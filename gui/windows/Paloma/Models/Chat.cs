@@ -1,5 +1,6 @@
 using ProviderBackendId = PalomaCore.ProviderBackendId;
 using UserDecision = PalomaCore.UserDecision;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.Models;
 
@@ -16,7 +17,7 @@ public abstract record ChatStreamEvent
 {
     public sealed record SessionStarted(string SessionId) : ChatStreamEvent;
 
-    public sealed record UserPrompt(string Text) : ChatStreamEvent;
+    public sealed record UserPrompt(string Text, UserPromptAttachment[] Attachments) : ChatStreamEvent;
 
     public sealed record TextDelta(ProviderBackendId Backend, string Text) : ChatStreamEvent;
 
