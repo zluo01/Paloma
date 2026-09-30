@@ -9,6 +9,7 @@ using Serilog;
 using PermissionState = PalomaCore.PermissionState;
 using ProviderBackendId = PalomaCore.ProviderBackendId;
 using UserDecision = PalomaCore.UserDecision;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.ViewModels.Overlay;
 
@@ -34,7 +35,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
         return !Streaming && prompt.Trim().Length > 0;
     }
 
-    public async Task SubmitAsync(string prompt)
+    public async Task SubmitAsync(string prompt, UserPromptAttachment[] attachments)
     {
         if (!CanSubmit(prompt))
         {
@@ -67,7 +68,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
             return;
         }
 
-        await ConsumeTurnAsync(client.ChatAsync(_sessionId, backend, prompt, turn.Token), turn);
+        await ConsumeTurnAsync(client.ChatAsync(_sessionId, backend, prompt, attachments, turn.Token), turn);
     }
 
     public async Task RestoreAsync(string sessionId)

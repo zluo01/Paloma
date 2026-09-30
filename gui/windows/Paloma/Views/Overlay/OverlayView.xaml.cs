@@ -257,8 +257,9 @@ public sealed partial class OverlayView
                     return;
                 }
 
+                var attachments = Query.Attachments();
                 Query.Clear();
-                await Chat.ViewModel.SubmitAsync(prompt);
+                await Chat.ViewModel.SubmitAsync(prompt, attachments);
                 return;
             }
             case OverlayMode.Sessions:
@@ -286,9 +287,10 @@ public sealed partial class OverlayView
             return;
         }
 
+        var attachments = Query.Attachments();
         Query.Clear();
         SetMode(OverlayMode.Chat);
-        await Chat.ViewModel.SubmitAsync(prompt);
+        await Chat.ViewModel.SubmitAsync(prompt, attachments);
     }
 
     private void RestoreSession(SessionRow row)

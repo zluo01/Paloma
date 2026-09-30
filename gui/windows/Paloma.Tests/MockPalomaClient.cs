@@ -18,6 +18,7 @@ using ProviderAuthMethod = PalomaCore.ProviderAuthMethod;
 using ProviderBackendId = PalomaCore.ProviderBackendId;
 using QueryResponse = PalomaCore.QueryResponse;
 using Behavior = PalomaCore.Behavior;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 using SessionListItem = PalomaCore.SessionListItem;
 using UserDecision = PalomaCore.UserDecision;
 
@@ -66,7 +67,7 @@ internal sealed class MockPalomaClient : IPalomaClient
         }
     }
 
-    public List<(string? SessionId, string Prompt)> ChatCalls { get; } = [];
+    public List<(string? SessionId, string Prompt, UserPromptAttachment[] Attachments)> ChatCalls { get; } = [];
 
     public List<(string Name, bool Disabled)> PluginToggles { get; } = [];
 
@@ -199,9 +200,10 @@ internal sealed class MockPalomaClient : IPalomaClient
         string? sessionId,
         ProviderBackendId backend,
         string prompt,
+        UserPromptAttachment[] attachments,
         CancellationToken cancellationToken = default)
     {
-        ChatCalls.Add((sessionId, prompt));
+        ChatCalls.Add((sessionId, prompt, attachments));
         return Observing(
             Terminated(
                 OnChat?.Invoke(sessionId, prompt)

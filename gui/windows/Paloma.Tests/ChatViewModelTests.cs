@@ -10,6 +10,7 @@ using IgnorePermission = PalomaCore.UserDecision.IgnorePermission;
 using PermissionState = PalomaCore.PermissionState;
 using ProviderBackendId = PalomaCore.ProviderBackendId;
 using UserDecision = PalomaCore.UserDecision;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.Tests;
 
@@ -31,6 +32,34 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             _pending = null;
             pending?.Invoke();
         }
+    }
+
+    [Fact]
+    public async Task GivenAttachmentsWhenSubmittingShouldPassThemToTheClientInOrder()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var png = new UserPromptAttachment.Image(1, "image/png", [1, 2, 3]);
+        var jpeg = new UserPromptAttachment.Image(2, "image/jpeg", [4, 5]);
+
+        await vm.SubmitAsync("[Image #1] hi [Image #2]", [png, jpeg]);
+
+        var call = Assert.Single(mock.ChatCalls);
+        Assert.Equal("[Image #1] hi [Image #2]", call.Prompt);
+        Assert.Equal(2, call.Attachments.Length);
+        Assert.Same(png, call.Attachments[0]);
+        Assert.Same(jpeg, call.Attachments[1]);
+    }
+
+    [Fact]
+    public async Task GivenOnlyAnImageWhenSubmittingShouldStillSubmit()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+
+        await vm.SubmitAsync("[Image #1]", [new UserPromptAttachment.Image(1, "image/png", [1])]);
+
+        Assert.Single(mock.ChatCalls);
     }
 
     [Fact]
@@ -65,7 +94,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
 
             var vm = new ChatViewModel(mock, batched ? gate.Defer : _ => false);
             var before = GC.GetAllocatedBytesForCurrentThread();
-            await vm.SubmitAsync("go");
+            await vm.SubmitAsync("go", []);
             gate.Run();
             var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
             var section = Assert.IsType<AssistantSectionViewModel>(vm.Sections[^1]);
@@ -105,7 +134,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         gateA.SetException(new InvalidOperationException("superseded"));
         await restoreA;
 
-        await vm.SubmitAsync("hello");
+        await vm.SubmitAsync("hello", []);
 
         // The prompt typed under B's transcript must continue session B, not
         // silently fork a fresh session.
@@ -134,7 +163,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 1);
         var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
 
@@ -169,7 +198,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 1);
         var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
 
@@ -212,7 +241,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 2);
         var first = Assert.IsType<ToolSectionViewModel>(vm.Sections[0]);
         var second = Assert.IsType<ToolSectionViewModel>(vm.Sections[1]);
@@ -259,7 +288,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 1);
         var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
 
@@ -294,7 +323,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 1);
         var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
 
@@ -341,7 +370,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 3);
         var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
 
@@ -386,7 +415,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 5);
         var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
 
@@ -434,7 +463,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 3);
         var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
 
@@ -490,7 +519,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 2);
         var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
 
@@ -524,7 +553,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var submit = vm.SubmitAsync("run");
+        var submit = vm.SubmitAsync("run", []);
         await TestWait.UntilAsync(() => vm.Sections.Count == 1);
         var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
         vm.Navigate(1);
@@ -553,7 +582,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.TextDelta(Backend("gpt"), "world."),
             new ChatStreamEvent.Done());
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         var section = Assert.IsType<AssistantSectionViewModel>(Assert.Single(vm.Sections));
         Assert.Equal(("Hello, world.", Backend("gpt")), (section.Text, section.Backend));
@@ -571,7 +600,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.TextDelta(Backend("gpt"), "after"),
             new ChatStreamEvent.Done());
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         Assert.Equal(3, vm.Sections.Count);
         Assert.IsType<AssistantSectionViewModel>(vm.Sections[0]);
@@ -590,7 +619,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.TextDelta(Backend("gpt"), "hi"),
             new ChatStreamEvent.Done());
 
-        await vm.SubmitAsync("hello");
+        await vm.SubmitAsync("hello", []);
 
         Assert.Equal(2, vm.Sections.Count);
         Assert.Equal("hello", Assert.IsType<UserSectionViewModel>(vm.Sections[0]).Text);
@@ -607,7 +636,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.TextDelta(Backend("gpt"), "partial"),
             new ChatStreamEvent.Cancelled());
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         Assert.Equal(ChatStatus.Cancelled, vm.Status);
         Assert.False(vm.Streaming);
@@ -622,7 +651,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.SessionStarted("s"),
             new ChatStreamEvent.Error("provider exploded"));
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         Assert.Equal(ChatStatus.Failed, vm.Status);
         Assert.Equal("provider exploded", vm.StatusMessage);
@@ -637,7 +666,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.SessionStarted("s"),
             new ChatStreamEvent.TextDelta(Backend("gpt"), "hi"));
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         // The spinner must not run forever on a stream that just closes.
         Assert.Equal(ChatStatus.Idle, vm.Status);
@@ -649,7 +678,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         var mock = new MockPalomaClient { PreferredBackend = null };
         var vm = new ChatViewModel(mock);
 
-        await vm.SubmitAsync("hi");
+        await vm.SubmitAsync("hi", []);
 
         Assert.Equal(ChatStatus.Failed, vm.Status);
         Assert.Equal("No model selected. Connect a provider first.", vm.StatusMessage);
@@ -677,7 +706,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
                 null,
                 [new AllowOnce("c2")]),
             new ChatStreamEvent.Done());
-        await vm.SubmitAsync("run");
+        await vm.SubmitAsync("run", []);
         var first = Assert.IsType<ToolSectionViewModel>(vm.Sections[0]);
         var second = Assert.IsType<ToolSectionViewModel>(vm.Sections[1]);
 
@@ -719,7 +748,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         Assert.False(vm.CanSubmit("   "));
         Assert.True(vm.CanSubmit("prompt"));
 
-        var turn = vm.SubmitAsync("prompt");
+        var turn = vm.SubmitAsync("prompt", []);
         await TestWait.UntilAsync(() => vm.Streaming);
         Assert.False(vm.CanSubmit("prompt"));
 
@@ -741,10 +770,10 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             await gate.Task;
         }
 
-        var first = vm.SubmitAsync("first");
+        var first = vm.SubmitAsync("first", []);
         await TestWait.UntilAsync(() => vm.Streaming);
 
-        await vm.SubmitAsync("second");
+        await vm.SubmitAsync("second", []);
 
         Assert.Single(mock.ChatCalls);
 
@@ -762,7 +791,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             new ChatStreamEvent.Done(),
             new ChatStreamEvent.TextDelta(Backend("b"), "late"));
 
-        await vm.SubmitAsync("hello");
+        await vm.SubmitAsync("hello", []);
 
         // The mock cuts the stream after Done the way the real client does.
         Assert.Equal(ChatStatus.Idle, vm.Status);
@@ -787,7 +816,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
             yield break;
         }
 
-        var turn = vm.SubmitAsync("hello");
+        var turn = vm.SubmitAsync("hello", []);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(vm.Streaming);
 

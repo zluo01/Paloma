@@ -1,4 +1,5 @@
 using Paloma.Models;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.ViewModels.Overlay;
 
@@ -13,18 +14,18 @@ public sealed class QueryViewModel
         return key;
     }
 
-    public List<InlineImage> Attachments(IEnumerable<string> keys)
+    public UserPromptAttachment[] Attachments(IEnumerable<string> keys)
     {
-        var images = new List<InlineImage>();
+        var attachments = new List<UserPromptAttachment>();
         foreach (var key in keys)
         {
             if (_images.TryGetValue(key, out var image))
             {
-                images.Add(image);
+                attachments.Add(new UserPromptAttachment.Image((uint)attachments.Count + 1, image.MediaType, image.Data));
             }
         }
 
-        return images;
+        return [.. attachments];
     }
 
     public void Clear()

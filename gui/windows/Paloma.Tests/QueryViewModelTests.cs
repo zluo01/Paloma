@@ -1,6 +1,7 @@
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
 using Xunit;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.Tests;
 
@@ -20,26 +21,27 @@ public sealed class QueryViewModelTests
     }
 
     [Fact]
-    public void GivenKeysWhenGettingAttachmentsShouldFollowKeyOrderAndSkipUnknown()
+    public void GivenKeysWhenGettingAttachmentsShouldNumberThemInKeyOrderAndSkipUnknown()
     {
         var vm = new QueryViewModel();
         var png = vm.Add(Png);
         var jpeg = vm.Add(Jpeg);
 
-        Assert.Equal([Jpeg, Png, Png], vm.Attachments([jpeg, "missing", png, png]));
+        var attachments = vm.Attachments([jpeg, "missing", png, png]);
+
+        Assert.Equal(3, attachments.Length);
+        var first = Assert.IsType<UserPromptAttachment.Image>(attachments[0]);
+        Assert.Equal(1u, first.Id);
+        Assert.Equal("image/jpeg", first.MediaType);
+        Assert.Same(Jpeg.Data, first.Data);
+        var second = Assert.IsType<UserPromptAttachment.Image>(attachments[1]);
+        Assert.Equal(2u, second.Id);
+        Assert.Equal("image/png", second.MediaType);
+        Assert.Same(Png.Data, second.Data);
+        var third = Assert.IsType<UserPromptAttachment.Image>(attachments[2]);
+        Assert.Equal(3u, third.Id);
+        Assert.Same(Png.Data, third.Data);
         Assert.Empty(vm.Attachments([]));
-    }
-
-    [Fact]
-    public void GivenAddedImageWhenGettingAttachmentsShouldReturnTheSameInstance()
-    {
-        var vm = new QueryViewModel();
-        var key = vm.Add(Png);
-
-        var attachment = Assert.Single(vm.Attachments([key]));
-
-        Assert.Same(Png, attachment);
-        Assert.Same(Png.Data, attachment.Data);
     }
 
     [Fact]

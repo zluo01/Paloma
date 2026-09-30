@@ -9,6 +9,7 @@ using HealthLevel = PalomaCore.HealthLevel;
 using McpOauthSession = PalomaCore.McpOauthSession;
 using McpPluginInfo = PalomaCore.McpPluginInfo;
 using Permission = PalomaCore.Permission;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 using PermissionState = PalomaCore.PermissionState;
 using Plugin = PalomaCore.Plugin;
 using PluginType = PalomaCore.PluginType;
@@ -38,6 +39,7 @@ public interface IPalomaClient
         string? sessionId,
         ProviderBackendId backend,
         string prompt,
+        UserPromptAttachment[] attachments,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SessionListItem>> GetSessionsAsync(

@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Paloma.Helpers;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 
 namespace Paloma.Views.Overlay.Query;
@@ -51,6 +52,25 @@ public sealed partial class QueryView
     public QueryView()
     {
         InitializeComponent();
+    }
+
+    public UserPromptAttachment[] Attachments()
+    {
+        var document = Input.Document;
+        document.GetText(TextGetOptions.None, out var text);
+        var keys = new List<string>();
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] != Images.ImageCharacter)
+            {
+                continue;
+            }
+
+            document.GetRange(i, i + 1).GetText(TextGetOptions.UseObjectText, out var key);
+            keys.Add(key);
+        }
+
+        return ViewModel.Attachments(keys);
     }
 
     public void Clear()
