@@ -45,6 +45,35 @@ public sealed class QueryViewModelTests
     }
 
     [Fact]
+    public void GivenAddedImageWhenLookingUpItsKeyShouldReturnIt()
+    {
+        var vm = new QueryViewModel();
+        var key = vm.Add(Png);
+
+        Assert.True(vm.TryGetImage(key, out var image));
+        Assert.Same(Png, image);
+    }
+
+    [Fact]
+    public void GivenUnknownKeyWhenLookingUpShouldFindNothing()
+    {
+        var vm = new QueryViewModel();
+        vm.Add(Png);
+
+        Assert.False(vm.TryGetImage("missing", out _));
+    }
+
+    [Fact]
+    public void GivenAddedImageWhenClearedShouldNotFindIt()
+    {
+        var vm = new QueryViewModel();
+        var key = vm.Add(Png);
+        vm.Clear();
+
+        Assert.False(vm.TryGetImage(key, out _));
+    }
+
+    [Fact]
     public void GivenAddedImageWhenClearedShouldClearAll()
     {
         var vm = new QueryViewModel();

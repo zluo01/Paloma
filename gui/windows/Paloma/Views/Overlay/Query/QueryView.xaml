@@ -6,6 +6,22 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:extensions="using:Paloma.Extensions">
 
+    <UserControl.Resources>
+        <Flyout
+            x:Name="Preview"
+            AreOpenCloseAnimationsEnabled="False"
+            Placement="Bottom"
+            ShouldConstrainToRootBounds="False">
+            <Flyout.FlyoutPresenterStyle>
+                <Style BasedOn="{StaticResource DefaultFlyoutPresenterStyle}" TargetType="FlyoutPresenter">
+                    <Setter Property="Padding" Value="8" />
+                    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                    <Setter Property="IsTabStop" Value="False" />
+                </Style>
+            </Flyout.FlyoutPresenterStyle>
+        </Flyout>
+    </UserControl.Resources>
+
     <Grid Padding="18,12" ColumnSpacing="12">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
@@ -36,6 +52,7 @@
             FontSize="20"
             Paste="OnInputPaste"
             PlaceholderText="{x:Bind extensions:Display.Placeholder(Mode), Mode=OneWay}"
+            PointerExited="OnInputPointerExited"
             ScrollViewer.VerticalScrollBarVisibility="Auto"
             SizeChanged="OnInputSizeChanged"
             TextChanged="OnInputChanged"

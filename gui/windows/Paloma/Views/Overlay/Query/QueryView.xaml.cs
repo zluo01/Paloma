@@ -1,8 +1,11 @@
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.Storage;
+using CommunityToolkit.WinUI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Paloma.Helpers;
 using Paloma.Models;
@@ -17,7 +20,13 @@ public sealed partial class QueryView
     public static readonly DependencyProperty ModeProperty = DependencyProperty.Register(
         nameof(Mode), typeof(OverlayMode), typeof(QueryView), new PropertyMetadata(OverlayMode.Search));
 
+    private const double PreviewHeight = 240;
+
+    private string? _hovered;
+
     public QueryViewModel ViewModel { get; } = new();
+
+    private UIElement DocumentContent => (UIElement)Input.FindDescendant<ScrollViewer>()!.Content;
 
     public OverlayMode Mode
     {
@@ -52,6 +61,7 @@ public sealed partial class QueryView
     public QueryView()
     {
         InitializeComponent();
+        Input.AddHandler(PointerMovedEvent, new PointerEventHandler(OnInputPointerMoved), true);
     }
 
     public UserPromptAttachment[] Attachments()
@@ -115,6 +125,54 @@ public sealed partial class QueryView
         return rect.Height > 0 ? rect.Height : Input.FontSize;
     }
 
+    private void OnInputPointerMoved(object sender, PointerRoutedEventArgs args)
+    {
+        var content = DocumentContent;
+        var point = args.GetCurrentPoint(content).Position;
+        var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
+        foreach (var start in new[] { caret - 1, caret })
+        {
+            var range = Input.Document.GetRange(start, start + 1);
+            range.GetRect(PointOptions.ClientCoordinates, out var rect, out _);
+            if (range.Character != Images.ImageCharacter || !rect.Contains(point))
+            {
+                continue;
+            }
+
+            range.GetText(TextGetOptions.UseObjectText, out var key);
+            if (key == _hovered)
+            {
+                return;
+            }
+
+            if (!ViewModel.TryGetImage(key, out var image))
+            {
+                continue;
+            }
+
+            _hovered = key;
+            var anchor = content.TransformToVisual(Input).TransformBounds(rect);
+            Preview.Hide();
+            Preview.Content = Images.Picture(image.Data, PreviewHeight);
+            Preview.ShowAt(Input, new FlyoutShowOptions
+            {
+                Position = new Point(anchor.X + anchor.Width / 2, anchor.Bottom),
+                ExclusionRect = anchor,
+                ShowMode = FlyoutShowMode.Transient,
+            });
+            return;
+        }
+
+        _hovered = null;
+        Preview.Hide();
+    }
+
+    private void OnInputPointerExited(object sender, PointerRoutedEventArgs args)
+    {
+        _hovered = null;
+        Preview.Hide();
+    }
+
     private void OnInputChanged(object sender, RoutedEventArgs args)
     {
         TextChanged?.Invoke(this, EventArgs.Empty);
@@ -148,7 +206,7 @@ public sealed partial class QueryView
         var deferral = args.GetDeferral();
         try
         {
-            var point = args.GetPosition(Input);
+            var point = args.GetPosition(DocumentContent);
             var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
             Input.Document.Selection.SetRange(caret, caret);
             await InsertContentAsync(args.DataView);

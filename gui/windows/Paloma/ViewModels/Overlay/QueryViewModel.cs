@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Paloma.Models;
 using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
@@ -12,6 +13,11 @@ public sealed class QueryViewModel
         var key = Guid.NewGuid().ToString("N");
         _images[key] = image;
         return key;
+    }
+
+    public bool TryGetImage(string key, [MaybeNullWhen(false)] out InlineImage image)
+    {
+        return _images.TryGetValue(key, out image);
     }
 
     public UserPromptAttachment[] Attachments(IEnumerable<string> keys)
