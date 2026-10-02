@@ -121,14 +121,14 @@ public sealed partial class OverlayView
                 break;
             case var key when Shortcuts.CloseOverlay.Matches(key, modifiers):
                 args.Handled = true;
-                if (Mode is OverlayMode.Sessions or OverlayMode.Chat)
+                if (Query.Text.Length > 0)
+                {
+                    Query.Clear();
+                }
+                else if (Mode is OverlayMode.Sessions or OverlayMode.Chat)
                 {
                     Query.Clear();
                     SetMode(OverlayMode.Search);
-                }
-                else if (Query.Text.Length > 0)
-                {
-                    Query.Clear();
                 }
                 else
                 {

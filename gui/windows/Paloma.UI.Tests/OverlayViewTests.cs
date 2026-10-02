@@ -66,6 +66,33 @@ public sealed class OverlayViewTests(UiFixture ui)
         Assert.Equal(1, requested);
     });
 
+    [Theory]
+    [InlineData(OverlayMode.Chat)]
+    [InlineData(OverlayMode.Sessions)]
+    public Task GivenTextOutsideSearchWhenPressingEscapeShouldClearItAndStay(OverlayMode mode) =>
+        ui.RunAsync(async () =>
+        {
+            var (overlay, query, input) = await FocusedAsync(mode);
+            query.Text = "hello";
+
+            await ui.PressAsync(input, VirtualKey.Escape);
+
+            Assert.Equal((mode, string.Empty), (overlay.Mode, query.Text));
+        });
+
+    [Theory]
+    [InlineData(OverlayMode.Chat)]
+    [InlineData(OverlayMode.Sessions)]
+    public Task GivenEmptyInputOutsideSearchWhenPressingEscapeShouldReturnToSearch(OverlayMode mode) =>
+        ui.RunAsync(async () =>
+        {
+            var (overlay, _, input) = await FocusedAsync(mode);
+
+            await ui.PressAsync(input, VirtualKey.Escape);
+
+            Assert.Equal(OverlayMode.Search, overlay.Mode);
+        });
+
     [Fact]
     public Task GivenSearchModeWhenPressingOpenSessionsShouldSwitchToSessions() => ui.RunAsync(async () =>
     {
@@ -105,13 +132,27 @@ public sealed class OverlayViewTests(UiFixture ui)
         return (overlay, overlay.FindDescendant<FooterView>()!, () => passthrough);
     }
 
-    private async Task<(OverlayView Overlay, QueryView Query, RichEditBox Input)> FocusedAsync()
+    private async Task<(OverlayView Overlay, QueryView Query, RichEditBox Input)> FocusedAsync(
+        OverlayMode mode = OverlayMode.Search)
     {
         var overlay = await ui.ShowAsync(new OverlayView { Width = 680, Height = 540 });
         var query = overlay.FindDescendant<QueryView>()!;
         query.FocusInput();
         await ui.IdleAsync();
-        return (overlay, query, query.FindDescendant<RichEditBox>()!);
+        var input = query.FindDescendant<RichEditBox>()!;
+        switch (mode)
+        {
+            case OverlayMode.Chat:
+                query.Text = "hi";
+                await ui.PressAsync(input, VirtualKey.Enter);
+                break;
+            case OverlayMode.Sessions:
+                await ui.PressAsync(input, VirtualKey.H, VirtualKey.Control);
+                break;
+        }
+
+        Assert.Equal(mode, overlay.Mode);
+        return (overlay, query, input);
     }
 
     private async Task SetStreamingAsync(OverlayView overlay, FooterView footer, bool streaming)
