@@ -39,7 +39,8 @@
                         <shared:RowItem
                             Hovered="{x:Bind IsHovered, Mode=TwoWay}"
                             Selected="{x:Bind IsSelected, Mode=OneWay}"
-                            Tapped="OnSessionTapped">
+                            Tapped="OnSessionTapped"
+                            ToolTipService.ToolTip="{x:Bind Item.Title}">
                             <Grid Padding="12,7" ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -58,7 +59,7 @@
                                     VerticalAlignment="Center"
                                     Spacing="1">
                                     <TextBlock
-                                        Text="{x:Bind Item.Title}"
+                                        Text="{x:Bind Title}"
                                         TextTrimming="CharacterEllipsis" />
                                     <TextBlock
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"

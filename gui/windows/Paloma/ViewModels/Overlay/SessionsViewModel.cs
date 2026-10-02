@@ -185,9 +185,17 @@ public sealed partial class SessionRow(SessionListItem item) : ObservableObject
 {
     public SessionListItem Item { get; } = item;
 
+    public string Title { get; } = FirstLine(item.Title);
+
     [ObservableProperty] public partial bool IsSelected { get; set; }
 
     [ObservableProperty] public partial bool PendingDeletion { get; set; }
 
     [ObservableProperty] public partial bool IsHovered { get; set; }
+
+    private static string FirstLine(string title)
+    {
+        var end = title.AsSpan().IndexOfAny('\r', '\n', '\v');
+        return (end < 0 ? title : title[..end]).Trim();
+    }
 }
