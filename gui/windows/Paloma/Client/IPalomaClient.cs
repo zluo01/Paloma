@@ -28,10 +28,7 @@ public interface IPalomaClient
         string input,
         CancellationToken cancellationToken = default);
 
-    Task<Behavior?> RunSearchActionAsync(
-        ExtensionCapabilityId capabilityId,
-        ExtAction action,
-        CancellationToken cancellationToken = default);
+    Task<Behavior?> RunSearchActionAsync(ExtensionCapabilityId capabilityId, ExtAction action);
 
     Task<ProviderBackendId?> PreferModelAsync(CancellationToken cancellationToken = default);
 
@@ -42,101 +39,62 @@ public interface IPalomaClient
         UserPromptAttachment[] attachments,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<SessionListItem>> GetSessionsAsync(
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SessionListItem>> GetSessionsAsync();
 
     Task<IReadOnlyList<string>> SearchSessionsAsync(
         string needle,
         CancellationToken cancellationToken = default);
 
-    Task RemoveSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task RemoveSessionAsync(string sessionId);
 
     IAsyncEnumerable<ChatStreamEvent> RestoreSessionAsync(
         string sessionId,
         CancellationToken cancellationToken = default);
 
-    Task CancelSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task CancelSessionAsync(string sessionId);
 
-    Task<PermissionState> DecideAsync(
-        UserDecision decision,
-        CancellationToken cancellationToken = default);
+    Task<PermissionState> DecideAsync(UserDecision decision);
 
-    Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync(
-        CancellationToken cancellationToken = default);
+    Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync();
 
-    Task<IReadOnlyList<Connector>> GetConnectorsAsync(
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Connector>> GetConnectorsAsync();
 
-    Task<ConnectionPhase> InitConnectionAsync(
-        ProviderBackendId id,
-        CancellationToken cancellationToken = default);
+    Task<ConnectionPhase> InitConnectionAsync(ProviderBackendId id);
 
-    Task FinalizeConnectionAsync(
-        ProviderBackendId id,
-        ProviderAuthMethod method,
-        string payload,
-        CancellationToken cancellationToken = default);
+    Task FinalizeConnectionAsync(ProviderBackendId id, ProviderAuthMethod method, string payload);
 
-    Task CancelConnectionAsync(ProviderBackendId id, CancellationToken cancellationToken = default);
+    Task CancelConnectionAsync(ProviderBackendId id);
 
-    Task DisconnectAsync(ProviderBackendId id, CancellationToken cancellationToken = default);
+    Task DisconnectAsync(ProviderBackendId id);
 
-    Task SetModelPreferenceAsync(
-        ProviderBackendId id,
-        string model,
-        string effort,
-        bool asDefault = false,
-        CancellationToken cancellationToken = default);
+    Task SetModelPreferenceAsync(ProviderBackendId id, string model, string effort, bool asDefault = false);
 
-    Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync(
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync();
 
-    Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync(
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync();
 
-    Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync();
 
-    Task TogglePluginAsync(
-        string name,
-        bool disabled,
-        CancellationToken cancellationToken = default);
+    Task TogglePluginAsync(string name, bool disabled);
 
-    Task ToggleCapabilityAsync(
-        string plugin,
-        string capability,
-        CapabilityFacet facet,
-        bool disabled,
-        CancellationToken cancellationToken = default);
+    Task ToggleCapabilityAsync(string plugin, string capability, CapabilityFacet facet, bool disabled);
 
-    Task AddExtensionPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default);
+    Task AddExtensionPluginAsync(Plugin config);
 
-    Task AddProviderPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default);
+    Task AddProviderPluginAsync(Plugin config);
 
-    Task<McpOauthSession?> InitMcpConnectionAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default);
+    Task<McpOauthSession?> InitMcpConnectionAsync(Plugin config);
 
     Task FinalizeMcpConnectionAsync(
         Plugin config,
         McpOauthSession? session,
         CancellationToken cancellationToken = default);
 
-    Task UpdatePluginAsync(
-        PluginType kind,
-        Plugin config,
-        CancellationToken cancellationToken = default);
+    Task UpdatePluginAsync(PluginType kind, Plugin config);
 
-    Task RemovePluginAsync(
-        PluginType kind,
-        string name,
-        CancellationToken cancellationToken = default);
+    Task RemovePluginAsync(PluginType kind, string name);
 
-    Task<IReadOnlyList<Permission>> GetPermissionsAsync(
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Permission>> GetPermissionsAsync();
 
-    Task DeletePermissionAsync(string prefix, CancellationToken cancellationToken = default);
+    Task DeletePermissionAsync(string prefix);
 }

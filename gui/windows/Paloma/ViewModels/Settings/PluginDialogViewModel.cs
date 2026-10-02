@@ -384,7 +384,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         // One token spans both connect phases: closing the dialog cancels
         // whichever call is currently in flight.
         _finalize = new CancellationTokenSource();
-        var session = await _client.InitMcpConnectionAsync(config, _finalize.Token);
+        var session = await _client.InitMcpConnectionAsync(config);
         // A cancel that landed between the two calls must not finalize.
         _finalize.Token.ThrowIfCancellationRequested();
         if (session is not null)

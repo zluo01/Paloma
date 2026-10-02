@@ -35,10 +35,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         }
     }
 
-    public async Task<Behavior?> RunSearchActionAsync(
-        ExtensionCapabilityId capabilityId,
-        ExtAction action,
-        CancellationToken cancellationToken = default)
+    public async Task<Behavior?> RunSearchActionAsync(ExtensionCapabilityId capabilityId, ExtAction action)
     {
         return await app.RunSearchAction(capabilityId, action);
     }
@@ -72,8 +69,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         }
     }
 
-    public async Task<IReadOnlyList<SessionListItem>> GetSessionsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SessionListItem>> GetSessionsAsync()
     {
         return await app.AvailableSessions();
     }
@@ -85,9 +81,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         return await app.SearchSessions(needle);
     }
 
-    public async Task RemoveSessionAsync(
-        string sessionId,
-        CancellationToken cancellationToken = default)
+    public async Task RemoveSessionAsync(string sessionId)
     {
         await app.RemoveSession(sessionId);
     }
@@ -108,22 +102,17 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         }
     }
 
-    public async Task CancelSessionAsync(
-        string sessionId,
-        CancellationToken cancellationToken = default)
+    public async Task CancelSessionAsync(string sessionId)
     {
         await app.CancelSession(sessionId);
     }
 
-    public async Task<PermissionState> DecideAsync(
-        UserDecision decision,
-        CancellationToken cancellationToken = default)
+    public async Task<PermissionState> DecideAsync(UserDecision decision)
     {
         return await app.DecideToolcallPermissions(decision);
     }
 
-    public async Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync()
     {
         var services = app.ConnectorsHealthLevel();
         var plugins = app.PluginsHealthLevel();
@@ -131,15 +120,12 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         return (await services, await plugins);
     }
 
-    public async Task<IReadOnlyList<Connector>> GetConnectorsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Connector>> GetConnectorsAsync()
     {
         return await app.AvailableConnectors();
     }
 
-    public async Task<ConnectionPhase> InitConnectionAsync(
-        ProviderBackendId id,
-        CancellationToken cancellationToken = default)
+    public async Task<ConnectionPhase> InitConnectionAsync(ProviderBackendId id)
     {
         return await app.InitConnection(id) switch
         {
@@ -150,23 +136,17 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         };
     }
 
-    public async Task FinalizeConnectionAsync(
-        ProviderBackendId id,
-        ProviderAuthMethod method,
-        string payload,
-        CancellationToken cancellationToken = default)
+    public async Task FinalizeConnectionAsync(ProviderBackendId id, ProviderAuthMethod method, string payload)
     {
         await app.FinalizeConnection(method, id, payload);
     }
 
-    public async Task CancelConnectionAsync(
-        ProviderBackendId id,
-        CancellationToken cancellationToken = default)
+    public async Task CancelConnectionAsync(ProviderBackendId id)
     {
         await app.CancelConnection(id);
     }
 
-    public async Task DisconnectAsync(ProviderBackendId id, CancellationToken cancellationToken = default)
+    public async Task DisconnectAsync(ProviderBackendId id)
     {
         await app.DisconnectConnector(id);
     }
@@ -175,55 +155,42 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         ProviderBackendId id,
         string model,
         string effort,
-        bool asDefault = false,
-        CancellationToken cancellationToken = default)
+        bool asDefault = false)
     {
         await app.SetModelPreference(id, model, effort, asDefault);
     }
 
-    public async Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync()
     {
         return await app.ListExtensionPlugins();
     }
 
-    public async Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync()
     {
         return await app.ListProviderPlugins();
     }
 
-    public async Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync()
     {
         return await app.ListMcps();
     }
 
-    public async Task TogglePluginAsync(
-        string name,
-        bool disabled,
-        CancellationToken cancellationToken = default)
+    public async Task TogglePluginAsync(string name, bool disabled)
     {
         await app.TogglePlugin(name, disabled);
     }
 
-    public async Task AddExtensionPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public async Task AddExtensionPluginAsync(Plugin config)
     {
         await app.AddExtensionPlugin(config);
     }
 
-    public async Task AddProviderPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public async Task AddProviderPluginAsync(Plugin config)
     {
         await app.AddProviderPlugin(config);
     }
 
-    public async Task<McpOauthSession?> InitMcpConnectionAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public async Task<McpOauthSession?> InitMcpConnectionAsync(Plugin config)
     {
         return await app.InitMcpConnection(config);
     }
@@ -238,31 +205,22 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         await app.FinalizeMcpConnection(config, session, token);
     }
 
-    public async Task UpdatePluginAsync(
-        PluginType kind,
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public async Task UpdatePluginAsync(PluginType kind, Plugin config)
     {
         await app.UpdatePlugin(kind, config);
     }
 
-    public async Task RemovePluginAsync(
-        PluginType kind,
-        string name,
-        CancellationToken cancellationToken = default)
+    public async Task RemovePluginAsync(PluginType kind, string name)
     {
         await app.RemovePlugin(kind, name);
     }
 
-    public async Task<IReadOnlyList<Permission>> GetPermissionsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Permission>> GetPermissionsAsync()
     {
         return await app.GetPermissions();
     }
 
-    public async Task DeletePermissionAsync(
-        string prefix,
-        CancellationToken cancellationToken = default)
+    public async Task DeletePermissionAsync(string prefix)
     {
         await app.DeletePermission(prefix);
     }
@@ -271,8 +229,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         string plugin,
         string capability,
         CapabilityFacet facet,
-        bool disabled,
-        CancellationToken cancellationToken = default)
+        bool disabled)
     {
         await app.ToggleCapability(plugin, capability, facet, disabled);
     }

@@ -177,10 +177,7 @@ internal sealed class MockPalomaClient : IPalomaClient
             cancellationToken);
     }
 
-    public async Task<Behavior?> RunSearchActionAsync(
-        ExtensionCapabilityId capabilityId,
-        ExtAction action,
-        CancellationToken cancellationToken = default)
+    public async Task<Behavior?> RunSearchActionAsync(ExtensionCapabilityId capabilityId, ExtAction action)
     {
         if (OnRunActionAsync is { } hook)
         {
@@ -212,8 +209,7 @@ internal sealed class MockPalomaClient : IPalomaClient
             cancellationToken);
     }
 
-    public Task<IReadOnlyList<SessionListItem>> GetSessionsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<SessionListItem>> GetSessionsAsync() =>
         Task.FromResult(Sessions);
 
     public async Task<IReadOnlyList<string>> SearchSessionsAsync(
@@ -237,9 +233,7 @@ internal sealed class MockPalomaClient : IPalomaClient
         return OnSearchSessions?.Invoke(needle) ?? [];
     }
 
-    public Task RemoveSessionAsync(
-        string sessionId,
-        CancellationToken cancellationToken = default)
+    public Task RemoveSessionAsync(string sessionId)
     {
         OnRemoveSession?.Invoke(sessionId);
         return Task.CompletedTask;
@@ -254,52 +248,38 @@ internal sealed class MockPalomaClient : IPalomaClient
             cancellationToken);
     }
 
-    public Task CancelSessionAsync(
-        string sessionId,
-        CancellationToken cancellationToken = default)
+    public Task CancelSessionAsync(string sessionId)
     {
         CancelledSessions.Add(sessionId);
         return Task.CompletedTask;
     }
 
-    public Task<PermissionState> DecideAsync(
-        UserDecision decision,
-        CancellationToken cancellationToken = default) =>
+    public Task<PermissionState> DecideAsync(UserDecision decision) =>
         OnDecideAsync?.Invoke(decision)
         ?? Task.FromResult(OnDecide?.Invoke(decision) ?? PermissionState.Allow);
 
-    public Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<(HealthLevel Services, HealthLevel Plugins)> GetHealthAsync() =>
         Task.FromResult((HealthLevel.Healthy, HealthLevel.Healthy));
 
-    public Task<IReadOnlyList<Connector>> GetConnectorsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<Connector>> GetConnectorsAsync() =>
         Task.FromResult(OnGetConnectors is { } hook ? hook() : Connectors);
 
-    public Task<ConnectionPhase> InitConnectionAsync(
-        ProviderBackendId id,
-        CancellationToken cancellationToken = default) =>
+    public Task<ConnectionPhase> InitConnectionAsync(ProviderBackendId id) =>
         // The real init can never return Success; its unreachable phases
         // must stay unreachable in tests too.
         Task.FromResult(OnInitConnection?.Invoke(id)
                         ?? (ConnectionPhase)new ConnectionPhase.Failed("no init hook configured"));
 
-    public Task FinalizeConnectionAsync(
-        ProviderBackendId id,
-        ProviderAuthMethod method,
-        string payload,
-        CancellationToken cancellationToken = default)
+    public Task FinalizeConnectionAsync(ProviderBackendId id, ProviderAuthMethod method, string payload)
     {
         FinalizeConnections.Add((id, method, payload));
         return Task.CompletedTask;
     }
 
-    public Task CancelConnectionAsync(
-        ProviderBackendId id,
-        CancellationToken cancellationToken = default) =>
+    public Task CancelConnectionAsync(ProviderBackendId id) =>
         Task.CompletedTask;
 
-    public Task DisconnectAsync(ProviderBackendId id, CancellationToken cancellationToken = default)
+    public Task DisconnectAsync(ProviderBackendId id)
     {
         OnDisconnect?.Invoke(id);
         return Task.CompletedTask;
@@ -309,30 +289,23 @@ internal sealed class MockPalomaClient : IPalomaClient
         ProviderBackendId id,
         string model,
         string effort,
-        bool asDefault = false,
-        CancellationToken cancellationToken = default)
+        bool asDefault = false)
     {
         OnSetModelPreference?.Invoke(id, model, effort);
         ModelPreferences.Add((id, model, effort));
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<ExtensionInfo>> GetExtensionPluginsAsync() =>
         Task.FromResult(ExtensionPlugins);
 
-    public Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<ProviderInfo>> GetProviderPluginsAsync() =>
         Task.FromResult(ProviderPlugins);
 
-    public Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<McpPluginInfo>> GetMcpsAsync() =>
         Task.FromResult(McpPlugins);
 
-    public Task TogglePluginAsync(
-        string name,
-        bool disabled,
-        CancellationToken cancellationToken = default)
+    public Task TogglePluginAsync(string name, bool disabled)
     {
         PluginToggles.Add((name, disabled));
         // The production call site discards this task, so a hook failure must
@@ -349,33 +322,22 @@ internal sealed class MockPalomaClient : IPalomaClient
         return Task.CompletedTask;
     }
 
-    public Task ToggleCapabilityAsync(
-        string plugin,
-        string capability,
-        CapabilityFacet facet,
-        bool disabled,
-        CancellationToken cancellationToken = default)
+    public Task ToggleCapabilityAsync(string plugin, string capability, CapabilityFacet facet, bool disabled)
     {
         CapabilityToggles.Add((plugin, capability, facet, disabled));
         return Task.CompletedTask;
     }
 
-    public Task AddExtensionPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public Task AddExtensionPluginAsync(Plugin config)
     {
         OnAddExtensionPlugin?.Invoke(config);
         return Task.CompletedTask;
     }
 
-    public Task AddProviderPluginAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default) =>
+    public Task AddProviderPluginAsync(Plugin config) =>
         Task.CompletedTask;
 
-    public Task<McpOauthSession?> InitMcpConnectionAsync(
-        Plugin config,
-        CancellationToken cancellationToken = default) =>
+    public Task<McpOauthSession?> InitMcpConnectionAsync(Plugin config) =>
         Task.FromResult<McpOauthSession?>(null);
 
     public Task FinalizeMcpConnectionAsync(
@@ -388,31 +350,22 @@ internal sealed class MockPalomaClient : IPalomaClient
         return Task.CompletedTask;
     }
 
-    public Task UpdatePluginAsync(
-        PluginType kind,
-        Plugin config,
-        CancellationToken cancellationToken = default)
+    public Task UpdatePluginAsync(PluginType kind, Plugin config)
     {
         UpdatedPlugins.Add((kind, config));
         return Task.CompletedTask;
     }
 
-    public Task RemovePluginAsync(
-        PluginType kind,
-        string name,
-        CancellationToken cancellationToken = default)
+    public Task RemovePluginAsync(PluginType kind, string name)
     {
         OnRemovePlugin?.Invoke(kind, name);
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<Permission>> GetPermissionsAsync(
-        CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyList<Permission>> GetPermissionsAsync() =>
         Task.FromResult(Permissions);
 
-    public Task DeletePermissionAsync(
-        string prefix,
-        CancellationToken cancellationToken = default)
+    public Task DeletePermissionAsync(string prefix)
     {
         OnDeletePermission?.Invoke(prefix);
         DeletedPermissions.Add(prefix);
