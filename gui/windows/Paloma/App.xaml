@@ -62,6 +62,23 @@
                     </Setter.Value>
                 </Setter>
             </Style>
+            <Style x:Key="KeyCaps" TargetType="ItemsControl">
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="ItemTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <ContentControl Content="{Binding}" Style="{StaticResource KeyCap}" />
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="ItemsPanel">
+                    <Setter.Value>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4" />
+                        </ItemsPanelTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
             <extensions:EmptyStringToCollapsedConverter x:Key="EmptyToCollapsed" />
             <extensions:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <extensions:HealthToLabelConverter x:Key="HealthToLabel" />

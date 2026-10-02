@@ -6,24 +6,15 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="using:Paloma.Views.Settings.Shortcuts"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:Paloma.Models"
     mc:Ignorable="d">
 
     <Page.Resources>
         <x:Double x:Key="SettingsCardMinHeight">44</x:Double>
-        <DataTemplate x:Key="KeyTemplate" x:DataType="x:String">
-            <ContentControl Content="{x:Bind}" Style="{StaticResource KeyCap}" />
-        </DataTemplate>
-        <DataTemplate x:Key="ShortcutTemplate" x:DataType="local:ShortcutEntry">
+        <DataTemplate x:Key="ShortcutTemplate" x:DataType="models:Shortcut">
             <controls:SettingsCard Header="{x:Bind Description}">
-                <ItemsControl ItemTemplate="{StaticResource KeyTemplate}" ItemsSource="{x:Bind Keys}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" Spacing="4" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
+                <ItemsControl ItemsSource="{x:Bind Keys}" Style="{StaticResource KeyCaps}" />
             </controls:SettingsCard>
         </DataTemplate>
         <ItemsPanelTemplate x:Key="CardStack">
@@ -39,16 +30,16 @@
         <StackPanel MaxWidth="720" Spacing="16">
             <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="Shortcuts" />
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Global" />
-            <ItemsControl ItemsSource="{x:Bind Global}" Style="{StaticResource ShortcutList}" />
+            <ItemsControl ItemsSource="{x:Bind models:Shortcuts.Global}" Style="{StaticResource ShortcutList}" />
 
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Search" />
-            <ItemsControl ItemsSource="{x:Bind Search}" Style="{StaticResource ShortcutList}" />
+            <ItemsControl ItemsSource="{x:Bind models:Shortcuts.Search}" Style="{StaticResource ShortcutList}" />
 
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Chat" />
-            <ItemsControl ItemsSource="{x:Bind Chat}" Style="{StaticResource ShortcutList}" />
+            <ItemsControl ItemsSource="{x:Bind models:Shortcuts.Chat}" Style="{StaticResource ShortcutList}" />
 
             <TextBlock Style="{StaticResource SettingsSectionHeader}" Text="Sessions" />
-            <ItemsControl ItemsSource="{x:Bind Sessions}" Style="{StaticResource ShortcutList}" />
+            <ItemsControl ItemsSource="{x:Bind models:Shortcuts.Sessions}" Style="{StaticResource ShortcutList}" />
         </StackPanel>
     </ScrollViewer>
 </Page>

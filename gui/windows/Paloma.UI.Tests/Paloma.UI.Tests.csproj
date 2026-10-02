@@ -31,8 +31,10 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Page Remove="TestApp.xaml" />
-        <ApplicationDefinition Include="TestApp.xaml" />
+        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.3.42" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.4.4" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.1.74" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" ExcludeAssets="all" />
     </ItemGroup>
 
     <ItemGroup>

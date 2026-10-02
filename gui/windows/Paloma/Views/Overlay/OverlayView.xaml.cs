@@ -95,7 +95,7 @@ public sealed partial class OverlayView
 
         switch (args.Key)
         {
-            case VirtualKey.H when modifiers == Modifiers.MOD_CONTROL:
+            case var key when Shortcuts.OpenSessions.Matches(key, modifiers):
                 args.Handled = true;
                 if (Mode == OverlayMode.Sessions)
                 {
@@ -115,11 +115,11 @@ public sealed partial class OverlayView
                 when FocusManager.GetFocusedElement(XamlRoot)
                     is ButtonBase:
                 break;
-            case VirtualKey.Enter when modifiers == default:
+            case var key when Shortcuts.Submit.Matches(key, modifiers):
                 args.Handled = true;
                 await SubmitAsync();
                 break;
-            case VirtualKey.Escape:
+            case var key when Shortcuts.CloseOverlay.Matches(key, modifiers):
                 args.Handled = true;
                 if (Mode is OverlayMode.Sessions or OverlayMode.Chat)
                 {
@@ -143,11 +143,11 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
+            case var key when Shortcuts.MoveSelection.Matches(key, modifiers) && CaretOnEdge(key):
                 SearchPanel.Move(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
-            case VirtualKey.Enter when modifiers == Modifiers.MOD_CONTROL:
+            case var key when Shortcuts.ShowActions.Matches(key, modifiers):
                 SearchPanel.ShowActions();
                 args.Handled = true;
                 break;
@@ -158,23 +158,22 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
+            case var key when Shortcuts.MoveBetweenDecisions.Matches(key, modifiers) && CaretOnEdge(key):
                 Chat.Navigate(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
-            case VirtualKey.PageUp or VirtualKey.PageDown when modifiers == default:
+            case var key when Shortcuts.ScrollByPage.Matches(key, modifiers):
                 Chat.PageScroll(args.Key == VirtualKey.PageDown ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
             // Home/End is occupied by the input
-            case VirtualKey.Home or VirtualKey.End when modifiers == Modifiers.MOD_CONTROL:
+            case var key when Shortcuts.ScrollToEdge.Matches(key, modifiers):
                 Chat.EdgeScroll(args.Key == VirtualKey.End ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
             // Only a streaming turn claims Ctrl+C; otherwise it stays the
             // clipboard copy everyone expects in a text box.
-            case VirtualKey.C when modifiers == Modifiers.MOD_CONTROL
-                                   && Chat.ViewModel.Streaming:
+            case var key when Shortcuts.Interrupt.Matches(key, modifiers) && Chat.ViewModel.Streaming:
                 // select on the input prompt
                 if (Query.HasSelection)
                 {
@@ -196,16 +195,16 @@ public sealed partial class OverlayView
     {
         switch (args.Key)
         {
-            case VirtualKey.Up or VirtualKey.Down when modifiers == default && CaretOnEdge(args.Key):
+            case var key when Shortcuts.MoveBetweenSessions.Matches(key, modifiers) && CaretOnEdge(key):
                 SessionsPanel.Move(args.Key == VirtualKey.Down ? MoveDown : MoveUp);
                 args.Handled = true;
                 break;
-            case VirtualKey.Delete when modifiers == default:
+            case var key when Shortcuts.DeleteSession.Matches(key, modifiers):
                 Sessions.PendingDelete();
                 args.Handled = true;
                 break;
             // if it is session mode and with delete signal on, cancel that first
-            case VirtualKey.Escape when Sessions.CancelPendingDelete():
+            case var key when Shortcuts.CloseSessions.Matches(key, modifiers) && Sessions.CancelPendingDelete():
                 args.Handled = true;
                 break;
         }
