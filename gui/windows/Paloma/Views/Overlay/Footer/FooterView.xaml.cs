@@ -77,7 +77,7 @@ public sealed partial class FooterView
     // Exclude following buttons from the dragging area
     internal IReadOnlyList<FrameworkElement> InteractiveControls()
     {
-        return [ModelButton, SettingsButton, SessionsButton, StopButton];
+        return [ActionsPanel];
     }
 
     private void OnModelFlyoutOpening(object sender, object args)
