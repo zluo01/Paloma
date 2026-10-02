@@ -114,7 +114,11 @@ public sealed partial class QueryView
 
         var selection = Input.Document.Selection;
         var caret = delta < 0 ? selection.StartPosition : selection.EndPosition;
-        return Composer.CaretOnEdge(delta, Text, caret);
+        var line = Input.Document.GetRange(caret, caret);
+        line.Expand(TextRangeUnit.Line);
+        return delta < 0
+            ? line.StartPosition == 0
+            : line.EndPosition >= Input.Document.GetRange(0, int.MaxValue).EndPosition;
     }
 
     // Exclude the input from the dragging area
