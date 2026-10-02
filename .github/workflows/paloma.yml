@@ -126,7 +126,10 @@ jobs:
 
       - name: Build and test Windows application
         if: matrix.platform == 'windows'
-        run: dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj -p:PalomaBindingsArgs=-Debug
+        shell: bash
+        run: |
+          dotnet test gui/windows/Paloma.Tests/Paloma.Tests.csproj -p:PalomaBindingsArgs=-Debug
+          dotnet test gui/windows/Paloma.UI.Tests/Paloma.UI.Tests.csproj -p:SkipPalomaCore=true
 
       - name: Save NuGet cache
         if: matrix.platform == 'windows' && github.ref == 'refs/heads/main' && steps.nuget-cache.outputs.cache-hit != 'true'
