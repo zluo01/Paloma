@@ -63,6 +63,23 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task GivenPromptEventWithAnImageWhenStreamingShouldKeepTheImageInTheUserSection()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var png = new UserPromptAttachment.Image(1, "image/png", [1, 2, 3]);
+        mock.OnChat = (_, _) => MockPalomaClient.Stream<ChatStreamEvent>(
+            new ChatStreamEvent.SessionStarted("s"),
+            new ChatStreamEvent.UserPrompt("look [Image #1]", [png]),
+            new ChatStreamEvent.Done());
+
+        await vm.SubmitAsync("look [Image #1]", [png]);
+
+        var section = Assert.IsType<UserSectionViewModel>(Assert.Single(vm.Sections));
+        Assert.Same(png.Data, Assert.Single(section.Images));
+    }
+
+    [Fact]
     public async Task Streaming_TextMaterialization_Measured()
     {
         const int deltas = 2000;
