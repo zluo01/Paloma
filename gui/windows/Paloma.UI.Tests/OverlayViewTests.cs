@@ -1,9 +1,13 @@
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.System;
 using CommunityToolkit.WinUI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Paloma.Models;
 using Paloma.Views.Overlay;
 using Paloma.Views.Overlay.Footer;
+using Paloma.Views.Overlay.Query;
 using Xunit;
 
 namespace Paloma.UI.Tests;
@@ -37,12 +41,77 @@ public sealed class OverlayViewTests(UiFixture ui)
             Assert.Contains(published(), region => Covers(region, Bounds(footer, button)));
         });
 
+    [Fact]
+    public Task GivenTextWhenPressingEscapeShouldClearIt() => ui.RunAsync(async () =>
+    {
+        var (_, query, input) = await FocusedAsync();
+        query.Text = "hello";
+
+        await ui.PressAsync(input, VirtualKey.Escape);
+
+        Assert.Equal(string.Empty, query.Text);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task GivenEmptyInputWhenPressingEscapeShouldRequestHide(bool shift) => ui.RunAsync(async () =>
+    {
+        var (overlay, _, input) = await FocusedAsync();
+        var requested = 0;
+        overlay.HideRequested += () => requested++;
+
+        await ui.PressAsync(input, VirtualKey.Escape, shift ? [VirtualKey.Shift] : []);
+
+        Assert.Equal(1, requested);
+    });
+
+    [Fact]
+    public Task GivenSearchModeWhenPressingOpenSessionsShouldSwitchToSessions() => ui.RunAsync(async () =>
+    {
+        var (overlay, _, input) = await FocusedAsync();
+
+        await ui.PressAsync(input, VirtualKey.H, VirtualKey.Control);
+
+        Assert.Equal(OverlayMode.Sessions, overlay.Mode);
+    });
+
+    [Fact]
+    public Task GivenSessionsModeWhenPressingOpenSessionsShouldReturnToSearch() => ui.RunAsync(async () =>
+    {
+        var (overlay, _, input) = await FocusedAsync();
+        await ui.PressAsync(input, VirtualKey.H, VirtualKey.Control);
+
+        await ui.PressAsync(input, VirtualKey.H, VirtualKey.Control);
+
+        Assert.Equal(OverlayMode.Search, overlay.Mode);
+    });
+
+    [Fact]
+    public Task GivenSearchModeWhenPressingTheOpenSessionsKeyAloneShouldTypeIt() => ui.RunAsync(async () =>
+    {
+        var (overlay, query, input) = await FocusedAsync();
+
+        await ui.PressAsync(input, VirtualKey.H);
+
+        Assert.Equal((OverlayMode.Search, "h"), (overlay.Mode, query.Text));
+    });
+
     private async Task<(OverlayView Overlay, FooterView Footer, Func<RectInt32[]> Published)> HostAsync()
     {
         var overlay = await ui.ShowAsync(new OverlayView { Width = 680, Height = 540 });
         RectInt32[] passthrough = [];
         overlay.DragRegionsChanged += (_, regions) => passthrough = regions;
         return (overlay, overlay.FindDescendant<FooterView>()!, () => passthrough);
+    }
+
+    private async Task<(OverlayView Overlay, QueryView Query, RichEditBox Input)> FocusedAsync()
+    {
+        var overlay = await ui.ShowAsync(new OverlayView { Width = 680, Height = 540 });
+        var query = overlay.FindDescendant<QueryView>()!;
+        query.FocusInput();
+        await ui.IdleAsync();
+        return (overlay, query, query.FindDescendant<RichEditBox>()!);
     }
 
     private async Task SetStreamingAsync(OverlayView overlay, FooterView footer, bool streaming)
