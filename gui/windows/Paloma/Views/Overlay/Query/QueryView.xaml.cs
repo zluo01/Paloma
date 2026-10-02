@@ -73,6 +73,25 @@ public sealed partial class QueryView
         });
     }
 
+    public string? CopyText()
+    {
+        var selection = Input.Document.Selection;
+        selection.GetText(TextGetOptions.None, out var text);
+        if (!text.Contains(Images.ImageCharacter, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (text.EndsWith('\r')
+            && selection.EndPosition >= Input.Document.GetRange(0, int.MaxValue).EndPosition)
+        {
+            text = text[..^1];
+        }
+
+        Input.Document.GetRange(0, selection.StartPosition).GetText(TextGetOptions.None, out var before);
+        return Composer.CopyText(text, before.AsSpan().Count(Images.ImageCharacter));
+    }
+
     public void Clear()
     {
         Text = string.Empty;
@@ -254,7 +273,8 @@ public sealed partial class QueryView
 
         if (content.Contains(StandardDataFormats.Bitmap))
         {
-            var loaded = await Images.LoadBitmapAsync(await content.GetBitmapAsync(), LineHeight(), XamlRoot.RasterizationScale);
+            var loaded = await Images.LoadBitmapAsync(await content.GetBitmapAsync(), LineHeight(),
+                XamlRoot.RasterizationScale);
             if (loaded != null)
             {
                 InsertAtCaret([new Segment.Image(loaded)], true);
@@ -323,21 +343,13 @@ public sealed partial class QueryView
     private bool Copy()
     {
         // fallback to built-in when no image
-        var selection = Input.Document.Selection;
-        selection.GetText(TextGetOptions.None, out var text);
-        if (!text.Contains(Images.ImageCharacter, StringComparison.Ordinal))
+        if (CopyText() is not { } text)
         {
             return false;
         }
 
-        if (text.EndsWith('\r')
-            && selection.EndPosition >= Input.Document.GetRange(0, int.MaxValue).EndPosition)
-        {
-            text = text[..^1];
-        }
-
         var package = new DataPackage();
-        package.SetText(Composer.CopyText(text));
+        package.SetText(text);
         Clipboard.SetContent(package);
         return true;
     }

@@ -137,15 +137,16 @@ public sealed class QueryViewTests(UiFixture ui)
     });
 
     [Fact]
-    public Task GivenWrappedParagraphWhenCaretIsAtTheStartOfTheSecondLineShouldBeOnNeitherEdge() => ui.RunAsync(async () =>
-    {
-        var (query, input) = await FocusedAsync(Paragraph);
-        var caret = FirstPositionOnLine(input, 1);
-        Select(input, caret, caret);
-        Assert.Equal(1, CaretLine(input));
+    public Task GivenWrappedParagraphWhenCaretIsAtTheStartOfTheSecondLineShouldBeOnNeitherEdge() =>
+        ui.RunAsync(async () =>
+        {
+            var (query, input) = await FocusedAsync(Paragraph);
+            var caret = FirstPositionOnLine(input, 1);
+            Select(input, caret, caret);
+            Assert.Equal(1, CaretLine(input));
 
-        Assert.Equal((false, false), (query.CaretOnEdge(Up), query.CaretOnEdge(Down)));
-    });
+            Assert.Equal((false, false), (query.CaretOnEdge(Up), query.CaretOnEdge(Down)));
+        });
 
     [Fact]
     public Task GivenSelectionWithinTheMiddleLinesWhenCheckingEdgesShouldBeOnNeither() => ui.RunAsync(async () =>
@@ -187,7 +188,8 @@ public sealed class QueryViewTests(UiFixture ui)
     [InlineData("ab\rcd", 2, true, false)]
     [InlineData("ab\rcd", 3, false, true)]
     [InlineData("ab\r", 3, false, true)]
-    public Task GivenLineBreakWhenCaretIsBesideItShouldBeOnTheEdgeOfItsLine(string text, int caret, bool up, bool down) => ui.RunAsync(async () =>
+    public Task GivenLineBreakWhenCaretIsBesideItShouldBeOnTheEdgeOfItsLine(string text, int caret, bool up,
+        bool down) => ui.RunAsync(async () =>
     {
         var (query, input) = await FocusedAsync(text);
         Select(input, caret, caret);
@@ -279,6 +281,73 @@ public sealed class QueryViewTests(UiFixture ui)
         AssertImages(attachments, (1, Jpeg));
     });
 
+    [Fact]
+    public Task GivenSelectionWithoutImagesWhenCopyingShouldLeaveItToTheBuiltInCopy() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, "look ", Png, " and ", Jpeg, " end");
+
+        Select(query.FindDescendant<RichEditBox>()!, 0, 4);
+
+        Assert.Null(query.CopyText());
+    });
+
+    [Fact]
+    public Task GivenWholePromptWhenCopyingShouldNumberImagesInOrder() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, "look ", Png, " and ", Jpeg, " end");
+
+        Select(query.FindDescendant<RichEditBox>()!, 0, 16);
+
+        Assert.Equal("look [Image #1] and [Image #2] end", query.CopyText());
+    });
+
+    [Fact]
+    public Task GivenSecondImageWhenCopyingShouldKeepItsNumberInThePrompt() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, "look ", Png, " and ", Jpeg, " end");
+
+        Select(query.FindDescendant<RichEditBox>()!, 11, 12);
+
+        Assert.Equal("[Image #2]", query.CopyText());
+    });
+
+    [Fact]
+    public Task GivenSelectionStartingAfterTheFirstImageWhenCopyingShouldKeepTheNumbersInThePrompt() =>
+        ui.RunAsync(async () =>
+        {
+            var query = await ui.ShowAsync(new QueryView { Width = 680 });
+            await AppendAsync(query, Png, " a ", Jpeg, " b ", Png);
+
+            Select(query.FindDescendant<RichEditBox>()!, 1, 9);
+
+            Assert.Equal(" a [Image #2] b [Image #3]", query.CopyText());
+        });
+
+    [Fact]
+    public Task GivenLineBreaksWhenCopyingShouldUseCrlf() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, "x\r", Png, "\vy");
+
+        Select(query.FindDescendant<RichEditBox>()!, 0, 5);
+
+        Assert.Equal("x\r\n[Image #1]\r\ny", query.CopyText());
+    });
+
+    [Fact]
+    public Task GivenSelectAllWhenCopyingShouldNotAddATrailingLineBreak() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, Png, " tail");
+
+        Select(query.FindDescendant<RichEditBox>()!, 0, int.MaxValue);
+
+        Assert.Equal("[Image #1] tail", query.CopyText());
+    });
+
     private static async Task AppendAsync(QueryView query, params object[] parts)
     {
         var selection = query.FindDescendant<RichEditBox>()!.Document.Selection;
@@ -288,7 +357,8 @@ public sealed class QueryViewTests(UiFixture ui)
             {
                 var caret = selection.StartPosition;
                 using var thumbnail = await ThumbnailAsync();
-                selection.InsertImage(16, 16, 0, VerticalCharacterAlignment.Bottom, query.ViewModel.Add(image), thumbnail);
+                selection.InsertImage(16, 16, 0, VerticalCharacterAlignment.Bottom, query.ViewModel.Add(image),
+                    thumbnail);
                 selection.SetRange(caret + 1, caret + 1);
             }
             else

@@ -9,10 +9,10 @@ internal static class Composer
         return $"\"{path}\"";
     }
 
-    public static string Prompt(string text)
+    public static string Prompt(string text, int imagesBefore = 0)
     {
         var prompt = new StringBuilder(text.Length);
-        var count = 0;
+        var count = imagesBefore;
         foreach (var character in text)
         {
             if (character != Images.ImageCharacter)
@@ -27,9 +27,9 @@ internal static class Composer
         return prompt.ToString();
     }
 
-    public static string CopyText(string text)
+    public static string CopyText(string text, int imagesBefore = 0)
     {
-        return Prompt(text)
+        return Prompt(text, imagesBefore)
             .Replace("\r", "\r\n", StringComparison.Ordinal)
             .Replace("\v", "\r\n", StringComparison.Ordinal);
     }
