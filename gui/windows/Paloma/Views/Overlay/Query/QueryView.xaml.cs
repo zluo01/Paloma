@@ -56,7 +56,7 @@ public sealed partial class QueryView
         }
     }
 
-    public string Prompt => Composer.Prompt(Text);
+    public string Prompt => Compose().Prompt;
 
     public QueryView()
     {
@@ -64,23 +64,13 @@ public sealed partial class QueryView
         Input.AddHandler(PointerMovedEvent, new PointerEventHandler(OnInputPointerMoved), true);
     }
 
-    public UserPromptAttachment[] Attachments()
+    public (string Prompt, UserPromptAttachment[] Attachments) Compose()
     {
-        var document = Input.Document;
-        document.GetText(TextGetOptions.None, out var text);
-        var keys = new List<string>();
-        for (var i = 0; i < text.Length; i++)
+        return ViewModel.Compose(Text, position =>
         {
-            if (text[i] != Images.ImageCharacter)
-            {
-                continue;
-            }
-
-            document.GetRange(i, i + 1).GetText(TextGetOptions.UseObjectText, out var key);
-            keys.Add(key);
-        }
-
-        return ViewModel.Attachments(keys);
+            Input.Document.GetRange(position, position + 1).GetText(TextGetOptions.UseObjectText, out var key);
+            return key;
+        });
     }
 
     public void Clear()

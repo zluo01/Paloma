@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
+using Paloma.Helpers;
 using Paloma.Models;
 using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
@@ -20,18 +22,27 @@ public sealed class QueryViewModel
         return _images.TryGetValue(key, out image);
     }
 
-    public UserPromptAttachment[] Attachments(IEnumerable<string> keys)
+    public (string Prompt, UserPromptAttachment[] Attachments) Compose(string text, Func<int, string> keyAt)
     {
+        var prompt = new StringBuilder(text.Length);
         var attachments = new List<UserPromptAttachment>();
-        foreach (var key in keys)
+        for (var i = 0; i < text.Length; i++)
         {
-            if (_images.TryGetValue(key, out var image))
+            if (text[i] != Images.ImageCharacter)
             {
-                attachments.Add(new UserPromptAttachment.Image((uint)attachments.Count + 1, image.MediaType, image.Data));
+                prompt.Append(text[i]);
+                continue;
+            }
+
+            if (_images.TryGetValue(keyAt(i), out var image))
+            {
+                var id = (uint)attachments.Count + 1;
+                attachments.Add(new UserPromptAttachment.Image(id, image.MediaType, image.Data));
+                prompt.Append("[Image #").Append(id).Append(']');
             }
         }
 
-        return [.. attachments];
+        return (prompt.ToString(), [.. attachments]);
     }
 
     public void Clear()

@@ -250,13 +250,12 @@ public sealed partial class OverlayView
                 }
 
                 // submit prompt if not in streaming
-                var prompt = Query.Prompt;
+                var (prompt, attachments) = Query.Compose();
                 if (!Chat.ViewModel.CanSubmit(prompt))
                 {
                     return;
                 }
 
-                var attachments = Query.Attachments();
                 Query.Clear();
                 await Chat.ViewModel.SubmitAsync(prompt, attachments);
                 return;
@@ -280,13 +279,12 @@ public sealed partial class OverlayView
 
     private async Task StartChatAsync()
     {
-        var prompt = Query.Prompt;
+        var (prompt, attachments) = Query.Compose();
         if (!Chat.ViewModel.CanSubmit(prompt))
         {
             return;
         }
 
-        var attachments = Query.Attachments();
         Query.Clear();
         SetMode(OverlayMode.Chat);
         await Chat.ViewModel.SubmitAsync(prompt, attachments);

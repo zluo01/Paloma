@@ -1,10 +1,14 @@
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 using CommunityToolkit.WinUI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Paloma.Models;
 using Paloma.Views.Overlay.Query;
 using Xunit;
+using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
 namespace Paloma.UI.Tests;
 
@@ -16,6 +20,9 @@ public sealed class QueryViewTests(UiFixture ui)
 
     // Wraps to four lines at the overlay width, with no line breaks.
     private static readonly string Paragraph = string.Join(" ", Enumerable.Repeat("one long paragraph that wraps", 8));
+
+    private static readonly InlineImage Png = new("image/png", [1, 2, 3]);
+    private static readonly InlineImage Jpeg = new("image/jpeg", [4, 5]);
 
     [Fact]
     public Task GivenTextWhenSettingShouldReadItBack() => ui.RunAsync(async () =>
@@ -220,6 +227,99 @@ public sealed class QueryViewTests(UiFixture ui)
 
         Assert.Equal((true, true), (query.CaretOnEdge(Up), query.CaretOnEdge(Down)));
     });
+
+    [Fact]
+    public Task GivenTextWithImagesWhenComposingShouldNumberThemInOrder() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+
+        await AppendAsync(query, "look ", Png, " and ", Jpeg);
+
+        var (prompt, attachments) = query.Compose();
+        Assert.Equal("look [Image #1] and [Image #2]", prompt);
+        AssertImages(attachments, (1, Png), (2, Jpeg));
+    });
+
+    [Fact]
+    public Task GivenImagesPlacedOutOfInsertionOrderWhenComposingShouldNumberThemByPosition() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, " then ", Png);
+        query.FindDescendant<RichEditBox>()!.Document.Selection.SetRange(0, 0);
+
+        await AppendAsync(query, Jpeg);
+
+        var (prompt, attachments) = query.Compose();
+        Assert.Equal("[Image #1] then [Image #2]", prompt);
+        AssertImages(attachments, (1, Jpeg), (2, Png));
+    });
+
+    [Fact]
+    public Task GivenNoImagesWhenComposingShouldSendTheTextAlone() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+
+        await AppendAsync(query, "hello");
+
+        var (prompt, attachments) = query.Compose();
+        Assert.Equal("hello", prompt);
+        Assert.Empty(attachments);
+    });
+
+    [Fact]
+    public Task GivenDeletedImageWhenComposingShouldLeaveItOut() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, Png, " and ", Jpeg);
+
+        query.FindDescendant<RichEditBox>()!.Document.GetRange(0, 1).SetText(TextSetOptions.None, string.Empty);
+
+        var (prompt, attachments) = query.Compose();
+        Assert.Equal(" and [Image #1]", prompt);
+        AssertImages(attachments, (1, Jpeg));
+    });
+
+    private static async Task AppendAsync(QueryView query, params object[] parts)
+    {
+        var selection = query.FindDescendant<RichEditBox>()!.Document.Selection;
+        foreach (var part in parts)
+        {
+            if (part is InlineImage image)
+            {
+                var caret = selection.StartPosition;
+                using var thumbnail = await ThumbnailAsync();
+                selection.InsertImage(16, 16, 0, VerticalCharacterAlignment.Bottom, query.ViewModel.Add(image), thumbnail);
+                selection.SetRange(caret + 1, caret + 1);
+            }
+            else
+            {
+                selection.SetText(TextSetOptions.None, (string)part);
+                selection.Collapse(false);
+            }
+        }
+    }
+
+    private static async Task<InMemoryRandomAccessStream> ThumbnailAsync()
+    {
+        var stream = new InMemoryRandomAccessStream();
+        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, 1, 1, 96, 96, [0, 0, 0, 255]);
+        await encoder.FlushAsync();
+        stream.Seek(0);
+        return stream;
+    }
+
+    private static void AssertImages(UserPromptAttachment[] attachments, params (uint Id, InlineImage Image)[] expected)
+    {
+        Assert.Equal(expected.Length, attachments.Length);
+        foreach (var ((id, image), attachment) in expected.Zip(attachments))
+        {
+            var sent = Assert.IsType<UserPromptAttachment.Image>(attachment);
+            Assert.Equal(id, sent.Id);
+            Assert.Equal(image.MediaType, sent.MediaType);
+            Assert.Same(image.Data, sent.Data);
+        }
+    }
 
     private async Task<(QueryView Query, RichEditBox Input)> FocusedAsync(string text)
     {

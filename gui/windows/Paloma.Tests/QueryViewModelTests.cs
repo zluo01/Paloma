@@ -1,3 +1,4 @@
+using Paloma.Helpers;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
 using Xunit;
@@ -21,14 +22,16 @@ public sealed class QueryViewModelTests
     }
 
     [Fact]
-    public void GivenKeysWhenGettingAttachmentsShouldNumberThemInKeyOrderAndSkipUnknown()
+    public void GivenImagesWhenComposingShouldNumberPlaceholdersAndAttachmentsTogetherAndSkipUnknown()
     {
         var vm = new QueryViewModel();
         var png = vm.Add(Png);
         var jpeg = vm.Add(Jpeg);
+        var keys = new Dictionary<int, string> { [1] = jpeg, [3] = "missing", [4] = png, [5] = png };
 
-        var attachments = vm.Attachments([jpeg, "missing", png, png]);
+        var (prompt, attachments) = vm.Compose($"a{Images.ImageCharacter}b{Images.ImageCharacter}{Images.ImageCharacter}{Images.ImageCharacter}", position => keys[position]);
 
+        Assert.Equal("a[Image #1]b[Image #2][Image #3]", prompt);
         Assert.Equal(3, attachments.Length);
         var first = Assert.IsType<UserPromptAttachment.Image>(attachments[0]);
         Assert.Equal(1u, first.Id);
@@ -41,7 +44,15 @@ public sealed class QueryViewModelTests
         var third = Assert.IsType<UserPromptAttachment.Image>(attachments[2]);
         Assert.Equal(3u, third.Id);
         Assert.Same(Png.Data, third.Data);
-        Assert.Empty(vm.Attachments([]));
+    }
+
+    [Fact]
+    public void GivenTextWithoutImagesWhenComposingShouldKeepItAsIs()
+    {
+        var (prompt, attachments) = new QueryViewModel().Compose("a\rb", _ => throw new InvalidOperationException());
+
+        Assert.Equal("a\rb", prompt);
+        Assert.Empty(attachments);
     }
 
     [Fact]
@@ -64,21 +75,16 @@ public sealed class QueryViewModelTests
     }
 
     [Fact]
-    public void GivenAddedImageWhenClearedShouldNotFindIt()
+    public void GivenAddedImageWhenClearedShouldForgetIt()
     {
         var vm = new QueryViewModel();
         var key = vm.Add(Png);
+
         vm.Clear();
 
         Assert.False(vm.TryGetImage(key, out _));
-    }
-
-    [Fact]
-    public void GivenAddedImageWhenClearedShouldClearAll()
-    {
-        var vm = new QueryViewModel();
-        var key = vm.Add(Png);
-        vm.Clear();
-        Assert.Empty(vm.Attachments([key]));
+        var (prompt, attachments) = vm.Compose($"{Images.ImageCharacter}", _ => key);
+        Assert.Empty(prompt);
+        Assert.Empty(attachments);
     }
 }
