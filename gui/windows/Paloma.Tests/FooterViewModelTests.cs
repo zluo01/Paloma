@@ -1,14 +1,7 @@
-using CommunityToolkit.Mvvm.Messaging;
-using Paloma.Messages;
 using Paloma.ViewModels.Overlay;
 using Xunit;
-using Connector = PalomaCore.Connector;
-using ConnectorConnection = PalomaCore.ConnectorConnection;
 using HealthLevel = PalomaCore.HealthLevel;
 using HealthStatus = PalomaCore.HealthStatus;
-using Model = PalomaCore.Model;
-using ProviderBackendId = PalomaCore.ProviderBackendId;
-using ProviderStatus = PalomaCore.ProviderStatus;
 
 namespace Paloma.Tests;
 

@@ -1,6 +1,3 @@
-using CommunityToolkit.Mvvm.Messaging;
-using Paloma.Helpers;
-using Paloma.Messages;
 using Paloma.ViewModels.Overlay;
 using Xunit;
 using CapabilityIcon = PalomaCore.Icon;

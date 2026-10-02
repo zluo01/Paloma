@@ -1,8 +1,6 @@
 using Paloma.ViewModels.Settings;
 using Xunit;
 using Connector = PalomaCore.Connector;
-using ConnectorConnection = PalomaCore.ConnectorConnection;
-using ProviderBackendId = PalomaCore.ProviderBackendId;
 
 namespace Paloma.Tests;
 
