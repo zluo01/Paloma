@@ -1,5 +1,6 @@
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using Windows.System;
 using CommunityToolkit.WinUI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -17,6 +18,9 @@ public sealed class QueryViewTests(UiFixture ui)
 {
     private const int Up = -1;
     private const int Down = 1;
+    private const VirtualKey OemPlus = (VirtualKey)187;
+    private const VirtualKey OemComma = (VirtualKey)188;
+    private const VirtualKey OemPeriod = (VirtualKey)190;
 
     // Wraps to four lines at the overlay width, with no line breaks.
     private static readonly string Paragraph = string.Join(" ", Enumerable.Repeat("one long paragraph that wraps", 8));
@@ -348,6 +352,91 @@ public sealed class QueryViewTests(UiFixture ui)
         Assert.Equal("[Image #1] tail", query.CopyText());
     });
 
+    [Fact]
+    public Task GivenFocusedInputWhenPressingALetterShouldTypeIt() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync(string.Empty);
+
+        await ui.PressAsync(input, VirtualKey.A);
+
+        Assert.Equal("a", query.Text);
+    });
+
+    [Theory]
+    [InlineData(VirtualKey.B, false)]
+    [InlineData(VirtualKey.I, false)]
+    [InlineData(VirtualKey.U, false)]
+    [InlineData(VirtualKey.E, false)]
+    [InlineData(VirtualKey.R, false)]
+    [InlineData(VirtualKey.J, false)]
+    [InlineData(VirtualKey.Number1, false)]
+    [InlineData(VirtualKey.Number2, false)]
+    [InlineData(VirtualKey.Number5, false)]
+    [InlineData(VirtualKey.L, true)]
+    [InlineData(VirtualKey.A, true)]
+    [InlineData(OemComma, true)]
+    [InlineData(OemPeriod, true)]
+    [InlineData(OemPlus, false)]
+    [InlineData(OemPlus, true)]
+    public Task GivenSelectedTextWhenPressingAFormattingShortcutShouldKeepItPlain(VirtualKey key, bool shift) =>
+        ui.RunAsync(async () =>
+        {
+            var (_, input) = await FocusedAsync("hello world");
+            Select(input, 0, 11);
+            var plain = Format(input);
+
+            await ui.PressAsync(input, key, shift ? [VirtualKey.Control, VirtualKey.Shift] : [VirtualKey.Control]);
+
+            Assert.Equal(plain, Format(input));
+        });
+
+    [Fact]
+    public Task GivenFormattingShortcutWhenClearedShouldTypeTheNextPromptPlain() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync("hello world");
+        Select(input, 0, 11);
+        var plain = Format(input);
+        await ui.PressAsync(input, VirtualKey.A, VirtualKey.Control, VirtualKey.Shift);
+
+        query.Clear();
+        query.Text = "hello world";
+
+        Assert.Equal(plain, Format(input));
+    });
+
+    [Fact]
+    public Task GivenTextWhenPressingSelectAllShouldSelectAllOfIt() => ui.RunAsync(async () =>
+    {
+        var (_, input) = await FocusedAsync("hello world");
+        Select(input, 0, 0);
+
+        await ui.PressAsync(input, VirtualKey.A, VirtualKey.Control);
+
+        input.Document.Selection.GetText(TextGetOptions.None, out var selected);
+        Assert.Equal("hello world", selected.TrimEnd('\r'));
+    });
+
+    [Fact]
+    public Task GivenTypedLetterWhenPressingUndoShouldRemoveIt() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync(string.Empty);
+        await ui.PressAsync(input, VirtualKey.A);
+
+        await ui.PressAsync(input, VirtualKey.Z, VirtualKey.Control);
+
+        Assert.Equal(string.Empty, query.Text);
+    });
+
+    [Fact]
+    public Task GivenCaretAtTheEndWhenPressingWordLeftShouldMoveToTheLastWord() => ui.RunAsync(async () =>
+    {
+        var (_, input) = await FocusedAsync("hello world");
+
+        await ui.PressAsync(input, VirtualKey.Left, VirtualKey.Control);
+
+        Assert.Equal(6, input.Document.Selection.StartPosition);
+    });
+
     private static async Task AppendAsync(QueryView query, params object[] parts)
     {
         var selection = query.FindDescendant<RichEditBox>()!.Document.Selection;
@@ -389,6 +478,16 @@ public sealed class QueryViewTests(UiFixture ui)
             Assert.Equal(image.MediaType, sent.MediaType);
             Assert.Same(image.Data, sent.Data);
         }
+    }
+
+    private static string Format(RichEditBox input)
+    {
+        var range = input.Document.GetRange(0, 5);
+        var paragraph = range.ParagraphFormat;
+        var character = range.CharacterFormat;
+        return $"align={paragraph.Alignment} list={paragraph.ListType} spacing={paragraph.LineSpacingRule} " +
+               $"size={character.Size} bold={character.Bold} italic={character.Italic} underline={character.Underline} " +
+               $"caps={character.AllCaps} sub={character.Subscript} super={character.Superscript}";
     }
 
     private async Task<(QueryView Query, RichEditBox Input)> FocusedAsync(string text)
