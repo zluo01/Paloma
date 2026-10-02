@@ -92,10 +92,14 @@ public sealed partial class QueryView
 
     /// Only keyboard focus renders a caret. The queued retry covers
     /// a show that has not settled yet.
-    public void FocusInput()
+    public void FocusInput(bool moveCaretToEnd = false)
     {
         Input.Focus(FocusState.Keyboard);
-        Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
+        if (moveCaretToEnd)
+        {
+            Input.Document.Selection.SetRange(int.MaxValue, int.MaxValue);
+        }
+
         DispatcherQueue.TryEnqueue(
             DispatcherQueuePriority.Low,
             () => Input.Focus(FocusState.Keyboard));

@@ -108,7 +108,7 @@ public sealed partial class OverlayWindow
 
         // make sure we keep the launcher on top
         ForceForeground(hwnd);
-        Overlay.Query.FocusInput();
+        Overlay.Query.FocusInput(moveCaretToEnd: true);
 
         // click to hide procedure is a global event,
         // hence only add the click to hide hook procedure on showing
