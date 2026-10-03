@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using Windows.Foundation;
@@ -15,10 +16,6 @@ public sealed class ImagesTests
     private const double LineHeight = 27;
 
     private static readonly byte[] Webp = Convert.FromBase64String("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==");
-
-    // There is no Webp Decoder on windows server, skip when running under CI/CD
-    private static bool HasWebpDecoder =>
-        BitmapDecoder.GetDecoderInformationEnumerator().Any(codec => codec.CodecId == BitmapDecoder.WebpDecoderId);
 
     private static readonly Dictionary<string, Guid> Encoders = new()
     {
@@ -49,7 +46,7 @@ public sealed class ImagesTests
     [Fact]
     public async Task GivenWebpWhenLoadingFileShouldKeepItsBytes()
     {
-        Assert.SkipUnless(HasWebpDecoder, "No WebP decoder is registered on this machine");
+        Assert.SkipUnless(await CanLoadWebpAsync(), "WebP is not supported on this machine");
 
         var loaded = await LoadFileAsync("webp", Webp, LineHeight, 1);
 
@@ -387,13 +384,39 @@ public sealed class ImagesTests
 
     private static async Task<Images.Loaded?> LoadFileAsync(string extension, byte[] bytes, double lineHeight, double scale)
     {
-        var file = await StorageFile.CreateStreamedFileAsync($"image.{extension}", async request =>
+        return await Images.LoadFileAsync(await StreamedFileAsync(extension, bytes), lineHeight, scale);
+    }
+
+    private static async Task<StorageFile> StreamedFileAsync(string extension, byte[] bytes)
+    {
+        return await StorageFile.CreateStreamedFileAsync($"image.{extension}", async request =>
         {
             using (request)
             {
                 await request.WriteAsync(bytes.AsBuffer());
             }
         }, null);
-        return await Images.LoadFileAsync(file, lineHeight, scale);
+    }
+
+    // env such as Github Action, windows server does not have webp decoder properly setup,
+    // runtime check if webp decoding is possible, if not skip the tests
+    private static async Task<bool> CanLoadWebpAsync()
+    {
+        var file = await StreamedFileAsync("webp", Webp);
+        if (file.ContentType != "image/webp")
+        {
+            return false;
+        }
+
+        try
+        {
+            using var source = await file.OpenReadAsync();
+            await BitmapDecoder.CreateAsync(source);
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
     }
 }
