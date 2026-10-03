@@ -63,7 +63,15 @@ absolute path.
 
 ## Models
 
-The catalogue is static — `src/main/resources/models.json`. Whenever there is a new publication on new models, need to update the file.
+The catalogue is static — `src/main/resources/models.json`. Auto regenerated
+by `scripts/update-models.py`. The
+[Update DeepSeek models](../../../.github/workflows/update-deepseek-models.yml)
+workflow runs the script weekly and commits the file when it changes. To refresh
+it by hand:
+
+```sh
+python3 scripts/update-models.py
+```
 
 ## Development
 
