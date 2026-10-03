@@ -48,6 +48,7 @@ pub(super) fn watch_clipboard(history: &RwLock<VecDeque<String>>) -> std::io::Re
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, hwnd, 0, 0) > 0 {
             if msg.message == WM_CLIPBOARDUPDATE
+                && IsClipboardFormatAvailable(CF_UNICODETEXT) != 0
                 && let Some(text) = recordable_text(hwnd)
                 && !text.trim().is_empty()
             {
