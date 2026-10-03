@@ -437,6 +437,47 @@ public sealed class QueryViewTests(UiFixture ui)
         Assert.Equal(6, input.Document.Selection.StartPosition);
     });
 
+    [Fact]
+    public Task GivenAnotherProgramReadsTheClipboardOnChangeWhenCopyingPlainTextShouldCopyIt() =>
+        ui.RunAsync(async () =>
+        {
+            var (_, input) = await FocusedAsync("hello world");
+            Select(input, 0, 11);
+            await using var listener = await ClipboardListener.StartAsync();
+
+            await ui.PressAsync(input, VirtualKey.C, VirtualKey.Control);
+
+            Assert.Equal("hello world", await listener.Text);
+        });
+
+    [Fact]
+    public Task GivenAnotherProgramReadsTheClipboardOnChangeWhenCopyingAnImageSelectionShouldCopyIt() =>
+        ui.RunAsync(async () =>
+        {
+            var (query, input) = await FocusedAsync(string.Empty);
+            await AppendAsync(query, "look ", Png);
+            Select(input, 0, 6);
+            await using var listener = await ClipboardListener.StartAsync();
+
+            await ui.PressAsync(input, VirtualKey.C, VirtualKey.Control);
+
+            Assert.Equal("look [Image #1]", await listener.Text);
+        });
+
+    [Fact]
+    public Task GivenAnotherProgramReadsTheClipboardOnChangeWhenCuttingAnImageSelectionShouldCutIt() =>
+        ui.RunAsync(async () =>
+        {
+            var (query, input) = await FocusedAsync(string.Empty);
+            await AppendAsync(query, "look ", Png, " here");
+            Select(input, 0, 6);
+            await using var listener = await ClipboardListener.StartAsync();
+
+            await ui.PressAsync(input, VirtualKey.X, VirtualKey.Control);
+
+            Assert.Equal(("look [Image #1]", " here"), (await listener.Text, query.Text));
+        });
+
     private static async Task AppendAsync(QueryView query, params object[] parts)
     {
         var selection = query.FindDescendant<RichEditBox>()!.Document.Selection;

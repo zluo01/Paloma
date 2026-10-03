@@ -1,8 +1,8 @@
-using CommunityToolkit.WinUI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Paloma.Helpers;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
 using PermissionState = PalomaCore.PermissionState;
@@ -49,17 +49,13 @@ public sealed partial class ChatView
 
     public bool CopySelection()
     {
-        switch (this.FindDescendants().FirstOrDefault(HasSelection))
+        var text = FocusManager.GetFocusedElement(XamlRoot) switch
         {
-            case TextBlock block:
-                block.CopySelectionToClipboard();
-                return true;
-            case RichTextBlock block:
-                block.CopySelectionToClipboard();
-                return true;
-            default:
-                return false;
-        }
+            TextBlock block => block.SelectedText,
+            RichTextBlock block => block.SelectedText,
+            _ => string.Empty,
+        };
+        return text.Length > 0 && Clipboard.Copy(text);
     }
 
     public static string ChevronGlyph(bool expanded)
@@ -144,11 +140,5 @@ public sealed partial class ChatView
     {
         SectionsScroller.ChangeView(
             null, SectionsScroller.VerticalOffset + delta, null, true);
-    }
-
-    private static bool HasSelection(DependencyObject element)
-    {
-        return element is TextBlock { SelectedText.Length: > 0 }
-            or RichTextBlock { SelectedText.Length: > 0 };
     }
 }

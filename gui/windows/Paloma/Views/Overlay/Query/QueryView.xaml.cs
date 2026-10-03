@@ -10,6 +10,8 @@ using Microsoft.UI.Xaml.Input;
 using Paloma.Helpers;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
+using Clipboard = Paloma.Helpers.Clipboard;
+using SystemClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 
@@ -203,7 +205,7 @@ public sealed partial class QueryView
     private async void OnInputPaste(object sender, TextControlPasteEventArgs args)
     {
         args.Handled = true;
-        await InsertContentAsync(Clipboard.GetContent());
+        await InsertContentAsync(SystemClipboard.GetContent());
     }
 
     private void OnInputDragOver(object sender, DragEventArgs args)
@@ -343,15 +345,7 @@ public sealed partial class QueryView
     private bool Copy()
     {
         // fallback to built-in when no image
-        if (CopyText() is not { } text)
-        {
-            return false;
-        }
-
-        var package = new DataPackage();
-        package.SetText(text);
-        Clipboard.SetContent(package);
-        return true;
+        return CopyText() is { } text && Clipboard.Copy(text);
     }
 
     private abstract record Segment
