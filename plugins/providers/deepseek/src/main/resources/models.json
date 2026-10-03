@@ -1,22 +1,15 @@
 [
   {
-    "id": "deepseek-v4-pro",
-    "name": "DeepSeek V4 Pro",
-    "description": "DeepSeek V4 Pro is a large-scale Mixture-of-Experts model from DeepSeek with 1.6T total parameters and 49B activated parameters, supporting a 1M-token context window. It is designed for advanced reasoning, coding,...",
-    "context_length": 1048576,
-    "architecture": {
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "tokenizer": "DeepSeek",
-      "instruct_type": null
-    },
+    "id": "deepseek-flash",
+    "name": "DeepSeek V4.1 Flash",
+    "input_modalities": [
+      "text",
+      "image"
+    ],
+    "output_modalities": [
+      "text"
+    ],
     "reasoning": {
-      "mandatory": false,
       "supported_efforts": [
         "low",
         "high",
@@ -26,23 +19,15 @@
     }
   },
   {
-    "id": "deepseek-v4-flash",
-    "name": "DeepSeek V4 Flash",
-    "description": "DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters, supporting a 1M-token context window. It is designed for fast inference and...",
-    "context_length": 1048576,
-    "architecture": {
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "tokenizer": "DeepSeek",
-      "instruct_type": null
-    },
+    "id": "deepseek-v4-pro",
+    "name": "DeepSeek V4 Pro",
+    "input_modalities": [
+      "text"
+    ],
+    "output_modalities": [
+      "text"
+    ],
     "reasoning": {
-      "mandatory": false,
       "supported_efforts": [
         "low",
         "high",
