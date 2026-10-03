@@ -101,6 +101,8 @@ struct OverlayView: View {
         }
         .frame(width: 640)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .gesture(WindowDragGesture())
+        .allowsWindowActivationEvents()
         .onReceive(NotificationCenter.default.publisher(for: .panelDidHide)) { _ in
             operationError = nil
             sessions.cancelDelete()

@@ -26,7 +26,6 @@ final class PalomaPanel: NSPanel {
         isOpaque = false
         hasShadow = true
         hidesOnDeactivate = false
-        isMovableByWindowBackground = true
         contentView = hosting
         needsCentering = !setFrameUsingName(Self.frameName)
         setFrameAutosaveName(Self.frameName)
