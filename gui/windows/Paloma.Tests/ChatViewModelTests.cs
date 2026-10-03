@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using Paloma.Models;
 using Paloma.ViewModels.Overlay;
 using Xunit;
-using Xunit.Abstractions;
 using AllowOnce = PalomaCore.UserDecision.AllowOnce;
 using AllowSession = PalomaCore.UserDecision.AllowSession;
 using Deny = PalomaCore.UserDecision.Deny;
@@ -835,7 +834,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         }
 
         var turn = vm.SubmitAsync("hello", []);
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.True(vm.Streaming);
 
         await vm.InterruptAsync();
@@ -845,7 +844,7 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
         Assert.False(vm.Streaming);
         Assert.Equal(ChatStatus.Cancelled, vm.Status);
         Assert.Empty(mock.CancelledSessions);
-        await turn.WaitAsync(TimeSpan.FromSeconds(5));
+        await turn.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     private static ProviderBackendId Backend(string id)

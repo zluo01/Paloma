@@ -79,7 +79,7 @@ public sealed class SearchViewModelTests
         }
 
         var searchA = vm.SearchAsync("aa");
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         // The clear runs to completion synchronously: no await sits
         // between the cancel and the reset.
@@ -87,11 +87,11 @@ public sealed class SearchViewModelTests
         Assert.True(clear.IsCompleted);
         Assert.Empty(vm.Groups);
 
-        await vm.SearchAsync("cc").WaitAsync(TimeSpan.FromSeconds(5));
+        await vm.SearchAsync("cc").WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal("Files", Assert.Single(vm.Groups).Name);
 
         gate.SetResult();
-        await searchA.WaitAsync(TimeSpan.FromSeconds(5));
+        await searchA.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         // The superseded run's late section must not land.
         Assert.Equal("Files", Assert.Single(vm.Groups).Name);

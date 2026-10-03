@@ -198,7 +198,7 @@ public sealed class SessionsViewModelTests
 
         // The superseded filter answers late; it must not narrow the rows.
         gate.SetResult(["b"]);
-        await filter.WaitAsync(TimeSpan.FromSeconds(5));
+        await filter.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(2, vm.Rows.Count);
     }
 

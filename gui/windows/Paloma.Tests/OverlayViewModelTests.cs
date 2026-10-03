@@ -35,13 +35,13 @@ public sealed class OverlayViewModelTests
         var (vm, messenger) = Banner(TimeSpan.FromMilliseconds(800));
         messenger.Send(new ErrorReportedMessage("first"));
 
-        await Task.Delay(300);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
         messenger.Send(new ErrorReportedMessage("second"));
         await TestWait.UntilAsync(() => vm.ErrorMessage == "second");
 
         // Past the first error's expiry: its cancelled timer must not have
         // wiped the newer message.
-        await Task.Delay(600);
+        await Task.Delay(600, TestContext.Current.CancellationToken);
         Assert.Equal("second", vm.ErrorMessage);
         await TestWait.UntilAsync(() => vm.ErrorMessage.Length == 0);
     }

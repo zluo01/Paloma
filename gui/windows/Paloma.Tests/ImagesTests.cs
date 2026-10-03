@@ -16,6 +16,10 @@ public sealed class ImagesTests
 
     private static readonly byte[] Webp = Convert.FromBase64String("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==");
 
+    // There is no Webp Decoder on windows server, skip when running under CI/CD
+    private static bool HasWebpDecoder =>
+        BitmapDecoder.GetDecoderInformationEnumerator().Any(codec => codec.CodecId == BitmapDecoder.WebpDecoderId);
+
     private static readonly Dictionary<string, Guid> Encoders = new()
     {
         ["png"] = BitmapEncoder.PngEncoderId,
@@ -45,6 +49,8 @@ public sealed class ImagesTests
     [Fact]
     public async Task GivenWebpWhenLoadingFileShouldKeepItsBytes()
     {
+        Assert.SkipUnless(HasWebpDecoder, "No WebP decoder is registered on this machine");
+
         var loaded = await LoadFileAsync("webp", Webp, LineHeight, 1);
 
         Assert.NotNull(loaded);
