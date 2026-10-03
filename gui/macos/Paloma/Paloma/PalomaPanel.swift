@@ -20,11 +20,9 @@ final class PalomaPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = true
         hidesOnDeactivate = false
         contentView = hosting
         needsCentering = !setFrameUsingName(Self.frameName)

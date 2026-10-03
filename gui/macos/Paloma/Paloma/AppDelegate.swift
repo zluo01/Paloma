@@ -73,7 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
-            window.isMovableByWindowBackground = true
 
             let hostingView = NSHostingView(rootView: SettingsView())
             hostingView.setFrameSize(hostingView.fittingSize)
