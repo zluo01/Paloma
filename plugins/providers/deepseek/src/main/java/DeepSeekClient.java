@@ -23,7 +23,6 @@ import com.github.zluo01.paloma.proto.v1.Instruction;
 import com.github.zluo01.paloma.proto.v1.InstructionLink;
 import com.github.zluo01.paloma.proto.v1.ListModelsResponse;
 import com.github.zluo01.paloma.proto.v1.ManualInput;
-import com.github.zluo01.paloma.proto.v1.Model;
 import com.github.zluo01.paloma.proto.v1.ProviderAuth;
 import com.github.zluo01.paloma.proto.v1.ProviderAuthMethod;
 import com.github.zluo01.paloma.proto.v1.ProviderError;
@@ -33,21 +32,20 @@ import com.github.zluo01.paloma.proto.v1.ResponseEvent;
 import com.google.protobuf.ByteString;
 import constants.Constants;
 import enums.MessageEvent;
+import helpers.DeepSeekModels;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpResponseExpectation;
-import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -59,29 +57,12 @@ public final class DeepSeekClient {
   private static final Logger LOGGER = Logger.getLogger(DeepSeekClient.class.getSimpleName());
 
   private static final ByteString ICON;
-  private static final List<Model> MODELS;
 
   static {
-    try (InputStream icon = DeepSeekClient.class.getResourceAsStream("/deepseek.svg");
-        InputStream models = DeepSeekClient.class.getResourceAsStream("/models.json")) {
-      ICON = ByteString.readFrom(icon);
+    try (InputStream icon = DeepSeekClient.class.getResourceAsStream("/deepseek.svg")) {
+      Objects.requireNonNull(icon, "Fail to find icon file.");
 
-      final List<Model> parsed = new ArrayList<>();
-      for (final Object entry : new JsonArray(Buffer.buffer(models.readAllBytes()))) {
-        final JsonObject node = (JsonObject) entry;
-        final JsonObject reasoning = node.getJsonObject("reasoning");
-        final Model.Builder builder =
-            Model.newBuilder()
-                .setId(node.getString("id"))
-                .setName(node.getString("name"))
-                .setProvider(PROVIDER_ID)
-                .setDefaultReasoningEffort(reasoning.getString("default_effort"));
-        reasoning
-            .getJsonArray("supported_efforts")
-            .forEach(effort -> builder.addSupportedReasoningEfforts((String) effort));
-        parsed.add(builder.build());
-      }
-      MODELS = List.copyOf(parsed);
+      ICON = ByteString.readFrom(icon);
     } catch (IOException e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -90,6 +71,7 @@ public final class DeepSeekClient {
   private final Vertx vertx;
   private final EventBus eventBus;
   private final HttpClient httpClient;
+  private final DeepSeekModels models;
   private final ConcurrentHashMap<String, ChatStream> sessions = new ConcurrentHashMap<>();
   private Optional<String> apiKey;
   private BackendHealth health;
@@ -100,6 +82,7 @@ public final class DeepSeekClient {
     this.httpClient = httpClient;
     this.apiKey = Optional.empty();
     this.health = BackendHealth.starting();
+    this.models = new DeepSeekModels();
   }
 
   void handshakeRequest(final long eventId) {
@@ -272,7 +255,9 @@ public final class DeepSeekClient {
   void listModel(final long eventId) {
     reply(
         eventId,
-        b -> b.setListModelsResponse(ListModelsResponse.newBuilder().addAllModels(MODELS).build()));
+        b ->
+            b.setListModelsResponse(
+                ListModelsResponse.newBuilder().addAllModels(models.models()).build()));
   }
 
   void healthStatus(final long eventId) {
@@ -357,7 +342,7 @@ public final class DeepSeekClient {
       previous.abort("chat cancelled");
     }
     try {
-      stream.start(DeepSeekCodec.buildRequestBody(request));
+      stream.start(DeepSeekCodec.buildRequestBody(request, models));
     } catch (Exception e) {
       LOGGER.log(Level.SEVERE, "chat start failed for session " + sessionId, e);
       final var msg = e.getMessage();

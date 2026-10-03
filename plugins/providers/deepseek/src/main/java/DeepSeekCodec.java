@@ -2,11 +2,16 @@ import com.github.zluo01.paloma.proto.v1.ChatRequest;
 import com.github.zluo01.paloma.proto.v1.ChatRequestMessage;
 import com.github.zluo01.paloma.proto.v1.ConversationItem;
 import com.github.zluo01.paloma.proto.v1.ToolDefinition;
+import com.github.zluo01.paloma.proto.v1.UserPrompt;
 import constants.Constants;
+import helpers.DeepSeekModels;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.logging.Logger;
@@ -20,18 +25,24 @@ final class DeepSeekCodec {
 
   private DeepSeekCodec() {}
 
-  static JsonObject buildRequestBody(final ChatRequest request) {
+  static JsonObject buildRequestBody(final ChatRequest request, final DeepSeekModels models) {
     final var messages =
         new JsonArray()
             .add(new JsonObject().put("role", "system").put("content", request.getInstruction()))
             .add(new JsonObject().put("role", "system").put("content", ENVIRONMENT_CONTEXT));
+
+    final String modelId = request.getModel();
+    final boolean supportImage = models.supportImages(modelId);
+
     for (final ChatRequestMessage message : request.getMessagesList()) {
       if (!message.hasItem()) {
         continue;
       }
       final var encoded =
           encodeConversationItem(
-              message.getItem(), Constants.PROVIDER_ID.equals(message.getProviderId()));
+              message.getItem(),
+              supportImage,
+              Constants.PROVIDER_ID.equals(message.getProviderId()));
       if (encoded != null) {
         messages.add(encoded);
       }
@@ -39,7 +50,7 @@ final class DeepSeekCodec {
 
     final var body =
         new JsonObject()
-            .put("model", request.getModel())
+            .put("model", modelId)
             .put("messages", messages)
             .put("stream", true)
             .put("thinking", new JsonObject().put("type", "enabled"));
@@ -70,13 +81,33 @@ final class DeepSeekCodec {
   }
 
   private static JsonObject encodeConversationItem(
-      final ConversationItem item, final boolean sameProvider) {
+      final ConversationItem item, final boolean supportImage, final boolean sameProvider) {
     return switch (item.getItemCase()) {
       case USER_PROMPT -> {
-        if (item.getUserPrompt().getContentCount() > 0) {
+        final UserPrompt userPrompt = item.getUserPrompt();
+        if (userPrompt.getContentCount() > 0 && !supportImage) {
           throw new IllegalArgumentException("Model does not support images.");
         }
-        yield new JsonObject().put("role", "user").put("content", item.getUserPrompt().getPrompt());
+
+        final List<JsonObject> contents = new ArrayList<>();
+        contents.add(JsonObject.of("type", "text", "text", userPrompt.getPrompt()));
+        userPrompt
+            .getContentList()
+            .forEach(
+                content -> {
+                  if (content.hasImage()) {
+                    final var image = content.getImage();
+                    final String url =
+                        "data:"
+                            + image.getMediaType()
+                            + ";base64,"
+                            + Base64.getEncoder().encodeToString(image.getData().toByteArray());
+                    contents.add(
+                        JsonObject.of("type", "image_url", "image_url", JsonObject.of("url", url)));
+                  }
+                });
+
+        yield new JsonObject().put("role", "user").put("content", contents);
       }
       case MESSAGE -> {
         final var content = new StringBuilder();
