@@ -53,7 +53,11 @@ public sealed class ImagesTests
 
         var loaded = await LoadFileAsync("webp", Webp, LineHeight, 1);
 
-        Assert.NotNull(loaded);
+        if (loaded == null || true)
+        {
+            Assert.Fail(await WebpDiagnosticsAsync());
+        }
+
         Assert.Equal("image/webp", loaded.Image.MediaType);
         Assert.Equal(Webp, loaded.Image.Data);
         Assert.Equal(27, loaded.Width);
@@ -387,13 +391,48 @@ public sealed class ImagesTests
 
     private static async Task<Images.Loaded?> LoadFileAsync(string extension, byte[] bytes, double lineHeight, double scale)
     {
-        var file = await StorageFile.CreateStreamedFileAsync($"image.{extension}", async request =>
+        return await Images.LoadFileAsync(await StreamedFileAsync(extension, bytes), lineHeight, scale);
+    }
+
+    private static async Task<StorageFile> StreamedFileAsync(string extension, byte[] bytes)
+    {
+        return await StorageFile.CreateStreamedFileAsync($"image.{extension}", async request =>
         {
             using (request)
             {
                 await request.WriteAsync(bytes.AsBuffer());
             }
         }, null);
-        return await Images.LoadFileAsync(file, lineHeight, scale);
+    }
+
+    private static async Task<string> WebpDiagnosticsAsync()
+    {
+        var file = await StreamedFileAsync("webp", Webp);
+        var lines = new List<string>
+        {
+            $"content type: '{file.ContentType}'",
+            $"decoders: {string.Join(", ", BitmapDecoder.GetDecoderInformationEnumerator().Select(codec => codec.FriendlyName))}",
+        };
+        try
+        {
+            var properties = await file.GetBasicPropertiesAsync();
+            lines.Add($"size: {properties.Size}");
+            using var source = await file.OpenReadAsync();
+            var decoder = await BitmapDecoder.CreateAsync(source);
+            lines.Add($"decoder: {decoder.DecoderInformation.FriendlyName} {decoder.PixelWidth}x{decoder.PixelHeight}");
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                new BitmapTransform(),
+                ExifOrientationMode.RespectExifOrientation,
+                ColorManagementMode.ColorManageToSRgb);
+            lines.Add($"bitmap: {bitmap.PixelWidth}x{bitmap.PixelHeight}");
+        }
+        catch (Exception e)
+        {
+            lines.Add($"failed: {e.GetType().Name} 0x{e.HResult:X8} {e.Message}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 }
