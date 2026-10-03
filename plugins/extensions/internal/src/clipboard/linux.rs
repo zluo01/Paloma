@@ -64,20 +64,18 @@ mod tests {
     use super::*;
 
     fn run_watch_command(state: &str, input: &[u8]) -> Vec<u8> {
-        let mut child = Command::new("sh")
+        let (reader, mut writer) = std::io::pipe().expect("create pipe");
+        writer.write_all(input).expect("write pipe");
+        drop(writer);
+
+        Command::new("sh")
             .args(["-c", WATCH_COMMAND])
             .env("CLIPBOARD_STATE", state)
-            .stdin(Stdio::piped())
+            .stdin(reader)
             .stdout(Stdio::piped())
-            .spawn()
-            .expect("spawn sh");
-        child
-            .stdin
-            .take()
-            .expect("piped stdin")
-            .write_all(input)
-            .expect("write stdin");
-        child.wait_with_output().expect("wait for sh").stdout
+            .output()
+            .expect("run sh")
+            .stdout
     }
 
     #[test]
