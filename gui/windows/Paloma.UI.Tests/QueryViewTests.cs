@@ -1,4 +1,6 @@
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
+using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.System;
 using CommunityToolkit.WinUI;
@@ -8,6 +10,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Paloma.Models;
 using Paloma.Views.Overlay.Query;
+using Paloma.UI.Tests.Helpers;
 using Xunit;
 using UserPromptAttachment = PalomaCore.UserPromptAttachment;
 
@@ -27,6 +30,8 @@ public sealed class QueryViewTests(UiFixture ui)
 
     private static readonly InlineImage Png = new("image/png", [1, 2, 3]);
     private static readonly InlineImage Jpeg = new("image/jpeg", [4, 5]);
+
+    private static Task<(StorageFile Image, StorageFile Text)>? _pastableFiles;
 
     [Fact]
     public Task GivenTextWhenSettingShouldReadItBack() => ui.RunAsync(async () =>
@@ -478,6 +483,108 @@ public sealed class QueryViewTests(UiFixture ui)
             Assert.Equal(("look [Image #1]", " here"), (await listener.Text, query.Text));
         });
 
+    [Fact]
+    public Task GivenSelectionLeftInUnfocusedInputWhenCheckingForASelectionShouldReportNone() => ui.RunAsync(async () =>
+    {
+        var query = new QueryView { Width = 680 };
+        var other = new TextBox();
+        var panel = new StackPanel();
+        panel.Children.Add(query);
+        panel.Children.Add(other);
+        await ui.ShowAsync(panel);
+        query.Text = "hello world";
+        query.FocusInput();
+        await ui.IdleAsync();
+        Select(query.FindDescendant<RichEditBox>()!, 0, 5);
+
+        other.Focus(FocusState.Keyboard);
+        await ui.IdleAsync();
+
+        Assert.False(query.HasSelection);
+    });
+
+    [Fact]
+    public Task GivenTextOnTheClipboardWhenPastingShouldInsertItAtTheCaret() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync("ab");
+        Select(input, 1, 1);
+        var package = new DataPackage();
+        package.SetText("XY");
+        Clipboard.SetContent(package);
+
+        await ui.PressAsync(input, VirtualKey.V, VirtualKey.Control);
+        await PastedAsync(query, "aXYb");
+
+        Assert.Equal(("aXYb", false), (query.Text, query.HasSelection));
+    });
+
+    [Fact]
+    public Task GivenAnImageOnTheClipboardWhenPastingShouldInsertItFollowedByASpace() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync(string.Empty);
+        var package = new DataPackage();
+        package.SetBitmap(RandomAccessStreamReference.CreateFromStream(await ThumbnailAsync()));
+        Clipboard.SetContent(package);
+
+        await ui.PressAsync(input, VirtualKey.V, VirtualKey.Control);
+        await PastedAsync(query, "\uFFFC ");
+
+        var (prompt, attachments) = query.Compose();
+        Assert.Equal("[Image #1] ", prompt);
+        Assert.Equal("image/png", Assert.IsType<UserPromptAttachment.Image>(Assert.Single(attachments)).MediaType);
+    });
+
+    [Fact]
+    public Task GivenFilesOnTheClipboardWhenPastingShouldInsertImagesInlineAndOtherFilesAsQuotedPaths() =>
+        ui.RunAsync(async () =>
+        {
+            var (query, input) = await FocusedAsync(string.Empty);
+            var (image, text) = await PastableFilesAsync();
+            var package = new DataPackage();
+            package.SetStorageItems([image, text]);
+            Clipboard.SetContent(package);
+
+            await ui.PressAsync(input, VirtualKey.V, VirtualKey.Control);
+            await PastedAsync(query, $"\uFFFC \"{text.Path}\" ");
+
+            var (prompt, attachments) = query.Compose();
+            Assert.Equal($"[Image #1] \"{text.Path}\" ", prompt);
+            Assert.Single(attachments);
+        });
+
+    [Fact]
+    public Task GivenAPasteOfSeveralItemsWhenUndoingShouldRemoveThemTogether() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync(string.Empty);
+        var (image, text) = await PastableFilesAsync();
+        var package = new DataPackage();
+        package.SetStorageItems([image, text]);
+        Clipboard.SetContent(package);
+        await ui.PressAsync(input, VirtualKey.V, VirtualKey.Control);
+        await PastedAsync(query, $"\uFFFC \"{text.Path}\" ");
+
+        await ui.PressAsync(input, VirtualKey.Z, VirtualKey.Control);
+
+        Assert.Equal(string.Empty, query.Text);
+    });
+
+    [Fact]
+    public Task GivenMoreLinesWhenMeasuringShouldGrowAndRaiseInputResized() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        var input = query.FindDescendant<RichEditBox>()!;
+        var singleLine = query.Growth;
+        var resized = 0;
+        query.InputResized += (_, _) => resized++;
+
+        query.Text = "one\rtwo\rthree";
+        query.UpdateLayout();
+        await ui.IdleAsync();
+
+        Assert.True(query.Growth > singleLine);
+        Assert.Equal((input.DesiredSize.Height - input.MinHeight, 1), (query.Growth, resized));
+    });
+
     private static async Task AppendAsync(QueryView query, params object[] parts)
     {
         var selection = query.FindDescendant<RichEditBox>()!.Document.Selection;
@@ -497,6 +604,35 @@ public sealed class QueryViewTests(UiFixture ui)
                 selection.Collapse(false);
             }
         }
+    }
+
+    private async Task PastedAsync(QueryView query, string text)
+    {
+        for (var attempt = 0; attempt < 50 && query.Text != text; attempt++)
+        {
+            await Task.Delay(20);
+            await ui.IdleAsync();
+        }
+    }
+
+    private static Task<(StorageFile Image, StorageFile Text)> PastableFilesAsync()
+    {
+        return _pastableFiles ??= CreatePastableFilesAsync();
+    }
+
+    private static async Task<(StorageFile Image, StorageFile Text)> CreatePastableFilesAsync()
+    {
+        var folder = await StorageFolder.GetFolderFromPathAsync(AppContext.BaseDirectory);
+        var image = await folder.CreateFileAsync("pasted.png", CreationCollisionOption.ReplaceExisting);
+        using (var png = await ThumbnailAsync())
+        using (var target = await image.OpenAsync(FileAccessMode.ReadWrite))
+        {
+            await RandomAccessStream.CopyAsync(png, target);
+        }
+
+        var text = await folder.CreateFileAsync("pasted.txt", CreationCollisionOption.ReplaceExisting);
+        await FileIO.WriteTextAsync(text, "not an image");
+        return (image, text);
     }
 
     private static async Task<InMemoryRandomAccessStream> ThumbnailAsync()

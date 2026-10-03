@@ -42,7 +42,8 @@ public sealed partial class QueryView
 
     public double Growth => Math.Max(0, Input.DesiredSize.Height - Input.MinHeight);
 
-    public bool HasSelection => Input.Document.Selection.Length != 0;
+    public bool HasSelection =>
+        ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), Input) && Input.Document.Selection.Length != 0;
 
     public string Text
     {

@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Paloma.ViewModels.Overlay;
 using Paloma.Views.Overlay.Chat;
+using Paloma.UI.Tests.Helpers;
 using Xunit;
 
 namespace Paloma.UI.Tests;

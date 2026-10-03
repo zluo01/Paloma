@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using Windows.ApplicationModel.DataTransfer;
 
-namespace Paloma.UI.Tests;
+namespace Paloma.UI.Tests.Helpers;
 
 /// Opens the clipboard to read its text as soon as it changes, like a clipboard manager does.
 /// Starts from a placeholder text and puts back the text the clipboard held when it is disposed,
