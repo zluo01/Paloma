@@ -91,8 +91,7 @@ public sealed partial class QueryView
             text = text[..^1];
         }
 
-        Input.Document.GetRange(0, selection.StartPosition).GetText(TextGetOptions.None, out var before);
-        return Composer.CopyText(text, before.AsSpan().Count(Images.ImageCharacter));
+        return Composer.CopyText(text);
     }
 
     public void Clear()
@@ -346,7 +345,7 @@ public sealed partial class QueryView
     private bool Copy()
     {
         // fallback to built-in when no image
-        return CopyText() is { } text && Clipboard.Copy(text);
+        return CopyText() is { } text && (text.Length == 0 || Clipboard.Copy(text));
     }
 
     private abstract record Segment

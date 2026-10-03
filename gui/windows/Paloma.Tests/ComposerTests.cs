@@ -34,9 +34,11 @@ public sealed class ComposerTests
     [InlineData("a\rb", "a\r\nb")]
     [InlineData("a\vb", "a\r\nb")]
     [InlineData("a\rb\vc\r", "a\r\nb\r\nc\r\n")]
-    [InlineData("a \uFFFC b", "a [Image #1] b")]
-    [InlineData("\uFFFC\r\uFFFC", "[Image #1]\r\n[Image #2]")]
-    public void GivenTextWithImagesWhenCopyingShouldNumberImagesAndUseCrlf(string text, string expected)
+    [InlineData("a \uFFFC b", "a  b")]
+    [InlineData("\uFFFC\r\uFFFC", "\r\n")]
+    [InlineData("\uFFFC", "")]
+    [InlineData("\uFFFC\uFFFC", "")]
+    public void GivenTextWithImagesWhenCopyingShouldDropImagesAndUseCrlf(string text, string expected)
     {
         Assert.Equal(expected, Composer.CopyText(text));
     }

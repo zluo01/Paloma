@@ -302,29 +302,29 @@ public sealed class QueryViewTests(UiFixture ui)
     });
 
     [Fact]
-    public Task GivenWholePromptWhenCopyingShouldNumberImagesInOrder() => ui.RunAsync(async () =>
+    public Task GivenWholePromptWhenCopyingShouldDropTheImages() => ui.RunAsync(async () =>
     {
         var query = await ui.ShowAsync(new QueryView { Width = 680 });
         await AppendAsync(query, "look ", Png, " and ", Jpeg, " end");
 
         Select(query.FindDescendant<RichEditBox>()!, 0, 16);
 
-        Assert.Equal("look [Image #1] and [Image #2] end", query.CopyText());
+        Assert.Equal("look  and  end", query.CopyText());
     });
 
     [Fact]
-    public Task GivenSecondImageWhenCopyingShouldKeepItsNumberInThePrompt() => ui.RunAsync(async () =>
+    public Task GivenOnlyAnImageWhenCopyingShouldCopyNothing() => ui.RunAsync(async () =>
     {
         var query = await ui.ShowAsync(new QueryView { Width = 680 });
         await AppendAsync(query, "look ", Png, " and ", Jpeg, " end");
 
         Select(query.FindDescendant<RichEditBox>()!, 11, 12);
 
-        Assert.Equal("[Image #2]", query.CopyText());
+        Assert.Equal(string.Empty, query.CopyText());
     });
 
     [Fact]
-    public Task GivenSelectionStartingAfterTheFirstImageWhenCopyingShouldKeepTheNumbersInThePrompt() =>
+    public Task GivenSelectionStartingAfterTheFirstImageWhenCopyingShouldDropTheImages() =>
         ui.RunAsync(async () =>
         {
             var query = await ui.ShowAsync(new QueryView { Width = 680 });
@@ -332,7 +332,7 @@ public sealed class QueryViewTests(UiFixture ui)
 
             Select(query.FindDescendant<RichEditBox>()!, 1, 9);
 
-            Assert.Equal(" a [Image #2] b [Image #3]", query.CopyText());
+            Assert.Equal(" a  b ", query.CopyText());
         });
 
     [Fact]
@@ -343,7 +343,7 @@ public sealed class QueryViewTests(UiFixture ui)
 
         Select(query.FindDescendant<RichEditBox>()!, 0, 5);
 
-        Assert.Equal("x\r\n[Image #1]\r\ny", query.CopyText());
+        Assert.Equal("x\r\n\r\ny", query.CopyText());
     });
 
     [Fact]
@@ -354,7 +354,7 @@ public sealed class QueryViewTests(UiFixture ui)
 
         Select(query.FindDescendant<RichEditBox>()!, 0, int.MaxValue);
 
-        Assert.Equal("[Image #1] tail", query.CopyText());
+        Assert.Equal(" tail", query.CopyText());
     });
 
     [Fact]
@@ -466,7 +466,7 @@ public sealed class QueryViewTests(UiFixture ui)
 
             await ui.PressAsync(input, VirtualKey.C, VirtualKey.Control);
 
-            Assert.Equal("look [Image #1]", await listener.Text);
+            Assert.Equal("look ", await listener.Text);
         });
 
     [Fact]
@@ -480,8 +480,24 @@ public sealed class QueryViewTests(UiFixture ui)
 
             await ui.PressAsync(input, VirtualKey.X, VirtualKey.Control);
 
-            Assert.Equal(("look [Image #1]", " here"), (await listener.Text, query.Text));
+            Assert.Equal(("look ", " here"), (await listener.Text, query.Text));
         });
+
+    [Fact]
+    public Task GivenOnlyAnImageWhenCuttingShouldRemoveItWithoutTouchingTheClipboard() => ui.RunAsync(async () =>
+    {
+        var (query, input) = await FocusedAsync(string.Empty);
+        await AppendAsync(query, "look ", Png, " here");
+        var package = new DataPackage();
+        package.SetText("before");
+        Clipboard.SetContent(package);
+        Select(input, 5, 6);
+
+        await ui.PressAsync(input, VirtualKey.X, VirtualKey.Control);
+
+        Assert.Equal("look  here", query.Text);
+        Assert.Equal("before", await Clipboard.GetContent().GetTextAsync());
+    });
 
     [Fact]
     public Task GivenSelectionLeftInUnfocusedInputWhenCheckingForASelectionShouldReportNone() => ui.RunAsync(async () =>

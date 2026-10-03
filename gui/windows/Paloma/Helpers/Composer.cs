@@ -27,9 +27,10 @@ internal static class Composer
         return prompt.ToString();
     }
 
-    public static string CopyText(string text, int imagesBefore = 0)
+    public static string CopyText(string text)
     {
-        return Prompt(text, imagesBefore)
+        return text
+            .Replace(Images.ImageCharacter.ToString(), string.Empty, StringComparison.Ordinal)
             .Replace("\r", "\r\n", StringComparison.Ordinal)
             .Replace("\v", "\r\n", StringComparison.Ordinal);
     }
