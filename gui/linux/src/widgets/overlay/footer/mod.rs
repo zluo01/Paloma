@@ -196,11 +196,11 @@ fn stop_button(dispatcher: mpsc::UnboundedSender<Msg>) -> Button {
         .first()
         .map(|chord| gtk4::accelerator_get_label(chord.accel.0, chord.accel.1))
         .unwrap_or_default();
-    content.append(&Label::new(Some(accel.as_str())));
 
     let button = Button::builder()
         .height_request(34)
         .child(&content)
+        .tooltip_text(accel)
         .focus_on_click(false)
         .valign(Align::Center)
         .css_classes(["dimmed"])
