@@ -1,0 +1,9 @@
+{
+  "comment": "Added due to https://github.com/oracle/graalvm-reachability-metadata/issues/10292",
+  "reflection": [
+    {
+      "type": "io.netty.util.ReferenceCountUtil",
+      "allDeclaredMethods": true
+    }
+  ]
+}
