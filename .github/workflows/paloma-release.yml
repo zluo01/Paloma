@@ -54,7 +54,7 @@ jobs:
 
       - name: Run Swift tests
         working-directory: gui/macos/Paloma
-        run: xcodebuild -scheme Paloma -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
+        run: xcodebuild -scheme Paloma -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ENABLE_TESTABILITY=YES test
 
       - name: Build DMG
         env:
