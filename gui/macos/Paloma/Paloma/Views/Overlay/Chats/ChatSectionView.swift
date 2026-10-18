@@ -21,6 +21,7 @@ struct ChatSectionView: View {
                 Spacer(minLength: 60)
                 VStack(alignment: .leading, spacing: 6) {
                     Self.promptText(segments, images: images)
+                        .textSelection(.enabled)
                     let shown = Self.shownImages(segments, images: images)
                     if !shown.isEmpty {
                         WrapLayout {
