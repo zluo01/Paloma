@@ -1,7 +1,7 @@
 [
   {
     "id": "deepseek-flash",
-    "name": "DeepSeek V4.1 Flash",
+    "name": "DeepSeek V4.1 Flash 1017",
     "input_modalities": [
       "text",
       "image"
