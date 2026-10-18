@@ -295,8 +295,7 @@ struct OverlayView: View {
 
     /// delete on session should only show the pop up
     private func handleDeleteKey() -> KeyPress.Result {
-        guard mode == .session else { return .ignored }
-        guard let item = sessions.selected else { return .ignored }
+        guard mode == .session, let item = sessions.selected else { return .ignored }
         sessions.pendingDelete(item)
         return .handled
     }

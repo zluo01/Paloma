@@ -154,8 +154,7 @@ final class MultilineTextView: NSTextView {
     }
 
     private func image(_ data: Data, type: UTType?) -> NSAttributedString? {
-        guard let type, let image = NSImage(data: data), image.size.height > 0 else { return nil }
-        guard let thumbnail = ImageThumbnail.image(image, height: Self.lineHeight) else { return nil }
+        guard let type, let image = NSImage(data: data), image.size.height > 0, let thumbnail = ImageThumbnail.image(image, height: Self.lineHeight) else { return nil }
         let attachment = ImageAttachment(data: data, type: type, thumbnail: thumbnail)
         attachment.bounds = CGRect(origin: CGPoint(x: 0, y: Self.font.descender), size: thumbnail.size)
         let content = NSMutableAttributedString(attachment: attachment)

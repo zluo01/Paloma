@@ -215,8 +215,7 @@ struct PluginDialog: View {
     }
 
     private var argsError: String? {
-        guard !state.argsJson.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        guard parsedArgs == nil else { return nil }
+        guard !state.argsJson.trimmingCharacters(in: .whitespaces).isEmpty, parsedArgs == nil else { return nil }
         return state.pluginType == .mcp
             ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]."
             : "Must be a JSON array like [\"--log-level\", \"info\"]."

@@ -5,8 +5,8 @@
 
 import SwiftUI
 
+@MainActor
 extension OperationError {
-    @MainActor
     static func run<T>(
         _ title: String,
         into destination: Binding<OperationError?>,
@@ -28,7 +28,6 @@ extension OperationError {
         }
     }
 
-    @MainActor
     static func run(
         _ title: String,
         into destination: Binding<OperationError?>,

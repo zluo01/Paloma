@@ -39,12 +39,11 @@ struct InputView: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context _: Context) -> CGSize? {
         guard let textView = scrollView.documentView as? MultilineTextView else { return nil }
-        let width = proposal.width ?? textView.frame.width
-        if textView.frame.width != width {
+        if let width = proposal.width, width.isFinite, width > 0, textView.frame.width != width {
             textView.frame.size.width = width
         }
         let cap = MultilineTextView.lineHeight * CGFloat(MultilineTextView.maxLines)
-        return CGSize(width: width, height: ceil(min(textView.contentHeight, cap)))
+        return CGSize(width: proposal.width ?? textView.frame.width, height: ceil(min(textView.contentHeight, cap)))
     }
 
     @MainActor
@@ -74,8 +73,7 @@ struct InputView: NSViewRepresentable {
                 forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
             ) { [weak self] note in
                 MainActor.assumeIsolated {
-                    guard note.object is PalomaPanel else { return }
-                    guard let textView = self?.textView else { return }
+                    guard note.object is PalomaPanel, let textView = self?.textView else { return }
                     textView.window?.makeFirstResponder(textView)
                 }
             })
