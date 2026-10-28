@@ -28,10 +28,10 @@
 
     <!-- The app excludes the AI, ML and widget runtimes; keep them out of the test output too. -->
     <ItemGroup>
-        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.4.89" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.5.5" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.1.94" ExcludeAssets="all" />
-        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.0.5" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.5.96" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.6.4" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="2.6.4" ExcludeAssets="all" />
+        <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="2.6.4" ExcludeAssets="all" />
     </ItemGroup>
 
     <ItemGroup>
