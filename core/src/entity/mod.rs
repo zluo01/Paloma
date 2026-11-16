@@ -62,9 +62,16 @@ pub struct CapabilityInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteAuth {
+    None,
+    Oauth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginArgs {
     Local { command: String, args: Vec<String> },
-    Remote { url: String, requires_auth: bool },
+    Remote { url: String, auth: RemoteAuth },
 }
 
 #[derive(Clone, FromRow)]

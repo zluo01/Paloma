@@ -34,7 +34,10 @@ use tokio::{
 use crate::{
     constants::{MAX_STREAM_PAYLOAD_BYTES, SPILL_ROOT},
     db::Storage,
-    entity::{CapabilityInfo, HealthStatus, Plugin, PluginArgs, ToolResult, ToolSchema, ToolSpec},
+    entity::{
+        CapabilityInfo, HealthStatus, Plugin, PluginArgs, RemoteAuth, ToolResult, ToolSchema,
+        ToolSpec,
+    },
     mcp::credentials::CredentialStorage,
     utils::{hide_console, mcp_function_name_encode, shell_path, write_spill_file},
 };
@@ -405,11 +408,11 @@ async fn connect(
         },
         PluginArgs::Remote {
             url,
-            requires_auth: false,
+            auth: RemoteAuth::None,
         } => Ok(create_http_connection(request_client.clone(), url).await?),
         PluginArgs::Remote {
             url,
-            requires_auth: true,
+            auth: RemoteAuth::Oauth,
         } => Ok(
             create_auth_http_connection(request_client.clone(), storage.clone(), url, name).await?,
         ),

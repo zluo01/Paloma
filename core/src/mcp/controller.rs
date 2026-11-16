@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::{McpPlugin, McpPluginError, McpPluginInfo, McpToolSpecCache};
 use crate::{
     CapabilityFacet, HealthLevel, HealthStatus, OAuthCallbackState, Plugin, PluginArgs, PluginType,
+    RemoteAuth,
     db::{Storage, StorageError},
     entity::{CapabilityInfo, ToolResult, ToolSchema, ToolSpec},
     utils::{OAuthError, finalize_oauth_connection, init_oauth_connection},
@@ -93,7 +94,7 @@ impl McpController {
         match config.args {
             PluginArgs::Remote {
                 url,
-                requires_auth: true,
+                auth: RemoteAuth::Oauth,
             } => Ok(Some(init_oauth_connection(&url).await?)),
             _ => Ok(None),
         }

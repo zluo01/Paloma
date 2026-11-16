@@ -41,7 +41,8 @@ pub use db::Permission;
 pub use entity::{
     CapabilityFacet, CapabilityInfo, ChatRenderEvent, ExtensionCapabilityId, HealthLevel,
     HealthStatus, Icon, Plugin, PluginArgs, PluginType, ProviderBackendId, QueryResponse,
-    RenderEvent, SearchRenderEvent, ToolSchema, ToolSpec, Transport, UserPromptAttachment,
+    RemoteAuth, RenderEvent, SearchRenderEvent, ToolSchema, ToolSpec, Transport,
+    UserPromptAttachment,
 };
 pub use extension::ExtensionInfo;
 pub use mcp::McpPluginInfo;
