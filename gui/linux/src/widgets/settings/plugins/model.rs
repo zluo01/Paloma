@@ -329,7 +329,7 @@ fn reload_list(plugin_type: &PluginType) -> Option<Command> {
 
 #[cfg(test)]
 mod tests {
-    use paloma_core::{CapabilityInfo, HealthStatus, PluginArgs, Transport};
+    use paloma_core::{CapabilityInfo, HealthStatus, PluginArgs, RemoteAuth, Transport};
 
     use super::*;
 
@@ -347,7 +347,7 @@ mod tests {
                 env: Default::default(),
                 args: PluginArgs::Remote {
                     url: "https://example.com".into(),
-                    requires_auth: false,
+                    auth: RemoteAuth::None,
                 },
             },
             description: String::new(),

@@ -13,7 +13,7 @@ use libadwaita::{
     Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, SpinRow, SwitchRow, ToolbarView,
     prelude::*,
 };
-use paloma_core::{Plugin, PluginArgs, PluginType, Transport};
+use paloma_core::{Plugin, PluginArgs, PluginType, RemoteAuth, Transport};
 
 use crate::widgets::settings::plugins::model::{GeneralPluginMsg, Msg};
 
@@ -525,10 +525,10 @@ impl FormData {
                 }
                 form.command = command;
             },
-            PluginArgs::Remote { url, requires_auth } => {
+            PluginArgs::Remote { url, auth } => {
                 form.kind = Kind::Remote;
                 form.url = url;
-                form.requires_auth = requires_auth;
+                form.requires_auth = matches!(auth, RemoteAuth::Oauth);
             },
         }
 
@@ -548,7 +548,11 @@ impl FormData {
                 Transport::Http,
                 PluginArgs::Remote {
                     url: self.url.trim().to_string(),
-                    requires_auth: self.requires_auth,
+                    auth: if self.requires_auth {
+                        RemoteAuth::Oauth
+                    } else {
+                        RemoteAuth::None
+                    },
                 },
             ),
         };
