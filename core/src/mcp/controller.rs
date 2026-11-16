@@ -95,7 +95,11 @@ impl McpController {
             PluginArgs::Remote {
                 url,
                 auth: RemoteAuth::Oauth,
-            } => Ok(Some(init_oauth_connection(&url).await?)),
+            } => Ok(Some(init_oauth_connection(&url, None).await?)),
+            PluginArgs::Remote {
+                url,
+                auth: RemoteAuth::OauthClient { client_id },
+            } => Ok(Some(init_oauth_connection(&url, Some(&client_id)).await?)),
             _ => Ok(None),
         }
     }

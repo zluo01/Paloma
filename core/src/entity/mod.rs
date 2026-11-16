@@ -65,7 +65,18 @@ pub struct CapabilityInfo {
 #[serde(rename_all = "snake_case")]
 pub enum RemoteAuth {
     None,
+    Bearer {
+        token: String,
+    },
+    Headers {
+        headers: HashMap<String, String>,
+    },
     Oauth,
+    /// oauth with a client id registered at the authorization server ahead of
+    /// time, for servers without dynamic client registration
+    OauthClient {
+        client_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

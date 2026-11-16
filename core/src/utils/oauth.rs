@@ -17,7 +17,10 @@ const SUCCESS_PAGE: &str = r#"<!doctype html><html><head><title>Paloma - Authori
 
 const FAILURE_PAGE: &str = r#"<!doctype html><html><head><title>Paloma - Authorization Failed</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111827;color:#f9fafb;"><div style="text-align:center;padding:2rem;"><h1 style="margin-bottom:0.75rem;">Authorization Failed</h1><p style="color:#d1d5db;">You can close this window and return to Paloma for details.</p></div></body></html>"#;
 
-pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackState> {
+pub(crate) async fn init_oauth_connection(
+    url: &str,
+    client_id: Option<&str>,
+) -> Result<OAuthCallbackState> {
     let mut oauth_state = OAuthState::new(url, None).await?;
 
     // Bind before building the authorization URL so the redirect target is
@@ -30,9 +33,12 @@ pub(crate) async fn init_oauth_connection(url: &str) -> Result<OAuthCallbackStat
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
     // empty scopes: rmcp selects them from the 401 header or server metadata
-    oauth_state
-        .start_authorization(AuthorizationRequest::new(&redirect_uri).with_client_name("Paloma"))
-        .await?;
+    let mut request = AuthorizationRequest::new(&redirect_uri).with_client_name("Paloma");
+    // a pre-registered client skips dynamic client registration
+    if let Some(client_id) = client_id {
+        request = request.with_preregistered_client(client_id);
+    }
+    oauth_state.start_authorization(request).await?;
 
     info!("Starting OAuth authentication: {url}; callback server listening on port {port}");
 

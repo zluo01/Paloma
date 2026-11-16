@@ -12,6 +12,7 @@ pub use cache::McpToolSpecCache;
 pub use controller::{McpController, McpControllerError};
 use log::{error, warn};
 use paloma_utils::{Element, attempt_with_retry};
+use reqwest::header::{HeaderName, HeaderValue};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{
@@ -406,26 +407,44 @@ async fn connect(
 
             Ok(().serve(transport).await?)
         },
-        PluginArgs::Remote {
-            url,
-            auth: RemoteAuth::None,
-        } => Ok(create_http_connection(request_client.clone(), url).await?),
-        PluginArgs::Remote {
-            url,
-            auth: RemoteAuth::Oauth,
-        } => Ok(
-            create_auth_http_connection(request_client.clone(), storage.clone(), url, name).await?,
-        ),
+        PluginArgs::Remote { url, auth } => {
+            let config = StreamableHttpClientTransportConfig::with_uri(url.as_str());
+            match auth {
+                RemoteAuth::None => create_http_connection(request_client, config).await,
+                RemoteAuth::Bearer { token } => {
+                    let config = config.auth_header(token.as_str());
+                    create_http_connection(request_client, config).await
+                },
+                RemoteAuth::Headers { headers } => {
+                    let config = config.custom_headers(parse_headers(headers)?);
+                    create_http_connection(request_client, config).await
+                },
+                RemoteAuth::Oauth | RemoteAuth::OauthClient { .. } => {
+                    create_auth_http_connection(request_client, storage, url, name).await
+                },
+            }
+        },
     }
 }
 
 async fn create_http_connection(
     request_client: reqwest::Client,
-    url: &str,
+    config: StreamableHttpClientTransportConfig,
 ) -> Result<RunningService<RoleClient, ()>> {
-    let config = StreamableHttpClientTransportConfig::with_uri(url);
     let transport = StreamableHttpClientTransport::with_client(request_client, config);
     Ok(().serve(transport).await?)
+}
+
+fn parse_headers(headers: &HashMap<String, String>) -> Result<HashMap<HeaderName, HeaderValue>> {
+    headers
+        .iter()
+        .map(
+            |(name, value)| match (name.parse(), HeaderValue::from_str(value)) {
+                (Ok(name), Ok(value)) => Ok((name, value)),
+                _ => Err(McpPluginError::InvalidHeader(name.clone())),
+            },
+        )
+        .collect()
 }
 
 async fn create_auth_http_connection(
@@ -489,6 +508,9 @@ pub enum McpPluginError {
 
     #[error("MCP authorization failed: {0}")]
     Auth(#[from] AuthError),
+
+    #[error("invalid header `{0}`")]
+    InvalidHeader(String),
 
     #[error("internal error: mcp server `{0}` is unavailable")]
     Disconnected(String),
