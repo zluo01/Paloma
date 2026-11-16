@@ -10,8 +10,8 @@ use gtk4::{
     prelude::*,
 };
 use libadwaita::{
-    Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, SpinRow, SwitchRow, ToolbarView,
-    prelude::*,
+    Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, PasswordEntryRow, SpinRow,
+    ToolbarView, prelude::*,
 };
 use paloma_core::{Plugin, PluginArgs, PluginType, RemoteAuth, Transport};
 
@@ -48,11 +48,11 @@ impl PluginDialog {
             editing,
         );
 
-        // [name, command, args / url, env]
+        // [name, command, args / url, env, auth detail]
         let status = Rc::new(Cell::new(if editing {
-            [true; 4]
+            [true; 5]
         } else {
-            [false, false, false, true]
+            [false, false, false, true, true]
         }));
         let update_status = {
             let add = frame.submit_button().clone();
@@ -60,7 +60,7 @@ impl PluginDialog {
                 let mut slots = status.get();
                 slots[index] = ok;
                 status.set(slots);
-                add.set_sensitive(slots == [true; 4]);
+                add.set_sensitive(slots == [true; 5]);
             }
         };
 
@@ -69,7 +69,7 @@ impl PluginDialog {
             .text(&initial.name)
             .editable(!editing)
             .build();
-        validate(&name, 0, true, update_status.clone(), move |text| {
+        validate(&name, 0, true, &update_status, move |text| {
             validate_name(text, &taken)
         });
         let kind = ComboRow::builder()
@@ -88,19 +88,38 @@ impl PluginDialog {
             .text(&initial.args)
             .visible(!remote)
             .build();
-        validate(&command, 1, true, update_status.clone(), |_| None);
-        validate(&args, 2, true, update_status.clone(), validate_args);
+        validate(&command, 1, true, &update_status, |_| None);
+        validate(&args, 2, true, &update_status, validate_args);
         let url = EntryRow::builder()
             .title("URL")
             .text(&initial.url)
             .visible(remote)
             .build();
-        validate(&url, 2, true, update_status.clone(), validate_url);
-        let requires_auth = SwitchRow::builder()
-            .title("Requires authentication")
-            .active(initial.requires_auth)
+        validate(&url, 2, true, &update_status, validate_url);
+        let auth = ComboRow::builder()
+            .title("Authentication")
+            .model(&StringList::new(&AUTH_LABELS))
+            .selected(auth_index(&initial.auth))
             .visible(remote)
             .build();
+        let auth_rows = AuthRows::new(&initial.auth);
+        validate(
+            auth_rows.token.upcast_ref(),
+            4,
+            true,
+            &update_status,
+            |_| None,
+        );
+        validate(&auth_rows.headers, 4, true, &update_status, validate_json);
+        validate(&auth_rows.client_id, 4, true, &update_status, |_| None);
+        update_status(4, auth_rows.select(remote.then(|| auth.selected())));
+        {
+            let update_status = update_status.clone();
+            let auth_rows = auth_rows.clone();
+            auth.connect_selected_notify(move |auth| {
+                update_status(4, auth_rows.select(Some(auth.selected())));
+            });
+        }
         // Switching the kind swaps which rows are shown, so the slots of the
         // swapped rows are re-judged: hidden rows are forced valid, shown
         // ones take their text's verdict.
@@ -109,13 +128,15 @@ impl PluginDialog {
             let command = command.clone();
             let args = args.clone();
             let url = url.clone();
-            let requires_auth = requires_auth.clone();
+            let auth = auth.clone();
+            let auth_rows = auth_rows.clone();
             kind.connect_selected_notify(move |kind| {
                 let remote = kind.selected() == 1;
                 command.set_visible(!remote);
                 args.set_visible(!remote);
                 url.set_visible(remote);
-                requires_auth.set_visible(remote);
+                auth.set_visible(remote);
+                update_status(4, auth_rows.select(remote.then(|| auth.selected())));
                 let source = if remote { url.text() } else { args.text() };
                 let error = if remote {
                     validate_url(&source)
@@ -144,7 +165,7 @@ impl PluginDialog {
             .tooltip_text(r#"e.g. {"API_KEY": "secret"}"#)
             .text(&initial.env)
             .build();
-        validate(&env, 3, false, update_status, validate_env);
+        validate(&env, 3, false, &update_status, validate_json);
         let advanced = ExpanderRow::builder()
             .title("Advanced")
             .subtitle("Optional")
@@ -157,7 +178,10 @@ impl PluginDialog {
         frame.append(&command);
         frame.append(&args);
         frame.append(&url);
-        frame.append(&requires_auth);
+        frame.append(&auth);
+        frame.append(&auth_rows.token);
+        frame.append(&auth_rows.headers);
+        frame.append(&auth_rows.client_id);
         frame.append(&advanced);
 
         // Submit reads the widgets at click time and reports through the
@@ -175,7 +199,7 @@ impl PluginDialog {
                     command: command.text().into(),
                     args: args.text().into(),
                     url: url.text().into(),
-                    requires_auth: requires_auth.is_active(),
+                    auth: auth_rows.read(auth.selected()),
                     timeout: timeout.value() as u32,
                     env: env.text().into(),
                 };
@@ -232,21 +256,21 @@ impl PluginDialog {
             .title("Command")
             .text(&initial.command)
             .build();
-        validate(&command, 0, true, update_status.clone(), |_| None);
+        validate(&command, 0, true, &update_status, |_| None);
         let args = EntryRow::builder()
             .title("Arguments (JSON array)")
             .tooltip_text(r#"e.g. ["--port", "8080"]"#)
             .text(&initial.args)
             .build();
         // A provider binary may take no arguments, so the field is optional.
-        validate(&args, 1, false, update_status.clone(), validate_args);
+        validate(&args, 1, false, &update_status, validate_args);
 
         let env = EntryRow::builder()
             .title("Environment variables (JSON)")
             .tooltip_text(r#"e.g. {"API_KEY": "secret"}"#)
             .text(&initial.env)
             .build();
-        validate(&env, 2, false, update_status, validate_env);
+        validate(&env, 2, false, &update_status, validate_json);
         let advanced = ExpanderRow::builder()
             .title("Advanced")
             .subtitle("Optional")
@@ -410,9 +434,10 @@ fn validate(
     row: &EntryRow,
     index: usize,
     required: bool,
-    update_status: impl Fn(usize, bool) + 'static,
+    update_status: &(impl Fn(usize, bool) + Clone + 'static),
     validate: impl Fn(&str) -> Option<&'static str> + 'static,
 ) {
+    let update_status = update_status.clone();
     row.connect_changed(move |row| {
         let text = row.text();
         let error = validate(&text);
@@ -447,8 +472,8 @@ fn validate_url(url: &str) -> Option<&'static str> {
     (!url.is_empty() && !is_valid_url(url)).then_some("Must be a valid http(s) URL.")
 }
 
-fn validate_env(text: &str) -> Option<&'static str> {
-    parse_env(text)
+fn validate_json(text: &str) -> Option<&'static str> {
+    parse_json(text)
         .is_err()
         .then_some(r#"Must be a JSON object like {"KEY": "value"}."#)
 }
@@ -473,7 +498,7 @@ struct FormData {
     command: String,
     args: String,
     url: String,
-    requires_auth: bool,
+    auth: RemoteAuth,
     timeout: u32,
     env: String,
 }
@@ -486,7 +511,7 @@ impl Default for FormData {
             command: String::new(),
             args: String::new(),
             url: String::new(),
-            requires_auth: false,
+            auth: RemoteAuth::None,
             timeout: 300,
             env: String::new(),
         }
@@ -501,7 +526,7 @@ impl FormData {
             command,
             args,
             url: String::new(),
-            requires_auth: false,
+            auth: RemoteAuth::None,
             timeout: 300,
             env,
         }
@@ -528,7 +553,7 @@ impl FormData {
             PluginArgs::Remote { url, auth } => {
                 form.kind = Kind::Remote;
                 form.url = url;
-                form.requires_auth = matches!(auth, RemoteAuth::Oauth);
+                form.auth = auth;
             },
         }
 
@@ -548,11 +573,7 @@ impl FormData {
                 Transport::Http,
                 PluginArgs::Remote {
                     url: self.url.trim().to_string(),
-                    auth: if self.requires_auth {
-                        RemoteAuth::Oauth
-                    } else {
-                        RemoteAuth::None
-                    },
+                    auth: self.auth.clone(),
                 },
             ),
         };
@@ -561,8 +582,88 @@ impl FormData {
             transport,
             timeout: self.timeout,
             disabled,
-            env: parse_env(&self.env).unwrap_or_default(),
+            env: parse_json(&self.env).unwrap_or_default(),
             args,
+        }
+    }
+}
+
+const AUTH_LABELS: [&str; 5] = [
+    "None",
+    "Bearer token",
+    "Custom headers",
+    "OAuth",
+    "OAuth with client ID",
+];
+
+fn auth_index(auth: &RemoteAuth) -> u32 {
+    match auth {
+        RemoteAuth::None => 0,
+        RemoteAuth::Bearer { .. } => 1,
+        RemoteAuth::Headers { .. } => 2,
+        RemoteAuth::Oauth => 3,
+        RemoteAuth::OauthClient { .. } => 4,
+    }
+}
+
+#[derive(Clone)]
+struct AuthRows {
+    token: PasswordEntryRow,
+    headers: EntryRow,
+    client_id: EntryRow,
+}
+
+impl AuthRows {
+    fn new(auth: &RemoteAuth) -> Self {
+        let rows = Self {
+            token: PasswordEntryRow::builder().title("Token").build(),
+            headers: EntryRow::builder()
+                .title("Headers (JSON)")
+                .tooltip_text(r#"e.g. {"X-API-Key": "secret"}"#)
+                .build(),
+            client_id: EntryRow::builder().title("Client ID").build(),
+        };
+        match auth {
+            RemoteAuth::Bearer { token } => rows.token.set_text(token),
+            RemoteAuth::Headers { headers } => {
+                rows.headers
+                    .set_text(&serde_json::to_string(headers).unwrap_or_default());
+            },
+            RemoteAuth::OauthClient { client_id } => rows.client_id.set_text(client_id),
+            RemoteAuth::None | RemoteAuth::Oauth => {},
+        }
+        rows
+    }
+
+    /// Shows only the selected auth's row; false while it still needs input.
+    fn select(&self, index: Option<u32>) -> bool {
+        self.token.set_visible(index == Some(1));
+        self.headers.set_visible(index == Some(2));
+        self.client_id.set_visible(index == Some(4));
+        match index {
+            Some(1) => !self.token.text().trim().is_empty(),
+            Some(2) => {
+                let text = self.headers.text();
+                !text.trim().is_empty() && validate_json(&text).is_none()
+            },
+            Some(4) => !self.client_id.text().trim().is_empty(),
+            _ => true,
+        }
+    }
+
+    fn read(&self, index: u32) -> RemoteAuth {
+        match index {
+            1 => RemoteAuth::Bearer {
+                token: self.token.text().trim().to_string(),
+            },
+            2 => RemoteAuth::Headers {
+                headers: parse_json(&self.headers.text()).unwrap_or_default(),
+            },
+            3 => RemoteAuth::Oauth,
+            4 => RemoteAuth::OauthClient {
+                client_id: self.client_id.text().trim().to_string(),
+            },
+            _ => RemoteAuth::None,
         }
     }
 }
@@ -576,7 +677,7 @@ fn parse_args(text: &str) -> Result<Vec<String>, serde_json::Error> {
     }
 }
 
-fn parse_env(text: &str) -> Result<HashMap<String, String>, serde_json::Error> {
+fn parse_json(text: &str) -> Result<HashMap<String, String>, serde_json::Error> {
     let text = text.trim();
     if text.is_empty() {
         Ok(HashMap::new())
