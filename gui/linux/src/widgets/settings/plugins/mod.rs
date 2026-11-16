@@ -1,3 +1,4 @@
+mod key_value_row;
 mod model;
 mod plugin_dialog;
 

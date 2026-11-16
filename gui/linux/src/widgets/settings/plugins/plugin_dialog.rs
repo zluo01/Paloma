@@ -6,8 +6,8 @@ use std::{
 
 use futures::channel::mpsc;
 use gtk4::{
-    Adjustment, Box as GtkBox, Button, ListBox, Orientation, SelectionMode, StringList, glib,
-    prelude::*,
+    Adjustment, Box as GtkBox, Button, ListBox, Orientation, PolicyType, ScrolledWindow,
+    SelectionMode, StringList, glib, prelude::*,
 };
 use libadwaita::{
     Banner, ComboRow, Dialog, EntryRow, ExpanderRow, HeaderBar, PasswordEntryRow, SpinRow,
@@ -15,7 +15,10 @@ use libadwaita::{
 };
 use paloma_core::{Plugin, PluginArgs, PluginType, RemoteAuth, Transport};
 
-use crate::widgets::settings::plugins::model::{GeneralPluginMsg, Msg};
+use crate::widgets::settings::plugins::{
+    key_value_row::KeyValueRow,
+    model::{GeneralPluginMsg, Msg},
+};
 
 #[derive(Default, PartialEq)]
 enum Kind {
@@ -110,8 +113,15 @@ impl PluginDialog {
             &update_status,
             |_| None,
         );
-        validate(&auth_rows.headers, 4, true, &update_status, validate_json);
         validate(&auth_rows.client_id, 4, true, &update_status, |_| None);
+        {
+            let update_status = update_status.clone();
+            auth_rows
+                .headers
+                .connect_has_duplicates_notify(move |headers| {
+                    update_status(4, !headers.has_duplicates());
+                });
+        }
         update_status(4, auth_rows.select(remote.then(|| auth.selected())));
         {
             let update_status = update_status.clone();
@@ -355,9 +365,15 @@ impl DialogFrame {
             .css_classes(["boxed-list"])
             .build();
 
+        let scroller = ScrolledWindow::builder()
+            .hscrollbar_policy(PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&form)
+            .build();
+
         let content = GtkBox::new(Orientation::Vertical, 0);
         content.append(&banner);
-        content.append(&form);
+        content.append(&scroller);
 
         let view = ToolbarView::builder().content(&content).build();
         view.add_top_bar(&header);
@@ -609,28 +625,25 @@ fn auth_index(auth: &RemoteAuth) -> u32 {
 #[derive(Clone)]
 struct AuthRows {
     token: PasswordEntryRow,
-    headers: EntryRow,
+    headers: KeyValueRow,
     client_id: EntryRow,
 }
 
 impl AuthRows {
     fn new(auth: &RemoteAuth) -> Self {
+        let headers = match auth {
+            RemoteAuth::Headers { headers } => headers,
+            _ => &HashMap::new(),
+        };
         let rows = Self {
             token: PasswordEntryRow::builder().title("Token").build(),
-            headers: EntryRow::builder()
-                .title("Headers (JSON)")
-                .tooltip_text(r#"e.g. {"X-API-Key": "secret"}"#)
-                .build(),
+            headers: KeyValueRow::new("Headers", headers),
             client_id: EntryRow::builder().title("Client ID").build(),
         };
         match auth {
             RemoteAuth::Bearer { token } => rows.token.set_text(token),
-            RemoteAuth::Headers { headers } => {
-                rows.headers
-                    .set_text(&serde_json::to_string(headers).unwrap_or_default());
-            },
             RemoteAuth::OauthClient { client_id } => rows.client_id.set_text(client_id),
-            RemoteAuth::None | RemoteAuth::Oauth => {},
+            _ => {},
         }
         rows
     }
@@ -642,10 +655,7 @@ impl AuthRows {
         self.client_id.set_visible(index == Some(4));
         match index {
             Some(1) => !self.token.text().trim().is_empty(),
-            Some(2) => {
-                let text = self.headers.text();
-                !text.trim().is_empty() && validate_json(&text).is_none()
-            },
+            Some(2) => !self.headers.has_duplicates(),
             Some(4) => !self.client_id.text().trim().is_empty(),
             _ => true,
         }
@@ -657,7 +667,7 @@ impl AuthRows {
                 token: self.token.text().trim().to_string(),
             },
             2 => RemoteAuth::Headers {
-                headers: parse_json(&self.headers.text()).unwrap_or_default(),
+                headers: self.headers.pairs(),
             },
             3 => RemoteAuth::Oauth,
             4 => RemoteAuth::OauthClient {
