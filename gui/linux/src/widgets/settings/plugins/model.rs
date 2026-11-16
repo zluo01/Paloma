@@ -45,8 +45,7 @@ pub(super) enum GeneralPluginMsg {
 
 pub(super) enum McpPluginMsg {
     McpInitFinished {
-        config: Plugin,
-        // Boxed: the oauth state dwarfs every other variant.
+        config: Box<Plugin>,
         result: Result<Option<Box<OAuthCallbackState>>, AppError>,
     },
     OauthDialogClosed,
@@ -227,7 +226,10 @@ impl State {
                     if let Some(state) = &state {
                         commands.push(Command::OpenOauthDialog(state.auth_url().to_string()));
                     }
-                    commands.push(Command::FinalizeMcp { config, state });
+                    commands.push(Command::FinalizeMcp {
+                        config: *config,
+                        state,
+                    });
                     commands
                 },
                 Err(e) => vec![Command::ShowPluginDialogError(format!("{e}"))],
@@ -460,7 +462,7 @@ mod tests {
         // Submit inits the connection; no authorization step follows.
         let config = submitted(&mut state, "fs");
         let cmds = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
-            config,
+            config: Box::new(config),
             result: Ok(None),
         }));
         assert!(matches!(
@@ -497,7 +499,7 @@ mod tests {
 
         let config = submitted(&mut state, "fs");
         let cmds = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
-            config,
+            config: Box::new(config),
             result: Err(error("refused")),
         }));
         assert!(matches!(
@@ -517,7 +519,7 @@ mod tests {
         )));
         let config = submitted(&mut state, "fs");
         let _ = state.update(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
-            config,
+            config: Box::new(config),
             result: Ok(None),
         }));
 

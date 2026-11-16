@@ -319,7 +319,7 @@ impl PluginsPage {
                 .await
                 .map(|state| state.map(Box::new));
             let _ = dispatcher.unbounded_send(Msg::McpPlugin(McpPluginMsg::McpInitFinished {
-                config,
+                config: Box::new(config),
                 result,
             }));
         }));
