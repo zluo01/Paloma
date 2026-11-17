@@ -16,6 +16,7 @@ mod imp {
     #[properties(wrapper_type = super::KeyValueRow)]
     pub struct KeyValueRow {
         pub(super) entries: RefCell<Vec<(Entry, Entry)>>,
+        pub(super) ignore_case: Cell<bool>,
         #[property(get)]
         pub(super) has_duplicates: Cell<bool>,
     }
@@ -47,11 +48,12 @@ glib::wrapper! {
 }
 
 impl KeyValueRow {
-    pub(super) fn new(title: &str, pairs: &HashMap<String, String>) -> Self {
+    pub(super) fn new(title: &str, pairs: &HashMap<String, String>, ignore_case: bool) -> Self {
         let row: Self = glib::Object::builder()
             .property("title", title)
             .property("expanded", true)
             .build();
+        row.imp().ignore_case.set(ignore_case);
 
         let add = Button::builder()
             .icon_name("list-add-symbolic")
@@ -156,7 +158,15 @@ impl KeyValueRow {
 
     fn flag_duplicates(&self) {
         let entries = self.imp().entries.borrow();
-        let name = |key: &Entry| key.text().trim().to_lowercase();
+        let ignore_case = self.imp().ignore_case.get();
+        let name = |key: &Entry| {
+            let name = key.text().trim().to_string();
+            if ignore_case {
+                name.to_lowercase()
+            } else {
+                name
+            }
+        };
 
         let mut duplicates = HashMap::new();
         for (key, _) in entries.iter() {

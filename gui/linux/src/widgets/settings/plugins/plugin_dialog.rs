@@ -170,12 +170,8 @@ impl PluginDialog {
                 0.0,
             ))
             .build();
-        let env = EntryRow::builder()
-            .title("Environment variables (JSON)")
-            .tooltip_text(r#"e.g. {"API_KEY": "secret"}"#)
-            .text(&initial.env)
-            .build();
-        validate(&env, 3, false, &update_status, validate_json);
+        let env = KeyValueRow::new("Environment variables", &initial.env, false);
+        env.connect_has_duplicates_notify(move |env| update_status(3, !env.has_duplicates()));
         let advanced = ExpanderRow::builder()
             .title("Advanced")
             .subtitle("Optional")
@@ -211,12 +207,12 @@ impl PluginDialog {
                     url: url.text().into(),
                     auth: auth_rows.read(auth.selected()),
                     timeout: timeout.value() as u32,
-                    env: env.text().into(),
+                    env: env.pairs(),
                 };
                 let _ = dispatcher.unbounded_send(Msg::General(
                     GeneralPluginMsg::PluginDialogSubmitted {
                         plugin_type: PluginType::Mcp,
-                        config: data.to_plugin(disabled),
+                        config: data.into_plugin(disabled),
                         editing,
                     },
                 ));
@@ -275,12 +271,8 @@ impl PluginDialog {
         // A provider binary may take no arguments, so the field is optional.
         validate(&args, 1, false, &update_status, validate_args);
 
-        let env = EntryRow::builder()
-            .title("Environment variables (JSON)")
-            .tooltip_text(r#"e.g. {"API_KEY": "secret"}"#)
-            .text(&initial.env)
-            .build();
-        validate(&env, 2, false, &update_status, validate_json);
+        let env = KeyValueRow::new("Environment variables", &initial.env, false);
+        env.connect_has_duplicates_notify(move |env| update_status(2, !env.has_duplicates()));
         let advanced = ExpanderRow::builder()
             .title("Advanced")
             .subtitle("Optional")
@@ -294,15 +286,12 @@ impl PluginDialog {
         {
             let dispatcher = dispatcher.clone();
             frame.connect_submit(move || {
-                let data = FormData::provider(
-                    command.text().into(),
-                    args.text().into(),
-                    env.text().into(),
-                );
+                let data =
+                    FormData::provider(command.text().into(), args.text().into(), env.pairs());
                 let _ = dispatcher.unbounded_send(Msg::General(
                     GeneralPluginMsg::PluginDialogSubmitted {
                         plugin_type,
-                        config: data.to_plugin(false),
+                        config: data.into_plugin(false),
                         editing,
                     },
                 ));
@@ -368,6 +357,7 @@ impl DialogFrame {
         let scroller = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Never)
             .propagate_natural_height(true)
+            .width_request(440)
             .child(&form)
             .build();
 
@@ -380,7 +370,7 @@ impl DialogFrame {
 
         let dialog = Dialog::builder()
             .title(title)
-            .content_width(440)
+            .follows_content_size(true)
             .child(&view)
             .build();
 
@@ -488,12 +478,6 @@ fn validate_url(url: &str) -> Option<&'static str> {
     (!url.is_empty() && !is_valid_url(url)).then_some("Must be a valid http(s) URL.")
 }
 
-fn validate_json(text: &str) -> Option<&'static str> {
-    parse_json(text)
-        .is_err()
-        .then_some(r#"Must be a JSON object like {"KEY": "value"}."#)
-}
-
 /// Toggle Adwaita's red error outline and an explanatory tooltip.
 fn flag(row: &impl IsA<gtk4::Widget>, error: Option<&str>) {
     match error {
@@ -516,7 +500,7 @@ struct FormData {
     url: String,
     auth: RemoteAuth,
     timeout: u32,
-    env: String,
+    env: HashMap<String, String>,
 }
 
 impl Default for FormData {
@@ -529,13 +513,13 @@ impl Default for FormData {
             url: String::new(),
             auth: RemoteAuth::None,
             timeout: 300,
-            env: String::new(),
+            env: HashMap::new(),
         }
     }
 }
 
 impl FormData {
-    fn provider(command: String, args: String, env: String) -> Self {
+    fn provider(command: String, args: String, env: HashMap<String, String>) -> Self {
         Self {
             name: String::new(),
             kind: Kind::default(),
@@ -552,12 +536,10 @@ impl FormData {
         let mut form = Self {
             name: initial.name,
             timeout: initial.timeout,
+            env: initial.env,
             ..Self::default()
         };
 
-        if !initial.env.is_empty() {
-            form.env = serde_json::to_string(&initial.env).unwrap_or_default();
-        }
         match initial.args {
             PluginArgs::Local { command, args } => {
                 form.kind = Kind::Local;
@@ -576,7 +558,7 @@ impl FormData {
         form
     }
 
-    fn to_plugin(&self, disabled: bool) -> Plugin {
+    fn into_plugin(self, disabled: bool) -> Plugin {
         let (transport, args) = match self.kind {
             Kind::Local => (
                 Transport::Local,
@@ -589,7 +571,7 @@ impl FormData {
                 Transport::Http,
                 PluginArgs::Remote {
                     url: self.url.trim().to_string(),
-                    auth: self.auth.clone(),
+                    auth: self.auth,
                 },
             ),
         };
@@ -598,7 +580,7 @@ impl FormData {
             transport,
             timeout: self.timeout,
             disabled,
-            env: parse_json(&self.env).unwrap_or_default(),
+            env: self.env,
             args,
         }
     }
@@ -637,7 +619,7 @@ impl AuthRows {
         };
         let rows = Self {
             token: PasswordEntryRow::builder().title("Token").build(),
-            headers: KeyValueRow::new("Headers", headers),
+            headers: KeyValueRow::new("Headers", headers, true),
             client_id: EntryRow::builder().title("Client ID").build(),
         };
         match auth {
@@ -682,15 +664,6 @@ fn parse_args(text: &str) -> Result<Vec<String>, serde_json::Error> {
     let text = text.trim();
     if text.is_empty() {
         Ok(Vec::new())
-    } else {
-        serde_json::from_str(text)
-    }
-}
-
-fn parse_json(text: &str) -> Result<HashMap<String, String>, serde_json::Error> {
-    let text = text.trim();
-    if text.is_empty() {
-        Ok(HashMap::new())
     } else {
         serde_json::from_str(text)
     }
