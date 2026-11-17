@@ -40,7 +40,7 @@ dashmap = "6.2.1"
 env_logger = "0.11.11"
 eventsource-stream = "0.2.3"
 futures = "0.3.34"
-log = "0.4.34"
+log = "0.4.35"
 oauth2 = { version = "5.0.0", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
 paloma-core = { path = "core" }
@@ -53,9 +53,9 @@ paloma-provider-base = { path = "provider-base" }
 paloma-provider-openai = { path = "plugins/providers/openai" }
 paloma-provider-protocol = { path = "provider-protocol" }
 paloma-utils = { path = "utils" }
-prost = "0.14.4"
-prost-build = "0.14.4"
-protoc-bin-vendored = "3.2.0"
+prost = "0.14.6"
+prost-build = "0.14.6"
+protoc-bin-vendored = "3.3.0"
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = [
     "json",
@@ -64,16 +64,16 @@ reqwest = { version = "0.13.5", default-features = false, features = [
     "http2",
     "stream",
 ] }
-schemars = "1.2.2"
+schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tokio = { version = "1.53.1", default-features = false }
-tokio-util = { version = "0.7.19", features = ["codec"] }
-uniffi = "0.31.2"
-uuid = { version = "1.27.0", default-features = false, features = ["v7", "std"] }
-windows = { version = "0.62", default-features = false }
+tokio = { version = "1.54.1", default-features = false }
+tokio-util = { version = "0.7.20", features = ["codec"] }
+uniffi = "0.32.2"
+uuid = { version = "1.29.2", default-features = false, features = ["v7", "std"] }
+windows = { version = "0.62.2", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false }
 
 [profile.release]
