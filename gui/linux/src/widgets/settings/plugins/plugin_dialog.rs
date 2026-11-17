@@ -55,7 +55,7 @@ impl PluginDialog {
         let status = Rc::new(Cell::new(if editing {
             [true; 5]
         } else {
-            [false, false, false, true, true]
+            [false, false, true, true, true]
         }));
         let update_status = {
             let add = frame.submit_button().clone();
@@ -92,7 +92,7 @@ impl PluginDialog {
             .visible(!remote)
             .build();
         validate(&command, 1, true, &update_status, |_| None);
-        validate(&args, 2, true, &update_status, validate_args);
+        validate(&args, 2, false, &update_status, validate_args);
         let url = EntryRow::builder()
             .title("URL")
             .text(&initial.url)
@@ -154,7 +154,7 @@ impl PluginDialog {
                     validate_args(&source)
                 };
                 update_status(1, remote || !command.text().trim().is_empty());
-                update_status(2, !source.trim().is_empty() && error.is_none());
+                update_status(2, (!remote || !source.trim().is_empty()) && error.is_none());
             });
         }
 
@@ -464,7 +464,6 @@ fn validate_name(name: &str, taken: &HashSet<String>) -> Option<&'static str> {
 fn validate_args(text: &str) -> Option<&'static str> {
     let text = text.trim();
     if text.is_empty() {
-        // Unflagged; the required rule already withholds submit.
         return None;
     }
     match parse_args(text) {
