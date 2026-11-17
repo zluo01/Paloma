@@ -13,8 +13,8 @@ use bytes::Bytes;
 pub use paloma_core::{
     Action, CapabilityFacet, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus,
     Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
-    ProviderBackendId, ProviderInfo, ProviderStatus, SessionListItem, Transport, UserDecision,
-    UserPromptAttachment,
+    ProviderBackendId, ProviderInfo, ProviderStatus, RemoteAuth, SessionListItem, Transport,
+    UserDecision, UserPromptAttachment,
 };
 use uuid::Uuid;
 
@@ -76,9 +76,18 @@ pub enum Transport {
 }
 
 #[uniffi::remote(Enum)]
+pub enum RemoteAuth {
+    None,
+    Bearer { token: String },
+    Headers { headers: HashMap<String, String> },
+    Oauth,
+    OauthClient { client_id: String },
+}
+
+#[uniffi::remote(Enum)]
 pub enum PluginArgs {
     Local { command: String, args: Vec<String> },
-    Remote { url: String, requires_auth: bool },
+    Remote { url: String, auth: RemoteAuth },
 }
 
 #[uniffi::remote(Record)]

@@ -14,6 +14,7 @@ mod error;
 mod types;
 
 use std::{
+    collections::HashSet,
     future::Future,
     path::PathBuf,
     pin::pin,
@@ -300,9 +301,14 @@ impl PalomaApp {
 
     /// Ids of stored sessions whose user prompts or assistant messages
     /// contain `needle`.
-    pub async fn search_sessions(&self, needle: String) -> Result<Vec<Uuid>, PalomaError> {
+    pub async fn search_sessions(&self, needle: String) -> Result<HashSet<Uuid>, PalomaError> {
         let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.search_sessions(needle).await }).await??)
+        Ok(
+            on_runtime(async move { inner.search_sessions(needle).await })
+                .await??
+                .into_iter()
+                .collect(),
+        )
     }
 
     pub async fn restore_session(&self, session_id: Uuid) -> Result<Arc<EventStream>, PalomaError> {

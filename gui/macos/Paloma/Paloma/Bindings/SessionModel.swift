@@ -88,7 +88,7 @@ final class SessionModel {
             guard !Task.isCancelled else { return }
             switch result {
             case let .success(ids):
-                searchResult = Set(ids)
+                searchResult = ids
             case let .failure(error):
                 logError(target: "sessions", message: "failed to search sessions: \(String(describing: error))")
             }

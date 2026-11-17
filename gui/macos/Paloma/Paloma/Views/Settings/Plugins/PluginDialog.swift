@@ -75,7 +75,7 @@ struct PluginDialog: View {
             TextField("Name", text: $state.name)
                 .labelsHidden()
                 .disabled(state.originalName != nil || submitting)
-                .validationFlag(nameError)
+                .validationFlag(state.nameError(isTaken: model.isPluginNameTaken))
         }
         .padding(.bottom, 6)
         Picker("Type", selection: $state.isRemote) {
@@ -91,13 +91,17 @@ struct PluginDialog: View {
                 TextField("URL", text: $state.url, prompt: Text("https://example.com/mcp"))
                     .labelsHidden()
                     .disabled(submitting)
-                    .validationFlag(urlError)
+                    .validationFlag(state.urlError)
             }
             .padding(.bottom, 6)
-            LabeledContent("") {
-                Toggle("Requires authentication", isOn: $state.requiresAuth)
-                    .disabled(submitting)
-            }.padding(.bottom, 3)
+            Picker("Authentication", selection: $state.auth.kind) {
+                ForEach(RemoteAuth.kinds, id: \.self) { kind in
+                    Text(kind.label).tag(kind)
+                }
+            }
+            .padding(.bottom, 3)
+            .disabled(submitting)
+            authDetailView
         } else {
             TextField("Command", text: $state.command, prompt: Text("npx"))
                 .fontDesign(.monospaced)
@@ -112,7 +116,7 @@ struct PluginDialog: View {
                     .labelsHidden()
                     .fontDesign(.monospaced)
                     .disabled(submitting)
-                    .validationFlag(argsError)
+                    .validationFlag(state.argsError)
                 }
             }
         }
@@ -125,7 +129,7 @@ struct PluginDialog: View {
                     .labelsHidden()
                     .frame(width: 70)
                     .disabled(submitting)
-                    .validationFlag(timeoutError)
+                    .validationFlag(state.timeoutError)
                 Text("seconds")
                     .foregroundStyle(.secondary)
             }
@@ -136,8 +140,59 @@ struct PluginDialog: View {
                     .labelsHidden()
                     .fontDesign(.monospaced)
                     .disabled(submitting)
-                    .validationFlag(envError)
+                    .validationFlag(state.envError)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var authDetailView: some View {
+        switch state.auth {
+        case .none, .oauth:
+            EmptyView()
+        case let .bearer(token):
+            LabeledContent("Token") {
+                SecureField("Token", text: Binding(get: { token }, set: { state.auth = .bearer(token: $0) }))
+                    .labelsHidden()
+                    .disabled(submitting)
+            }
+            .padding(.top, 3)
+            .padding(.bottom, 3)
+        case .headers:
+            LabeledContent("Headers") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach($state.headers) { $header in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            TextField("Name", text: $header.name, prompt: Text("Name"))
+                                .labelsHidden()
+                                .validationFlag(state.duplicateHeaders.contains(header.id) ? "Duplicate name." : nil)
+                            TextField("Value", text: $header.value, prompt: Text("Value"))
+                                .labelsHidden()
+                            Button {
+                                state.headers.removeAll { $0.id == header.id }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.ghostIcon)
+                            .help("Remove")
+                        }
+                    }
+                    Button("Add Header", systemImage: "plus") {
+                        state.headers.append(HeaderField())
+                    }
+                }
+                .disabled(submitting)
+            }
+            .padding(.top, 3)
+            .padding(.bottom, 3)
+        case let .oauthClient(clientId):
+            LabeledContent("Client ID") {
+                TextField("Client ID", text: Binding(get: { clientId }, set: { state.auth = .oauthClient(clientId: $0) }))
+                    .labelsHidden()
+                    .disabled(submitting)
+            }
+            .padding(.top, 3)
+            .padding(.bottom, 3)
         }
     }
 
@@ -156,7 +211,7 @@ struct PluginDialog: View {
                 .labelsHidden()
                 .fontDesign(.monospaced)
                 .disabled(submitting)
-                .validationFlag(argsError)
+                .validationFlag(state.argsError)
             }
         }
         LabeledContent("Environment") {
@@ -165,7 +220,7 @@ struct PluginDialog: View {
                     .labelsHidden()
                     .fontDesign(.monospaced)
                     .disabled(submitting)
-                    .validationFlag(envError)
+                    .validationFlag(state.envError)
             }
         }
     }
@@ -177,7 +232,7 @@ struct PluginDialog: View {
                 .keyboardShortcut(.cancelAction)
             Button(state.originalName == nil ? "Add" : "Save", action: submit)
                 .keyboardShortcut(.defaultAction)
-                .disabled(submitting || !canSubmit)
+                .disabled(submitting || !state.canSubmit(isNameTaken: model.isPluginNameTaken))
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -189,75 +244,6 @@ struct PluginDialog: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    // MARK: - Live per-field validation
-
-    private var nameError: String? {
-        let name = state.name.trimmingCharacters(in: .whitespaces)
-        return state.originalName == nil && model.isPluginNameTaken(name) ? "A plugin with this name already exists." : nil
-    }
-
-    private var parsedArgs: [String]? {
-        let text = state.argsJson.trimmingCharacters(in: .whitespaces)
-        guard let args = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) else { return nil }
-        // A provider binary may take no arguments; MCP servers always need them.
-        if state.pluginType == .mcp, args.isEmpty {
-            return nil
-        }
-        return args
-    }
-
-    private var parsedEnv: [String: String]? {
-        let text = state.envJson.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return [:] }
-        return try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
-    }
-
-    private var argsError: String? {
-        guard !state.argsJson.trimmingCharacters(in: .whitespaces).isEmpty, parsedArgs == nil else { return nil }
-        return state.pluginType == .mcp
-            ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]."
-            : "Must be a JSON array like [\"--log-level\", \"info\"]."
-    }
-
-    private var urlError: String? {
-        let text = state.url.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return nil }
-        guard let url = URL(string: text), let scheme = url.scheme,
-              ["http", "https"].contains(scheme), url.host() != nil
-        else {
-            return "Must be a valid http(s) URL."
-        }
-        return nil
-    }
-
-    private var envError: String? {
-        parsedEnv == nil ? "Must be a JSON object like {\"KEY\": \"value\"}." : nil
-    }
-
-    private var timeoutError: String? {
-        (1 ... 3600).contains(state.timeout) ? nil : "Must be between 1 and 3600."
-    }
-
-    private var canSubmit: Bool {
-        if state.pluginType != .mcp {
-            return !state.command.trimmingCharacters(in: .whitespaces).isEmpty
-                && argsError == nil
-                && envError == nil
-        }
-        let requiredFilled = if state.isRemote {
-            !state.url.trimmingCharacters(in: .whitespaces).isEmpty
-        } else {
-            !state.command.trimmingCharacters(in: .whitespaces).isEmpty
-                && !state.argsJson.trimmingCharacters(in: .whitespaces).isEmpty
-        }
-        return requiredFilled
-            && !state.name.trimmingCharacters(in: .whitespaces).isEmpty
-            && nameError == nil
-            && (state.isRemote ? urlError : argsError) == nil
-            && envError == nil
-            && timeoutError == nil
     }
 
     private func submit() {
@@ -273,38 +259,36 @@ struct PluginDialog: View {
             } onFailure: {
                 submitting = false
             }
+        } else if state.pluginType == .mcp {
+            OperationError.run("Failed to Add MCP Server", into: $operationError) {
+                await model.initMcpConnection(plugin)
+            } onSuccess: { session in
+                oauthSession = session
+                if let session {
+                    openUrl(session.authUrl())
+                }
+                finalizeConnection(plugin, session: session)
+            } onFailure: {
+                submitting = false
+            }
         } else {
-            if state.pluginType == .mcp {
-                OperationError.run("Failed to Add MCP Server", into: $operationError) {
-                    await model.initMcpConnection(plugin)
-                } onSuccess: { session in
-                    oauthSession = session
-                    if let session {
-                        openUrl(session.authUrl())
-                    }
-                    finalizeConnection(plugin, session: session)
-                } onFailure: {
-                    submitting = false
+            OperationError.run("Failed to Add \(state.pluginType.label)", into: $operationError) {
+                if state.pluginType == .extension {
+                    await model.addExtensionPlugin(plugin)
+                } else {
+                    await model.addProviderPlugin(plugin)
                 }
-            } else {
-                OperationError.run("Failed to Add \(state.pluginType.label)", into: $operationError) {
-                    if state.pluginType == .extension {
-                        await model.addExtensionPlugin(plugin)
-                    } else {
-                        await model.addProviderPlugin(plugin)
-                    }
-                } onSuccess: {
-                    onClose()
-                } onFailure: {
-                    submitting = false
-                }
+            } onSuccess: {
+                onClose()
+            } onFailure: {
+                submitting = false
             }
         }
     }
 
     /// canSubmit gates the button; the guards only protect the invariant.
     private func constructPlugin() -> Plugin? {
-        guard let env = parsedEnv else { return nil }
+        guard let env = state.parsedEnv else { return nil }
         switch state.pluginType {
         case .extension, .provider:
             return Plugin(
@@ -315,15 +299,16 @@ struct PluginDialog: View {
                 env: env,
                 args: .local(
                     command: state.command.trimmingCharacters(in: .whitespaces),
-                    args: parsedArgs ?? []
+                    args: state.parsedArgs ?? []
                 )
             )
         case .mcp:
             let args: PluginArgs
             if state.isRemote {
-                args = .remote(url: state.url.trimmingCharacters(in: .whitespaces), requiresAuth: state.requiresAuth)
+                guard let auth = state.remoteAuth else { return nil }
+                args = .remote(url: state.url.trimmingCharacters(in: .whitespaces), auth: auth)
             } else {
-                guard let parsed = parsedArgs else { return nil }
+                guard let parsed = state.parsedArgs else { return nil }
                 args = .local(
                     command: state.command.trimmingCharacters(in: .whitespaces),
                     args: parsed
@@ -393,7 +378,8 @@ struct PluginDialogState: Identifiable {
     var command = ""
     var argsJson = ""
     var url = ""
-    var requiresAuth = false
+    var auth = RemoteAuth.none
+    var headers = [HeaderField()]
     var timeout = 300
     var envJson = "{}"
     var disabled = false
@@ -415,10 +401,108 @@ struct PluginDialogState: Identifiable {
             isRemote = false
             self.command = command
             argsJson = Self.json(args)
-        case let .remote(url, requiresAuth):
+        case let .remote(url, auth):
             isRemote = true
             self.url = url
-            self.requiresAuth = requiresAuth
+            self.auth = auth
+            if case let .headers(headers) = auth {
+                self.headers = headers.sorted { $0.key < $1.key }.map { HeaderField(name: $0.key, value: $0.value) }
+            }
+        }
+    }
+
+    // MARK: - Live per-field validation
+
+    func nameError(isTaken: (String) -> Bool) -> String? {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        return originalName == nil && isTaken(name) ? "A plugin with this name already exists." : nil
+    }
+
+    var parsedArgs: [String]? {
+        let text = argsJson.trimmingCharacters(in: .whitespaces)
+        guard let args = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) else { return nil }
+        // A provider binary may take no arguments; MCP servers always need them.
+        if pluginType == .mcp, args.isEmpty {
+            return nil
+        }
+        return args
+    }
+
+    var parsedEnv: [String: String]? {
+        let text = envJson.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return [:] }
+        return try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
+    }
+
+    var argsError: String? {
+        guard !argsJson.trimmingCharacters(in: .whitespaces).isEmpty, parsedArgs == nil else { return nil }
+        return pluginType == .mcp
+            ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]."
+            : "Must be a JSON array like [\"--log-level\", \"info\"]."
+    }
+
+    var urlError: String? {
+        let text = url.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        guard let url = URL(string: text), let scheme = url.scheme,
+              ["http", "https"].contains(scheme), url.host() != nil
+        else {
+            return "Must be a valid http(s) URL."
+        }
+        return nil
+    }
+
+    var envError: String? {
+        parsedEnv == nil ? "Must be a JSON object like {\"KEY\": \"value\"}." : nil
+    }
+
+    var timeoutError: String? {
+        (1 ... 3600).contains(timeout) ? nil : "Must be between 1 and 3600."
+    }
+
+    func canSubmit(isNameTaken: (String) -> Bool) -> Bool {
+        if pluginType != .mcp {
+            return !command.trimmingCharacters(in: .whitespaces).isEmpty
+                && argsError == nil
+                && envError == nil
+        }
+        let requiredFilled = if isRemote {
+            !url.trimmingCharacters(in: .whitespaces).isEmpty && remoteAuth != nil
+        } else {
+            !command.trimmingCharacters(in: .whitespaces).isEmpty
+                && !argsJson.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return requiredFilled
+            && !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && nameError(isTaken: isNameTaken) == nil
+            && (isRemote ? urlError : argsError) == nil
+            && envError == nil
+            && timeoutError == nil
+    }
+
+    /// Rows whose name another row also uses; header names are case-insensitive.
+    var duplicateHeaders: Set<UUID> {
+        let rows = Dictionary(grouping: headers) { $0.name.trimmingCharacters(in: .whitespaces).lowercased() }
+        return Set(rows.filter { !$0.key.isEmpty && $0.value.count > 1 }.values.joined().map(\.id))
+    }
+
+    /// The auth to submit, or nil while it still needs input.
+    var remoteAuth: RemoteAuth? {
+        switch auth {
+        case .none, .oauth:
+            return auth
+        case let .bearer(token):
+            let token = token.trimmingCharacters(in: .whitespaces)
+            return token.isEmpty ? nil : .bearer(token: token)
+        case .headers:
+            guard duplicateHeaders.isEmpty else { return nil }
+            let headers = headers
+                .map { ($0.name.trimmingCharacters(in: .whitespaces), $0.value.trimmingCharacters(in: .whitespaces)) }
+                .filter { !$0.0.isEmpty }
+            return .headers(headers: Dictionary(headers, uniquingKeysWith: { _, last in last }))
+        case let .oauthClient(clientId):
+            let clientId = clientId.trimmingCharacters(in: .whitespaces)
+            return clientId.isEmpty ? nil : .oauthClient(clientId: clientId)
         }
     }
 
@@ -426,4 +510,10 @@ struct PluginDialogState: Identifiable {
         guard let data = try? JSONEncoder().encode(value) else { return "" }
         return String(data: data, encoding: .utf8) ?? ""
     }
+}
+
+struct HeaderField: Identifiable {
+    let id = UUID()
+    var name = ""
+    var value = ""
 }
