@@ -26,6 +26,13 @@ LIB="target/$TARGET/$PROFILE/libpaloma_ffi.a"
 OUT="target/swift"
 APP_GENERATED="gui/macos/Paloma/Paloma/Generated"
 
+# Same value Xcode passes, so terminal and Xcode builds share one cargo cache.
+if [[ -z "${MACOSX_DEPLOYMENT_TARGET:-}" ]]; then
+    MACOSX_DEPLOYMENT_TARGET=$(awk -F' = |;' '/MACOSX_DEPLOYMENT_TARGET/ { print $2; exit }' \
+        gui/macos/Paloma/Paloma.xcodeproj/project.pbxproj)
+fi
+export MACOSX_DEPLOYMENT_TARGET
+
 cargo build -p paloma-ffi --target "$TARGET" ${PROFILE_FLAG}
 
 rm -rf "$OUT"
