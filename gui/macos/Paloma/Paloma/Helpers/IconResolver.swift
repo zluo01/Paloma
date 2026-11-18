@@ -35,7 +35,7 @@ enum IconResolver {
             }
             return .system(name)
         case let .embedded(data):
-            if let image = NSImage(data: Data(data)) {
+            if let image = NSImage(data: data) {
                 return .image(image)
             }
             return .system("questionmark.square.dashed")
