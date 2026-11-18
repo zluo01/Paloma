@@ -88,119 +88,28 @@ struct ChatSectionView: View {
     }
 }
 
-/// Inline-only AttributedString cannot express blocks, so lines split into blocks first.
-private struct MarkdownBlock: Identifiable {
-    enum Kind {
-        case paragraph(String)
-        case heading(Int, String)
-        case code(String)
-        case table(header: [String], rows: [[String]])
-        case quote(String)
-        case list([ListItem])
-    }
-
-    let id: Int
-    let kind: Kind
-}
-
-private struct ListItem {
-    let indent: Int
-    let marker: String
-    let text: String
-}
-
 private struct MessageText: View {
     let text: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(blocks) { block in
-                blockView(block)
+                MessageBlockView(block: block)
             }
         }
     }
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block.kind {
-        case let .paragraph(content):
-            Text(inline(content))
-                .font(.system(size: 13))
-                .textSelection(.enabled)
-        case let .heading(level, content):
-            Text(inline(content))
-                .font(headingFont(level))
-                .textSelection(.enabled)
-                .padding(.top, 4)
-        case let .code(content):
-            Text(content)
-                .font(.system(size: 12, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-        case let .quote(content):
-            HStack(alignment: .top, spacing: 8) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(.quaternary)
-                    .frame(width: 3)
-                Text(inline(content))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        case let .list(items):
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(items.indices, id: \.self) { index in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(items[index].marker)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                        Text(inline(items[index].text))
-                            .font(.system(size: 13))
-                            .textSelection(.enabled)
-                    }
-                    .padding(.leading, CGFloat(items[index].indent) * 14)
-                }
-            }
-        case let .table(header, rows):
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                if !header.isEmpty {
-                    GridRow {
-                        ForEach(header.indices, id: \.self) { column in
-                            Text(inline(header[column]))
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                    }
-                    Divider()
-                }
-                ForEach(rows.indices, id: \.self) { row in
-                    GridRow {
-                        ForEach(rows[row].indices, id: \.self) { column in
-                            Text(inline(rows[row][column]))
-                                .font(.system(size: 12))
-                        }
-                    }
-                }
-            }
-            .textSelection(.enabled)
-            .padding(8)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    private var blocks: [MarkdownBlock] {
-        var result: [MarkdownBlock] = []
+    private var blocks: [MessageBlock] {
+        var result: [MessageBlock] = []
         var paragraph: [Substring] = []
         var code: [Substring] = []
         var tableLines: [Substring] = []
         var quoteLines: [String] = []
-        var listItems: [ListItem] = []
+        var listItems: [MessageBlock.ListItem] = []
         var inCode = false
 
-        func append(_ kind: MarkdownBlock.Kind) {
-            result.append(MarkdownBlock(id: result.count, kind: kind))
+        func append(_ kind: MessageBlock.Kind) {
+            result.append(MessageBlock(id: result.count, kind: kind))
         }
 
         func flushParagraph() {
@@ -293,17 +202,17 @@ private struct MessageText: View {
         return content.hasPrefix(" ") ? String(content.dropFirst()) : String(content)
     }
 
-    private func listItem(_ line: Substring) -> ListItem? {
+    private func listItem(_ line: Substring) -> MessageBlock.ListItem? {
         let indent = line.prefix(while: { $0 == " " }).count / 2
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         for bullet in ["- ", "* ", "+ "] where trimmed.hasPrefix(bullet) {
-            return ListItem(indent: indent, marker: "•", text: String(trimmed.dropFirst(2)))
+            return MessageBlock.ListItem(indent: indent, marker: "•", text: String(trimmed.dropFirst(2)))
         }
         let digits = trimmed.prefix(while: \.isNumber)
         guard !digits.isEmpty else { return nil }
         let rest = trimmed.dropFirst(digits.count)
         guard rest.hasPrefix(". ") || rest.hasPrefix(") ") else { return nil }
-        return ListItem(indent: indent, marker: "\(digits).", text: String(rest.dropFirst(2)))
+        return MessageBlock.ListItem(indent: indent, marker: "\(digits).", text: String(rest.dropFirst(2)))
     }
 
     private func heading(_ line: String) -> (Int, String)? {
@@ -311,15 +220,6 @@ private struct MessageText: View {
         let hashes = line.prefix(while: { $0 == "#" })
         guard hashes.count <= 6, line.dropFirst(hashes.count).first == " " else { return nil }
         return (hashes.count, String(line.dropFirst(hashes.count + 1)))
-    }
-
-    private func headingFont(_ level: Int) -> Font {
-        switch level {
-        case 1: .system(size: 17, weight: .bold)
-        case 2: .system(size: 15, weight: .bold)
-        case 3: .system(size: 14, weight: .semibold)
-        default: .system(size: 13, weight: .semibold)
-        }
     }
 
     private func cells(_ line: Substring) -> [String] {
@@ -338,12 +238,5 @@ private struct MessageText: View {
         !cells.isEmpty && cells.allSatisfy { cell in
             !cell.isEmpty && cell.allSatisfy { "-:".contains($0) }
         }
-    }
-
-    private func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(text)
     }
 }
