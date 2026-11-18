@@ -135,13 +135,7 @@ struct PluginDialog: View {
             }
         }
         LabeledContent("Environment") {
-            captioned("A JSON object of strings.") {
-                TextField("Environment", text: $state.envJson, prompt: Text("{\"KEY\": \"value\"}"))
-                    .labelsHidden()
-                    .fontDesign(.monospaced)
-                    .disabled(submitting)
-                    .validationFlag(state.envError)
-            }
+            keyValueRows($state.env, duplicates: state.duplicateEnv, addTitle: "Add Variable")
         }
     }
 
@@ -160,28 +154,7 @@ struct PluginDialog: View {
             .padding(.bottom, 3)
         case .headers:
             LabeledContent("Headers") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach($state.headers) { $header in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            TextField("Name", text: $header.name, prompt: Text("Name"))
-                                .labelsHidden()
-                                .validationFlag(state.duplicateHeaders.contains(header.id) ? "Duplicate name." : nil)
-                            TextField("Value", text: $header.value, prompt: Text("Value"))
-                                .labelsHidden()
-                            Button {
-                                state.headers.removeAll { $0.id == header.id }
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.ghostIcon)
-                            .help("Remove")
-                        }
-                    }
-                    Button("Add Header", systemImage: "plus") {
-                        state.headers.append(HeaderField())
-                    }
-                }
-                .disabled(submitting)
+                keyValueRows($state.headers, duplicates: state.duplicateHeaders, addTitle: "Add Header")
             }
             .padding(.top, 3)
             .padding(.bottom, 3)
@@ -215,13 +188,7 @@ struct PluginDialog: View {
             }
         }
         LabeledContent("Environment") {
-            captioned("Optional. A JSON object of strings.") {
-                TextField("Environment", text: $state.envJson, prompt: Text("{\"API_KEY\": \"secret\"}"))
-                    .labelsHidden()
-                    .fontDesign(.monospaced)
-                    .disabled(submitting)
-                    .validationFlag(state.envError)
-            }
+            keyValueRows($state.env, duplicates: state.duplicateEnv, addTitle: "Add Variable")
         }
     }
 
@@ -235,6 +202,31 @@ struct PluginDialog: View {
                 .disabled(submitting || !state.canSubmit(isNameTaken: model.isPluginNameTaken))
                 .buttonStyle(.borderedProminent)
         }
+    }
+
+    private func keyValueRows(_ rows: Binding<[KeyValueRow]>, duplicates: Set<UUID>, addTitle: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(rows) { $row in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    TextField("Name", text: $row.name, prompt: Text("Name"))
+                        .labelsHidden()
+                        .validationFlag(duplicates.contains(row.id) ? "Duplicate name." : nil)
+                    TextField("Value", text: $row.value, prompt: Text("Value"))
+                        .labelsHidden()
+                    Button {
+                        rows.wrappedValue.removeAll { $0.id == row.id }
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.ghostIcon)
+                    .help("Remove")
+                }
+            }
+            Button(addTitle, systemImage: "plus") {
+                rows.wrappedValue.append(KeyValueRow())
+            }
+        }
+        .disabled(submitting)
     }
 
     private func captioned(_ caption: String, @ViewBuilder content: () -> some View) -> some View {
@@ -288,7 +280,8 @@ struct PluginDialog: View {
 
     /// canSubmit gates the button; the guards only protect the invariant.
     private func constructPlugin() -> Plugin? {
-        guard let env = state.parsedEnv else { return nil }
+        guard state.duplicateEnv.isEmpty else { return nil }
+        let env = state.env.dictionary
         switch state.pluginType {
         case .extension, .provider:
             return Plugin(
@@ -379,9 +372,9 @@ struct PluginDialogState: Identifiable {
     var argsJson = ""
     var url = ""
     var auth = RemoteAuth.none
-    var headers = [HeaderField()]
+    var headers = [KeyValueRow()]
     var timeout = 300
-    var envJson = "{}"
+    var env: [KeyValueRow] = []
     var disabled = false
 
     init(_ pluginType: PluginType) {
@@ -394,7 +387,7 @@ struct PluginDialogState: Identifiable {
         self.pluginType = pluginType
         name = plugin.name
         timeout = Int(plugin.timeout)
-        envJson = Self.json(plugin.env)
+        env = KeyValueRow.rows(plugin.env)
         disabled = plugin.disabled
         switch plugin.args {
         case let .local(command, args):
@@ -405,8 +398,8 @@ struct PluginDialogState: Identifiable {
             isRemote = true
             self.url = url
             self.auth = auth
-            if case let .headers(headers) = auth {
-                self.headers = headers.sorted { $0.key < $1.key }.map { HeaderField(name: $0.key, value: $0.value) }
+            if case let .headers(headers) = auth, !headers.isEmpty {
+                self.headers = KeyValueRow.rows(headers)
             }
         }
     }
@@ -428,12 +421,6 @@ struct PluginDialogState: Identifiable {
         return args
     }
 
-    var parsedEnv: [String: String]? {
-        let text = envJson.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return [:] }
-        return try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))
-    }
-
     var argsError: String? {
         guard !argsJson.trimmingCharacters(in: .whitespaces).isEmpty, parsedArgs == nil else { return nil }
         return pluginType == .mcp
@@ -452,10 +439,6 @@ struct PluginDialogState: Identifiable {
         return nil
     }
 
-    var envError: String? {
-        parsedEnv == nil ? "Must be a JSON object like {\"KEY\": \"value\"}." : nil
-    }
-
     var timeoutError: String? {
         (1 ... 3600).contains(timeout) ? nil : "Must be between 1 and 3600."
     }
@@ -464,7 +447,7 @@ struct PluginDialogState: Identifiable {
         if pluginType != .mcp {
             return !command.trimmingCharacters(in: .whitespaces).isEmpty
                 && argsError == nil
-                && envError == nil
+                && duplicateEnv.isEmpty
         }
         let requiredFilled = if isRemote {
             !url.trimmingCharacters(in: .whitespaces).isEmpty && remoteAuth != nil
@@ -476,14 +459,17 @@ struct PluginDialogState: Identifiable {
             && !name.trimmingCharacters(in: .whitespaces).isEmpty
             && nameError(isTaken: isNameTaken) == nil
             && (isRemote ? urlError : argsError) == nil
-            && envError == nil
+            && duplicateEnv.isEmpty
             && timeoutError == nil
     }
 
-    /// Rows whose name another row also uses; header names are case-insensitive.
+    /// Header names are case-insensitive; environment variable names are not.
     var duplicateHeaders: Set<UUID> {
-        let rows = Dictionary(grouping: headers) { $0.name.trimmingCharacters(in: .whitespaces).lowercased() }
-        return Set(rows.filter { !$0.key.isEmpty && $0.value.count > 1 }.values.joined().map(\.id))
+        headers.duplicates(ignoringCase: true)
+    }
+
+    var duplicateEnv: Set<UUID> {
+        env.duplicates(ignoringCase: false)
     }
 
     /// The auth to submit, or nil while it still needs input.
@@ -496,10 +482,7 @@ struct PluginDialogState: Identifiable {
             return token.isEmpty ? nil : .bearer(token: token)
         case .headers:
             guard duplicateHeaders.isEmpty else { return nil }
-            let headers = headers
-                .map { ($0.name.trimmingCharacters(in: .whitespaces), $0.value.trimmingCharacters(in: .whitespaces)) }
-                .filter { !$0.0.isEmpty }
-            return .headers(headers: Dictionary(headers, uniquingKeysWith: { _, last in last }))
+            return .headers(headers: headers.dictionary)
         case let .oauthClient(clientId):
             let clientId = clientId.trimmingCharacters(in: .whitespaces)
             return clientId.isEmpty ? nil : .oauthClient(clientId: clientId)
@@ -512,8 +495,31 @@ struct PluginDialogState: Identifiable {
     }
 }
 
-struct HeaderField: Identifiable {
+struct KeyValueRow: Identifiable {
     let id = UUID()
     var name = ""
     var value = ""
+
+    /// Rows for `values`, sorted by name.
+    static func rows(_ values: [String: String]) -> [KeyValueRow] {
+        values.sorted { $0.key < $1.key }.map { KeyValueRow(name: $0.key, value: $0.value) }
+    }
+}
+
+extension [KeyValueRow] {
+    /// The trimmed pairs, without the rows that have no name.
+    var dictionary: [String: String] {
+        let pairs = map { ($0.name.trimmingCharacters(in: .whitespaces), $0.value.trimmingCharacters(in: .whitespaces)) }
+            .filter { !$0.0.isEmpty }
+        return Dictionary(pairs, uniquingKeysWith: { _, last in last })
+    }
+
+    /// Rows whose name another row also uses.
+    func duplicates(ignoringCase: Bool) -> Set<UUID> {
+        let rows = Dictionary(grouping: self) {
+            let name = $0.name.trimmingCharacters(in: .whitespaces)
+            return ignoringCase ? name.lowercased() : name
+        }
+        return Set(rows.filter { !$0.key.isEmpty && $0.value.count > 1 }.values.joined().map(\.id))
+    }
 }

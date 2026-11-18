@@ -43,9 +43,9 @@ struct PluginDialogStateTests {
         let duplicated = remote {
             $0.auth = .headers(headers: [:])
             $0.headers = [
-                HeaderField(name: "X-API-Key", value: "one"),
-                HeaderField(name: "Accept", value: "application/json"),
-                HeaderField(name: " x-api-key ", value: "two"),
+                KeyValueRow(name: "X-API-Key", value: "one"),
+                KeyValueRow(name: "Accept", value: "application/json"),
+                KeyValueRow(name: " x-api-key ", value: "two"),
             ]
         }
         #expect(duplicated.duplicateHeaders == [duplicated.headers[0].id, duplicated.headers[2].id])
@@ -61,9 +61,9 @@ struct PluginDialogStateTests {
         let state = remote {
             $0.auth = .headers(headers: [:])
             $0.headers = [
-                HeaderField(name: " X-API-Key ", value: " key-456 "),
-                HeaderField(name: "", value: "orphan"),
-                HeaderField(name: "  ", value: ""),
+                KeyValueRow(name: " X-API-Key ", value: " key-456 "),
+                KeyValueRow(name: "", value: "orphan"),
+                KeyValueRow(name: "  ", value: ""),
             ]
         }
         #expect(canSubmit(state))
@@ -126,13 +126,68 @@ struct PluginDialogStateTests {
         #expect(state.nameError(isTaken: { $0 == "linear" }) == nil)
     }
 
-    @Test func givenServerWithInvalidEnvironmentWhenValidatingShouldBlockSubmit() {
-        expectBlocked(remote()) { $0.envJson = "{\"KEY\": 1}" }
-        expectBlocked(local()) { $0.envJson = "not json" }
+    @Test func givenDuplicateEnvironmentNamesWhenValidatingShouldFlagThemAndBlockSubmit() {
+        let rows = [
+            KeyValueRow(name: "API_KEY", value: "one"),
+            KeyValueRow(name: "HOME", value: "/tmp"),
+            KeyValueRow(name: " API_KEY ", value: "two"),
+        ]
+        #expect(remote { $0.env = rows }.duplicateEnv == [rows[0].id, rows[2].id])
+        expectBlocked(remote()) { $0.env = rows }
+        expectBlocked(local()) { $0.env = rows }
     }
 
-    @Test func givenServerWithBlankEnvironmentWhenValidatingShouldAllowSubmit() {
-        #expect(canSubmit(remote { $0.envJson = "  " }))
+    @Test func givenEnvironmentNamesDifferingOnlyByCaseWhenValidatingShouldAllowSubmit() {
+        let state = remote { $0.env = [KeyValueRow(name: "path", value: "one"), KeyValueRow(name: "PATH", value: "two")] }
+        #expect(state.duplicateEnv.isEmpty)
+        #expect(canSubmit(state))
+    }
+
+    @Test func givenEnvironmentRowsWithBlankNamesWhenBuildingTheEnvironmentShouldDropThem() {
+        let state = remote {
+            $0.env = [
+                KeyValueRow(name: " API_KEY ", value: " secret "),
+                KeyValueRow(name: "", value: "orphan"),
+                KeyValueRow(name: "  ", value: ""),
+            ]
+        }
+        #expect(canSubmit(state))
+        #expect(state.env.dictionary == ["API_KEY": "secret"])
+    }
+
+    @Test func givenSavedServerWhenEditingShouldListItsEnvironmentAndHeadersSortedByName() {
+        let state = PluginDialogState(.mcp, editing: Plugin(
+            name: "linear", transport: .http, timeout: 300, disabled: false, env: ["PATH": "/bin", "API_KEY": "secret"],
+            args: .remote(url: "https://mcp.example.com/mcp", auth: .headers(headers: ["X-Tenant": "acme", "Accept": "application/json"]))
+        ))
+        #expect(state.env.map(\.name) == ["API_KEY", "PATH"])
+        #expect(state.env.dictionary == ["API_KEY": "secret", "PATH": "/bin"])
+        #expect(state.headers.map(\.name) == ["Accept", "X-Tenant"])
+        #expect(state.remoteAuth == .headers(headers: ["X-Tenant": "acme", "Accept": "application/json"]))
+    }
+
+    @Test(arguments: [PluginType.mcp, .extension, .provider])
+    func givenNewDialogWhenOpenedShouldHaveNoEnvironmentRows(pluginType: PluginType) {
+        #expect(PluginDialogState(pluginType).env.isEmpty)
+    }
+
+    @Test func givenSavedServerWithoutEnvironmentWhenEditingShouldHaveNoEnvironmentRows() {
+        let state = PluginDialogState(.mcp, editing: Plugin(
+            name: "files", transport: .local, timeout: 300, disabled: false, env: [:],
+            args: .local(command: "npx", args: ["-y", "server-files"])
+        ))
+        #expect(state.env.isEmpty)
+        #expect(canSubmit(state))
+    }
+
+    @Test func givenCustomHeadersWithNothingEnteredWhenOpenedShouldStartFromOneBlankRow() {
+        #expect(PluginDialogState(.mcp).headers.count == 1)
+        let saved = PluginDialogState(.mcp, editing: Plugin(
+            name: "linear", transport: .http, timeout: 300, disabled: false, env: [:],
+            args: .remote(url: "https://mcp.example.com/mcp", auth: .headers(headers: [:]))
+        ))
+        #expect(saved.headers.count == 1)
+        #expect(saved.headers.dictionary.isEmpty)
     }
 
     @Test(arguments: [0, -1, 3601])
@@ -157,7 +212,7 @@ struct PluginDialogStateTests {
     func givenPluginWithArgumentsAndEnvironmentWhenValidatingShouldAllowSubmit(pluginType: PluginType) {
         #expect(canSubmit(command(pluginType) {
             $0.argsJson = "[\"--log-level\", \"info\"]"
-            $0.envJson = "{\"API_KEY\": \"secret\"}"
+            $0.env = [KeyValueRow(name: "API_KEY", value: "secret")]
         }))
         #expect(canSubmit(command(pluginType) { $0.argsJson = "[]" }))
     }
@@ -173,8 +228,10 @@ struct PluginDialogStateTests {
     }
 
     @Test(arguments: [PluginType.extension, .provider])
-    func givenPluginWithInvalidEnvironmentWhenValidatingShouldBlockSubmit(pluginType: PluginType) {
-        expectBlocked(command(pluginType)) { $0.envJson = "not json" }
+    func givenPluginWithDuplicateEnvironmentNamesWhenValidatingShouldBlockSubmit(pluginType: PluginType) {
+        expectBlocked(command(pluginType)) {
+            $0.env = [KeyValueRow(name: "API_KEY", value: "one"), KeyValueRow(name: "API_KEY", value: "two")]
+        }
     }
 
     // MARK: - Forms the dialog lets through, with one change applied
