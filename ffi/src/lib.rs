@@ -421,13 +421,7 @@ impl PalomaApp {
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, PalomaError> {
         let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.available_connectors().await })
-                .await??
-                .into_iter()
-                .map(Connector::from)
-                .collect(),
-        )
+        Ok(on_runtime(async move { inner.available_connectors().await }).await??)
     }
 
     pub async fn connectors_health_level(&self) -> Result<HealthLevel, PalomaError> {

@@ -11,10 +11,10 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 pub use paloma_core::{
-    Action, CapabilityFacet, ConnectorConnection, ExtensionCapabilityId, HealthLevel, HealthStatus,
-    Model, Permission, PermissionState, Plugin, PluginArgs, PluginType, ProviderAuthMethod,
-    ProviderBackendId, ProviderInfo, ProviderStatus, RemoteAuth, SessionListItem, Transport,
-    UserDecision, UserPromptAttachment,
+    Action, CapabilityFacet, ChatRenderEvent, Connector, ConnectorConnection,
+    ExtensionCapabilityId, HealthLevel, HealthStatus, Icon, Model, Permission, PermissionState,
+    Plugin, PluginArgs, PluginType, ProviderAuthMethod, ProviderBackendId, ProviderInfo,
+    ProviderStatus, RemoteAuth, SessionListItem, Transport, UserDecision, UserPromptAttachment,
 };
 use uuid::Uuid;
 
@@ -184,31 +184,19 @@ pub struct ConnectorConnection {
     pub status: ProviderStatus,
 }
 
-#[derive(Clone, Debug, uniffi::Enum)]
+#[uniffi::remote(Enum)]
 pub enum Icon {
     Name(String),
     Path(String),
     Embedded(Vec<u8>),
 }
 
-impl From<paloma_core::Icon> for Icon {
-    fn from(value: paloma_core::Icon) -> Self {
-        match value {
-            paloma_core::Icon::Name(name) => Self::Name(name),
-            paloma_core::Icon::Path(path) => Self::Path(path),
-            paloma_core::Icon::Embedded(bytes) => Self::Embedded(bytes),
-        }
-    }
-}
-
-impl From<paloma_core::capability_icon::Icon> for Icon {
-    fn from(value: paloma_core::capability_icon::Icon) -> Self {
-        use paloma_core::capability_icon::Icon as CapabilityIcon;
-        match value {
-            CapabilityIcon::Name(name) => Self::Name(name),
-            CapabilityIcon::Path(path) => Self::Path(path),
-            CapabilityIcon::Embedded(bytes) => Self::Embedded(bytes),
-        }
+fn capability_icon(value: paloma_core::capability_icon::Icon) -> Icon {
+    use paloma_core::capability_icon::Icon as CapabilityIcon;
+    match value {
+        CapabilityIcon::Name(name) => Icon::Name(name),
+        CapabilityIcon::Path(path) => Icon::Path(path),
+        CapabilityIcon::Embedded(bytes) => Icon::Embedded(bytes),
     }
 }
 
@@ -225,29 +213,18 @@ impl From<paloma_core::Item> for Item {
         Self {
             title: value.title,
             subtitle: value.subtitle,
-            icon: value.icon.and_then(|icon| icon.icon).map(Icon::from),
+            icon: value.icon.and_then(|icon| icon.icon).map(capability_icon),
             actions: value.actions,
         }
     }
 }
 
-#[derive(Clone, uniffi::Record)]
+#[uniffi::remote(Record)]
 pub struct Connector {
     pub id: ProviderBackendId,
     pub description: String,
     pub icon: Option<Icon>,
     pub connection: Option<ConnectorConnection>,
-}
-
-impl From<paloma_core::Connector> for Connector {
-    fn from(value: paloma_core::Connector) -> Self {
-        Self {
-            id: value.id,
-            description: value.description,
-            icon: value.icon.map(Icon::from),
-            connection: value.connection,
-        }
-    }
 }
 
 #[uniffi::remote(Enum)]
@@ -462,7 +439,7 @@ pub enum UserPromptAttachment {
     },
 }
 
-#[derive(Clone, Debug, uniffi::Enum)]
+#[uniffi::remote(Enum)]
 pub enum ChatRenderEvent {
     UserPrompt {
         text: String,
@@ -483,35 +460,6 @@ pub enum ChatRenderEvent {
     },
 }
 
-impl From<paloma_core::ChatRenderEvent> for ChatRenderEvent {
-    fn from(value: paloma_core::ChatRenderEvent) -> Self {
-        match value {
-            paloma_core::ChatRenderEvent::UserPrompt { text, attachments } => {
-                Self::UserPrompt { text, attachments }
-            },
-            paloma_core::ChatRenderEvent::TextDelta {
-                provider_backend_id,
-                text,
-            } => Self::TextDelta {
-                provider_backend_id,
-                text,
-            },
-            paloma_core::ChatRenderEvent::ReasoningDelta { text } => Self::ReasoningDelta { text },
-            paloma_core::ChatRenderEvent::ToolCall {
-                tool_name,
-                arguments,
-                description,
-                decisions,
-            } => Self::ToolCall {
-                tool_name,
-                arguments,
-                description,
-                decisions,
-            },
-        }
-    }
-}
-
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum RenderEvent {
     Search { event: SearchRenderEvent },
@@ -527,9 +475,7 @@ impl From<paloma_core::RenderEvent> for RenderEvent {
             paloma_core::RenderEvent::Search(event) => Self::Search {
                 event: event.into(),
             },
-            paloma_core::RenderEvent::Chat(event) => Self::Chat {
-                event: event.into(),
-            },
+            paloma_core::RenderEvent::Chat(event) => Self::Chat { event },
             paloma_core::RenderEvent::Cancel => Self::Cancel,
             paloma_core::RenderEvent::Done => Self::Done,
             paloma_core::RenderEvent::Error { message } => Self::Error { message },
