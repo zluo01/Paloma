@@ -21,6 +21,17 @@ struct PluginDialogTests {
         #expect(host.isSubmitting)
     }
 
+    @Test func givenLocalServerWithoutArgumentsWhenPressingReturnShouldSubmit() {
+        var state = PluginDialogState(.mcp)
+        state.name = "files"
+        state.command = "server-files"
+        let host = Host(state)
+        defer { host.tearDown() }
+
+        #expect(host.pressReturn())
+        #expect(host.isSubmitting)
+    }
+
     /// An empty name is refused by `canSubmit` alone: nothing else in the
     /// submit path would stop it.
     @Test func givenBlockedFormWhenPressingReturnShouldNotSubmit() {

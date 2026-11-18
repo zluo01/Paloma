@@ -108,7 +108,7 @@ struct PluginDialog: View {
                 .padding(.bottom, 6)
                 .disabled(submitting)
             LabeledContent("Arguments") {
-                captioned("A JSON array of strings.") {
+                captioned("Optional. A JSON array of strings.") {
                     TextField(
                         "Arguments", text: $state.argsJson,
                         prompt: Text("[\"--flag\", \"value\"]")
@@ -393,7 +393,7 @@ struct PluginDialogState: Identifiable {
         case let .local(command, args):
             isRemote = false
             self.command = command
-            argsJson = Self.json(args)
+            argsJson = args.isEmpty ? "" : Self.json(args)
         case let .remote(url, auth):
             isRemote = true
             self.url = url
@@ -413,8 +413,8 @@ struct PluginDialogState: Identifiable {
 
     var parsedArgs: [String]? {
         let text = argsJson.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return [] }
         guard let args = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) else { return nil }
-        // A provider binary may take no arguments; MCP servers always need them.
         if pluginType == .mcp, args.isEmpty {
             return nil
         }
@@ -453,7 +453,6 @@ struct PluginDialogState: Identifiable {
             !url.trimmingCharacters(in: .whitespaces).isEmpty && remoteAuth != nil
         } else {
             !command.trimmingCharacters(in: .whitespaces).isEmpty
-                && !argsJson.trimmingCharacters(in: .whitespaces).isEmpty
         }
         return requiredFilled
             && !name.trimmingCharacters(in: .whitespaces).isEmpty

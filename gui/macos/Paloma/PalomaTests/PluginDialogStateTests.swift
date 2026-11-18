@@ -87,8 +87,20 @@ struct PluginDialogStateTests {
         expectBlocked(local()) { $0.command = "  " }
     }
 
-    @Test func givenLocalServerWithEmptyArgumentsWhenValidatingShouldBlockSubmit() {
-        expectBlocked(local()) { $0.argsJson = "  " }
+    @Test func givenLocalServerWithoutArgumentsWhenValidatingShouldAllowSubmit() {
+        let state = local { $0.argsJson = "  " }
+        #expect(canSubmit(state))
+        #expect(state.argsError == nil)
+        #expect(state.parsedArgs == [])
+    }
+
+    @Test func givenSavedLocalServerWithoutArgumentsWhenEditingShouldLeaveArgumentsBlank() {
+        let state = PluginDialogState(.mcp, editing: Plugin(
+            name: "files", transport: .local, timeout: 300, disabled: false, env: [:],
+            args: .local(command: "server-files", args: [])
+        ))
+        #expect(state.argsJson.isEmpty)
+        #expect(canSubmit(state))
     }
 
     @Test(arguments: ["not json", "[]", "[1, 2]", "{\"flag\": \"value\"}"])
