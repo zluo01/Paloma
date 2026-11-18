@@ -7,7 +7,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for proto in [
         "schema/provider/codec.proto",
-        "schema/provider/common.proto",
         "schema/provider/connection.proto",
         "schema/provider/main.proto",
         "schema/provider/runtime.proto",
