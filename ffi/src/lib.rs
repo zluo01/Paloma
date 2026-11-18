@@ -238,6 +238,21 @@ pub struct PalomaApp {
     inner: Arc<AppContext>,
 }
 
+impl PalomaApp {
+    async fn call<T, E, Fut>(
+        &self,
+        call: impl FnOnce(Arc<AppContext>) -> Fut,
+    ) -> Result<T, PalomaError>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        PalomaError: From<E>,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+    {
+        Ok(on_runtime(call(Arc::clone(&self.inner))).await??)
+    }
+}
+
 #[uniffi::export]
 impl PalomaApp {
     /// Build the whole core: storage, providers, and the plugin/session/turn
@@ -263,14 +278,10 @@ impl PalomaApp {
         extension_capability_id: ExtensionCapabilityId,
         action: Action,
     ) -> Result<Behavior, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move {
-            inner
-                .run_search_action(extension_capability_id, action)
-                .await
-        })
-        .await??
-        .into())
+        Ok(self
+            .call(|app| async move { app.run_search_action(extension_capability_id, action).await })
+            .await?
+            .into())
     }
 
     pub async fn chat(
@@ -295,72 +306,61 @@ impl PalomaApp {
     }
 
     pub async fn available_sessions(&self) -> Result<Vec<SessionListItem>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.available_sessions().await }).await??)
+        self.call(|app| async move { app.available_sessions().await })
+            .await
     }
 
     /// Ids of stored sessions whose user prompts or assistant messages
     /// contain `needle`.
     pub async fn search_sessions(&self, needle: String) -> Result<HashSet<Uuid>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.search_sessions(needle).await })
-                .await??
-                .into_iter()
-                .collect(),
-        )
+        Ok(self
+            .call(|app| async move { app.search_sessions(needle).await })
+            .await?
+            .into_iter()
+            .collect())
     }
 
     pub async fn restore_session(&self, session_id: Uuid) -> Result<Arc<EventStream>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        let stream = on_runtime(async move {
-            inner
-                .restore_session(session_id)
-                .await
-                .map(EventStream::pump)
-        })
-        .await??;
+        let stream = self
+            .call(|app| async move { app.restore_session(session_id).await.map(EventStream::pump) })
+            .await?;
         Ok(Arc::new(stream))
     }
 
     pub async fn remove_session(&self, session_id: Uuid) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.remove_session(session_id).await }).await??)
+        self.call(|app| async move { app.remove_session(session_id).await })
+            .await
     }
 
     pub async fn cancel_session(&self, session_id: Uuid) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.cancel_session(session_id).await }).await??)
+        self.call(|app| async move { app.cancel_session(session_id).await })
+            .await
     }
 
     pub async fn decide_toolcall_permissions(
         &self,
         user_decision: UserDecision,
     ) -> Result<PermissionState, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.decide_toolcall_permissions(user_decision).await })
-                .await??,
-        )
+        self.call(|app| async move { app.decide_toolcall_permissions(user_decision).await })
+            .await
     }
 
     pub async fn get_permissions(&self) -> Result<Vec<Permission>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.get_permissions().await }).await??)
+        self.call(|app| async move { app.get_permissions().await })
+            .await
     }
 
     pub async fn delete_permission(&self, prefix: String) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.delete_permission(&prefix).await }).await??)
+        self.call(|app| async move { app.delete_permission(&prefix).await })
+            .await
     }
 
     pub async fn init_connection(
         &self,
         provider_backend_id: ProviderBackendId,
     ) -> Result<ConnectionPayload, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        on_runtime(async move { inner.init_connection(provider_backend_id).await })
-            .await??
+        self.call(|app| async move { app.init_connection(provider_backend_id).await })
+            .await?
             .try_into()
     }
 
@@ -370,32 +370,27 @@ impl PalomaApp {
         provider_backend_id: ProviderBackendId,
         payload: String,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move {
-            inner
-                .finalize_connection(provider_auth_method, provider_backend_id, payload)
+        self.call(|app| async move {
+            app.finalize_connection(provider_auth_method, provider_backend_id, payload)
                 .await
         })
-        .await??)
+        .await
     }
 
     pub async fn cancel_connection(
         &self,
         provider_backend_id: ProviderBackendId,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.cancel_connection(provider_backend_id).await }).await??)
+        self.call(|app| async move { app.cancel_connection(provider_backend_id).await })
+            .await
     }
 
     pub async fn disconnect_connector(
         &self,
         provider_backend_id: ProviderBackendId,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.disconnect_connector(provider_backend_id).await })
-                .await??,
-        )
+        self.call(|app| async move { app.disconnect_connector(provider_backend_id).await })
+            .await
     }
 
     pub async fn set_model_preference(
@@ -405,23 +400,21 @@ impl PalomaApp {
         effort: String,
         set_default: bool,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move {
-            inner
-                .set_model_preference(provider_backend_id, &model, &effort, set_default)
+        self.call(|app| async move {
+            app.set_model_preference(provider_backend_id, &model, &effort, set_default)
                 .await
         })
-        .await??)
+        .await
     }
 
     pub async fn prefer_model(&self) -> Result<Option<ProviderBackendId>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.prefer_model().await }).await??)
+        self.call(|app| async move { app.prefer_model().await })
+            .await
     }
 
     pub async fn available_connectors(&self) -> Result<Vec<Connector>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.available_connectors().await }).await??)
+        self.call(|app| async move { app.available_connectors().await })
+            .await
     }
 
     pub async fn connectors_health_level(&self) -> Result<HealthLevel, PalomaError> {
@@ -435,35 +428,33 @@ impl PalomaApp {
     }
 
     pub async fn list_extension_plugins(&self) -> Result<Vec<ExtensionInfo>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(
-            on_runtime(async move { inner.list_extension_plugins().await })
-                .await??
-                .into_iter()
-                .map(ExtensionInfo::from)
-                .collect(),
-        )
+        Ok(self
+            .call(|app| async move { app.list_extension_plugins().await })
+            .await?
+            .into_iter()
+            .map(ExtensionInfo::from)
+            .collect())
     }
 
     pub async fn list_provider_plugins(&self) -> Result<Vec<ProviderInfo>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.list_provider_plugins().await }).await??)
+        self.call(|app| async move { app.list_provider_plugins().await })
+            .await
     }
 
     pub async fn add_extension_plugin(&self, config: Plugin) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.add_extension_plugin(config).await }).await??)
+        self.call(|app| async move { app.add_extension_plugin(config).await })
+            .await
     }
 
     pub async fn add_provider_plugin(&self, config: Plugin) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.add_provider_plugin(config).await }).await??)
+        self.call(|app| async move { app.add_provider_plugin(config).await })
+            .await
     }
 
     pub async fn list_mcps(&self) -> Result<Vec<McpPluginInfo>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.list_mcps().await })
-            .await??
+        Ok(self
+            .call(|app| async move { app.list_mcps().await })
+            .await?
             .into_iter()
             .map(McpPluginInfo::from)
             .collect())
@@ -476,8 +467,9 @@ impl PalomaApp {
         &self,
         config: Plugin,
     ) -> Result<Option<Arc<McpOauthSession>>, PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        let state = on_runtime(async move { inner.init_mcp_connection(config).await }).await??;
+        let state = self
+            .call(|app| async move { app.init_mcp_connection(config).await })
+            .await?;
         Ok(state.map(|state| {
             Arc::new(McpOauthSession {
                 auth_url: state.auth_url().to_owned(),
@@ -505,8 +497,8 @@ impl PalomaApp {
         plugin_type: PluginType,
         plugin: Plugin,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.update_plugin(plugin_type, plugin).await }).await??)
+        self.call(|app| async move { app.update_plugin(plugin_type, plugin).await })
+            .await
     }
 
     pub async fn remove_plugin(
@@ -514,13 +506,13 @@ impl PalomaApp {
         plugin_type: PluginType,
         name: String,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.remove_plugin(plugin_type, &name).await }).await??)
+        self.call(|app| async move { app.remove_plugin(plugin_type, &name).await })
+            .await
     }
 
     pub async fn toggle_plugin(&self, name: String, disabled: bool) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move { inner.toggle_plugin(&name, disabled).await }).await??)
+        self.call(|app| async move { app.toggle_plugin(&name, disabled).await })
+            .await
     }
 
     pub async fn toggle_capability(
@@ -530,12 +522,10 @@ impl PalomaApp {
         facet: CapabilityFacet,
         disabled: bool,
     ) -> Result<(), PalomaError> {
-        let inner = Arc::clone(&self.inner);
-        Ok(on_runtime(async move {
-            inner
-                .toggle_capability(&name, &capability, facet, disabled)
+        self.call(|app| async move {
+            app.toggle_capability(&name, &capability, facet, disabled)
                 .await
         })
-        .await??)
+        .await
     }
 }
