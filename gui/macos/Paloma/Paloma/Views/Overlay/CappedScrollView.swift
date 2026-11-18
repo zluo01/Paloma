@@ -12,7 +12,6 @@ struct CappedScrollView<Content: View>: View {
         340
     }
 
-    @State private var contentHeight: CGFloat = 0
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -22,10 +21,8 @@ struct CappedScrollView<Content: View>: View {
     var body: some View {
         ScrollView {
             content
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
-                    contentHeight = height
-                }
         }
-        .frame(height: min(contentHeight, Self.contentCap))
+        .frame(maxHeight: Self.contentCap)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
