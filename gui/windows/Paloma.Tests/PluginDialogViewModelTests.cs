@@ -105,20 +105,51 @@ public sealed class PluginDialogViewModelTests
     }
 
     [Fact]
-    public void MalformedEnv_ReportsErrorAndExpandsAdvanced()
+    public void DuplicateEnvNames_AreFlaggedBlockSubmitAndExpandAdvanced()
     {
         var vm = McpAdd(new MockPalomaClient());
+        vm.Name = "server";
+        vm.Command = "npx";
+        vm.Args = "[\"--flag\"]";
+        Assert.Empty(vm.Env);
         Assert.False(vm.AdvancedExpanded);
+        Assert.True(vm.CanSubmit);
 
-        vm.Env = "not json";
+        vm.AddVariable();
+        vm.Env[0].Name = "API_KEY";
+        vm.AddVariable();
+        vm.Env[1].Name = " api_key ";
 
-        Assert.NotNull(vm.EnvError);
+        Assert.True(vm.Env[0].IsDuplicate);
+        Assert.True(vm.Env[1].IsDuplicate);
         Assert.True(vm.AdvancedExpanded);
         Assert.False(vm.CanSubmit);
 
-        vm.Env = "{\"KEY\": \"value\"}";
+        vm.Env[1].Remove();
 
-        Assert.Null(vm.EnvError);
+        Assert.False(Assert.Single(vm.Env).IsDuplicate);
+        Assert.True(vm.CanSubmit);
+    }
+
+    [Fact]
+    public async Task Submit_SendsTheTrimmedEnvWithoutBlankNames()
+    {
+        var mock = new MockPalomaClient();
+        var vm = McpAdd(mock);
+        vm.Name = "server";
+        vm.Command = "npx";
+        vm.Args = "[\"--flag\"]";
+        vm.AddVariable();
+        vm.Env[0].Name = " API_KEY ";
+        vm.Env[0].Value = " secret ";
+        vm.AddVariable();
+        vm.Env[1].Value = "orphan";
+
+        Assert.True(await vm.SubmitAsync());
+
+        var (name, value) = Assert.Single(Assert.Single(mock.FinalizedMcps).Env);
+        Assert.Equal("API_KEY", name);
+        Assert.Equal("secret", value);
     }
 
     [Fact]
@@ -140,7 +171,9 @@ public sealed class PluginDialogViewModelTests
         Assert.Equal(1, vm.TypeIndex);
         Assert.Equal("https://example.com/mcp", vm.Url);
         Assert.IsType<RemoteAuth.Oauth>(vm.Auth.Kind);
-        Assert.Equal("{\"KEY\":\"value\"}", vm.Env);
+        var variable = Assert.Single(vm.Env);
+        Assert.Equal("KEY", variable.Name);
+        Assert.Equal("value", variable.Value);
         // Customized timeout and env surface the advanced section.
         Assert.True(vm.AdvancedExpanded);
         Assert.True(vm.CanSubmit);

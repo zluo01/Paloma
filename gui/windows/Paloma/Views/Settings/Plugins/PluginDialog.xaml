@@ -20,6 +20,42 @@
         <DataTemplate x:Key="FieldHeader">
             <TextBlock FontFamily="{ThemeResource ContentControlThemeFontFamily}" Text="{Binding}" />
         </DataTemplate>
+
+        <DataTemplate x:Key="KeyValueRow" x:DataType="viewmodels:KeyValueRow">
+            <StackPanel Margin="0,0,0,8" Spacing="4">
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox
+                        AutomationProperties.Name="Name"
+                        FontFamily="{StaticResource PalomaMonoFontFamily}"
+                        PlaceholderText="Name"
+                        Text="{x:Bind Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox
+                        Grid.Column="1"
+                        AutomationProperties.Name="Value"
+                        FontFamily="{StaticResource PalomaMonoFontFamily}"
+                        PlaceholderText="Value"
+                        Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button
+                        Grid.Column="2"
+                        AutomationProperties.Name="Remove"
+                        Click="{x:Bind Remove}"
+                        Style="{StaticResource IconButton}"
+                        ToolTipService.ToolTip="Remove">
+                        <FontIcon FontSize="13" Glyph="&#xE74D;" />
+                    </Button>
+                </Grid>
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Text="Another row already uses this name."
+                    Visibility="{x:Bind IsDuplicate, Mode=OneWay}" />
+            </StackPanel>
+        </DataTemplate>
     </ContentDialog.Resources>
 
     <Grid Width="400">
@@ -116,45 +152,7 @@
 
                         <StackPanel Visibility="{x:Bind ViewModel.IsHeadersAuth, Mode=OneWay}">
                             <TextBlock Margin="0,0,0,8" Text="Headers" />
-                            <ItemsControl ItemsSource="{x:Bind ViewModel.Headers}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="viewmodels:HeaderRow">
-                                        <StackPanel Margin="0,0,0,8" Spacing="4">
-                                            <Grid ColumnSpacing="8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="2*" />
-                                                    <ColumnDefinition Width="3*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox
-                                                    AutomationProperties.Name="Header name"
-                                                    FontFamily="{StaticResource PalomaMonoFontFamily}"
-                                                    PlaceholderText="Name"
-                                                    Text="{x:Bind Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                                <TextBox
-                                                    Grid.Column="1"
-                                                    AutomationProperties.Name="Header value"
-                                                    FontFamily="{StaticResource PalomaMonoFontFamily}"
-                                                    PlaceholderText="Value"
-                                                    Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                                <Button
-                                                    Grid.Column="2"
-                                                    AutomationProperties.Name="Remove header"
-                                                    Click="{x:Bind Remove}"
-                                                    Style="{StaticResource IconButton}"
-                                                    ToolTipService.ToolTip="Remove">
-                                                    <FontIcon FontSize="13" Glyph="&#xE74D;" />
-                                                </Button>
-                                            </Grid>
-                                            <TextBlock
-                                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                                Style="{ThemeResource CaptionTextBlockStyle}"
-                                                Text="Another header already uses this name."
-                                                Visibility="{x:Bind IsDuplicate, Mode=OneWay}" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <ItemsControl ItemTemplate="{StaticResource KeyValueRow}" ItemsSource="{x:Bind ViewModel.Headers}" />
                             <Button
                                 HorizontalAlignment="Left"
                                 Click="{x:Bind ViewModel.AddHeader}"
@@ -180,20 +178,13 @@
                                 SpinButtonPlacementMode="Compact"
                                 Value="{x:Bind ViewModel.Timeout, Mode=TwoWay}"
                                 Visibility="{x:Bind ViewModel.IsMcp}" />
-                            <StackPanel Spacing="4">
-                                <TextBox
-                                    FontFamily="{StaticResource PalomaMonoFontFamily}"
-                                    Header="Environment"
-                                    HeaderTemplate="{StaticResource FieldHeader}"
-                                    Text="{x:Bind ViewModel.Env, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
-                                    <TextBox.PlaceholderText>{"KEY": "value"}</TextBox.PlaceholderText>
-                                </TextBox>
-                                <TextBlock
-                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                    Style="{ThemeResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind ViewModel.EnvError, Mode=OneWay}"
-                                    TextWrapping="Wrap"
-                                    Visibility="{x:Bind ViewModel.EnvError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
+                            <StackPanel>
+                                <TextBlock Margin="0,0,0,8" Text="Environment" />
+                                <ItemsControl ItemTemplate="{StaticResource KeyValueRow}" ItemsSource="{x:Bind ViewModel.Env}" />
+                                <Button
+                                    HorizontalAlignment="Left"
+                                    Click="{x:Bind ViewModel.AddVariable}"
+                                    Content="Add variable" />
                             </StackPanel>
                         </StackPanel>
                     </Expander>

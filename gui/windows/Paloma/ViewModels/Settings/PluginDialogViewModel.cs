@@ -72,15 +72,13 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
     [ObservableProperty] public partial string Token { get; set; } = string.Empty;
 
-    public ObservableCollection<HeaderRow> Headers { get; } = [];
+    public ObservableCollection<KeyValueRow> Headers { get; } = [];
 
     [ObservableProperty] public partial string ClientId { get; set; } = string.Empty;
 
     [ObservableProperty] public partial double Timeout { get; set; } = CoreDefaultTimeout;
 
-    [ObservableProperty] public partial string Env { get; set; } = "{}";
-
-    [ObservableProperty] public partial string? EnvError { get; private set; }
+    public ObservableCollection<KeyValueRow> Env { get; } = [];
 
     [ObservableProperty] public partial bool AdvancedExpanded { get; set; }
 
@@ -153,7 +151,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
         Name = _editing.Name;
         Timeout = _editing.Timeout;
-        Env = JsonSerializer.Serialize(_editing.Env);
+        Fill(Env, _editing.Env);
         // Customized advanced settings deserve to be seen while editing.
         AdvancedExpanded = _editing.Env.Count > 0 || _editing.Timeout != CoreDefaultTimeout;
         switch (_editing.Args)
@@ -180,12 +178,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
                 Token = bearer.Token;
                 break;
             case RemoteAuth.Headers headers:
-                var sorted = headers.HeadersValue.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase);
-                foreach (var (name, value) in sorted)
-                {
-                    Headers.Add(NewHeader(name, value));
-                }
-
+                Fill(Headers, headers.HeadersValue);
                 break;
             case RemoteAuth.OauthClient client:
                 ClientId = client.ClientId;
@@ -211,8 +204,6 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
     partial void OnTimeoutChanged(double value) => Validate();
 
-    partial void OnEnvChanged(string value) => Validate();
-
     private static List<string>? ParseArgs(string text)
     {
         try
@@ -225,55 +216,53 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         }
     }
 
-    private static Dictionary<string, string>? ParseEnv(string text)
-    {
-        if (text.Trim().Length == 0)
-        {
-            return [];
-        }
+    public void AddHeader() => AddRow(Headers);
 
-        try
-        {
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(text);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+    public void AddVariable() => AddRow(Env);
+
+    private void AddRow(ObservableCollection<KeyValueRow> rows, string name = "", string value = "")
+    {
+        rows.Add(new KeyValueRow(Validate, row => RemoveRow(rows, row)) { Name = name, Value = value });
     }
 
-    public void AddHeader() => Headers.Add(NewHeader());
-
-    private void RemoveHeader(HeaderRow row)
+    private void RemoveRow(ObservableCollection<KeyValueRow> rows, KeyValueRow row)
     {
-        Headers.Remove(row);
+        rows.Remove(row);
         Validate();
     }
 
-    private HeaderRow NewHeader(string name = "", string value = "") =>
-        new(Validate, RemoveHeader) { Name = name, Value = value };
-
-    private Dictionary<string, string>? HeaderPairs()
+    private void Fill(ObservableCollection<KeyValueRow> rows, Dictionary<string, string> values)
     {
-        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var row in Headers)
+        foreach (var (name, value) in values.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            AddRow(rows, name, value);
+        }
+    }
+
+    private static Dictionary<string, string>? Pairs(IEnumerable<KeyValueRow> rows)
+    {
+        var pairs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
         {
             var name = row.Name.Trim();
-            if (name.Length > 0 && !headers.TryAdd(name, row.Value.Trim()))
+            if (name.Length > 0 && !pairs.TryAdd(name, row.Value.Trim()))
             {
                 return null;
             }
         }
 
-        return headers;
+        return pairs;
     }
 
-    private void FlagDuplicateHeaders()
+    /**
+     * ENV variable and Headers are both case-insentive on windows.
+     */
+    private static void FlagDuplicates(IReadOnlyCollection<KeyValueRow> rows)
     {
-        foreach (var row in Headers)
+        foreach (var row in rows)
         {
             var name = row.Name.Trim();
-            row.IsDuplicate = name.Length > 0 && Headers.Count(other =>
+            row.IsDuplicate = name.Length > 0 && rows.Count(other =>
                 string.Equals(other.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)) > 1;
         }
     }
@@ -340,7 +329,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
                 valid = false;
             }
 
-            FlagDuplicateHeaders();
+            FlagDuplicates(Headers);
             if (BuildAuth() is null)
             {
                 valid = false;
@@ -349,16 +338,13 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
         UrlError = urlError;
 
-        string? envError = null;
-        if (ParseEnv(Env) is null)
+        FlagDuplicates(Env);
+        if (Pairs(Env) is null)
         {
-            envError = "Must be a JSON object like {\"KEY\": \"value\"}.";
             valid = false;
             // A collapsed expander must not swallow its own error.
             AdvancedExpanded = true;
         }
-
-        EnvError = envError;
 
         if (IsMcp && (double.IsNaN(Timeout) || Timeout is < 1 or > 3600))
         {
@@ -379,7 +365,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     {
         RemoteAuth.None or RemoteAuth.Oauth => Auth.Kind,
         RemoteAuth.Bearer => Token.Trim() is { Length: > 0 } token ? new RemoteAuth.Bearer(token) : null,
-        RemoteAuth.Headers => HeaderPairs() is { } headers ? new RemoteAuth.Headers(headers) : null,
+        RemoteAuth.Headers => Pairs(Headers) is { } headers ? new RemoteAuth.Headers(headers) : null,
         RemoteAuth.OauthClient => ClientId.Trim() is { Length: > 0 } clientId
             ? new RemoteAuth.OauthClient(clientId)
             : null,
@@ -389,7 +375,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     /// <summary>Validate gates the submit; the null returns only guard the invariant.</summary>
     private Plugin? BuildConfig()
     {
-        var env = ParseEnv(Env);
+        var env = Pairs(Env);
         if (env is null)
         {
             return null;
@@ -516,7 +502,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
 public sealed record AuthOption(RemoteAuth Kind, string Label);
 
-public sealed partial class HeaderRow(System.Action changed, Action<HeaderRow> remove) : ObservableObject
+public sealed partial class KeyValueRow(System.Action changed, Action<KeyValueRow> remove) : ObservableObject
 {
     [ObservableProperty] public partial string Name { get; set; } = string.Empty;
 
