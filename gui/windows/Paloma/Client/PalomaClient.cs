@@ -74,7 +74,7 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         return await app.AvailableSessions();
     }
 
-    public async Task<IReadOnlyList<string>> SearchSessionsAsync(
+    public async Task<IReadOnlySet<string>> SearchSessionsAsync(
         string needle,
         CancellationToken cancellationToken = default)
     {

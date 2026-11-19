@@ -41,7 +41,7 @@ public interface IPalomaClient
 
     Task<IReadOnlyList<SessionListItem>> GetSessionsAsync();
 
-    Task<IReadOnlyList<string>> SearchSessionsAsync(
+    Task<IReadOnlySet<string>> SearchSessionsAsync(
         string needle,
         CancellationToken cancellationToken = default);
 

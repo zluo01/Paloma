@@ -10,7 +10,7 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
 {
     private CancellationTokenSource? _searchCts;
     private IReadOnlyList<SessionListItem> _sessions = [];
-    private HashSet<string>? _filterIds;
+    private IReadOnlySet<string>? _filterIds;
     private int _selection = -1;
 
     public ObservableCollection<SessionRow> Rows { get; } = [];
@@ -58,7 +58,7 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
                 return;
             }
 
-            _filterIds = [.. ids];
+            _filterIds = ids;
             Apply(Visible());
         }
         catch (Exception e) when (PalomaClient.IsCancellation(e))

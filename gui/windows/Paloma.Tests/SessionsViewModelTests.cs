@@ -184,7 +184,7 @@ public sealed class SessionsViewModelTests
         var mock = new MockPalomaClient { Sessions = [Session("a"), Session("b")] };
         var vm = new SessionsViewModel(mock);
         await vm.LoadAsync();
-        var gate = new TaskCompletionSource<IReadOnlyList<string>>(
+        var gate = new TaskCompletionSource<HashSet<string>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         mock.OnSearchSessionsAsync = (_, _) => gate.Task;
 
@@ -209,8 +209,8 @@ public sealed class SessionsViewModelTests
         {
             Sessions = [Session("a"), Session("b")],
         };
-        var firstRpc = new TaskCompletionSource<IReadOnlyList<string>>();
-        var secondRpc = new TaskCompletionSource<IReadOnlyList<string>>();
+        var firstRpc = new TaskCompletionSource<HashSet<string>>();
+        var secondRpc = new TaskCompletionSource<HashSet<string>>();
         var secondStarted = new TaskCompletionSource();
         mock.OnSearchSessionsAsync = (needle, _) =>
         {

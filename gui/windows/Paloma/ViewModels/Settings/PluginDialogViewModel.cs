@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PalomaCore;
@@ -8,17 +9,19 @@ namespace Paloma.ViewModels.Settings;
 
 public sealed partial class PluginDialogViewModel : ObservableObject, IDisposable
 {
+    public static IReadOnlyList<AuthOption> AuthOptions { get; } =
+    [
+        new(new RemoteAuth.None(), "None"),
+        new(new RemoteAuth.Bearer(string.Empty), "Bearer token"),
+        new(new RemoteAuth.Headers([]), "Custom headers"),
+        new(new RemoteAuth.Oauth(), "OAuth"),
+        new(new RemoteAuth.OauthClient(string.Empty), "OAuth with client ID"),
+    ];
+
     // Mirrors core's stored default (db/queries/init_table.sql: timeout
     // DEFAULT 300); the customized-settings detection breaks silently if
     // they drift.
     private const uint CoreDefaultTimeout = 300;
-
-    private readonly IPalomaClient _client;
-    private readonly IReadOnlySet<string> _takenNames;
-    private readonly PluginType _kind;
-    private readonly Plugin? _editing;
-    private CancellationTokenSource? _finalize;
-    private bool _submitting;
 
     public string Title { get; }
 
@@ -55,7 +58,23 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
     [ObservableProperty] public partial string? UrlError { get; private set; }
 
-    [ObservableProperty] public partial bool RequiresAuth { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBearerAuth))]
+    [NotifyPropertyChangedFor(nameof(IsHeadersAuth))]
+    [NotifyPropertyChangedFor(nameof(IsOauthClientAuth))]
+    public partial AuthOption Auth { get; set; } = AuthOptions.Single(option => option.Kind is RemoteAuth.None);
+
+    public bool IsBearerAuth => Auth.Kind is RemoteAuth.Bearer;
+
+    public bool IsHeadersAuth => Auth.Kind is RemoteAuth.Headers;
+
+    public bool IsOauthClientAuth => Auth.Kind is RemoteAuth.OauthClient;
+
+    [ObservableProperty] public partial string Token { get; set; } = string.Empty;
+
+    public ObservableCollection<HeaderRow> Headers { get; } = [];
+
+    [ObservableProperty] public partial string ClientId { get; set; } = string.Empty;
 
     [ObservableProperty] public partial double Timeout { get; set; } = CoreDefaultTimeout;
 
@@ -80,6 +99,13 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     [ObservableProperty] public partial Uri? AuthUri { get; private set; }
 
     [ObservableProperty] public partial bool CanSubmit { get; private set; }
+
+    private readonly IPalomaClient _client;
+    private readonly IReadOnlySet<string> _takenNames;
+    private readonly PluginType _kind;
+    private readonly Plugin? _editing;
+    private CancellationTokenSource? _finalize;
+    private bool _submitting;
 
     public PluginDialogViewModel(
         IPalomaClient client,
@@ -110,6 +136,11 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         };
         NameEditable = editing is null;
         Prefill();
+        if (Headers.Count == 0)
+        {
+            AddHeader();
+        }
+
         Validate();
     }
 
@@ -135,7 +166,29 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
             case PluginArgs.Remote remote:
                 TypeIndex = 1;
                 Url = remote.Url;
-                RequiresAuth = remote.RequiresAuth;
+                PrefillAuth(remote.Auth);
+                break;
+        }
+    }
+
+    private void PrefillAuth(RemoteAuth auth)
+    {
+        Auth = AuthOptions.Single(option => option.Kind.GetType() == auth.GetType());
+        switch (auth)
+        {
+            case RemoteAuth.Bearer bearer:
+                Token = bearer.Token;
+                break;
+            case RemoteAuth.Headers headers:
+                var sorted = headers.HeadersValue.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+                foreach (var (name, value) in sorted)
+                {
+                    Headers.Add(NewHeader(name, value));
+                }
+
+                break;
+            case RemoteAuth.OauthClient client:
+                ClientId = client.ClientId;
                 break;
         }
     }
@@ -149,6 +202,12 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     partial void OnArgsChanged(string value) => Validate();
 
     partial void OnUrlChanged(string value) => Validate();
+
+    partial void OnAuthChanged(AuthOption value) => Validate();
+
+    partial void OnTokenChanged(string value) => Validate();
+
+    partial void OnClientIdChanged(string value) => Validate();
 
     partial void OnTimeoutChanged(double value) => Validate();
 
@@ -180,6 +239,42 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    public void AddHeader() => Headers.Add(NewHeader());
+
+    private void RemoveHeader(HeaderRow row)
+    {
+        Headers.Remove(row);
+        Validate();
+    }
+
+    private HeaderRow NewHeader(string name = "", string value = "") =>
+        new(Validate, RemoveHeader) { Name = name, Value = value };
+
+    private Dictionary<string, string>? HeaderPairs()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in Headers)
+        {
+            var name = row.Name.Trim();
+            if (name.Length > 0 && !headers.TryAdd(name, row.Value.Trim()))
+            {
+                return null;
+            }
+        }
+
+        return headers;
+    }
+
+    private void FlagDuplicateHeaders()
+    {
+        foreach (var row in Headers)
+        {
+            var name = row.Name.Trim();
+            row.IsDuplicate = name.Length > 0 && Headers.Count(other =>
+                string.Equals(other.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)) > 1;
         }
     }
 
@@ -244,6 +339,12 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
                 urlError = "Must be a valid http(s) URL.";
                 valid = false;
             }
+
+            FlagDuplicateHeaders();
+            if (BuildAuth() is null)
+            {
+                valid = false;
+            }
         }
 
         UrlError = urlError;
@@ -274,6 +375,17 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
                && uri.Host.Length > 0;
     }
 
+    private RemoteAuth? BuildAuth() => Auth.Kind switch
+    {
+        RemoteAuth.None or RemoteAuth.Oauth => Auth.Kind,
+        RemoteAuth.Bearer => Token.Trim() is { Length: > 0 } token ? new RemoteAuth.Bearer(token) : null,
+        RemoteAuth.Headers => HeaderPairs() is { } headers ? new RemoteAuth.Headers(headers) : null,
+        RemoteAuth.OauthClient => ClientId.Trim() is { Length: > 0 } clientId
+            ? new RemoteAuth.OauthClient(clientId)
+            : null,
+        _ => throw new ArgumentOutOfRangeException(nameof(Auth), Auth.Kind, null)
+    };
+
     /// <summary>Validate gates the submit; the null returns only guard the invariant.</summary>
     private Plugin? BuildConfig()
     {
@@ -301,13 +413,18 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         var disabled = _editing?.Disabled ?? false;
         if (IsRemote)
         {
+            if (BuildAuth() is not { } auth)
+            {
+                return null;
+            }
+
             return new Plugin(
                 name,
                 Transport.Http,
                 (uint)Timeout,
                 disabled,
                 env,
-                new PluginArgs.Remote(Url.Trim(), RequiresAuth));
+                new PluginArgs.Remote(Url.Trim(), auth));
         }
 
         if (ParseArgs(Args.Trim()) is not { } parsed)
@@ -395,4 +512,19 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
         await _client.FinalizeMcpConnectionAsync(config, session, _finalize.Token);
     }
+}
+
+public sealed record AuthOption(RemoteAuth Kind, string Label);
+
+public sealed partial class HeaderRow(System.Action changed, Action<HeaderRow> remove) : ObservableObject
+{
+    [ObservableProperty] public partial string Name { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial string Value { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial bool IsDuplicate { get; internal set; }
+
+    public void Remove() => remove(this);
+
+    partial void OnNameChanged(string value) => changed();
 }

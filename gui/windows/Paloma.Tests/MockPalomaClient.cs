@@ -96,9 +96,9 @@ internal sealed class MockPalomaClient : IPalomaClient
 
     public Action<string, bool>? OnTogglePlugin { get; set; }
 
-    public Func<string, IReadOnlyList<string>>? OnSearchSessions { get; set; }
+    public Func<string, HashSet<string>>? OnSearchSessions { get; set; }
 
-    public Func<string, CancellationToken, Task<IReadOnlyList<string>>>? OnSearchSessionsAsync { get; set; }
+    public Func<string, CancellationToken, Task<HashSet<string>>>? OnSearchSessionsAsync { get; set; }
 
     public Func<ProviderBackendId, ConnectionPhase>? OnInitConnection { get; set; }
 
@@ -212,7 +212,7 @@ internal sealed class MockPalomaClient : IPalomaClient
     public Task<IReadOnlyList<SessionListItem>> GetSessionsAsync() =>
         Task.FromResult(Sessions);
 
-    public async Task<IReadOnlyList<string>> SearchSessionsAsync(
+    public async Task<IReadOnlySet<string>> SearchSessionsAsync(
         string needle,
         CancellationToken cancellationToken = default)
     {
