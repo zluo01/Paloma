@@ -159,7 +159,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
             case PluginArgs.Local local:
                 TypeIndex = 0;
                 Command = local.Command;
-                Args = JsonSerializer.Serialize(local.Args);
+                Args = local.Args.Length == 0 ? string.Empty : JsonSerializer.Serialize(local.Args);
                 break;
             case PluginArgs.Remote remote:
                 TypeIndex = 1;
@@ -206,9 +206,15 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
     private static List<string>? ParseArgs(string text)
     {
+        if (text.Trim().Length == 0)
+        {
+            return [];
+        }
+
         try
         {
-            return JsonSerializer.Deserialize<List<string>>(text);
+            var args = JsonSerializer.Deserialize<List<string?>>(text);
+            return args is null || args.Contains(null) ? null : [.. args.OfType<string>()];
         }
         catch (JsonException)
         {
@@ -297,14 +303,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
             }
 
             var argsText = Args.Trim();
-            if (argsText.Length == 0)
-            {
-                if (IsMcp)
-                {
-                    valid = false;
-                }
-            }
-            else if (ParseArgs(argsText) is not { } args || (IsMcp && args.Count == 0))
+            if (argsText.Length > 0 && (ParseArgs(argsText) is not { } args || (IsMcp && args.Count == 0)))
             {
                 argsError = IsMcp
                     ? "Must be a non-empty JSON array like [\"--flag\", \"value\"]."
@@ -385,7 +384,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         {
             // Extension and provider names come from the plugin handshake,
             // not the dialog.
-            var extensionArgs = ParseArgs(Args.Trim().Length == 0 ? "[]" : Args.Trim()) ?? [];
+            var extensionArgs = ParseArgs(Args) ?? [];
             return new Plugin(
                 string.Empty,
                 Transport.Local,
@@ -413,7 +412,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
                 new PluginArgs.Remote(Url.Trim(), auth));
         }
 
-        if (ParseArgs(Args.Trim()) is not { } parsed)
+        if (ParseArgs(Args) is not { } parsed)
         {
             return null;
         }

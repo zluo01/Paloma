@@ -422,14 +422,38 @@ public sealed class PluginDialogViewModelTests
     }
 
     [Fact]
-    public void EmptyArgs_McpBlocksSubmitQuietly()
+    public async Task Submit_LocalMcpWithoutArgs_SendsNoArguments()
     {
-        var vm = McpAdd(new MockPalomaClient());
+        var mock = new MockPalomaClient();
+        var vm = McpAdd(mock);
         vm.Name = "server";
         vm.Command = "npx";
 
         Assert.Null(vm.ArgsError);
-        Assert.False(vm.CanSubmit);
+        Assert.True(vm.CanSubmit);
+        Assert.True(await vm.SubmitAsync());
+
+        var local = Assert.IsType<PluginArgs.Local>(Assert.Single(mock.FinalizedMcps).Args);
+        Assert.Empty(local.Args);
+    }
+
+    [Fact]
+    public void EditingLocalWithoutArgs_LeavesArgumentsBlank()
+    {
+        var editing = new Plugin(
+            "server",
+            Transport.Local,
+            300,
+            false,
+            [],
+            new PluginArgs.Local("npx", []));
+
+        var vm = new PluginDialogViewModel(
+            new MockPalomaClient(), new HashSet<string>(), PluginType.Mcp, editing);
+
+        Assert.Equal(string.Empty, vm.Args);
+        Assert.Null(vm.ArgsError);
+        Assert.True(vm.CanSubmit);
     }
 
     [Fact]
@@ -440,6 +464,21 @@ public sealed class PluginDialogViewModelTests
         vm.Command = "npx";
 
         vm.Args = "[]";
+
+        Assert.NotNull(vm.ArgsError);
+        Assert.False(vm.CanSubmit);
+    }
+
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[\"--flag\", null]")]
+    public void NullArgument_ReportsArgsError(string args)
+    {
+        var vm = McpAdd(new MockPalomaClient());
+        vm.Name = "server";
+        vm.Command = "npx";
+
+        vm.Args = args;
 
         Assert.NotNull(vm.ArgsError);
         Assert.False(vm.CanSubmit);
