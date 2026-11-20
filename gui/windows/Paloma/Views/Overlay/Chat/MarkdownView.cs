@@ -17,7 +17,6 @@ public sealed partial class MarkdownView : ContentControl
     private readonly StackPanel _container;
     private readonly MarkdownParser _parser;
     private readonly BatchedAction _rebuild;
-    private readonly ThemeBrushManager _themeManager;
 
     private bool _hidden;
 
@@ -34,19 +33,11 @@ public sealed partial class MarkdownView : ContentControl
         _container = new StackPanel { Spacing = 6 };
         _parser = new MarkdownParser();
         _rebuild = new BatchedAction(Rebuild);
-        _themeManager = new ThemeBrushManager(ActualTheme);
 
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         HorizontalAlignment = HorizontalAlignment.Stretch;
         IsTabStop = false;
         Content = _container;
-
-        ActualThemeChanged += (_, _) =>
-        {
-            _themeManager.Refresh(ActualTheme);
-            _parser.Reset();
-            QueueRebuild();
-        };
 
         // Proactively handle load and unload event to deregister message listen
         // such that if current view is dropped by the manager,
@@ -105,7 +96,7 @@ public sealed partial class MarkdownView : ContentControl
 
         foreach (var block in blocks)
         {
-            _container.Children.Add(MarkdownRenderer.Render(block, _themeManager));
+            _container.Children.Add(MarkdownRenderer.Render(block));
         }
     }
 }

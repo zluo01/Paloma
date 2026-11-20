@@ -25,22 +25,23 @@ internal static class MarkdownRenderer
             ? family
             : new FontFamily("Consolas");
 
-    public static FrameworkElement Render(Block block, ThemeBrushManager manager)
+    private static readonly Style Card = Themed("MarkdownCard");
+    private static readonly Style Divider = Themed("MarkdownDivider");
+    private static readonly Style QuoteRule = Themed("MarkdownQuoteRule");
+    private static readonly Style QuoteBody = Themed("MarkdownQuoteBody");
+    private static readonly Style ListMarker = Themed("MarkdownListMarker");
+
+    public static FrameworkElement Render(Block block)
     {
         return block switch
         {
             ParagraphBlock paragraph => InlineText(paragraph.Inline, 14),
             HeadingBlock heading => RenderHeading(heading),
-            CodeBlock code => RenderCode(code.Lines.ToString(), manager),
-            QuoteBlock quote => RenderQuote(quote, manager),
-            ListBlock list => RenderList(list, depth: 0, manager),
-            Table table => RenderTable(table, manager),
-            ThematicBreakBlock => new Border
-            {
-                Height = 1,
-                Margin = new Thickness(0, 4, 0, 4),
-                Background = manager.ThemeBrush("DividerStrokeColorDefaultBrush"),
-            },
+            CodeBlock code => RenderCode(code.Lines.ToString()),
+            QuoteBlock quote => RenderQuote(quote),
+            ListBlock list => RenderList(list, depth: 0),
+            Table table => RenderTable(table),
+            ThematicBreakBlock => new Border { Style = Divider, Margin = new Thickness(0, 4, 0, 4) },
             // Raw HTML and anything else unstyled: its text, unformatted.
             LeafBlock leaf => new TextBlock
             {
@@ -66,13 +67,13 @@ internal static class MarkdownRenderer
         return text;
     }
 
-    private static Border RenderCode(string content, ThemeBrushManager manager)
+    private static Style Themed(string key) => (Style)Application.Current.Resources[key];
+
+    private static Border RenderCode(string content)
     {
         return new Border
         {
-            Background = manager.ThemeBrush("SubtleFillColorSecondaryBrush"),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 8, 10, 8),
+            Style = Card,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Child = new TextBlock
             {
@@ -85,39 +86,28 @@ internal static class MarkdownRenderer
         };
     }
 
-    private static Grid RenderQuote(QuoteBlock quote, ThemeBrushManager manager)
+    private static Grid RenderQuote(QuoteBlock quote)
     {
         var grid = new Grid { ColumnSpacing = 8 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(
             new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var rule = new Rectangle
-        {
-            Width = 3,
-            RadiusX = 1.5,
-            RadiusY = 1.5,
-            Fill = manager.ThemeBrush("DividerStrokeColorDefaultBrush"),
-            VerticalAlignment = VerticalAlignment.Stretch,
-        };
+        var rule = new Rectangle { Style = QuoteRule, VerticalAlignment = VerticalAlignment.Stretch };
         var body = new StackPanel { Spacing = 6 };
         foreach (var child in quote)
         {
-            body.Children.Add(Render(child, manager));
+            body.Children.Add(Render(child));
         }
 
         // Foreground inherits down to every text block the quote contains.
-        var content = new ContentPresenter
-        {
-            Content = body,
-            Foreground = manager.ThemeBrush("TextFillColorSecondaryBrush"),
-        };
+        var content = new ContentPresenter { Content = body, Style = QuoteBody };
         Grid.SetColumn(content, 1);
         grid.Children.Add(rule);
         grid.Children.Add(content);
         return grid;
     }
 
-    private static StackPanel RenderList(ListBlock list, int depth, ThemeBrushManager manager)
+    private static StackPanel RenderList(ListBlock list, int depth)
     {
         var panel = new StackPanel { Spacing = 3 };
         // Count up from the first number. Markdig keeps the source numbers,
@@ -130,11 +120,11 @@ internal static class MarkdownRenderer
             {
                 if (child is ListBlock nested)
                 {
-                    panel.Children.Add(RenderList(nested, depth + 1, manager));
+                    panel.Children.Add(RenderList(nested, depth + 1));
                 }
                 else
                 {
-                    panel.Children.Add(ListRow(depth, marker, Render(child, manager), manager));
+                    panel.Children.Add(ListRow(depth, marker, Render(child)));
                     // The marker belongs to the item's first line only.
                     marker = string.Empty;
                 }
@@ -144,8 +134,7 @@ internal static class MarkdownRenderer
         return panel;
     }
 
-    private static Grid ListRow(
-        int depth, string marker, FrameworkElement content, ThemeBrushManager manager)
+    private static Grid ListRow(int depth, string marker, FrameworkElement content)
     {
         var row = new Grid
         {
@@ -155,19 +144,14 @@ internal static class MarkdownRenderer
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(
             new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var bullet = new TextBlock
-        {
-            Text = marker,
-            FontSize = 14,
-            Foreground = manager.ThemeBrush("TextFillColorSecondaryBrush"),
-        };
+        var bullet = new TextBlock { Text = marker, Style = ListMarker };
         Grid.SetColumn(content, 1);
         row.Children.Add(bullet);
         row.Children.Add(content);
         return row;
     }
 
-    private static Border RenderTable(Table table, ThemeBrushManager manager)
+    private static Border RenderTable(Table table)
     {
         var rows = table.OfType<TableRow>().ToList();
         var columns = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
@@ -215,25 +199,14 @@ internal static class MarkdownRenderer
             rowIndex++;
             if (!row.IsHeader) continue;
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var divider = new Border
-            {
-                Height = 1,
-                Background = manager.ThemeBrush("DividerStrokeColorDefaultBrush"),
-            };
+            var divider = new Border { Style = Divider };
             Grid.SetRow(divider, rowIndex);
             Grid.SetColumnSpan(divider, Math.Max(columns, 1));
             grid.Children.Add(divider);
             rowIndex++;
         }
 
-        return new Border
-        {
-            Background = manager.ThemeBrush("SubtleFillColorSecondaryBrush"),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 8, 10, 8),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Child = grid,
-        };
+        return new Border { Style = Card, HorizontalAlignment = HorizontalAlignment.Left, Child = grid };
     }
 
     private static TextBlock InlineText(ContainerInline? content, double size)
