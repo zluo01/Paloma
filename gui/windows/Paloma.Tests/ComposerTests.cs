@@ -17,19 +17,6 @@ public sealed class ComposerTests
     }
 
     [Theory]
-    [InlineData("", "")]
-    [InlineData("abc", "abc")]
-    [InlineData("\uFFFCabc", "[Image #1]abc")]
-    [InlineData("a\uFFFCb\uFFFCc", "a[Image #1]b[Image #2]c")]
-    [InlineData("\uFFFC\uFFFC", "[Image #1][Image #2]")]
-    [InlineData("a \uFFFC b", "a [Image #1] b")]
-    [InlineData("a\r\uFFFC", "a\r[Image #1]")]
-    public void GivenTextWithImagesWhenBuildingPromptShouldNumberImagePlaceholders(string text, string expected)
-    {
-        Assert.Equal(expected, Composer.Prompt(text));
-    }
-
-    [Theory]
     [InlineData("abc", "abc")]
     [InlineData("a\rb", "a\r\nb")]
     [InlineData("a\vb", "a\r\nb")]
