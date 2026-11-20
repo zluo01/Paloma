@@ -5,10 +5,13 @@ using CommunityToolkit.WinUI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Paloma.Models;
+using Paloma.ViewModels.Overlay;
 using Paloma.Views.Overlay;
+using Paloma.Views.Overlay.Chat;
 using Paloma.Views.Overlay.Footer;
 using Paloma.Views.Overlay.Query;
 using Xunit;
+using UserDecision = PalomaCore.UserDecision;
 
 namespace Paloma.UI.Tests;
 
@@ -124,6 +127,49 @@ public sealed class OverlayViewTests(UiFixture ui)
         Assert.Equal((OverlayMode.Search, "h"), (overlay.Mode, query.Text));
     });
 
+    [Fact]
+    public Task GivenChatModeWhenPressingEnterWithAPromptShouldSubmitItAndClearTheInput() => ui.RunAsync(async () =>
+    {
+        var (overlay, query, input) = await FocusedAsync(OverlayMode.Chat);
+        var submits = Submits(overlay.FindDescendant<ChatView>()!.ViewModel);
+        query.Text = "again";
+
+        await ui.PressAsync(input, VirtualKey.Enter);
+
+        Assert.Equal((OverlayMode.Chat, string.Empty, 1), (overlay.Mode, query.Text, submits()));
+    });
+
+    [Fact]
+    public Task GivenChatModeWhenPressingEnterWithoutAPromptShouldNotSubmit() => ui.RunAsync(async () =>
+    {
+        var (overlay, query, input) = await FocusedAsync(OverlayMode.Chat);
+        var submits = Submits(overlay.FindDescendant<ChatView>()!.ViewModel);
+
+        await ui.PressAsync(input, VirtualKey.Enter);
+
+        Assert.Equal((OverlayMode.Chat, string.Empty, 0), (overlay.Mode, query.Text, submits()));
+    });
+
+    [Fact]
+    public Task GivenSelectedDecisionWhenPressingEnterShouldDecideItInsteadOfSubmitting() => ui.RunAsync(async () =>
+    {
+        var (overlay, query, input) = await FocusedAsync(OverlayMode.Chat);
+        var chat = overlay.FindDescendant<ChatView>()!.ViewModel;
+        var submits = Submits(chat);
+        var attempts = 0;
+        chat.Sections.Add(new ToolSectionViewModel(
+            null!,
+            new ChatStreamEvent.ToolCall("shell", "{}", null, [new UserDecision.AllowOnce("call")]),
+            _ => attempts++,
+            (_, _) => { }));
+        chat.Navigate(1);
+        query.Text = "again";
+
+        await ui.PressAsync(input, VirtualKey.Enter);
+
+        Assert.Equal((OverlayMode.Chat, "again", 0, 1), (overlay.Mode, query.Text, submits(), attempts));
+    });
+
     private async Task<(OverlayView Overlay, FooterView Footer, Func<RectInt32[]> Published)> HostAsync()
     {
         var overlay = await ui.ShowAsync(new OverlayView { Width = 680, Height = 540 });
@@ -153,6 +199,19 @@ public sealed class OverlayViewTests(UiFixture ui)
 
         Assert.Equal(mode, overlay.Mode);
         return (overlay, query, input);
+    }
+
+    private static Func<int> Submits(ChatViewModel chat)
+    {
+        var submits = 0;
+        chat.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ChatViewModel.Status) && chat.Status == ChatStatus.Streaming)
+            {
+                submits++;
+            }
+        };
+        return () => submits;
     }
 
     private async Task SetStreamingAsync(OverlayView overlay, FooterView footer, bool streaming)

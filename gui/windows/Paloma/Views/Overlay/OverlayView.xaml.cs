@@ -242,24 +242,13 @@ public sealed partial class OverlayView
         switch (Mode)
         {
             case OverlayMode.Chat:
-            {
                 // handle the selected decision
-                if (Chat.ViewModel.DecideSelected())
+                if (!Chat.ViewModel.DecideSelected())
                 {
-                    return;
+                    await StartChatAsync();
                 }
 
-                // submit prompt if not in streaming
-                var (prompt, attachments) = Query.Compose();
-                if (!Chat.ViewModel.CanSubmit(prompt))
-                {
-                    return;
-                }
-
-                Query.Clear();
-                await Chat.ViewModel.SubmitAsync(prompt, attachments);
                 return;
-            }
             case OverlayMode.Sessions:
                 if (await Sessions.ConfirmPendingDeleteAsync())
                 {
