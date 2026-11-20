@@ -348,14 +348,9 @@ public sealed partial class OverlayView
         }
     }
 
-    private void OnChatDecisionHandled(object? sender, EventArgs args)
-    {
-        Query.FocusInput();
-    }
-
-    // After picking a model, focus is left on the dropdown button.
-    // Move it back to the input so the user can keep typing.
-    private void OnModelFlyoutClosed(object? sender, EventArgs args)
+    // A handled decision or a closed flyout leaves focus off the input.
+    // Move it back so the user can keep typing.
+    private void OnInputFocusRequested(object? sender, EventArgs args)
     {
         Query.FocusInput();
     }
@@ -383,13 +378,6 @@ public sealed partial class OverlayView
     private async void OnSearchAskRequested(object? sender, EventArgs args)
     {
         await StartChatAsync();
-    }
-
-    // Closing the actions popup leaves focus on it, not the input.
-    // Move it back so the user can keep typing.
-    private void OnSearchActionsFlyoutClosed(object? sender, EventArgs args)
-    {
-        Query.FocusInput();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)

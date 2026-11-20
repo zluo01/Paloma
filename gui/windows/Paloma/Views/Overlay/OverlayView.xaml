@@ -44,7 +44,7 @@
         <chat:ChatView
             x:Name="Chat"
             Grid.Row="2"
-            DecisionHandled="OnChatDecisionHandled"
+            DecisionHandled="OnInputFocusRequested"
             Visibility="{x:Bind local:OverlayView.WhenChat(Mode), Mode=OneWay}" />
 
         <sessions:SessionsView
@@ -57,7 +57,7 @@
             x:Name="SearchPanel"
             Grid.Row="2"
             ActionCompleted="OnSearchActionCompleted"
-            ActionsFlyoutClosed="OnSearchActionsFlyoutClosed"
+            ActionsFlyoutClosed="OnInputFocusRequested"
             AskRequested="OnSearchAskRequested"
             Visibility="{x:Bind local:OverlayView.WhenSearch(Mode), Mode=OneWay}" />
 
@@ -66,7 +66,7 @@
             Grid.Row="3"
             HasResults="{x:Bind Search.HasResults, Mode=OneWay}"
             Mode="{x:Bind Mode, Mode=OneWay}"
-            ModelFlyoutClosed="OnModelFlyoutClosed"
+            ModelFlyoutClosed="OnInputFocusRequested"
             SessionsRequested="OnFooterSessionsRequested"
             SizeChanged="OnSizeChanged"
             StopRequested="OnFooterStopRequested"
