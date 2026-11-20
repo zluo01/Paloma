@@ -391,18 +391,25 @@ public abstract partial class StreamingSectionViewModel : ChatSectionViewModel
 
     [ObservableProperty] public partial string Text { get; private set; }
 
+    private protected virtual bool Shown => true;
+
     private protected StreamingSectionViewModel(string text, Func<Action, bool>? delayFlush)
     {
         _builder = new StringBuilder(text);
         Text = text;
-        _flush = new BatchedAction(() => Text = _builder.ToString(), delayFlush);
+        _flush = new BatchedAction(Materialize, delayFlush);
     }
 
     public void Append(string delta)
     {
         _builder.Append(delta);
-        _flush.Trigger();
+        if (Shown)
+        {
+            _flush.Trigger();
+        }
     }
+
+    private protected void Materialize() => Text = _builder.ToString();
 }
 
 public sealed partial class AssistantSectionViewModel(
@@ -418,6 +425,16 @@ public sealed partial class ReasoningSectionViewModel(
     Func<Action, bool>? delayFlush = null) : StreamingSectionViewModel(text, delayFlush)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
+
+    private protected override bool Shown => IsExpanded;
+
+    partial void OnIsExpandedChanged(bool value)
+    {
+        if (value)
+        {
+            Materialize();
+        }
+    }
 
     [RelayCommand]
     private void ToggleExpanded() => IsExpanded = !IsExpanded;

@@ -737,6 +737,94 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task ReasoningDeltas_ExpandedAfterTheStream_ShowTheWholeText()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        mock.OnChat = (_, _) => MockPalomaClient.Stream<ChatStreamEvent>(
+            new ChatStreamEvent.SessionStarted("s"),
+            new ChatStreamEvent.ReasoningDelta("first "),
+            new ChatStreamEvent.ReasoningDelta("second "),
+            new ChatStreamEvent.ReasoningDelta("third"),
+            new ChatStreamEvent.Done());
+
+        await vm.SubmitAsync("hi", []);
+        var reasoning = Assert.IsType<ReasoningSectionViewModel>(Assert.Single(vm.Sections));
+        Assert.False(reasoning.IsExpanded);
+
+        reasoning.IsExpanded = true;
+
+        Assert.Equal("first second third", reasoning.Text);
+    }
+
+    [Fact]
+    public void Reasoning_Expanded_ShowsEachDeltaAsItArrives()
+    {
+        var reasoning = new ReasoningSectionViewModel("first", _ => false) { IsExpanded = true };
+
+        reasoning.Append(" second");
+        Assert.Equal("first second", reasoning.Text);
+
+        reasoning.Append(" third");
+        Assert.Equal("first second third", reasoning.Text);
+    }
+
+    [Fact]
+    public void Reasoning_CollapsedAndExpandedAgain_CatchesUpOnTheMissedDeltas()
+    {
+        var reasoning = new ReasoningSectionViewModel("first", _ => false) { IsExpanded = true };
+        reasoning.Append(" second");
+        reasoning.IsExpanded = false;
+        reasoning.Append(" third");
+        reasoning.Append(" fourth");
+
+        reasoning.IsExpanded = true;
+
+        Assert.Equal("first second third fourth", reasoning.Text);
+    }
+
+    [Fact]
+    public void Reasoning_ExpandedWithADeferredFlush_ShowsTheTextOnceItRuns()
+    {
+        var gate = new FlushGate();
+        var reasoning = new ReasoningSectionViewModel("first", gate.Defer) { IsExpanded = true };
+
+        reasoning.Append(" second");
+        reasoning.Append(" third");
+        gate.Run();
+
+        Assert.Equal("first second third", reasoning.Text);
+    }
+
+    [Fact]
+    public void Reasoning_Collapsed_DoesNotScheduleAFlush()
+    {
+        var scheduled = 0;
+        var reasoning = new ReasoningSectionViewModel("first", _ =>
+        {
+            scheduled++;
+            return true;
+        });
+
+        reasoning.Append(" second");
+        reasoning.Append(" third");
+
+        Assert.Equal(0, scheduled);
+    }
+
+    [Fact]
+    public void Assistant_AlwaysSchedulesItsFlush()
+    {
+        var gate = new FlushGate();
+        var assistant = new AssistantSectionViewModel(Backend("gpt"), "first", gate.Defer);
+
+        assistant.Append(" second");
+        gate.Run();
+
+        Assert.Equal("first second", assistant.Text);
+    }
+
+    [Fact]
     public async Task UserPromptEvent_AddsAUserSectionAndBreaksTheMerge()
     {
         var mock = new MockPalomaClient();
