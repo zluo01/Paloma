@@ -86,6 +86,7 @@
             <PasswordBox Header="API key" Password="{x:Bind ViewModel.Input, Mode=TwoWay}" />
             <TextBlock
                 x:Name="InstructionsText"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Style="{ThemeResource CaptionTextBlockStyle}"
                 TextWrapping="Wrap"
                 Visibility="{x:Bind ViewModel.HasInstructions, Mode=OneWay}" />

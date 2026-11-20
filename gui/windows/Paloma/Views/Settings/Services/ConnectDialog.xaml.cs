@@ -1,8 +1,6 @@
 using System.ComponentModel;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI.Xaml.Media;
 using Paloma.Models;
 using Paloma.ViewModels.Settings;
 using Instruction = PalomaCore.Instruction;
@@ -36,26 +34,21 @@ public sealed partial class ConnectDialog
     {
         var inlines = InstructionsText.Inlines;
         inlines.Clear();
-        var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
         foreach (var instruction in ViewModel.Instructions)
         {
             switch (instruction)
             {
                 case Instruction.Text text:
-                    inlines.Add(new Run { Text = text.TextValue, Foreground = secondary });
+                    inlines.Add(new Run { Text = text.TextValue });
                     break;
                 case Instruction.Link link:
-                    RenderLink(inlines, link.Label, link.LinkValue, secondary);
+                    RenderLink(inlines, link.Label, link.LinkValue);
                     break;
             }
         }
     }
 
-    private static void RenderLink(
-        InlineCollection target,
-        string label,
-        string url,
-        Brush fallbackForeground)
+    private static void RenderLink(InlineCollection target, string label, string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
@@ -65,7 +58,7 @@ public sealed partial class ConnectDialog
         }
         else
         {
-            target.Add(new Run { Text = label, Foreground = fallbackForeground });
+            target.Add(new Run { Text = label });
         }
     }
 
