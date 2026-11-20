@@ -1,8 +1,8 @@
+using CommunityToolkit.WinUI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Paloma.Helpers;
 using Paloma.ViewModels.Overlay;
 using Behavior = PalomaCore.Behavior;
@@ -152,26 +152,7 @@ public sealed partial class SearchView
                 return null;
             }
 
-            return ItemsControlOf(groupContainer)?.ContainerFromItem(row) as FrameworkElement;
-        }
-
-        return null;
-    }
-
-    private static ItemsControl? ItemsControlOf(DependencyObject container)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(container); i++)
-        {
-            var child = VisualTreeHelper.GetChild(container, i);
-            if (child is ItemsControl items)
-            {
-                return items;
-            }
-
-            if (ItemsControlOf(child) is { } nested)
-            {
-                return nested;
-            }
+            return groupContainer.FindDescendant<ItemsControl>()?.ContainerFromItem(row) as FrameworkElement;
         }
 
         return null;
