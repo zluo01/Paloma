@@ -72,6 +72,20 @@ public sealed class ConnectViewModelTests
     }
 
     [Fact]
+    public void Input_Change_NotifiesInputHasInputAndCanConnectOnce()
+    {
+        var vm = new ConnectViewModel(new MockPalomaClient(), TestConnector());
+        var notified = new List<string?>();
+        vm.PropertyChanged += (_, args) => notified.Add(args.PropertyName);
+
+        vm.Input = "secret-key";
+
+        Assert.Equal(
+            [nameof(ConnectViewModel.CanConnect), nameof(ConnectViewModel.HasInput), nameof(ConnectViewModel.Input)],
+            notified.Order());
+    }
+
+    [Fact]
     public async Task Submit_ManualBlankInput_FinalizesEmptyKey()
     {
         var mock = new MockPalomaClient

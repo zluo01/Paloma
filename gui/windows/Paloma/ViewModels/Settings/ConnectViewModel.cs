@@ -22,13 +22,10 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
 
     partial void OnPhaseChanged(ConnectionPhase value) => OnPropertyChanged(string.Empty);
 
-    [ObservableProperty] public partial string Input { get; set; } = string.Empty;
-
-    partial void OnInputChanged(string value)
-    {
-        OnPropertyChanged(nameof(HasInput));
-        OnPropertyChanged(nameof(CanConnect));
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasInput))]
+    [NotifyPropertyChangedFor(nameof(CanConnect))]
+    public partial string Input { get; set; } = string.Empty;
 
     public bool IsLoading => Phase is ConnectionPhase.Loading;
 
