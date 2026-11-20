@@ -588,6 +588,118 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task Decide_Sibling_ReleasesTheCursorParkedOnTheSection()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = _ => PermissionState.Allow;
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            yield return new ChatStreamEvent.ToolCall("one", "{}", null,
+            [
+                new AllowOnce("c1"),
+                new AllowSession("s", "c1"),
+            ]);
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run", []);
+        await TestWait.UntilAsync(() => vm.Sections.Count == 1);
+        var section = Assert.IsType<ToolSectionViewModel>(Assert.Single(vm.Sections));
+        vm.Navigate(1);
+        Assert.True(section.Decisions[0].IsSelected);
+
+        section.Decisions[1].Decide();
+
+        Assert.Equal(PermissionState.Allow, section.Resolution);
+        Assert.False(section.Decisions[0].IsSelected);
+        Assert.False(vm.DecideSelected());
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_OtherSection_KeepsTheCursor()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = _ => PermissionState.Allow;
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            yield return new ChatStreamEvent.ToolCall("one", "{}", null, [new AllowOnce("c1")]);
+            yield return new ChatStreamEvent.ToolCall("two", "{}", null, [new AllowOnce("c2")]);
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run", []);
+        await TestWait.UntilAsync(() => vm.Sections.Count == 2);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+        vm.Navigate(1);
+        Assert.True(sections[0].Decisions[0].IsSelected);
+
+        sections[1].Decisions[0].Decide();
+
+        Assert.Equal(PermissionState.Allow, sections[1].Resolution);
+        Assert.True(sections[0].Decisions[0].IsSelected);
+        Assert.True(sections[0].Unresolved);
+        Assert.True(vm.DecideSelected());
+        Assert.Equal(PermissionState.Allow, sections[0].Resolution);
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
+    public async Task Decide_IgnorePermission_ReleasesTheCursorParkedOnACascadedSection()
+    {
+        var mock = new MockPalomaClient();
+        var vm = new ChatViewModel(mock);
+        var gate = new TaskCompletionSource();
+        mock.OnChat = (_, _) => Held();
+        mock.OnDecide = _ => PermissionState.Allow;
+
+        async IAsyncEnumerable<ChatStreamEvent> Held()
+        {
+            yield return new ChatStreamEvent.SessionStarted("s");
+            yield return new ChatStreamEvent.ToolCall("one", "{}", null,
+            [
+                new AllowOnce("c1"),
+                new IgnorePermission("s", "c1"),
+            ]);
+            yield return new ChatStreamEvent.ToolCall("two", "{}", null,
+            [
+                new AllowOnce("c2"),
+                new IgnorePermission("s", "c2"),
+            ]);
+            await gate.Task;
+        }
+
+        var submit = vm.SubmitAsync("run", []);
+        await TestWait.UntilAsync(() => vm.Sections.Count == 2);
+        var sections = vm.Sections.OfType<ToolSectionViewModel>().ToList();
+        vm.Navigate(3);
+        Assert.True(sections[1].Decisions[0].IsSelected);
+
+        sections[0].Decisions[1].Decide();
+
+        Assert.Equal(PermissionState.Allow, sections[1].Resolution);
+        Assert.False(sections[1].Decisions[0].IsSelected);
+        Assert.False(vm.DecideSelected());
+
+        gate.SetResult();
+        await submit;
+    }
+
+    [Fact]
     public async Task Deltas_MergeIntoTheTrailingAssistantSection()
     {
         var mock = new MockPalomaClient();

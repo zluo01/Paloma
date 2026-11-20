@@ -242,8 +242,7 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
 
                 break;
             case ChatStreamEvent.ToolCall call:
-                Sections.Add(new ToolSectionViewModel(
-                    client, call, ReportError, ResetCursor, OnDecisionResolved));
+                Sections.Add(new ToolSectionViewModel(client, call, ReportError, OnDecisionResolved));
                 break;
             case ChatStreamEvent.Done:
                 Status = ChatStatus.Idle;
@@ -263,19 +262,18 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
         StatusMessage = message;
     }
 
-    // Reset the current selection if the trigger one is the selection one
-    private void ResetCursor(Func<DecisionViewModel, bool> contains)
-    {
-        if (_decisionCursor is not { } cursor || !contains(cursor)) return;
-        cursor.IsSelected = false;
-        _decisionCursor = null;
-    }
-
     // Once ignore permission is clicked, autopopulate for all other decisions with same format.
     // This method will cause cascade, should be safe due to it is run in UI thread which is single threaded
     // and Deciding flag will gate on duplicate RPC calls.
-    private void OnDecisionResolved(UserDecision decision)
+    private void OnDecisionResolved(ToolSectionViewModel resolved, UserDecision decision)
     {
+        // Reset the current selection if the trigger one is the selection one
+        if (_decisionCursor is { } cursor && resolved.Decisions.Contains(cursor))
+        {
+            cursor.IsSelected = false;
+            _decisionCursor = null;
+        }
+
         if (decision is not UserDecision.IgnorePermission)
         {
             return;
@@ -427,9 +425,9 @@ public sealed partial class ReasoningSectionViewModel(
 
 public sealed partial class ToolSectionViewModel : ChatSectionViewModel
 {
+    private readonly IPalomaClient _client;
     private readonly Action<string> _reportError;
-    private readonly Action<Func<DecisionViewModel, bool>> _cleanup;
-    private readonly Action<UserDecision> _resolved;
+    private readonly Action<ToolSectionViewModel, UserDecision> _resolved;
 
     public string ToolName { get; }
 
@@ -463,21 +461,20 @@ public sealed partial class ToolSectionViewModel : ChatSectionViewModel
         IPalomaClient client,
         ChatStreamEvent.ToolCall call,
         Action<string> reportError,
-        Action<Func<DecisionViewModel, bool>> cleanup,
-        Action<UserDecision> resolved)
+        Action<ToolSectionViewModel, UserDecision> resolved)
     {
+        _client = client;
         _reportError = reportError;
-        _cleanup = cleanup;
         _resolved = resolved;
         ToolName = call.Name;
         ToolDescription = call.Description;
         Arguments = call.Arguments;
-        Decisions = [.. call.Decisions.Select(decision => new DecisionViewModel(client, decision, OnDecide))];
+        Decisions = [.. call.Decisions.Select(decision => new DecisionViewModel(decision, OnDecide))];
         AllowDecisions = [.. Decisions.Where(decision => !decision.Terminal)];
         TerminalDecisions = [.. Decisions.Where(decision => decision.Terminal)];
     }
 
-    private async void OnDecide(UserDecision decision, Func<Task<PermissionState>> decide)
+    private async void OnDecide(UserDecision decision)
     {
         if (Deciding || Resolution is not null)
         {
@@ -487,7 +484,7 @@ public sealed partial class ToolSectionViewModel : ChatSectionViewModel
         Deciding = true;
         try
         {
-            Resolution = await decide();
+            Resolution = await _client.DecideAsync(decision);
         }
         catch (Exception e)
         {
@@ -502,17 +499,15 @@ public sealed partial class ToolSectionViewModel : ChatSectionViewModel
             // a sibling clears too. A failed decision keeps its highlight.
             if (Resolution is not null)
             {
-                _cleanup(Decisions.Contains);
-                _resolved(decision);
+                _resolved(this, decision);
             }
         }
     }
 }
 
 public sealed partial class DecisionViewModel(
-    IPalomaClient client,
     UserDecision decision,
-    Action<UserDecision, Func<Task<PermissionState>>> onDecide) : ObservableObject
+    Action<UserDecision> onDecide) : ObservableObject
 {
     public UserDecision Decision { get; } = decision;
 
@@ -520,16 +515,5 @@ public sealed partial class DecisionViewModel(
 
     [ObservableProperty] public partial bool IsSelected { get; set; }
 
-    public void Decide()
-    {
-        onDecide(Decision, DecideAsync);
-        return;
-
-        async Task<PermissionState> DecideAsync()
-        {
-            var result = await client.DecideAsync(Decision);
-            IsSelected = false;
-            return result;
-        }
-    }
+    public void Decide() => onDecide(Decision);
 }
