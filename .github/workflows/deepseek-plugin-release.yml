@@ -6,10 +6,10 @@ on:
       - "deepseek-plugin-v*"
   workflow_dispatch:
     inputs:
-      version:
-        description: Version to release, without the v prefix
-        required: true
-        type: string
+      date_suffix:
+        description: Append the UTC date to the version (model catalogue update)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,13 +27,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve release
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION_INPUT: ${{ inputs.version }}
-        run: bash .github/scripts/resolve-release.sh deepseek-plugin-v
-
       - name: Install JDK 25
         uses: actions/setup-java@v6
         with:
@@ -41,6 +34,28 @@ jobs:
           java-version: "25"
           cache: maven
           cache-dependency-path: plugins/providers/deepseek/pom.xml
+
+      - name: Resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DATE_SUFFIX: ${{ inputs.date_suffix }}
+        run: |
+          version="$(mvn -q --batch-mode -f plugins/providers/deepseek/pom.xml \
+            help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [ "$DATE_SUFFIX" != "true" ]; then
+            VERSION_INPUT="$version" bash .github/scripts/resolve-release.sh deepseek-plugin-v "$version"
+            exit 0
+          fi
+
+          version="${version}.$(date -u +%Y%m%d)"
+          tag="deepseek-plugin-v${version}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag already exists: ${tag}"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Build and test
         working-directory: plugins/providers/deepseek

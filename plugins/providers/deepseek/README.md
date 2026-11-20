@@ -66,8 +66,9 @@ absolute path.
 The catalogue is static — `src/main/resources/models.json`. Auto regenerated
 by `scripts/update-models.py`. The
 [Update DeepSeek models](../../../.github/workflows/update-deepseek-models.yml)
-workflow runs the script weekly and commits the file when it changes. To refresh
-it by hand:
+workflow runs the script weekly. When the file changes, it commits it and
+publishes a release versioned as the plugin version in `pom.xml` plus the UTC
+date, such as `deepseek-plugin-v0.0.5.20261122`. To refresh it by hand:
 
 ```sh
 python3 scripts/update-models.py

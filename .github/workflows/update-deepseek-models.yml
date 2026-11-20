@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: update-deepseek-models
@@ -31,6 +32,7 @@ jobs:
         run: python3 plugins/providers/deepseek/scripts/update-models.py
 
       - name: Commit if changed
+        id: commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -44,3 +46,14 @@ jobs:
             -f branch="$GITHUB_REF_NAME" \
             -f sha="$(git rev-parse "HEAD:$MODELS_FILE")" \
             -f content="$(base64 -w0 "$MODELS_FILE")"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Release updated catalogue
+        if: steps.commit.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deepseek-plugin-release.yml \
+            --ref "$GITHUB_REF_NAME" \
+            -f date_suffix=true
