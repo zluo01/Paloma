@@ -109,11 +109,12 @@ jobs:
         working-directory: gui/macos/Paloma
         run: xcodebuild -scheme Paloma -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 
-      - name: Install .NET 10
+      - name: Install .NET LTS
         if: matrix.platform == 'windows'
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: latest
+          dotnet-channel: LTS
 
       - name: Restore NuGet cache
         if: matrix.platform == 'windows'
