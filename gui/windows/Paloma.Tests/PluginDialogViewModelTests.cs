@@ -63,6 +63,37 @@ public sealed class PluginDialogViewModelTests
         Assert.False(vm.CanSubmit);
     }
 
+    [Theory]
+    [InlineData(PluginType.Extension, false, "Add Extension", "Add", "Couldn't add the Extension",
+        @"C:\path\to\extension.exe")]
+    [InlineData(PluginType.Extension, true, "Edit Extension", "Save", "Couldn't save the Extension",
+        @"C:\path\to\extension.exe")]
+    [InlineData(PluginType.Provider, false, "Add Provider", "Add", "Couldn't add the Provider",
+        @"C:\path\to\provider.exe")]
+    [InlineData(PluginType.Provider, true, "Edit Provider", "Save", "Couldn't save the Provider",
+        @"C:\path\to\provider.exe")]
+    [InlineData(PluginType.Mcp, false, "Add MCP Server", "Add", "Couldn't add the MCP Server", "npx")]
+    [InlineData(PluginType.Mcp, true, "Edit MCP Server", "Save", "Couldn't save the MCP Server", "npx")]
+    public void Kind_SetsTitleLabelsAndCommandPlaceholder(
+        PluginType kind,
+        bool editing,
+        string title,
+        string primaryLabel,
+        string submitErrorTitle,
+        string commandPlaceholder)
+    {
+        var vm = new PluginDialogViewModel(
+            new MockPalomaClient(),
+            new HashSet<string>(),
+            kind,
+            editing ? TestProtos.LocalPlugin("plugin", "tool.exe") : null);
+
+        Assert.Equal(title, vm.Title);
+        Assert.Equal(primaryLabel, vm.PrimaryLabel);
+        Assert.Equal(submitErrorTitle, vm.SubmitErrorTitle);
+        Assert.Equal(commandPlaceholder, vm.CommandPlaceholder);
+    }
+
     [Fact]
     public void MalformedArgs_ReportsArgsError()
     {

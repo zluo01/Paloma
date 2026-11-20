@@ -115,23 +115,16 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         _takenNames = takenNames;
         _kind = kind;
         _editing = editing;
-        var noun = kind switch
+        (var noun, CommandPlaceholder) = kind switch
         {
-            PluginType.Extension => "Extension",
-            PluginType.Provider => "Provider",
-            PluginType.Mcp => "MCP Server",
+            PluginType.Extension => ("Extension", @"C:\path\to\extension.exe"),
+            PluginType.Provider => ("Provider", @"C:\path\to\provider.exe"),
+            PluginType.Mcp => ("MCP Server", "npx"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
         };
         Title = editing is null ? $"Add {noun}" : $"Edit {noun}";
         PrimaryLabel = editing is null ? "Add" : "Save";
         SubmitErrorTitle = editing is null ? $"Couldn't add the {noun}" : $"Couldn't save the {noun}";
-        CommandPlaceholder = kind switch
-        {
-            PluginType.Extension => @"C:\path\to\extension.exe",
-            PluginType.Provider => @"C:\path\to\provider.exe",
-            PluginType.Mcp => "npx",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-        };
         NameEditable = editing is null;
         Prefill();
         if (Headers.Count == 0)
@@ -263,14 +256,18 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     /**
      * ENV variable and Headers are both case-insentive on windows.
      */
-    private static void FlagDuplicates(IReadOnlyCollection<KeyValueRow> rows)
+    private static bool FlagDuplicates(IReadOnlyCollection<KeyValueRow> rows)
     {
+        var any = false;
         foreach (var row in rows)
         {
             var name = row.Name.Trim();
             row.IsDuplicate = name.Length > 0 && rows.Count(other =>
                 string.Equals(other.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)) > 1;
+            any |= row.IsDuplicate;
         }
+
+        return any;
     }
 
     private void Validate()
@@ -337,8 +334,7 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
         UrlError = urlError;
 
-        FlagDuplicates(Env);
-        if (Pairs(Env) is null)
+        if (FlagDuplicates(Env))
         {
             valid = false;
             // A collapsed expander must not swallow its own error.
