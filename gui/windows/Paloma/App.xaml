@@ -46,6 +46,12 @@
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
             </Style>
+            <Style
+                x:Key="FieldError"
+                BasedOn="{StaticResource CaptionTextBlockStyle}"
+                TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+            </Style>
             <Style x:Key="IconButton" TargetType="Button">
                 <Setter Property="Width" Value="30" />
                 <Setter Property="Height" Value="30" />

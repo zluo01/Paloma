@@ -50,8 +50,7 @@
                     </Button>
                 </Grid>
                 <TextBlock
-                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    Style="{StaticResource FieldError}"
                     Text="Another row already uses this name."
                     Visibility="{x:Bind IsDuplicate, Mode=OneWay}" />
             </StackPanel>
@@ -84,10 +83,8 @@
                             PlaceholderText="my-server"
                             Text="{x:Bind ViewModel.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         <TextBlock
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Style="{StaticResource FieldError}"
                             Text="{x:Bind ViewModel.NameError, Mode=OneWay}"
-                            TextWrapping="Wrap"
                             Visibility="{x:Bind ViewModel.NameError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
                     </StackPanel>
 
@@ -116,10 +113,8 @@
                             PlaceholderText="[&quot;--flag&quot;, &quot;value&quot;]"
                             Text="{x:Bind ViewModel.Args, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         <TextBlock
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Style="{StaticResource FieldError}"
                             Text="{x:Bind ViewModel.ArgsError, Mode=OneWay}"
-                            TextWrapping="Wrap"
                             Visibility="{x:Bind ViewModel.ArgsError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
                     </StackPanel>
 
@@ -130,10 +125,8 @@
                                 PlaceholderText="https://example.com/mcp"
                                 Text="{x:Bind ViewModel.Url, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock
-                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Style="{StaticResource FieldError}"
                                 Text="{x:Bind ViewModel.UrlError, Mode=OneWay}"
-                                TextWrapping="Wrap"
                                 Visibility="{x:Bind ViewModel.UrlError, Mode=OneWay, Converter={StaticResource EmptyToCollapsed}}" />
                         </StackPanel>
 

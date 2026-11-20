@@ -27,10 +27,8 @@
                         Text="{x:Bind Description}"
                         TextWrapping="Wrap" />
                     <TextBlock
-                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Style="{StaticResource FieldError}"
                         Text="{x:Bind Error}"
-                        TextWrapping="Wrap"
                         Visibility="{x:Bind Error, Converter={StaticResource EmptyToCollapsed}}" />
                 </StackPanel>
             </DataTemplate>
