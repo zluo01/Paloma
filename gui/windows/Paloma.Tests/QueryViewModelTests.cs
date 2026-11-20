@@ -75,6 +75,19 @@ public sealed class QueryViewModelTests
     }
 
     [Fact]
+    public void GivenImagesWhenAddedAndClearedShouldReportWhetherAnyAreHeld()
+    {
+        var vm = new QueryViewModel();
+        Assert.False(vm.HasImages);
+
+        vm.Add(Png);
+        Assert.True(vm.HasImages);
+
+        vm.Clear();
+        Assert.False(vm.HasImages);
+    }
+
+    [Fact]
     public void GivenAddedImageWhenClearedShouldForgetIt()
     {
         var vm = new QueryViewModel();

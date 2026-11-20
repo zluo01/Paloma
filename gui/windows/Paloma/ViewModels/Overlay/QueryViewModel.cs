@@ -10,6 +10,8 @@ public sealed class QueryViewModel
 {
     private readonly Dictionary<string, InlineImage> _images = [];
 
+    public bool HasImages => _images.Count > 0;
+
     public string Add(InlineImage image)
     {
         var key = Guid.NewGuid().ToString("N");

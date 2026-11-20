@@ -146,6 +146,11 @@ public sealed partial class QueryView
 
     private void OnInputPointerMoved(object sender, PointerRoutedEventArgs args)
     {
+        if (!ViewModel.HasImages && _hovered is null)
+        {
+            return;
+        }
+
         var content = DocumentContent;
         var point = args.GetCurrentPoint(content).Position;
         var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
