@@ -40,12 +40,11 @@ public abstract class RefreshOnVisiblePage : Page
 
     private async void OnXamlRootChanged(XamlRoot root, XamlRootChangedEventArgs args)
     {
-        var visible = root.IsHostVisible;
-        if (visible && !_hostVisible)
+        var wasVisible = _hostVisible;
+        _hostVisible = root.IsHostVisible;
+        if (_hostVisible && !wasVisible)
         {
             await LoadAsync();
         }
-
-        _hostVisible = visible;
     }
 }

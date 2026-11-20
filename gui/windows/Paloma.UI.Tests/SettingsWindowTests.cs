@@ -60,6 +60,63 @@ public sealed partial class SettingsWindowTests(UiFixture ui)
         }
     });
 
+    [Fact]
+    public Task GivenLoadStillRunningWhenTheWindowIsResizedShouldNotLoadAgain() => ui.RunAsync(async () =>
+    {
+        var (page, window) = await ShownAsync();
+        var loading = new TaskCompletionSource();
+        try
+        {
+            window.Hide();
+            await SettleAsync();
+            page.Pending = loading.Task;
+            var hidden = page.Loads;
+
+            window.Show(false);
+            await SettleAsync();
+            window.ResizeClient(new SizeInt32(window.ClientSize.Width + 40, window.ClientSize.Height + 40));
+            await SettleAsync();
+
+            Assert.Equal(hidden + 1, page.Loads);
+        }
+        finally
+        {
+            loading.SetResult();
+            window.Hide();
+        }
+    });
+
+    [Fact]
+    public Task GivenWindowHiddenWhileLoadingWhenShownAgainShouldReloadOnce() => ui.RunAsync(async () =>
+    {
+        var (page, window) = await ShownAsync();
+        var loading = new TaskCompletionSource();
+        try
+        {
+            window.Hide();
+            await SettleAsync();
+            page.Pending = loading.Task;
+            window.Show(false);
+            await SettleAsync();
+            window.Hide();
+            await SettleAsync();
+            loading.SetResult();
+            page.Pending = Task.CompletedTask;
+            await SettleAsync();
+            var hidden = page.Loads;
+
+            window.Show(false);
+            await SettleAsync();
+
+            Assert.Equal(hidden + 1, page.Loads);
+        }
+        finally
+        {
+            loading.TrySetResult();
+            window.Hide();
+        }
+    });
+
     private async Task<(CountingPage Page, AppWindow Window)> ShownAsync()
     {
         var page = await ui.ShowAsync(new CountingPage());
@@ -83,10 +140,12 @@ public sealed partial class SettingsWindowTests(UiFixture ui)
     {
         public int Loads { get; private set; }
 
+        public Task Pending { get; set; } = Task.CompletedTask;
+
         protected override Task LoadAsync()
         {
             Loads++;
-            return Task.CompletedTask;
+            return Pending;
         }
     }
 }
