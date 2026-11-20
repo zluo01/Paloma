@@ -1,10 +1,13 @@
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
+using Windows.Graphics;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.System;
 using CommunityToolkit.WinUI;
 using Microsoft.UI.Text;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -24,6 +27,8 @@ public sealed class QueryViewTests(UiFixture ui)
     private const VirtualKey OemPlus = (VirtualKey)187;
     private const VirtualKey OemComma = (VirtualKey)188;
     private const VirtualKey OemPeriod = (VirtualKey)190;
+
+    private static readonly PointInt32 OffScreen = new(-30000, -30000);
 
     // Wraps to four lines at the overlay width, with no line breaks.
     private static readonly string Paragraph = string.Join(" ", Enumerable.Repeat("one long paragraph that wraps", 8));
@@ -600,6 +605,61 @@ public sealed class QueryViewTests(UiFixture ui)
         Assert.True(query.Growth > singleLine);
         Assert.Equal((input.DesiredSize.Height - input.MinHeight, 1), (query.Growth, resized));
     });
+
+    [Fact]
+    public Task GivenAPreviewWhenMovingOntoAnotherImageAcrossTextShouldPreviewThatImage() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, Png, " and ", Jpeg);
+        var preview = Hover(query, 0);
+        Assert.True(await OpenedAsync(preview));
+        var first = preview.Content;
+        Hover(query, 2);
+        await ui.IdleAsync();
+
+        Hover(query, 6);
+
+        Assert.True(await OpenedAsync(preview));
+        Assert.NotSame(first, preview.Content);
+        preview.Hide();
+    });
+
+    [Fact]
+    public Task GivenAPreviewWhenMovingStraightOntoAnotherImageShouldPreviewThatImage() => ui.RunAsync(async () =>
+    {
+        var query = await ui.ShowAsync(new QueryView { Width = 680 });
+        await AppendAsync(query, Png, Jpeg);
+        var preview = Hover(query, 0);
+        Assert.True(await OpenedAsync(preview));
+        var first = preview.Content;
+
+        Hover(query, 1);
+
+        Assert.True(await OpenedAsync(preview));
+        Assert.NotSame(first, preview.Content);
+        preview.Hide();
+    });
+
+    private static Flyout Hover(QueryView query, int position)
+    {
+        AppWindow.GetFromWindowId(query.XamlRoot.ContentIslandEnvironment.AppWindowId).Move(OffScreen);
+        query.UpdateLayout();
+        query.FindDescendant<RichEditBox>()!.Document.GetRange(position, position + 1)
+            .GetRect(PointOptions.ClientCoordinates, out var rect, out _);
+        query.HoverAt(new Point(rect.X + rect.Width / 2, rect.Y + rect.Height / 2));
+        return (Flyout)query.FindName("Preview");
+    }
+
+    private async Task<bool> OpenedAsync(Flyout preview)
+    {
+        for (var attempt = 0; attempt < 50 && !preview.IsOpen; attempt++)
+        {
+            await Task.Delay(20);
+            await ui.IdleAsync();
+        }
+
+        return preview.IsOpen;
+    }
 
     private static async Task AppendAsync(QueryView query, params object[] parts)
     {

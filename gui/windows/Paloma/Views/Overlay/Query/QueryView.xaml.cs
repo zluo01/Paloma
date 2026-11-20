@@ -151,8 +151,12 @@ public sealed partial class QueryView
             return;
         }
 
+        HoverAt(args.GetCurrentPoint(DocumentContent).Position);
+    }
+
+    public void HoverAt(Point point)
+    {
         var content = DocumentContent;
-        var point = args.GetCurrentPoint(content).Position;
         var caret = Input.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates).StartPosition;
         foreach (var start in new[] { caret - 1, caret })
         {
@@ -176,7 +180,6 @@ public sealed partial class QueryView
 
             _hovered = key;
             var anchor = content.TransformToVisual(Input).TransformBounds(rect);
-            Preview.Hide();
             Preview.Content = Images.Picture(image.Data, PreviewHeight);
             Preview.ShowAt(Input, new FlyoutShowOptions
             {
