@@ -1,7 +1,6 @@
 using Windows.System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Navigation;
 using Paloma.Helpers;
 using Paloma.ViewModels.Settings;
 
@@ -14,7 +13,6 @@ public sealed partial class GeneralPage
     public GeneralPage()
     {
         ViewModel = new GeneralViewModel();
-        NavigationCacheMode = NavigationCacheMode.Required;
         InitializeComponent();
     }
 
@@ -35,6 +33,7 @@ public sealed partial class GeneralPage
         {
             return;
         }
+
         args.Handled = true;
         var key = args.Key;
         switch (key)
