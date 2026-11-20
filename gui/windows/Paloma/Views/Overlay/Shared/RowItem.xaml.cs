@@ -21,6 +21,11 @@ public sealed partial class RowItem
     public static readonly DependencyProperty RowProperty = DependencyProperty.Register(
         nameof(Row), typeof(UIElement), typeof(RowItem), new PropertyMetadata(null));
 
+    public RowItem()
+    {
+        InitializeComponent();
+    }
+
     public bool Selected
     {
         get => (bool)GetValue(SelectedProperty);
@@ -37,11 +42,6 @@ public sealed partial class RowItem
     {
         get => (UIElement?)GetValue(RowProperty);
         set => SetValue(RowProperty, value);
-    }
-
-    public RowItem()
-    {
-        InitializeComponent();
     }
 
     private void OnPointerEntered(object sender, PointerRoutedEventArgs args)

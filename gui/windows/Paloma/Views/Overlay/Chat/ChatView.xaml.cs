@@ -17,15 +17,15 @@ public sealed partial class ChatView
     // spent on the first scrollable layout. Anchoring keeps the view there.
     private bool _startAtBottom = true;
 
-    public ChatViewModel ViewModel { get; }
-
-    public event EventHandler? DecisionHandled;
-
     public ChatView()
     {
         ViewModel = new ChatViewModel(App.Current.Client);
         InitializeComponent();
     }
+
+    public ChatViewModel ViewModel { get; }
+
+    public event EventHandler? DecisionHandled;
 
     public void Navigate(int delta)
     {

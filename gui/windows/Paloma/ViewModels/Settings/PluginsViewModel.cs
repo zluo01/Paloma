@@ -86,23 +86,6 @@ public abstract partial class PluginViewModel : ObservableObject
 {
     private readonly ToggleGuard _toggle;
 
-    public string Name { get; }
-
-    public string Description { get; }
-
-    public string HealthLabel { get; }
-
-    public string? Error { get; }
-
-    public Plugin? Config { get; }
-
-    // Built-ins ship no config; they can be neither managed nor disabled.
-    public bool CanManage => Config is not null;
-
-    public PluginType Kind { get; }
-
-    [ObservableProperty] public partial bool Enabled { get; set; }
-
     private protected PluginViewModel(
         IPalomaClient client,
         PluginType kind,
@@ -134,6 +117,23 @@ public abstract partial class PluginViewModel : ObservableObject
         Enabled = !(config?.Disabled ?? false);
         _toggle.Ready();
     }
+
+    public string Name { get; }
+
+    public string Description { get; }
+
+    public string HealthLabel { get; }
+
+    public string? Error { get; }
+
+    public Plugin? Config { get; }
+
+    // Built-ins ship no config; they can be neither managed nor disabled.
+    public bool CanManage => Config is not null;
+
+    public PluginType Kind { get; }
+
+    [ObservableProperty] public partial bool Enabled { get; set; }
 
     private protected static List<CapabilityToggleViewModel> Toggles(
         IPalomaClient client,
@@ -211,12 +211,6 @@ public sealed partial class CapabilityToggleViewModel : ObservableObject
 {
     private readonly ToggleGuard _toggle;
 
-    public string Id { get; }
-
-    public string Description { get; }
-
-    [ObservableProperty] public partial bool Enabled { get; set; }
-
     public CapabilityToggleViewModel(
         IPalomaClient client,
         string plugin,
@@ -234,6 +228,12 @@ public sealed partial class CapabilityToggleViewModel : ObservableObject
         Enabled = !capability.Facets.Any(state => state.Facet == facet && state.Disabled);
         _toggle.Ready();
     }
+
+    public string Id { get; }
+
+    public string Description { get; }
+
+    [ObservableProperty] public partial bool Enabled { get; set; }
 
     partial void OnEnabledChanged(bool value) => _toggle.Changed(value);
 }

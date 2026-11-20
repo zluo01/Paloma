@@ -26,6 +26,17 @@ public sealed partial class OverlayView
 
     private readonly DispatcherQueueTimer _inputDebounce;
 
+    public OverlayView()
+    {
+        ViewModel = new OverlayViewModel();
+        InitializeComponent();
+        _inputDebounce = DispatcherQueue.CreateTimer();
+        foreach (var control in FooterPanel.InteractiveControls())
+        {
+            control.SizeChanged += OnSizeChanged;
+        }
+    }
+
     public OverlayViewModel ViewModel { get; }
 
     public SearchViewModel Search => SearchPanel.ViewModel;
@@ -43,17 +54,6 @@ public sealed partial class OverlayView
     public event Action? ModeChanged;
 
     public event Action<RectInt32[], RectInt32[]>? DragRegionsChanged;
-
-    public OverlayView()
-    {
-        ViewModel = new OverlayViewModel();
-        InitializeComponent();
-        _inputDebounce = DispatcherQueue.CreateTimer();
-        foreach (var control in FooterPanel.InteractiveControls())
-        {
-            control.SizeChanged += OnSizeChanged;
-        }
-    }
 
     public static Visibility WhenSearch(OverlayMode mode)
     {

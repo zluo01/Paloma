@@ -15,24 +15,6 @@ namespace Paloma.Tests;
 
 public sealed class ChatViewModelTests(ITestOutputHelper output)
 {
-    private sealed class FlushGate
-    {
-        private Action? _pending;
-
-        public bool Defer(Action flush)
-        {
-            _pending = flush;
-            return true;
-        }
-
-        public void Run()
-        {
-            var pending = _pending;
-            _pending = null;
-            pending?.Invoke();
-        }
-    }
-
     [Fact]
     public async Task GivenAttachmentsWhenSubmittingShouldPassThemToTheClientInOrder()
     {
@@ -1050,5 +1032,23 @@ public sealed class ChatViewModelTests(ITestOutputHelper output)
     private static ProviderBackendId Backend(string id)
     {
         return new ProviderBackendId("prov", id);
+    }
+
+    private sealed class FlushGate
+    {
+        private Action? _pending;
+
+        public bool Defer(Action flush)
+        {
+            _pending = flush;
+            return true;
+        }
+
+        public void Run()
+        {
+            var pending = _pending;
+            _pending = null;
+            pending?.Invoke();
+        }
     }
 }

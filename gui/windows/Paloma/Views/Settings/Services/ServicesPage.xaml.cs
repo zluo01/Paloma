@@ -7,13 +7,13 @@ namespace Paloma.Views.Settings.Services;
 
 public sealed partial class ServicesPage
 {
-    public ServicesViewModel ViewModel { get; }
-
     public ServicesPage()
     {
         ViewModel = new ServicesViewModel(App.Current.Client);
         InitializeComponent();
     }
+
+    public ServicesViewModel ViewModel { get; }
 
     protected override Task LoadAsync() => ViewModel.LoadAsync();
 

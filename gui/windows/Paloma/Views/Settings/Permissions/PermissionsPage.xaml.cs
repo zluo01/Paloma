@@ -7,13 +7,13 @@ namespace Paloma.Views.Settings.Permissions;
 
 public sealed partial class PermissionsPage
 {
-    public PermissionsViewModel ViewModel { get; }
-
     public PermissionsPage()
     {
         ViewModel = new PermissionsViewModel(App.Current.Client);
         InitializeComponent();
     }
+
+    public PermissionsViewModel ViewModel { get; }
 
     protected override Task LoadAsync() => ViewModel.LoadAsync();
 

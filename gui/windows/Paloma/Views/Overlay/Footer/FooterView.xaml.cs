@@ -29,6 +29,14 @@ public sealed partial class FooterView
     private static readonly SolidColorBrush InactiveHealthBrush =
         new(Color.FromArgb(0x66, 0x80, 0x80, 0x80));
 
+    public FooterView()
+    {
+        ViewModel = new FooterViewModel(App.Current.Client);
+        InitializeComponent();
+        WeakReferenceMessenger.Default.Register<OverlayShownMessage>(
+            this, (_, _) => _ = ViewModel.RefreshAsync());
+    }
+
     public FooterViewModel ViewModel { get; }
 
     public OverlayMode Mode
@@ -54,14 +62,6 @@ public sealed partial class FooterView
     public event EventHandler? StopRequested;
 
     public event EventHandler? ModelFlyoutClosed;
-
-    public FooterView()
-    {
-        ViewModel = new FooterViewModel(App.Current.Client);
-        InitializeComponent();
-        WeakReferenceMessenger.Default.Register<OverlayShownMessage>(
-            this, (_, _) => _ = ViewModel.RefreshAsync());
-    }
 
     public static Brush HealthBrush(HealthLevel health)
     {

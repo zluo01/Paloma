@@ -29,7 +29,10 @@ public sealed class QueryViewModelTests
         var jpeg = vm.Add(Jpeg);
         var keys = new Dictionary<int, string> { [1] = jpeg, [3] = "missing", [4] = png, [5] = png };
 
-        var (prompt, attachments) = vm.Compose($"a{Images.ImageCharacter}b{Images.ImageCharacter}{Images.ImageCharacter}{Images.ImageCharacter}", position => keys[position]);
+        var (prompt, attachments) =
+            vm.Compose(
+                $"a{Images.ImageCharacter}b{Images.ImageCharacter}{Images.ImageCharacter}{Images.ImageCharacter}",
+                position => keys[position]);
 
         Assert.Equal("a[Image #1]b[Image #2][Image #3]", prompt);
         Assert.Equal(3, attachments.Length);

@@ -8,13 +8,13 @@ public sealed partial class PluginDialog
 {
     private const double WindowMargin = 32;
 
-    public PluginDialogViewModel ViewModel { get; }
-
     public PluginDialog(PluginDialogViewModel viewModel)
     {
         ViewModel = viewModel;
         InitializeComponent();
     }
+
+    public PluginDialogViewModel ViewModel { get; }
 
     protected override void OnApplyTemplate()
     {

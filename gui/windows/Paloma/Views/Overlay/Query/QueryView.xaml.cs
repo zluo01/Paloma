@@ -19,12 +19,18 @@ namespace Paloma.Views.Overlay.Query;
 
 public sealed partial class QueryView
 {
+    private const double PreviewHeight = 240;
+
     public static readonly DependencyProperty ModeProperty = DependencyProperty.Register(
         nameof(Mode), typeof(OverlayMode), typeof(QueryView), new PropertyMetadata(OverlayMode.Search));
 
-    private const double PreviewHeight = 240;
-
     private string? _hovered;
+
+    public QueryView()
+    {
+        InitializeComponent();
+        Input.AddHandler(PointerMovedEvent, new PointerEventHandler(OnInputPointerMoved), true);
+    }
 
     public QueryViewModel ViewModel { get; } = new();
 
@@ -35,10 +41,6 @@ public sealed partial class QueryView
         get => (OverlayMode)GetValue(ModeProperty);
         set => SetValue(ModeProperty, value);
     }
-
-    public event EventHandler? TextChanged;
-
-    public event EventHandler? InputResized;
 
     public double Growth => Math.Max(0, Input.DesiredSize.Height - Input.MinHeight);
 
@@ -61,11 +63,9 @@ public sealed partial class QueryView
 
     public string Prompt => Compose().Prompt;
 
-    public QueryView()
-    {
-        InitializeComponent();
-        Input.AddHandler(PointerMovedEvent, new PointerEventHandler(OnInputPointerMoved), true);
-    }
+    public event EventHandler? TextChanged;
+
+    public event EventHandler? InputResized;
 
     public (string Prompt, UserPromptAttachment[] Attachments) Compose()
     {

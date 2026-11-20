@@ -8,6 +8,62 @@ namespace Paloma.UI.Tests.Helpers;
 /// so a test's copy is always a change. Start and dispose on the UI thread.
 internal sealed class ClipboardListener : IAsyncDisposable
 {
+    private const uint ClipboardUpdateMessage = 0x031D;
+    private const uint QuitMessage = 0x0012;
+    private const uint UnicodeTextFormat = 13;
+    private const nint MessageOnlyParent = -3;
+    private const int WriteAttempts = 20;
+    private const string Placeholder = "Paloma.UI.Tests";
+
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+    private readonly ManualResetEventSlim _listening = new();
+    private readonly string _saved;
+
+    private readonly TaskCompletionSource<string> _text = new();
+    private readonly Thread _thread;
+    private uint _threadId;
+
+    private ClipboardListener(string saved)
+    {
+        _saved = saved;
+        _thread = new Thread(() =>
+        {
+            _threadId = GetCurrentThreadId();
+            var window = CreateWindowExW(0, "STATIC", null, 0, 0, 0, 0, 0, MessageOnlyParent, 0, 0, 0);
+            _ = AddClipboardFormatListener(window);
+            _listening.Set();
+            while (GetMessageW(out var message, 0, 0, 0) > 0)
+            {
+                if (message.Id == ClipboardUpdateMessage && OpenClipboard(window))
+                {
+                    var handle = GetClipboardData(UnicodeTextFormat);
+                    var text = Marshal.PtrToStringUni(GlobalLock(handle)) ?? string.Empty;
+                    _ = GlobalUnlock(handle);
+                    _ = CloseClipboard();
+                    if (text != Placeholder)
+                    {
+                        _text.TrySetResult(text);
+                    }
+                }
+            }
+
+            _ = DestroyWindow(window);
+        });
+        _thread.Start();
+        _listening.Wait();
+    }
+
+    public Task<string> Text => _text.Task.WaitAsync(Timeout);
+
+    public async ValueTask DisposeAsync()
+    {
+        _ = PostThreadMessageW(_threadId, QuitMessage, 0, 0);
+        _thread.Join();
+        _listening.Dispose();
+        await WriteAsync(_saved);
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern nint CreateWindowExW(
         uint exStyle, string className, string? name, uint style, int x, int y, int width, int height,
@@ -43,68 +99,12 @@ internal sealed class ClipboardListener : IAsyncDisposable
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
-    private const uint ClipboardUpdateMessage = 0x031D;
-    private const uint QuitMessage = 0x0012;
-    private const uint UnicodeTextFormat = 13;
-    private const nint MessageOnlyParent = -3;
-    private const int WriteAttempts = 20;
-    private const string Placeholder = "Paloma.UI.Tests";
-
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
-
-    private readonly TaskCompletionSource<string> _text = new();
-    private readonly ManualResetEventSlim _listening = new();
-    private readonly string _saved;
-    private readonly Thread _thread;
-    private uint _threadId;
-
-    public Task<string> Text => _text.Task.WaitAsync(Timeout);
-
-    private ClipboardListener(string saved)
-    {
-        _saved = saved;
-        _thread = new Thread(() =>
-        {
-            _threadId = GetCurrentThreadId();
-            var window = CreateWindowExW(0, "STATIC", null, 0, 0, 0, 0, 0, MessageOnlyParent, 0, 0, 0);
-            _ = AddClipboardFormatListener(window);
-            _listening.Set();
-            while (GetMessageW(out var message, 0, 0, 0) > 0)
-            {
-                if (message.Id == ClipboardUpdateMessage && OpenClipboard(window))
-                {
-                    var handle = GetClipboardData(UnicodeTextFormat);
-                    var text = Marshal.PtrToStringUni(GlobalLock(handle)) ?? string.Empty;
-                    _ = GlobalUnlock(handle);
-                    _ = CloseClipboard();
-                    if (text != Placeholder)
-                    {
-                        _text.TrySetResult(text);
-                    }
-                }
-            }
-
-            _ = DestroyWindow(window);
-        });
-        _thread.Start();
-        _listening.Wait();
-    }
-
     public static async Task<ClipboardListener> StartAsync()
     {
         var content = Clipboard.GetContent();
         var saved = content.Contains(StandardDataFormats.Text) ? await content.GetTextAsync() : string.Empty;
         await WriteAsync(Placeholder);
         return new ClipboardListener(saved);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _ = PostThreadMessageW(_threadId, QuitMessage, 0, 0);
-        _thread.Join();
-        _listening.Dispose();
-        await WriteAsync(_saved);
     }
 
     private static async Task WriteAsync(string text)

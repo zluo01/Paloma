@@ -10,14 +10,6 @@ public sealed partial class GeneralViewModel : ObservableObject
 {
     private readonly ToggleGuard _autostart;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasError))]
-    public partial string Error { get; private set; } = string.Empty;
-
-    [ObservableProperty] public partial bool AutostartEnabled { get; set; }
-
-    [ObservableProperty] public partial string ShortcutLabel { get; private set; }
-
     public GeneralViewModel()
     {
         _autostart = new ToggleGuard(
@@ -33,6 +25,14 @@ public sealed partial class GeneralViewModel : ObservableObject
         ShortcutLabel = App.Current.Settings.HotKeyLabel;
         _autostart.Ready();
     }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    public partial string Error { get; private set; } = string.Empty;
+
+    [ObservableProperty] public partial bool AutostartEnabled { get; set; }
+
+    [ObservableProperty] public partial string ShortcutLabel { get; private set; }
 
     public bool HasError => Error.Length > 0;
 

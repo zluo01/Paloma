@@ -11,6 +11,12 @@ namespace Paloma.Views.Overlay.Search;
 
 public sealed partial class SearchView
 {
+    public SearchView()
+    {
+        ViewModel = new SearchViewModel(App.Current.Client);
+        InitializeComponent();
+    }
+
     public SearchViewModel ViewModel { get; }
 
     public event EventHandler<Behavior?>? ActionCompleted;
@@ -18,12 +24,6 @@ public sealed partial class SearchView
     public event EventHandler? AskRequested;
 
     public event EventHandler? ActionsFlyoutClosed;
-
-    public SearchView()
-    {
-        ViewModel = new SearchViewModel(App.Current.Client);
-        InitializeComponent();
-    }
 
     public async Task ActivateSelectedAsync()
     {

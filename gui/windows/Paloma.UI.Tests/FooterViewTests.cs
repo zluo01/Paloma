@@ -20,7 +20,8 @@ public sealed class FooterViewTests(UiFixture ui)
         {
             var footer = await ui.ShowAsync(new FooterView());
 
-            var target = footer.FindDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == button);
+            var target = footer.FindDescendants().OfType<Button>()
+                .Single(b => AutomationProperties.GetName(b) == button);
 
             Assert.Equal(toolTip, ToolTipService.GetToolTip(target));
         });
@@ -30,7 +31,8 @@ public sealed class FooterViewTests(UiFixture ui)
     [InlineData(OverlayMode.Search, false, new string[0])]
     [InlineData(OverlayMode.Chat, false, new[] { "Scroll by page: PgUp PgDn" })]
     [InlineData(OverlayMode.Sessions, false, new[] { "Open session: Enter", "Delete session: Del" })]
-    public Task GivenModeWhenShownShouldShowItsHintsWithTheirKeys(OverlayMode mode, bool hasResults, string[] expected) =>
+    public Task GivenModeWhenShownShouldShowItsHintsWithTheirKeys(OverlayMode mode, bool hasResults,
+        string[] expected) =>
         ui.RunAsync(async () =>
         {
             var footer = await ui.ShowAsync(new FooterView());

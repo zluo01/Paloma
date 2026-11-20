@@ -11,11 +11,11 @@ public partial class MarkdownParser
     private static readonly MarkdownPipeline Pipeline =
         new MarkdownPipelineBuilder().UsePipeTables().Build();
 
+    private int _renderCount;
+
     // Strip Web-search citations
     [GeneratedRegex("\uE200[^\uE201]*(?:\uE201|$)|[\uE200-\uE202]")]
     private static partial Regex CitationPattern { get; }
-
-    private int _renderCount;
 
     public (int Keep, IReadOnlyList<Block> Blocks) RenderBlocks(string text)
     {

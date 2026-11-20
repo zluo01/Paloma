@@ -28,18 +28,18 @@ public sealed partial class OverlayWindow
     private const int OverlayWidth = 680;
     private const int MaxOverlayHeight = 540;
 
-    private readonly BatchedAction _resize;
-
-    // The window starts at a meaningless default position,
-    // so the first summon always moves it into place.
-    private bool _hasBeenPlaced;
-
     // Keep the subclass procedure so it does not get GC
     private readonly SUBCLASSPROC _activationProc;
     private readonly HOOKPROC _clickAwayProc;
 
+    private readonly BatchedAction _resize;
+
     // Installed only while the overlay is visible.
     private UnhookWindowsHookExSafeHandle? _clickAwayHook;
+
+    // The window starts at a meaningless default position,
+    // so the first summon always moves it into place.
+    private bool _hasBeenPlaced;
 
     public OverlayWindow()
     {

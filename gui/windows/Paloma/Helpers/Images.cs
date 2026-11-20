@@ -44,7 +44,8 @@ internal static class Images
                 return null;
             }
 
-            var (transform, boxWidth) = ThumbnailTransform(decoder.OrientedPixelWidth, decoder.OrientedPixelHeight, lineHeight, scale);
+            var (transform, boxWidth) = ThumbnailTransform(decoder.OrientedPixelWidth, decoder.OrientedPixelHeight,
+                lineHeight, scale);
             if (decoder.PixelWidth != decoder.OrientedPixelWidth)
             {
                 (transform.ScaledWidth, transform.ScaledHeight) = (transform.ScaledHeight, transform.ScaledWidth);
@@ -64,7 +65,8 @@ internal static class Images
         }
     }
 
-    public static async Task<Loaded?> LoadBitmapAsync(RandomAccessStreamReference reference, double lineHeight, double scale)
+    public static async Task<Loaded?> LoadBitmapAsync(RandomAccessStreamReference reference, double lineHeight,
+        double scale)
     {
         try
         {
@@ -82,7 +84,8 @@ internal static class Images
                 return null;
             }
 
-            var (transform, boxWidth) = ThumbnailTransform((uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, lineHeight, scale);
+            var (transform, boxWidth) =
+                ThumbnailTransform((uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, lineHeight, scale);
             return new Loaded(
                 new InlineImage(PngMediaType, await ReadImageAsync(png)),
                 boxWidth,
@@ -119,7 +122,8 @@ internal static class Images
     }
 
     // aspect ratio scale along the line height, center-cropped past MaxThumbnailAspect
-    private static (BitmapTransform Transform, int BoxWidth) ThumbnailTransform(uint width, uint height, double lineHeight, double scale)
+    private static (BitmapTransform Transform, int BoxWidth) ThumbnailTransform(uint width, uint height,
+        double lineHeight, double scale)
     {
         var aspect = Math.Clamp((double)width / height, 1 / MaxThumbnailAspect, MaxThumbnailAspect);
         var boxWidth = Math.Max(1, Math.Round(lineHeight * aspect));
@@ -144,7 +148,8 @@ internal static class Images
         return (transform, (int)boxWidth);
     }
 
-    private static async Task<InMemoryRandomAccessStream> EncodePngAsync(SoftwareBitmap bitmap, BitmapTransform transform)
+    private static async Task<InMemoryRandomAccessStream> EncodePngAsync(SoftwareBitmap bitmap,
+        BitmapTransform transform)
     {
         var stream = new InMemoryRandomAccessStream();
         var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
@@ -165,8 +170,6 @@ internal static class Images
         await stream.ReadAsync(data.AsBuffer(), (uint)data.Length, InputStreamOptions.None);
         return data;
     }
-
-    public sealed record Loaded(InlineImage Image, int Width, int Height, InMemoryRandomAccessStream Thumbnail);
 
     public static Image Picture(byte[] data, double height)
     {
@@ -189,4 +192,6 @@ internal static class Images
             Log.Error(e, "fail to show a prompt image");
         }
     }
+
+    public sealed record Loaded(InlineImage Image, int Width, int Height, InMemoryRandomAccessStream Thumbnail);
 }

@@ -18,18 +18,6 @@ public sealed class UiCollectionDefinition : ICollectionFixture<UiFixture>
 /// Runs one XAML app on its own UI thread for the whole test run.
 public sealed class UiFixture : IDisposable
 {
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern nint FindWindowEx(nint parent, nint after, string className, string? title);
-
-    [DllImport("user32.dll")]
-    private static extern bool PostMessage(nint window, uint message, nint wparam, nint lparam);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetKeyboardState(byte[] state);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetKeyboardState(byte[] state);
-
     private const uint KeyDownMessage = 0x0100;
     private const uint KeyUpMessage = 0x0101;
     private const int KeyDownFlags = 1;
@@ -56,6 +44,27 @@ public sealed class UiFixture : IDisposable
         thread.Start();
         _dispatcher = started.Task.GetAwaiter().GetResult();
     }
+
+    public void Dispose()
+    {
+        _dispatcher.TryEnqueue(() =>
+        {
+            _window?.Close();
+            Application.Current.Exit();
+        });
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindowEx(nint parent, nint after, string className, string? title);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(nint window, uint message, nint wparam, nint lparam);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetKeyboardState(byte[] state);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetKeyboardState(byte[] state);
 
     /// Runs the test body on the UI thread.
     public Task RunAsync(Func<Task> body)
@@ -131,14 +140,5 @@ public sealed class UiFixture : IDisposable
         {
             _ = SetKeyboardState(released);
         }
-    }
-
-    public void Dispose()
-    {
-        _dispatcher.TryEnqueue(() =>
-        {
-            _window?.Close();
-            Application.Current.Exit();
-        });
     }
 }

@@ -8,13 +8,13 @@ namespace Paloma.Views.Settings.Plugins;
 
 public sealed partial class PluginsPage
 {
-    public PluginsViewModel ViewModel { get; }
-
     public PluginsPage()
     {
         ViewModel = new PluginsViewModel(App.Current.Client);
         InitializeComponent();
     }
+
+    public PluginsViewModel ViewModel { get; }
 
     protected override Task LoadAsync() => ViewModel.LoadAsync();
 

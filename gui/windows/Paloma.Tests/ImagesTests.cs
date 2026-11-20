@@ -135,7 +135,8 @@ public sealed class ImagesTests
         Assert.NotNull(loaded);
         Assert.Equal(boxWidth, loaded.Width);
         var thumbnail = await BitmapDecoder.CreateAsync(loaded.Thumbnail);
-        Assert.Equal(["green", "green", "green", "green"], await QuadrantsAsync(thumbnail, ExifOrientationMode.IgnoreExifOrientation));
+        Assert.Equal(["green", "green", "green", "green"],
+            await QuadrantsAsync(thumbnail, ExifOrientationMode.IgnoreExifOrientation));
     }
 
     [Theory]
@@ -147,7 +148,8 @@ public sealed class ImagesTests
     [InlineData((ushort)6, 9, 14u, 40u)]
     [InlineData((ushort)7, 9, 14u, 40u)]
     [InlineData((ushort)8, 9, 14u, 40u)]
-    public async Task GivenExifOrientationWhenLoadingFileShouldTurnThumbnailUpright(ushort orientation, int boxWidth, uint pixelWidth, uint pixelHeight)
+    public async Task GivenExifOrientationWhenLoadingFileShouldTurnThumbnailUpright(ushort orientation, int boxWidth,
+        uint pixelWidth, uint pixelHeight)
     {
         var bytes = await EncodeAsync("jpeg", 120, 40, Grid, orientation);
 
@@ -382,7 +384,8 @@ public sealed class ImagesTests
         return RandomAccessStreamReference.CreateFromStream(stream);
     }
 
-    private static async Task<Images.Loaded?> LoadFileAsync(string extension, byte[] bytes, double lineHeight, double scale)
+    private static async Task<Images.Loaded?> LoadFileAsync(string extension, byte[] bytes, double lineHeight,
+        double scale)
     {
         return await Images.LoadFileAsync(await StreamedFileAsync(extension, bytes), lineHeight, scale);
     }

@@ -81,6 +81,15 @@ public sealed class OverlayViewModelTests
         }
     }
 
+    private static (OverlayViewModel Vm, IMessenger Messenger) Banner(TimeSpan duration)
+    {
+        // A private bus per test: the global one is shared across parallel
+        // test classes.
+        var messenger = new WeakReferenceMessenger();
+        var vm = new OverlayViewModel(messenger, duration);
+        return (vm, messenger);
+    }
+
     private sealed class PumpContext : SynchronizationContext
     {
         public ConcurrentQueue<(SendOrPostCallback Callback, object? State)> Queue { get; } = new();
@@ -98,14 +107,4 @@ public sealed class OverlayViewModelTests
             }
         }
     }
-
-    private static (OverlayViewModel Vm, IMessenger Messenger) Banner(TimeSpan duration)
-    {
-        // A private bus per test: the global one is shared across parallel
-        // test classes.
-        var messenger = new WeakReferenceMessenger();
-        var vm = new OverlayViewModel(messenger, duration);
-        return (vm, messenger);
-    }
-
 }

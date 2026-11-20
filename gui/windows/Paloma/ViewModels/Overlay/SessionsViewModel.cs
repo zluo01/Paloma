@@ -8,10 +8,10 @@ namespace Paloma.ViewModels.Overlay;
 
 public sealed partial class SessionsViewModel(IPalomaClient client) : ObservableObject, IDisposable
 {
-    private CancellationTokenSource? _searchCts;
-    private IReadOnlyList<SessionListItem> _sessions = [];
     private IReadOnlySet<string>? _filterIds;
+    private CancellationTokenSource? _searchCts;
     private int _selection = -1;
+    private IReadOnlyList<SessionListItem> _sessions = [];
 
     public ObservableCollection<SessionRow> Rows { get; } = [];
 
@@ -19,6 +19,11 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
 
     public SessionRow? Selected =>
         _selection >= 0 && _selection < Rows.Count ? Rows[_selection] : null;
+
+    public void Dispose()
+    {
+        _searchCts?.Dispose();
+    }
 
     public async Task LoadAsync()
     {
@@ -126,11 +131,6 @@ public sealed partial class SessionsViewModel(IPalomaClient client) : Observable
             },
             message => Status = message,
             "Failed to remove session");
-    }
-
-    public void Dispose()
-    {
-        _searchCts?.Dispose();
     }
 
     private void Apply(IReadOnlyList<SessionListItem> sessions)

@@ -29,44 +29,6 @@ namespace Paloma.Tests;
 /// OperationCanceledException, the way the real client reports it.</summary>
 internal sealed class MockPalomaClient : IPalomaClient
 {
-    private static OperationCanceledException Cancelled() => new("call was cancelled");
-
-    private static void ThrowIfCancelled(CancellationToken token)
-    {
-        if (token.IsCancellationRequested)
-        {
-            throw Cancelled();
-        }
-    }
-
-    private static async IAsyncEnumerable<T> Observing<T>(
-        IAsyncEnumerable<T> source,
-        [EnumeratorCancellation] CancellationToken token)
-    {
-        await using var enumerator = source.GetAsyncEnumerator(token);
-        while (true)
-        {
-            // Honor the call token even for sources that ignore theirs.
-            ThrowIfCancelled(token);
-            bool moved;
-            try
-            {
-                moved = await enumerator.MoveNextAsync();
-            }
-            catch (OperationCanceledException)
-            {
-                throw Cancelled();
-            }
-
-            if (!moved)
-            {
-                yield break;
-            }
-
-            yield return enumerator.Current;
-        }
-    }
-
     public List<(string? SessionId, string Prompt, UserPromptAttachment[] Attachments)> ChatCalls { get; } = [];
 
     public List<(string Name, bool Disabled)> PluginToggles { get; } = [];
@@ -140,32 +102,6 @@ internal sealed class MockPalomaClient : IPalomaClient
 
     public ProviderBackendId? PreferredBackend { get; set; } =
         new("provider", "backend");
-
-    // The real client stops reading after a terminal event; the mock must
-    // not deliver stream shapes production can never produce.
-    private static async IAsyncEnumerable<ChatStreamEvent> Terminated(
-        IAsyncEnumerable<ChatStreamEvent> source,
-        [EnumeratorCancellation] CancellationToken token = default)
-    {
-        await foreach (var e in source.WithCancellation(token))
-        {
-            yield return e;
-            if (PalomaClient.IsTerminal(e))
-            {
-                yield break;
-            }
-        }
-    }
-
-    public static async IAsyncEnumerable<T> Stream<T>(params T[] items)
-    {
-        foreach (var item in items)
-        {
-            yield return item;
-        }
-
-        await Task.CompletedTask;
-    }
 
     public IAsyncEnumerable<QueryResponse> SearchAsync(
         string input,
@@ -370,5 +306,69 @@ internal sealed class MockPalomaClient : IPalomaClient
         OnDeletePermission?.Invoke(prefix);
         DeletedPermissions.Add(prefix);
         return Task.CompletedTask;
+    }
+
+    private static OperationCanceledException Cancelled() => new("call was cancelled");
+
+    private static void ThrowIfCancelled(CancellationToken token)
+    {
+        if (token.IsCancellationRequested)
+        {
+            throw Cancelled();
+        }
+    }
+
+    private static async IAsyncEnumerable<T> Observing<T>(
+        IAsyncEnumerable<T> source,
+        [EnumeratorCancellation] CancellationToken token)
+    {
+        await using var enumerator = source.GetAsyncEnumerator(token);
+        while (true)
+        {
+            // Honor the call token even for sources that ignore theirs.
+            ThrowIfCancelled(token);
+            bool moved;
+            try
+            {
+                moved = await enumerator.MoveNextAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                throw Cancelled();
+            }
+
+            if (!moved)
+            {
+                yield break;
+            }
+
+            yield return enumerator.Current;
+        }
+    }
+
+    // The real client stops reading after a terminal event; the mock must
+    // not deliver stream shapes production can never produce.
+    private static async IAsyncEnumerable<ChatStreamEvent> Terminated(
+        IAsyncEnumerable<ChatStreamEvent> source,
+        [EnumeratorCancellation] CancellationToken token = default)
+    {
+        await foreach (var e in source.WithCancellation(token))
+        {
+            yield return e;
+            if (PalomaClient.IsTerminal(e))
+            {
+                yield break;
+            }
+        }
+    }
+
+    public static async IAsyncEnumerable<T> Stream<T>(params T[] items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+        }
+
+        await Task.CompletedTask;
     }
 }

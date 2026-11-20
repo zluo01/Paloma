@@ -17,8 +17,8 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
     : ObservableObject, IDisposable
 {
     private readonly IMessenger _messenger = messenger ?? WeakReferenceMessenger.Default;
-    private CancellationTokenSource? _searchCts;
     private bool _activating;
+    private CancellationTokenSource? _searchCts;
     private int _selection = -1;
 
     public ObservableCollection<SearchGroup> Groups { get; } = [];
@@ -32,6 +32,11 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
     public LauncherRow? SelectedRow => RowAt(_selection);
 
     public int RowCount => Groups.Sum(group => group.Items.Count);
+
+    public void Dispose()
+    {
+        _searchCts?.Dispose();
+    }
 
     public async Task SearchAsync(string query)
     {
@@ -180,11 +185,6 @@ public sealed partial class SearchViewModel(IPalomaClient client, IMessenger? me
         }
     }
 
-    public void Dispose()
-    {
-        _searchCts?.Dispose();
-    }
-
     private void Select(int index)
     {
         if (SelectedRow is { } previous)
@@ -226,6 +226,12 @@ public sealed class SearchGroup(string name, IReadOnlyList<LauncherRow> items)
 
 public sealed partial class LauncherRow : ObservableObject
 {
+    private LauncherRow(ExtensionCapabilityId capabilityId, Item item)
+    {
+        CapabilityId = capabilityId;
+        Item = item;
+    }
+
     public ExtensionCapabilityId CapabilityId { get; }
 
     public Item Item { get; }
@@ -240,12 +246,6 @@ public sealed partial class LauncherRow : ObservableObject
     [ObservableProperty] public partial IconElement? Icon { get; private set; }
 
     public bool ShowsIcon { get; private set; }
-
-    private LauncherRow(ExtensionCapabilityId capabilityId, Item item)
-    {
-        CapabilityId = capabilityId;
-        Item = item;
-    }
 
     public static LauncherRow ForItem(ExtensionCapabilityId capabilityId, Item item)
     {

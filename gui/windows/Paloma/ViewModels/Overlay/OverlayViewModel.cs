@@ -11,14 +11,14 @@ public sealed partial class OverlayViewModel : ObservableObject, IDisposable
     private readonly TimeSpan _bannerDuration;
     private CancellationTokenSource? _errorCts;
 
-    [ObservableProperty] public partial string ErrorMessage { get; private set; } = string.Empty;
-
     public OverlayViewModel(IMessenger? messenger = null, TimeSpan? bannerDuration = null)
     {
         _bannerDuration = bannerDuration ?? ErrorBannerDuration;
         (messenger ?? WeakReferenceMessenger.Default).Register<ErrorReportedMessage>(
             this, (banner, message) => ((OverlayViewModel)banner).ReportError(message.Message));
     }
+
+    [ObservableProperty] public partial string ErrorMessage { get; private set; } = string.Empty;
 
     public void Dispose()
     {

@@ -12,9 +12,9 @@ public sealed class KeyBindingTests
     {
         var binding = new KeyBinding(
             HOT_KEY_MODIFIERS.MOD_WIN
-                | HOT_KEY_MODIFIERS.MOD_SHIFT
-                | HOT_KEY_MODIFIERS.MOD_ALT
-                | HOT_KEY_MODIFIERS.MOD_CONTROL,
+            | HOT_KEY_MODIFIERS.MOD_SHIFT
+            | HOT_KEY_MODIFIERS.MOD_ALT
+            | HOT_KEY_MODIFIERS.MOD_CONTROL,
             VirtualKey.A);
 
         Assert.Equal("Ctrl+Alt+Shift+Win+A", binding.GetLabel());

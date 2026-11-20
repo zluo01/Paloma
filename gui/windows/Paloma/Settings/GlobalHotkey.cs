@@ -15,7 +15,6 @@ internal sealed partial class GlobalHotkey : IDisposable
 
     private readonly HWND _hwnd;
     private readonly SUBCLASSPROC _subclassProc;
-    public KeyBinding Binding { get; private set; }
 
     public GlobalHotkey(KeyBinding binding)
     {
@@ -75,6 +74,15 @@ internal sealed partial class GlobalHotkey : IDisposable
         Binding = binding;
     }
 
+    public KeyBinding Binding { get; private set; }
+
+    public void Dispose()
+    {
+        PInvoke.RemoveWindowSubclass(_hwnd, _subclassProc, Id);
+        PInvoke.UnregisterHotKey(_hwnd, Id);
+        PInvoke.DestroyWindow(_hwnd);
+    }
+
     public bool Update(KeyBinding binding)
     {
         if (binding == Binding)
@@ -92,12 +100,5 @@ internal sealed partial class GlobalHotkey : IDisposable
 
         Binding = binding;
         return true;
-    }
-
-    public void Dispose()
-    {
-        PInvoke.RemoveWindowSubclass(_hwnd, _subclassProc, Id);
-        PInvoke.UnregisterHotKey(_hwnd, Id);
-        PInvoke.DestroyWindow(_hwnd);
     }
 }

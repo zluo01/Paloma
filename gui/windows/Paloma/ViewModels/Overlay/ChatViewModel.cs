@@ -17,9 +17,9 @@ namespace Paloma.ViewModels.Overlay;
 public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, bool>? delayFlush = null)
     : ObservableObject, IDisposable
 {
-    private CancellationTokenSource? _turnCts;
-    private string? _sessionId;
     private DecisionViewModel? _decisionCursor;
+    private string? _sessionId;
+    private CancellationTokenSource? _turnCts;
 
     public ObservableCollection<ChatSectionViewModel> Sections { get; } = [];
 
@@ -30,6 +30,11 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
     [ObservableProperty] public partial string StatusMessage { get; private set; } = string.Empty;
 
     public bool Streaming => Status == ChatStatus.Streaming;
+
+    public void Dispose()
+    {
+        _turnCts?.Dispose();
+    }
 
     public bool CanSubmit(string prompt)
     {
@@ -170,11 +175,6 @@ public sealed partial class ChatViewModel(IPalomaClient client, Func<Action, boo
         return true;
     }
 
-    public void Dispose()
-    {
-        _turnCts?.Dispose();
-    }
-
     private async Task ConsumeTurnAsync(
         IAsyncEnumerable<ChatStreamEvent> stream,
         CancellationTokenSource turn,
@@ -311,10 +311,6 @@ public sealed class UserSectionViewModel : ChatSectionViewModel
 {
     private const string PlaceholderPrefix = "[Image #";
 
-    public IReadOnlyList<Segment> Segments { get; }
-
-    public IReadOnlyList<byte[]> Images { get; }
-
     public UserSectionViewModel(string text, UserPromptAttachment[] attachments)
     {
         var data = new Dictionary<uint, byte[]>();
@@ -373,6 +369,10 @@ public sealed class UserSectionViewModel : ChatSectionViewModel
         Images = images;
     }
 
+    public IReadOnlyList<Segment> Segments { get; }
+
+    public IReadOnlyList<byte[]> Images { get; }
+
     public abstract record Segment
     {
         public sealed record Text(string Value) : Segment;
@@ -389,16 +389,16 @@ public abstract partial class StreamingSectionViewModel : ChatSectionViewModel
     // instead of per delta; without a dispatcher the flush runs inline.
     private readonly BatchedAction _flush;
 
-    [ObservableProperty] public partial string Text { get; private set; }
-
-    private protected virtual bool Shown => true;
-
     private protected StreamingSectionViewModel(string text, Func<Action, bool>? delayFlush)
     {
         _builder = new StringBuilder(text);
         Text = text;
         _flush = new BatchedAction(Materialize, delayFlush);
     }
+
+    [ObservableProperty] public partial string Text { get; private set; }
+
+    private protected virtual bool Shown => true;
 
     public void Append(string delta)
     {
@@ -446,6 +446,23 @@ public sealed partial class ToolSectionViewModel : ChatSectionViewModel
     private readonly Action<string> _reportError;
     private readonly Action<ToolSectionViewModel, UserDecision> _resolved;
 
+    public ToolSectionViewModel(
+        IPalomaClient client,
+        ChatStreamEvent.ToolCall call,
+        Action<string> reportError,
+        Action<ToolSectionViewModel, UserDecision> resolved)
+    {
+        _client = client;
+        _reportError = reportError;
+        _resolved = resolved;
+        ToolName = call.Name;
+        ToolDescription = call.Description;
+        Arguments = call.Arguments;
+        Decisions = [.. call.Decisions.Select(decision => new DecisionViewModel(decision, OnDecide))];
+        AllowDecisions = [.. Decisions.Where(decision => !decision.Terminal)];
+        TerminalDecisions = [.. Decisions.Where(decision => decision.Terminal)];
+    }
+
     public string ToolName { get; }
 
     public string? ToolDescription { get; }
@@ -473,23 +490,6 @@ public sealed partial class ToolSectionViewModel : ChatSectionViewModel
     public partial bool Deciding { get; private set; }
 
     public bool CanDecide => !Deciding;
-
-    public ToolSectionViewModel(
-        IPalomaClient client,
-        ChatStreamEvent.ToolCall call,
-        Action<string> reportError,
-        Action<ToolSectionViewModel, UserDecision> resolved)
-    {
-        _client = client;
-        _reportError = reportError;
-        _resolved = resolved;
-        ToolName = call.Name;
-        ToolDescription = call.Description;
-        Arguments = call.Arguments;
-        Decisions = [.. call.Decisions.Select(decision => new DecisionViewModel(decision, OnDecide))];
-        AllowDecisions = [.. Decisions.Where(decision => !decision.Terminal)];
-        TerminalDecisions = [.. Decisions.Where(decision => decision.Terminal)];
-    }
 
     private async void OnDecide(UserDecision decision)
     {

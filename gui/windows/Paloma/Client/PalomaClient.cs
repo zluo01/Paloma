@@ -7,14 +7,9 @@ namespace Paloma.Client;
 
 public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDisposable
 {
-    public static string Describe(Exception e)
+    public void Dispose()
     {
-        return e is PalomaException.Failure failure ? failure.message : e.Message;
-    }
-
-    public static bool IsCancellation(Exception e)
-    {
-        return e is OperationCanceledException or PalomaException.Failure { message: "cancelled" };
+        app.Dispose();
     }
 
     public async IAsyncEnumerable<QueryResponse> SearchAsync(
@@ -234,9 +229,14 @@ public sealed partial class PalomaClient(PalomaApp app) : IPalomaClient, IDispos
         await app.ToggleCapability(plugin, capability, facet, disabled);
     }
 
-    public void Dispose()
+    public static string Describe(Exception e)
     {
-        app.Dispose();
+        return e is PalomaException.Failure failure ? failure.message : e.Message;
+    }
+
+    public static bool IsCancellation(Exception e)
+    {
+        return e is OperationCanceledException or PalomaException.Failure { message: "cancelled" };
     }
 
     private static async IAsyncEnumerable<RenderEvent> Events(

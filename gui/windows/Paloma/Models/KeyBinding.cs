@@ -8,16 +8,16 @@ public sealed record KeyBinding
 {
     public static readonly KeyBinding Default = new(HOT_KEY_MODIFIERS.MOD_ALT, VirtualKey.Space);
 
-    public HOT_KEY_MODIFIERS Modifiers { get; }
-
-    public VirtualKey VirtualKey { get; }
-
     public KeyBinding(HOT_KEY_MODIFIERS modifiers, VirtualKey virtualKey)
     {
         // Manually apply no repeat flag to force single toggle per key press
         Modifiers = modifiers | HOT_KEY_MODIFIERS.MOD_NOREPEAT;
         VirtualKey = virtualKey;
     }
+
+    public HOT_KEY_MODIFIERS Modifiers { get; }
+
+    public VirtualKey VirtualKey { get; }
 
     /// <summary>Human-readable form of the combo, e.g. "Alt+Space".</summary>
     public string GetLabel()

@@ -11,6 +11,11 @@ public sealed partial class AppSettings : IDisposable
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "Paloma";
 
+    private AppSettings(GlobalHotkey? hotKey)
+    {
+        HotKey = hotKey;
+    }
+
     private static string Path => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Paloma",
@@ -18,9 +23,11 @@ public sealed partial class AppSettings : IDisposable
 
     private GlobalHotkey? HotKey { get; set; }
 
-    private AppSettings(GlobalHotkey? hotKey)
+    public string HotKeyLabel => HotKey?.Binding.GetLabel() ?? "";
+
+    public void Dispose()
     {
-        HotKey = hotKey;
+        HotKey?.Dispose();
     }
 
     public static AppSettings Load()
@@ -77,8 +84,6 @@ public sealed partial class AppSettings : IDisposable
         }
     }
 
-    public string HotKeyLabel => HotKey?.Binding.GetLabel() ?? "";
-
     public void UpdateHotKey(KeyBinding binding)
     {
         if (HotKey is null)
@@ -102,10 +107,5 @@ public sealed partial class AppSettings : IDisposable
 
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         File.WriteAllText(Path, JsonSerializer.Serialize(new AppConfig(HotKey.Binding)));
-    }
-
-    public void Dispose()
-    {
-        HotKey?.Dispose();
     }
 }

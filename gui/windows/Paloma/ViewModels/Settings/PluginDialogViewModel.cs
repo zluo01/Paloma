@@ -9,6 +9,48 @@ namespace Paloma.ViewModels.Settings;
 
 public sealed partial class PluginDialogViewModel : ObservableObject, IDisposable
 {
+    // Mirrors core's stored default (db/queries/init_table.sql: timeout
+    // DEFAULT 300); the customized-settings detection breaks silently if
+    // they drift.
+    private const uint CoreDefaultTimeout = 300;
+
+    private readonly IPalomaClient _client;
+    private readonly Plugin? _editing;
+    private readonly PluginType _kind;
+    private readonly IReadOnlySet<string> _takenNames;
+    private CancellationTokenSource? _finalize;
+    private bool _submitting;
+
+    public PluginDialogViewModel(
+        IPalomaClient client,
+        IReadOnlySet<string> takenNames,
+        PluginType kind,
+        Plugin? editing)
+    {
+        _client = client;
+        _takenNames = takenNames;
+        _kind = kind;
+        _editing = editing;
+        (var noun, CommandPlaceholder) = kind switch
+        {
+            PluginType.Extension => ("Extension", @"C:\path\to\extension.exe"),
+            PluginType.Provider => ("Provider", @"C:\path\to\provider.exe"),
+            PluginType.Mcp => ("MCP Server", "npx"),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+        Title = editing is null ? $"Add {noun}" : $"Edit {noun}";
+        PrimaryLabel = editing is null ? "Add" : "Save";
+        SubmitErrorTitle = editing is null ? $"Couldn't add the {noun}" : $"Couldn't save the {noun}";
+        NameEditable = editing is null;
+        Prefill();
+        if (Headers.Count == 0)
+        {
+            AddHeader();
+        }
+
+        Validate();
+    }
+
     public static IReadOnlyList<AuthOption> AuthOptions { get; } =
     [
         new(new RemoteAuth.None(), "None"),
@@ -17,11 +59,6 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
         new(new RemoteAuth.Oauth(), "OAuth"),
         new(new RemoteAuth.OauthClient(string.Empty), "OAuth with client ID"),
     ];
-
-    // Mirrors core's stored default (db/queries/init_table.sql: timeout
-    // DEFAULT 300); the customized-settings detection breaks silently if
-    // they drift.
-    private const uint CoreDefaultTimeout = 300;
 
     public string Title { get; }
 
@@ -98,41 +135,9 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
 
     [ObservableProperty] public partial bool CanSubmit { get; private set; }
 
-    private readonly IPalomaClient _client;
-    private readonly IReadOnlySet<string> _takenNames;
-    private readonly PluginType _kind;
-    private readonly Plugin? _editing;
-    private CancellationTokenSource? _finalize;
-    private bool _submitting;
-
-    public PluginDialogViewModel(
-        IPalomaClient client,
-        IReadOnlySet<string> takenNames,
-        PluginType kind,
-        Plugin? editing)
+    public void Dispose()
     {
-        _client = client;
-        _takenNames = takenNames;
-        _kind = kind;
-        _editing = editing;
-        (var noun, CommandPlaceholder) = kind switch
-        {
-            PluginType.Extension => ("Extension", @"C:\path\to\extension.exe"),
-            PluginType.Provider => ("Provider", @"C:\path\to\provider.exe"),
-            PluginType.Mcp => ("MCP Server", "npx"),
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-        };
-        Title = editing is null ? $"Add {noun}" : $"Edit {noun}";
-        PrimaryLabel = editing is null ? "Add" : "Save";
-        SubmitErrorTitle = editing is null ? $"Couldn't add the {noun}" : $"Couldn't save the {noun}";
-        NameEditable = editing is null;
-        Prefill();
-        if (Headers.Count == 0)
-        {
-            AddHeader();
-        }
-
-        Validate();
+        _finalize?.Dispose();
     }
 
     private void Prefill()
@@ -471,11 +476,6 @@ public sealed partial class PluginDialogViewModel : ObservableObject, IDisposabl
     /// <summary>Closing the dialog cancels whichever connect phase is in
     /// flight.</summary>
     public void Cancel() => _finalize?.Cancel();
-
-    public void Dispose()
-    {
-        _finalize?.Dispose();
-    }
 
     private async Task ConnectMcpAsync(Plugin config)
     {

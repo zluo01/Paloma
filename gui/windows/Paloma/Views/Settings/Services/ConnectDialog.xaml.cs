@@ -12,14 +12,14 @@ public sealed partial class ConnectDialog
     // Linger so the success state is visible before the dialog closes itself.
     private static readonly TimeSpan SuccessLinger = TimeSpan.FromMilliseconds(800);
 
-    public ConnectViewModel ViewModel { get; }
-
     public ConnectDialog(ConnectViewModel viewModel)
     {
         ViewModel = viewModel;
         InitializeComponent();
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
+
+    public ConnectViewModel ViewModel { get; }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {

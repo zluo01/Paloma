@@ -15,6 +15,7 @@ public static class DialogExtensions
         {
             return false;
         }
+
         await dialog.ShowAsync();
         return true;
     }

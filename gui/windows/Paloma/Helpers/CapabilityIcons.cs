@@ -241,6 +241,10 @@ public static partial class CapabilityIcons
             BitmapAlphaMode.Premultiplied);
     }
 
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SHCreateItemFromParsingName(
+        string path, nint bindContext, in Guid riid, out IShellItemImageFactory factory);
+
     // CsWin32 would generate this interface with the legacy ComImport
     // pattern, whose runtime-built marshaling breaks Native AOT. Writing
     // it by hand keeps the compile-time [GeneratedComInterface] path.
@@ -257,8 +261,4 @@ public static partial class CapabilityIcons
         public int Width = width;
         public int Height = height;
     }
-
-    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial int SHCreateItemFromParsingName(
-        string path, nint bindContext, in Guid riid, out IShellItemImageFactory factory);
 }

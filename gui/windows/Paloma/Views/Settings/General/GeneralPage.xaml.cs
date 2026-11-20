@@ -8,13 +8,13 @@ namespace Paloma.Views.Settings.General;
 
 public sealed partial class GeneralPage
 {
-    public GeneralViewModel ViewModel { get; }
-
     public GeneralPage()
     {
         ViewModel = new GeneralViewModel();
         InitializeComponent();
     }
+
+    public GeneralViewModel ViewModel { get; }
 
     private void OnRecordChecked(object sender, RoutedEventArgs args)
     {

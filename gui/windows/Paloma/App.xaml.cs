@@ -20,15 +20,9 @@ namespace Paloma;
 
 public partial class App
 {
-    private SettingsWindow? _settingsWindow;
     private OverlayWindow? _overlayWindow;
+    private SettingsWindow? _settingsWindow;
     private TaskbarIcon? _tray;
-
-    public PalomaClient Client { get; private set; } = null!;
-
-    public AppSettings Settings { get; private set; } = null!;
-
-    public new static App Current => (App)Application.Current;
 
     public App()
     {
@@ -37,6 +31,12 @@ public partial class App
         UnhandledException += (_, args) =>
             Log.Fatal(args.Exception, "unhandled dispatcher exception");
     }
+
+    public PalomaClient Client { get; private set; } = null!;
+
+    public AppSettings Settings { get; private set; } = null!;
+
+    public new static App Current => (App)Application.Current;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {

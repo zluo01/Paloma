@@ -24,8 +24,6 @@ public sealed partial class ServicesViewModel(IPalomaClient client) : Observable
 
     public bool HasError => Error.Length > 0;
 
-    public void ReportError(string message) => Error = message;
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoConnected))]
     [NotifyPropertyChangedFor(nameof(ShowNoAvailable))]
@@ -34,6 +32,8 @@ public sealed partial class ServicesViewModel(IPalomaClient client) : Observable
     public bool ShowNoConnected => Ready && Connected.Count == 0;
 
     public bool ShowNoAvailable => Ready && Available.Count == 0;
+
+    public void ReportError(string message) => Error = message;
 
     public async Task LoadAsync()
     {

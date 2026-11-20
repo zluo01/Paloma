@@ -22,12 +22,6 @@ public sealed partial class MarkdownView : ContentControl
 
     private bool _unloaded;
 
-    public string Text
-    {
-        get => (string)GetValue(TextProperty);
-        set => SetValue(TextProperty, value);
-    }
-
     public MarkdownView()
     {
         _container = new StackPanel { Spacing = 6 };
@@ -44,6 +38,12 @@ public sealed partial class MarkdownView : ContentControl
         // underlying listener will not get trigger and try to read non exists native value and cause exceptions
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+    }
+
+    public string Text
+    {
+        get => (string)GetValue(TextProperty);
+        set => SetValue(TextProperty, value);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)

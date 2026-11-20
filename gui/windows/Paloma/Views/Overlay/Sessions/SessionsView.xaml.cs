@@ -10,10 +10,6 @@ namespace Paloma.Views.Overlay.Sessions;
 
 public sealed partial class SessionsView
 {
-    public SessionsViewModel ViewModel { get; }
-
-    public event EventHandler<SessionRow>? RowActivated;
-
     public SessionsView()
     {
         ViewModel = new SessionsViewModel(App.Current.Client);
@@ -22,6 +18,10 @@ public sealed partial class SessionsView
         WeakReferenceMessenger.Default.Register<OverlayHiddenMessage>(
             this, (_, _) => ViewModel.CancelPendingDelete());
     }
+
+    public SessionsViewModel ViewModel { get; }
+
+    public event EventHandler<SessionRow>? RowActivated;
 
     public void Move(int delta)
     {

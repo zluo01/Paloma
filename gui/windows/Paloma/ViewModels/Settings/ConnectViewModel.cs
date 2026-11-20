@@ -20,8 +20,6 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
 
     [ObservableProperty] public partial ConnectionPhase Phase { get; private set; } = new ConnectionPhase.Loading();
 
-    partial void OnPhaseChanged(ConnectionPhase value) => OnPropertyChanged(string.Empty);
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasInput))]
     [NotifyPropertyChangedFor(nameof(CanConnect))]
@@ -69,6 +67,8 @@ public sealed partial class ConnectViewModel(IPalomaClient client, Connector con
     public string PrimaryLabel => NeedsInput ? "Connect" : string.Empty;
 
     public string CloseLabel => IsSuccess || IsFailed ? "Close" : "Cancel";
+
+    partial void OnPhaseChanged(ConnectionPhase value) => OnPropertyChanged(string.Empty);
 
     private static Uri? ToUri(string? url) =>
         url is not null && Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null;

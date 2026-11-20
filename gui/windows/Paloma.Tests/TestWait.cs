@@ -11,6 +11,7 @@ internal static class TestWait
             {
                 throw new TimeoutException("condition not met within the timeout");
             }
+
             await Task.Delay(10);
         }
     }

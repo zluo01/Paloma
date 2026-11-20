@@ -18,16 +18,16 @@ public sealed partial class PromptView : ContentControl
         typeof(PromptView),
         new PropertyMetadata(null, (control, _) => ((PromptView)control).Rebuild()));
 
-    public UserSectionViewModel? Section
-    {
-        get => (UserSectionViewModel?)GetValue(SectionProperty);
-        set => SetValue(SectionProperty, value);
-    }
-
     public PromptView()
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         IsTabStop = false;
+    }
+
+    public UserSectionViewModel? Section
+    {
+        get => (UserSectionViewModel?)GetValue(SectionProperty);
+        set => SetValue(SectionProperty, value);
     }
 
     private void Rebuild()
