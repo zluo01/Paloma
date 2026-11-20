@@ -139,7 +139,7 @@
                         <MenuFlyout
                             x:Name="ModelFlyout"
                             Closed="OnModelFlyoutClosed"
-                            Opening="OnModelFlyoutOpening"
+                            Opening="{x:Bind BuildModelMenu}"
                             Placement="Top" />
                     </DropDownButton.Flyout>
                 </DropDownButton>

@@ -80,11 +80,6 @@ public sealed partial class FooterView
         return [ActionsPanel];
     }
 
-    private void OnModelFlyoutOpening(object sender, object args)
-    {
-        BuildModelMenu();
-    }
-
     private void OnModelFlyoutClosed(object sender, object args)
     {
         ModelFlyoutClosed?.Invoke(this, EventArgs.Empty);
