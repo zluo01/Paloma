@@ -34,13 +34,12 @@ public class ContentPayload implements StreamPayload {
     final var contentDelta = payload.getString(CONTENT_KEY);
     if (contentDelta != null && !contentDelta.isEmpty()) {
       content.append(contentDelta);
-      emitter.emit(
-          c ->
-              c.setTextDelta(
-                  TextDelta.newBuilder()
-                      .setProviderId(Constants.PROVIDER_ID)
-                      .setBackendId(Constants.BACKEND_ID)
-                      .setDelta(contentDelta)));
+      emitter.emit(c ->
+          c.setTextDelta(
+              TextDelta.newBuilder()
+                  .setProviderId(Constants.PROVIDER_ID)
+                  .setBackendId(Constants.BACKEND_ID)
+                  .setDelta(contentDelta)));
     }
 
     final var reasoningDelta = payload.getString(REASON_KEY);
@@ -53,29 +52,27 @@ public class ContentPayload implements StreamPayload {
   @Override
   public void flush(final ChatEventEmitter emitter) {
     if (!reasoning.isEmpty()) {
-      emitter.emit(
-          c ->
-              c.setOutputItem(
-                  ConversationItem.newBuilder()
-                      .setReasoning(
-                          Reasoning.newBuilder()
-                              .addReasoning(
-                                  SummaryItem.newBuilder().setContent(reasoning.toString()).build())
-                              .build())));
+      emitter.emit(c ->
+          c.setOutputItem(
+              ConversationItem.newBuilder()
+                  .setReasoning(
+                      Reasoning.newBuilder()
+                          .addReasoning(
+                              SummaryItem.newBuilder().setContent(reasoning.toString()).build())
+                          .build())));
     }
 
     if (!content.isEmpty()) {
-      emitter.emit(
-          c ->
-              c.setOutputItem(
-                  ConversationItem.newBuilder()
-                      .setMessage(
-                          ConversationMessage.newBuilder()
-                              .addMessage(
-                                  MessageContentItem.newBuilder()
-                                      .setContent(content.toString())
-                                      .build())
-                              .build())));
+      emitter.emit(c ->
+          c.setOutputItem(
+              ConversationItem.newBuilder()
+                  .setMessage(
+                      ConversationMessage.newBuilder()
+                          .addMessage(
+                              MessageContentItem.newBuilder()
+                                  .setContent(content.toString())
+                                  .build())
+                          .build())));
     }
   }
 }

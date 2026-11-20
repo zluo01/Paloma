@@ -49,48 +49,43 @@ public final class MainVerticle extends VerticleBase {
 
     eventBus
         .<RequestEvent>consumer(MessageEvent.REQUEST_EVENT.name())
-        .handler(
-            event -> {
-              final long eventId = event.body().getEventId();
-              final var backendId =
-                  event.body().hasBackendId() ? event.body().getBackendId() : null;
-              try {
-                switch (event.body().getPayloadCase()) {
-                  case HANDSHAKE_REQUEST -> deepSeekClient.handshakeRequest(eventId);
-                  case INITIALIZE_BACKENDS_REQUEST ->
-                      deepSeekClient.initBackendsRequest(
-                          eventId, event.body().getInitializeBackendsRequest());
-                  case INIT_BACKEND_REQUEST ->
-                      deepSeekClient.initBackendRequest(
-                          eventId, event.body().getInitBackendRequest());
-                  case REMOVE_BACKEND_REQUEST -> deepSeekClient.removeBackend(eventId, backendId);
-                  case INIT_CONNECTION_REQUEST -> deepSeekClient.initConnection(eventId, backendId);
-                  case FINALIZE_CONNECTION_REQUEST ->
-                      deepSeekClient.finalizeConnection(
-                          eventId, backendId, event.body().getFinalizeConnectionRequest());
-                  case CANCEL_CONNECTION_REQUEST -> deepSeekClient.cancelConnection(eventId);
-                  case CHAT_REQUEST ->
-                      deepSeekClient.chat(eventId, backendId, event.body().getChatRequest());
-                  case CANCEL_CHAT_REQUEST ->
-                      deepSeekClient.cancelChat(eventId, event.body().getCancelChatRequest());
-                  case LIST_MODELS_REQUEST -> deepSeekClient.listModel(eventId);
-                  case HEALTH_STATUS_REQUEST -> deepSeekClient.healthStatus(eventId);
-                  case BACKEND_INIT_ERROR_REQUEST -> deepSeekClient.backendInitError(eventId);
-                  case BACKEND_HEALTH_STATUS_REQUEST -> deepSeekClient.backendHealthStatus(eventId);
-                  default -> {
-                    LOGGER.severe(
-                        "request "
-                            + eventId
-                            + " has no payload: host bug or newer protocol version");
-                    replyError(eventId, "unsupported or missing request payload");
-                  }
-                }
-              } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "handler failed for request " + eventId, e);
-                final var msg = e.getMessage();
-                replyError(eventId, msg == null || msg.isBlank() ? "internal plugin error" : msg);
+        .handler(event -> {
+          final long eventId = event.body().getEventId();
+          final var backendId = event.body().hasBackendId() ? event.body().getBackendId() : null;
+          try {
+            switch (event.body().getPayloadCase()) {
+              case HANDSHAKE_REQUEST -> deepSeekClient.handshakeRequest(eventId);
+              case INITIALIZE_BACKENDS_REQUEST ->
+                  deepSeekClient.initBackendsRequest(
+                      eventId, event.body().getInitializeBackendsRequest());
+              case INIT_BACKEND_REQUEST ->
+                  deepSeekClient.initBackendRequest(eventId, event.body().getInitBackendRequest());
+              case REMOVE_BACKEND_REQUEST -> deepSeekClient.removeBackend(eventId, backendId);
+              case INIT_CONNECTION_REQUEST -> deepSeekClient.initConnection(eventId, backendId);
+              case FINALIZE_CONNECTION_REQUEST ->
+                  deepSeekClient.finalizeConnection(
+                      eventId, backendId, event.body().getFinalizeConnectionRequest());
+              case CANCEL_CONNECTION_REQUEST -> deepSeekClient.cancelConnection(eventId);
+              case CHAT_REQUEST ->
+                  deepSeekClient.chat(eventId, backendId, event.body().getChatRequest());
+              case CANCEL_CHAT_REQUEST ->
+                  deepSeekClient.cancelChat(eventId, event.body().getCancelChatRequest());
+              case LIST_MODELS_REQUEST -> deepSeekClient.listModel(eventId);
+              case HEALTH_STATUS_REQUEST -> deepSeekClient.healthStatus(eventId);
+              case BACKEND_INIT_ERROR_REQUEST -> deepSeekClient.backendInitError(eventId);
+              case BACKEND_HEALTH_STATUS_REQUEST -> deepSeekClient.backendHealthStatus(eventId);
+              default -> {
+                LOGGER.severe(
+                    "request " + eventId + " has no payload: host bug or newer protocol version");
+                replyError(eventId, "unsupported or missing request payload");
               }
-            });
+            }
+          } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "handler failed for request " + eventId, e);
+            final var msg = e.getMessage();
+            replyError(eventId, msg == null || msg.isBlank() ? "internal plugin error" : msg);
+          }
+        });
 
     return vertx
         .deployVerticle(
@@ -115,27 +110,21 @@ public final class MainVerticle extends VerticleBase {
     Thread.ofPlatform()
         .name("stdin-reader")
         .daemon()
-        .start(
-            () -> {
-              try (InputStream in = System.in) {
-                RequestEvent event;
-                while ((event = RequestEvent.parseDelimitedFrom(in)) != null) {
-                  final var e = event;
-                  context.runOnContext(
-                      _ ->
-                          eventBus.send(
-                              MessageEvent.REQUEST_EVENT.name(), e)); // hop to the event loop
-                }
-              } catch (IOException ex) {
-                LOGGER.log(Level.SEVERE, "stdin stream failed", ex);
-              }
-              // EOF: host is gone; drain dispatched requests and queued writes, then exit
-              context.runOnContext(
-                  _ ->
-                      eventBus
-                          .request(MessageEvent.FLUSH.name(), null)
-                          .onComplete(_ -> vertx.close()));
-            });
+        .start(() -> {
+          try (InputStream in = System.in) {
+            RequestEvent event;
+            while ((event = RequestEvent.parseDelimitedFrom(in)) != null) {
+              final var e = event;
+              context.runOnContext(_ ->
+                  eventBus.send(MessageEvent.REQUEST_EVENT.name(), e)); // hop to the event loop
+            }
+          } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, "stdin stream failed", ex);
+          }
+          // EOF: host is gone; drain dispatched requests and queued writes, then exit
+          context.runOnContext(_ ->
+              eventBus.request(MessageEvent.FLUSH.name(), null).onComplete(_ -> vertx.close()));
+        });
   }
 
   /** Worker Verticle only for flushing Protobuf response back in synchronize order. */
@@ -168,10 +157,9 @@ public final class MainVerticle extends VerticleBase {
     vertx.exceptionHandler(throwable -> LOGGER.log(Level.SEVERE, "Unhandled exception", throwable));
     vertx
         .deployVerticle(new MainVerticle())
-        .onFailure(
-            error -> {
-              LOGGER.log(Level.SEVERE, "Fail to start.", error);
-              vertx.close();
-            });
+        .onFailure(error -> {
+          LOGGER.log(Level.SEVERE, "Fail to start.", error);
+          vertx.close();
+        });
   }
 }

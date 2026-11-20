@@ -66,16 +66,15 @@ public class ToolCallPayload implements StreamPayload {
 
   @Override
   public void flush(final ChatEventEmitter emitter) {
-    emitter.emit(
-        c ->
-            c.setOutputItem(
-                ConversationItem.newBuilder()
-                    .setToolCall(
-                        ToolCall.newBuilder()
-                            .setCallId(functionCall.id())
-                            .setName(functionCall.name())
-                            .setArguments(functionCall.args().toString())
-                            .build())));
+    emitter.emit(c ->
+        c.setOutputItem(
+            ConversationItem.newBuilder()
+                .setToolCall(
+                    ToolCall.newBuilder()
+                        .setCallId(functionCall.id())
+                        .setName(functionCall.name())
+                        .setArguments(functionCall.args().toString())
+                        .build())));
   }
 
   private record FunctionCall(String id, String name, StringBuilder args) {}

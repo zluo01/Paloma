@@ -70,13 +70,12 @@ class ChatStreamTest {
     events = new ArrayList<>();
     onEvent = ignored -> {};
     when(eventBus.send(eq(MessageEvent.RESPONSE_EVENT.name()), any()))
-        .thenAnswer(
-            invocation -> {
-              final ResponseEvent event = invocation.getArgument(1);
-              events.add(event);
-              onEvent.accept(event);
-              return eventBus;
-            });
+        .thenAnswer(invocation -> {
+          final ResponseEvent event = invocation.getArgument(1);
+          events.add(event);
+          onEvent.accept(event);
+          return eventBus;
+        });
   }
 
   @Test
@@ -257,11 +256,10 @@ class ChatStreamTest {
   private static String joinedDeltas(final List<ResponseEvent> deltas, final PayloadCase kind) {
     return deltas.stream()
         .filter(event -> event.getChatResponse().getPayloadCase() == kind)
-        .map(
-            event ->
-                kind == PayloadCase.REASONING_DELTA
-                    ? event.getChatResponse().getReasoningDelta()
-                    : event.getChatResponse().getTextDelta().getDelta())
+        .map(event ->
+            kind == PayloadCase.REASONING_DELTA
+                ? event.getChatResponse().getReasoningDelta()
+                : event.getChatResponse().getTextDelta().getDelta())
         .collect(Collectors.joining());
   }
 }

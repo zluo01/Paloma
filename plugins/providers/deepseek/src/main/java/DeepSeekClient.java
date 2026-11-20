@@ -113,28 +113,26 @@ public final class DeepSeekClient {
       }
       inits.add(
           initBackend(auth)
-              .onFailure(
-                  e -> {
-                    LOGGER.log(
-                        Level.WARNING,
-                        "Failed to initialize " + Constants.BACKEND_ID + " backend; skipping.",
-                        e);
-                    final var msg = e.getMessage();
-                    health =
-                        BackendHealth.unhealthy(
-                            msg == null || msg.isBlank()
-                                ? "Failed to initialize " + Constants.BACKEND_ID + " backend."
-                                : msg);
-                  }));
+              .onFailure(e -> {
+                LOGGER.log(
+                    Level.WARNING,
+                    "Failed to initialize " + Constants.BACKEND_ID + " backend; skipping.",
+                    e);
+                final var msg = e.getMessage();
+                health =
+                    BackendHealth.unhealthy(
+                        msg == null || msg.isBlank()
+                            ? "Failed to initialize " + Constants.BACKEND_ID + " backend."
+                            : msg);
+              }));
     }
     Future.join(inits)
-        .onComplete(
-            _ ->
-                reply(
-                    eventId,
-                    b ->
-                        b.setInitializeBackendsResponse(
-                            InitializeBackendsResponse.getDefaultInstance())));
+        .onComplete(_ ->
+            reply(
+                eventId,
+                b ->
+                    b.setInitializeBackendsResponse(
+                        InitializeBackendsResponse.getDefaultInstance())));
   }
 
   void initBackendRequest(final long eventId, final InitBackendRequest request) {
@@ -144,26 +142,22 @@ public final class DeepSeekClient {
       return;
     }
     initBackend(request.getAuth())
-        .onSuccess(
-            _ -> {
-              final var deferred = health.error();
-              if (deferred.isPresent()) {
-                replyError(eventId, deferred.get());
-              } else {
-                reply(
-                    eventId,
-                    b -> b.setInitBackendResponse(InitBackendResponse.getDefaultInstance()));
-              }
-            })
-        .onFailure(
-            e -> {
-              final var errorMsg = e.getMessage();
-              replyError(
-                  eventId,
-                  errorMsg == null || errorMsg.isBlank()
-                      ? "Failed to initialize " + Constants.BACKEND_ID + " backend."
-                      : errorMsg);
-            });
+        .onSuccess(_ -> {
+          final var deferred = health.error();
+          if (deferred.isPresent()) {
+            replyError(eventId, deferred.get());
+          } else {
+            reply(eventId, b -> b.setInitBackendResponse(InitBackendResponse.getDefaultInstance()));
+          }
+        })
+        .onFailure(e -> {
+          final var errorMsg = e.getMessage();
+          replyError(
+              eventId,
+              errorMsg == null || errorMsg.isBlank()
+                  ? "Failed to initialize " + Constants.BACKEND_ID + " backend."
+                  : errorMsg);
+        });
   }
 
   void removeBackend(final long eventId, final String backendId) {
@@ -299,22 +293,20 @@ public final class DeepSeekClient {
       return Future.succeededFuture();
     }
     return healthCheck(key)
-        .onSuccess(
-            _ -> {
-              apiKey = Optional.of(key);
-              health = BackendHealth.running();
-            })
-        .otherwise(
-            e -> {
-              apiKey = Optional.empty();
-              final var msg = e.getMessage();
-              health =
-                  BackendHealth.unhealthy(
-                      msg == null || msg.isBlank()
-                          ? "Fail to connect to " + Constants.BACKEND_ID + "."
-                          : msg);
-              return null;
-            });
+        .onSuccess(_ -> {
+          apiKey = Optional.of(key);
+          health = BackendHealth.running();
+        })
+        .otherwise(e -> {
+          apiKey = Optional.empty();
+          final var msg = e.getMessage();
+          health =
+              BackendHealth.unhealthy(
+                  msg == null || msg.isBlank()
+                      ? "Fail to connect to " + Constants.BACKEND_ID + "."
+                      : msg);
+          return null;
+        });
   }
 
   void chat(final long eventId, final String backendId, final ChatRequest request) {
@@ -377,13 +369,12 @@ public final class DeepSeekClient {
   private Future<Void> healthCheck(final String apiKey) {
     return httpClient
         .request(HttpMethod.GET, "/models")
-        .compose(
-            request ->
-                request
-                    .putHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
-                    .putHeader(HttpHeaders.USER_AGENT, Constants.USER_AGENT)
-                    .putHeader(HttpHeaders.ACCEPT, HttpHeaderValues.APPLICATION_JSON)
-                    .send())
+        .compose(request ->
+            request
+                .putHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .putHeader(HttpHeaders.USER_AGENT, Constants.USER_AGENT)
+                .putHeader(HttpHeaders.ACCEPT, HttpHeaderValues.APPLICATION_JSON)
+                .send())
         .expecting(HttpResponseExpectation.SC_OK)
         .mapEmpty();
   }

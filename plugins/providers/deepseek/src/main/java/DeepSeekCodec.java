@@ -93,19 +93,18 @@ final class DeepSeekCodec {
         contents.add(JsonObject.of("type", "text", "text", userPrompt.getPrompt()));
         userPrompt
             .getContentList()
-            .forEach(
-                content -> {
-                  if (content.hasImage()) {
-                    final var image = content.getImage();
-                    final String url =
-                        "data:"
-                            + image.getMediaType()
-                            + ";base64,"
-                            + Base64.getEncoder().encodeToString(image.getData().toByteArray());
-                    contents.add(
-                        JsonObject.of("type", "image_url", "image_url", JsonObject.of("url", url)));
-                  }
-                });
+            .forEach(content -> {
+              if (content.hasImage()) {
+                final var image = content.getImage();
+                final String url =
+                    "data:"
+                        + image.getMediaType()
+                        + ";base64,"
+                        + Base64.getEncoder().encodeToString(image.getData().toByteArray());
+                contents.add(
+                    JsonObject.of("type", "image_url", "image_url", JsonObject.of("url", url)));
+              }
+            });
 
         yield new JsonObject().put("role", "user").put("content", contents);
       }
@@ -149,14 +148,13 @@ final class DeepSeekCodec {
     if (!include) {
       return object;
     }
-    meta.forEach(
-        (key, value) -> {
-          try {
-            object.put(key, Json.decodeValue(value));
-          } catch (Exception e) {
-            LOGGER.warning("skipping malformed provider meta entry " + key);
-          }
-        });
+    meta.forEach((key, value) -> {
+      try {
+        object.put(key, Json.decodeValue(value));
+      } catch (Exception e) {
+        LOGGER.warning("skipping malformed provider meta entry " + key);
+      }
+    });
     return object;
   }
 

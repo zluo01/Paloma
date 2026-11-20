@@ -57,15 +57,14 @@ public final class ChatStream {
     resetIdleTimeout();
     httpClient
         .request(HttpMethod.POST, "/chat/completions")
-        .compose(
-            req -> {
-              request = req;
-              return req.putHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
-                  .putHeader(HttpHeaders.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON)
-                  .putHeader(HttpHeaders.USER_AGENT, Constants.USER_AGENT)
-                  .putHeader(HttpHeaders.ACCEPT, HttpHeaderValues.TEXT_EVENT_STREAM)
-                  .send(body.encode());
-            })
+        .compose(req -> {
+          request = req;
+          return req.putHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+              .putHeader(HttpHeaders.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON)
+              .putHeader(HttpHeaders.USER_AGENT, Constants.USER_AGENT)
+              .putHeader(HttpHeaders.ACCEPT, HttpHeaderValues.TEXT_EVENT_STREAM)
+              .send(body.encode());
+        })
         .onSuccess(this::onResponse)
         .onFailure(e -> fail("Fail to connect to " + Constants.BACKEND_ID + ": " + e.getMessage()));
   }
