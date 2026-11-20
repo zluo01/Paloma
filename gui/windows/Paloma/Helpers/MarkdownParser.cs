@@ -17,11 +17,6 @@ public partial class MarkdownParser
 
     private int _renderCount;
 
-    public void Reset()
-    {
-        _renderCount = 0;
-    }
-
     public (int Keep, IReadOnlyList<Block> Blocks) RenderBlocks(string text)
     {
         var blocks = Parse(text);

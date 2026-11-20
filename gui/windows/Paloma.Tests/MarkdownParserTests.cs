@@ -108,19 +108,6 @@ public sealed class MarkdownParserTests
     }
 
     [Fact]
-    public void RenderBlocks_AfterReset_ReturnsEveryBlock()
-    {
-        var parser = new MarkdownParser();
-        parser.RenderBlocks("first.\n\nsecond.");
-        parser.Reset();
-
-        var (keep, blocks) = parser.RenderBlocks("first.\n\nsecond.");
-
-        Assert.Equal(0, keep);
-        Assert.Equal(2, blocks.Count);
-    }
-
-    [Fact]
     public void RenderBlocks_ShrinkingParse_KeepsNothingAndReturnsTheFullList()
     {
         var parser = new MarkdownParser();
