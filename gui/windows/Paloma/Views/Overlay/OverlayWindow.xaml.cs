@@ -140,6 +140,7 @@ public sealed partial class OverlayWindow
     }
 
     /// resize the app window to make sure the window boundary match the inner content size
+    /// Known bugs on resizing: https://github.com/microsoft/microsoft-ui-xaml/issues/5148
     private void ResizeWindow()
     {
         var scale = Overlay.XamlRoot.RasterizationScale;
