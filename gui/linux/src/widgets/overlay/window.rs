@@ -195,24 +195,16 @@ fn surface_monitor(window: &ApplicationWindow) -> Option<gtk4::gdk::Monitor> {
 }
 
 fn largest_monitor(display: &gtk4::gdk::Display) -> Option<gtk4::gdk::Monitor> {
-    let monitors = display.monitors();
-    let mut best: Option<(i32, gtk4::gdk::Monitor)> = None;
-
-    for i in 0..monitors.n_items() {
-        let Some(monitor) = monitors
-            .item(i)
-            .and_then(|item| item.downcast::<gtk4::gdk::Monitor>().ok())
-        else {
-            continue;
-        };
-        let geometry = monitor.geometry();
-        let area = geometry.width() * geometry.height();
-        if best.as_ref().is_none_or(|(best_area, _)| area > *best_area) {
-            best = Some((area, monitor));
-        }
-    }
-
-    best.map(|(_, monitor)| monitor)
+    display
+        .monitors()
+        .iter::<gtk4::gdk::Monitor>()
+        // `max_by_key` keeps the last of equals; reversed, that is the first monitor
+        .rev()
+        .flatten()
+        .max_by_key(|monitor| {
+            let geometry = monitor.geometry();
+            geometry.width() * geometry.height()
+        })
 }
 
 #[cfg(test)]
