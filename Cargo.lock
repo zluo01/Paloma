@@ -360,9 +360,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-bedrock"
-version = "1.169.0"
+version = "1.170.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1126a137a270444a616d780a2f917fdbae93f4675a27262fb2ae3e8729d94600"
+checksum = "f62fbe943603c06de1dd80df5f4b2cfa392e1ce111a9de5cfdc300a95c2ef723"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -383,9 +383,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-bedrockruntime"
-version = "1.156.0"
+version = "1.157.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5145042f2bd346c8540c8958536127c8df77df02259cd9341771ac074ebe767"
+checksum = "c1cd120cc746e32388787009be64a82213f1bd7bcdc3e366f3a4e53236b5eaf1"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
