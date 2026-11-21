@@ -12,7 +12,7 @@ exmex = "0.21.0"
 ignore = "0.4.34"
 log = { workspace = true }
 mime_guess = "2.0.5"
-notify = "8.2.2"
+notify = "9.0.0"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
 open = { version = "5.4.5", features = ["shellexecute-on-windows"] }
