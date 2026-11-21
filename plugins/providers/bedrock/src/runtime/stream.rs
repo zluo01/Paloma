@@ -1,6 +1,6 @@
 use aws_sdk_bedrockruntime::types::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStart, ContentBlockStartEvent,
-    ConverseStreamOutput, ReasoningContentBlockDelta,
+    ConverseStreamOutput, MessageStopEvent, ReasoningContentBlockDelta, StopReason,
 };
 use aws_smithy_types::base64;
 use log::{error, warn};
@@ -55,7 +55,7 @@ pub(super) fn on_stream_event(
                 None => StreamStep::Continue(None),
             })
         },
-        ConverseStreamOutput::MessageStop(_) => Ok(StreamStep::Done),
+        ConverseStreamOutput::MessageStop(stop) => parse_message_stop_event(stop),
         other => {
             warn!("unknown converse stream event {other:?}; skipping.");
             Ok(StreamStep::Continue(None))
@@ -213,6 +213,17 @@ fn finalize_block_content(placeholder: Option<BlockState>) -> Option<Conversatio
     Some(ConversationItem { item: Some(item) })
 }
 
+fn parse_message_stop_event(event: &MessageStopEvent) -> Result<StreamStep> {
+    match event.stop_reason() {
+        StopReason::EndTurn | StopReason::ToolUse | StopReason::StopSequence => {
+            Ok(StreamStep::Done)
+        },
+        other => Err(ProviderError::Other(format!(
+            "model stopped early: {other}"
+        ))),
+    }
+}
+
 fn mismatched_delta(delta_kind: &str, state: &BlockState) -> ProviderError {
     error!(
         "{delta_kind} delta arrived for mismatched block state {state:?}. This indicates a bug."
@@ -225,6 +236,22 @@ mod tests {
     use aws_sdk_bedrockruntime::types::{ToolUseBlockDelta, ToolUseBlockStart};
 
     use super::*;
+
+    fn message_stop(reason: StopReason) -> ConverseStreamOutput {
+        ConverseStreamOutput::MessageStop(
+            MessageStopEvent::builder()
+                .stop_reason(reason)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn stop_error(reason: StopReason) -> String {
+        match on_stream_event(&message_stop(reason), &mut None) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("stop reason should not complete the message"),
+        }
+    }
 
     fn text_delta(chunk: &str) -> ContentBlockDeltaEvent {
         ContentBlockDeltaEvent::builder()
@@ -359,5 +386,42 @@ mod tests {
     #[test]
     fn block_stop_without_accumulated_block_produces_nothing() {
         assert!(finalize_block_content(None).is_none());
+    }
+
+    #[test]
+    fn finished_turn_stop_reasons_complete_the_message() {
+        for reason in [
+            StopReason::EndTurn,
+            StopReason::ToolUse,
+            StopReason::StopSequence,
+        ] {
+            let step = on_stream_event(&message_stop(reason.clone()), &mut None);
+            assert!(matches!(step, Ok(StreamStep::Done)), "{reason}");
+        }
+    }
+
+    #[test]
+    fn cut_short_stop_reasons_are_errors_naming_the_reason() {
+        for reason in [
+            StopReason::MaxTokens,
+            StopReason::ContentFiltered,
+            StopReason::GuardrailIntervened,
+            StopReason::ModelContextWindowExceeded,
+            StopReason::MalformedModelOutput,
+            StopReason::MalformedToolUse,
+        ] {
+            assert_eq!(
+                stop_error(reason.clone()),
+                format!("model stopped early: {reason}")
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_stop_reason_is_an_error() {
+        assert_eq!(
+            stop_error(StopReason::from("pause_turn")),
+            "model stopped early: pause_turn"
+        );
     }
 }
