@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protodelim"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -44,9 +43,8 @@ func (r *Reader) Read(m proto.Message) error {
 // serialized, so concurrent tool invocations cannot interleave partial
 // frames.
 type Writer struct {
-	mu    sync.Mutex
-	buf   *bufio.Writer
-	frame []byte
+	mu  sync.Mutex
+	buf *bufio.Writer
 }
 
 func NewWriter(w io.Writer) *Writer {
@@ -61,22 +59,11 @@ func (w *Writer) Write(m proto.Message) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	var opts proto.MarshalOptions
-	frame, err := opts.MarshalAppend(w.frame[:0], m)
-	if err != nil {
+	if _, err := protodelim.MarshalTo(w.buf, m); err != nil {
 		sanitizeStrings(m.ProtoReflect())
-		if frame, err = opts.MarshalAppend(w.frame[:0], m); err != nil {
+		if _, err = protodelim.MarshalTo(w.buf, m); err != nil {
 			return err
 		}
-	}
-	w.frame = frame
-
-	var varint [10]byte
-	if _, err := w.buf.Write(protowire.AppendVarint(varint[:0], uint64(len(frame)))); err != nil {
-		return err
-	}
-	if _, err := w.buf.Write(frame); err != nil {
-		return err
 	}
 	return w.buf.Flush()
 }
