@@ -5,11 +5,6 @@ on:
     tags:
       - "webfetch-plugin-v*"
   workflow_dispatch:
-    inputs:
-      version:
-        description: Version to release, without the v prefix
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -31,8 +26,9 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION_INPUT: ${{ inputs.version }}
-        run: bash .github/scripts/resolve-release.sh webfetch-plugin-v
+        run: |
+          version="$(cat plugins/extensions/webfetch/VERSION)"
+          VERSION_INPUT="$version" bash .github/scripts/resolve-release.sh webfetch-plugin-v "${version:?VERSION file is empty}"
 
       - name: Install Go
         uses: actions/setup-go@v7
