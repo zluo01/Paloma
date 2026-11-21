@@ -135,16 +135,21 @@ func (c *Client) Get(ctx context.Context, rawURL string, timeout time.Duration) 
 	defer response.Body.Close()
 
 	// read one byte past the cap so a body sitting exactly on it is not
-	// reported as truncated; pre-size from Content-Length when sane so the
-	// body lands in one allocation (the limit still holds when it lies)
-	limit := int64(MaxBytes) + 1
-	size := limit
-	if n := response.ContentLength; n >= 0 && n < size {
-		size = n
+	// reported as truncated
+	limited := io.LimitReader(response.Body, int64(MaxBytes)+1)
+	var body []byte
+	var readErr error
+	if n := response.ContentLength; n >= 0 && n <= MaxBytes {
+		// a declared length lands in one allocation (the limit still holds
+		// when it lies)
+		buf := bytes.NewBuffer(make([]byte, 0, n))
+		_, readErr = buf.ReadFrom(limited)
+		body = buf.Bytes()
+	} else {
+		// compressed and chunked responses declare no length, and most of
+		// them are small: grow with the body instead of reserving the cap
+		body, readErr = io.ReadAll(limited)
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, size))
-	_, readErr := buf.ReadFrom(io.LimitReader(response.Body, limit))
-	body := buf.Bytes()
 	truncated := len(body) > MaxBytes
 	if truncated {
 		body = body[:MaxBytes]

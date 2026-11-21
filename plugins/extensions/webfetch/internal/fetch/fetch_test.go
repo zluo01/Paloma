@@ -91,6 +91,28 @@ func TestBodyExactlyAtCapIsNotTruncated(t *testing.T) {
 	}
 }
 
+func TestUnknownLengthBodyDoesNotReserveTheCap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// flushing before the handler returns forces chunked encoding, so
+		// the client sees no Content-Length
+		_, _ = w.Write([]byte(strings.Repeat("a", 20<<10)))
+		w.(http.Flusher).Flush()
+	}))
+	defer server.Close()
+
+	got, err := get(t, server.URL)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	if len(got.Body) != 20<<10 {
+		t.Fatalf("body = %d bytes, want %d", len(got.Body), 20<<10)
+	}
+	if cap(got.Body) > 1<<20 {
+		t.Errorf("20 KiB body sits in a %d byte buffer", cap(got.Body))
+	}
+}
+
 func TestInterruptedBodyKeepsPartialContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// promise more than is written; closing the connection mid-body
