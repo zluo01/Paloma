@@ -38,7 +38,7 @@ objc2-foundation = { workspace = true, default-features = false, features = [
 ] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.4", default-features = false, features = ["signal"] }
+nix = { version = "0.32.0", default-features = false, features = ["signal"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, default-features = false, features = [
