@@ -1,6 +1,6 @@
 [package]
 name = "paloma-provider-bedrock"
-version = { workspace = true }
+version = "0.0.3"
 edition = { workspace = true }
 rust-version = { workspace = true }
 license = { workspace = true }

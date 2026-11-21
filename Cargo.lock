@@ -3454,7 +3454,7 @@ dependencies = [
 
 [[package]]
 name = "paloma-provider-bedrock"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "aws-config",
