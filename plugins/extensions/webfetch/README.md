@@ -25,7 +25,6 @@ archive for your platform:
 | Linux ARM64 | `webfetch-linux-arm64.tar.gz` |
 | macOS Apple silicon | `webfetch-macos-arm64.tar.gz` |
 | Windows x86-64 | `webfetch-windows-amd64.zip` |
-| Windows ARM64 | `webfetch-windows-arm64.zip` |
 
 Extract the archive to the location where you want to keep the plugin. The
 plugin file is named `webfetch` (`webfetch.exe` on Windows). The release also

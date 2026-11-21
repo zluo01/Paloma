@@ -60,10 +60,6 @@ jobs:
             runner: ubuntu-latest
             goos: windows
             goarch: amd64
-          - name: windows-arm64
-            runner: ubuntu-latest
-            goos: windows
-            goarch: arm64
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
